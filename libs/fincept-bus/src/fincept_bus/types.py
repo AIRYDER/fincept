@@ -1,0 +1,2 @@
+StreamID = str
+ConsumerGroupName = str

@@ -7,8 +7,8 @@
 | # | Task | Depends on | File(s) | Status |
 |---|---|---|---|---|
 | 001 | Monorepo skeleton (uv, pnpm, Makefile, pre-commit, docker-compose) | — | root | [x] |
-| 002 | `fincept-core`: schemas, events, config, logging, tracing, clock, ids, errors | 001 | `libs/fincept-core` | [ ] |
-| 003 | `fincept-bus`: Redis Streams producer, consumer, stream constants | 002 | `libs/fincept-bus` | [ ] |
+| 002 | `fincept-core`: schemas, events, config, logging, tracing, clock, ids, errors | 001 | `libs/fincept-core` | [x] |
+| 003 | `fincept-bus`: Redis Streams producer, consumer, stream constants | 002 | `libs/fincept-bus` | [x] |
 | 004 | `fincept-db`: async SQLAlchemy engine, ORM models, alembic migrations, ticks/bars access | 002 | `libs/fincept-db` | [ ] |
 | 005 | `fincept-tools`: tool protocol, registry, data tools, analytics tools, exec tools (paper) | 002 | `libs/fincept-tools` | [ ] |
 | 006 | CI pipeline (GitHub Actions): lint, typecheck, test, build matrix | 001 | `.github/workflows` | [ ] |

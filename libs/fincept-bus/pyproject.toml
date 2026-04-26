@@ -1,9 +1,21 @@
 [project]
 name = "fincept-bus"
 version = "0.1.0"
-description = "Stub for fincept-bus — implemented by a later TASK in spec/BUILD_ORDER.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "redis[hiredis]>=5.1",
+  "fincept-core",
+]
+
+[dependency-groups]
+dev = [
+  "fakeredis>=2.25",
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.7",
+  "types-redis>=4.6",
+]
 
 [build-system]
 requires = ["hatchling"]
