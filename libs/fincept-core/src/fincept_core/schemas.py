@@ -208,3 +208,6 @@ class Position(BaseModel):
     symbol: str
     quantity: Decimal
     avg_cost: Decimal
+    realized_pnl: Decimal = Decimal(0)
+    unrealized_pnl: Decimal = Decimal(0)
+    updated_at: int

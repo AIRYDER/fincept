@@ -47,6 +47,9 @@ def test_position_allows_signed_decimal_quantity():
         symbol="AAPL",
         quantity=Decimal("-2.5"),
         avg_cost=Decimal("123.00"),
+        updated_at=1,
     )
 
     assert position.quantity == Decimal("-2.5")
+    assert position.realized_pnl == Decimal(0)
+    assert position.unrealized_pnl == Decimal(0)
