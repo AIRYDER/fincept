@@ -1,0 +1,72 @@
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.python-version-local
+
+# --- Tooling caches ---------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# --- Build artifacts --------------------------------------------------------
+dist/
+build/
+*.whl
+*.tar.gz
+
+# --- Node / Next.js ---------------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# --- Secrets & local data ---------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+data/local/
+models/local/
+
+# --- Databases / blobs ------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Logs -------------------------------------------------------------------
+logs/
+*.log
+
+# --- IDE / OS ---------------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Jupyter ----------------------------------------------------------------
+.ipynb_checkpoints/
+
+# --- ML artifacts -----------------------------------------------------------
+mlruns/
+*.pth
+*.onnx
+*.safetensors
+*.pkl
+
+# --- uv ---------------------------------------------------------------------
+uv.lock
+!uv.lock
+.uv-cache/

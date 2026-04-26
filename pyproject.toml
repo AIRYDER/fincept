@@ -1,0 +1,51 @@
+[project]
+name = "fincept-terminal"
+version = "0.0.0"
+description = "Internal AI-agentic stock & crypto trading platform"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = [
+    "libs/fincept-core",
+    "libs/fincept-bus",
+    "libs/fincept-db",
+    "libs/fincept-tools",
+    "libs/fincept-sdk",
+    "services/ingestor",
+    "services/features",
+    "services/agents",
+    "services/orchestrator",
+    "services/risk",
+    "services/oms",
+    "services/portfolio",
+    "services/api",
+    "services/backtester",
+    "services/jobs",
+]
+
+[tool.uv.sources]
+fincept-core = { workspace = true }
+fincept-bus = { workspace = true }
+fincept-db = { workspace = true }
+fincept-tools = { workspace = true }
+fincept-sdk = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    # mypy plugins / stubs that load before any service-specific deps exist.
+    # Concrete service deps live in each services/<svc>/pyproject.toml.
+    "pydantic>=2.9",
+    "types-redis>=4.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["libs", "services"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = ["error"]

@@ -1,0 +1,11 @@
+{
+  "name": "@fincept/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stub for the Fincept dashboard. Implemented by TASK-052 (spec/BUILD_ORDER.md).",
+  "scripts": {
+    "lint": "echo 'dashboard lint stub — implemented in TASK-052'",
+    "build": "echo 'dashboard build stub — implemented in TASK-052'",
+    "dev": "echo 'dashboard dev stub — implemented in TASK-052'"
+  }
+}

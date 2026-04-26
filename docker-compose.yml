@@ -1,0 +1,67 @@
+# Local dev stack. Production runs the same images via Kubernetes (see infra/k8s/).
+# Boot with `make dev`. Tear down + wipe volumes with `make clean`.
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: fincept-postgres
+    environment:
+      POSTGRES_DB: fincept
+      POSTGRES_USER: fincept
+      POSTGRES_PASSWORD: fincept
+      TS_TUNE_MEMORY: 2GB
+      TS_TUNE_NUM_CPUS: 2
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fincept -d fincept"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: fincept-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 2gb
+      --maxmemory-policy noeviction
+      --save 60 1000
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: fincept-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: fincept
+      MINIO_ROOT_PASSWORD: fincept-minio-pw
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

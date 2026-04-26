@@ -1,0 +1,40 @@
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/**", ".venv", "node_modules", "build", "dist"]
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "SIM",   # simplify
+    "RUF",   # ruff-specific
+    "ASYNC", # async best practices
+    "S",     # bandit (security)
+    "T20",   # no print statements
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "S101",  # asserts ok in tests
+    "S105",  # hardcoded password false positives in tests
+    "S106",
+]
+
+[lint.per-file-ignores]
+"**/tests/**/*.py" = ["S", "T20"]
+"**/scripts/**/*.py" = ["T20"]
+"**/notebooks/**/*.py" = ["T20", "E402"]
+
+[lint.isort]
+known-first-party = [
+    "fincept_core", "fincept_bus", "fincept_db", "fincept_tools", "fincept_sdk",
+    "ingestor", "features", "agents", "orchestrator", "risk", "oms",
+    "portfolio", "api", "backtester", "jobs",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false

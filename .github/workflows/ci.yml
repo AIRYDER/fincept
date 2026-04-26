@@ -1,0 +1,110 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9"
+
+jobs:
+  python:
+    name: Python (lint + typecheck + test)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: fincept
+          POSTGRES_USER: fincept
+          POSTGRES_PASSWORD: fincept
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fincept"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql+asyncpg://fincept:fincept@localhost:5432/fincept
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-secret
+      TRADING_MODE: paper
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages --all-groups
+
+      - name: Ruff lint
+        run: uv run ruff check libs services
+
+      - name: Ruff format check
+        run: uv run ruff format --check libs services
+
+      - name: Mypy
+        run: uv run mypy libs services
+
+      - name: Pytest
+        run: |
+          set +e
+          uv run pytest --cov=libs --cov=services --cov-report=xml
+          ec=$?
+          if [ $ec -eq 5 ]; then
+            echo "::notice::No tests collected — scaffold phase, exiting 0"
+            exit 0
+          fi
+          exit $ec
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  js:
+    name: JS (lint + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm -r lint || true   # tolerate during scaffold; tighten in TASK-052
+      - run: pnpm -r build || true
+
+  security:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
