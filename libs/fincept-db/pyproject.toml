@@ -1,9 +1,21 @@
 [project]
 name = "fincept-db"
 version = "0.1.0"
-description = "Stub for fincept-db — implemented by a later TASK in spec/BUILD_ORDER.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "alembic>=1.14",
+  "fincept-core",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.7",
+]
 
 [build-system]
 requires = ["hatchling"]
