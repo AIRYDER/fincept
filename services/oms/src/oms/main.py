@@ -1,30 +1,34 @@
 """
-oms.main — OMS entrypoint with sim + Alpaca routing.
+oms.main - OMS entrypoint with sim + Alpaca routing + risk gate.
 
 Routing is selected at startup via ``Settings.OMS_ROUTER``:
 
   - ``"sim"`` (default)
-        Bus -> Consumer(md.trades)   -> LivePrices.update            (price feed)
-        Bus -> Consumer(ord.orders)  -> process_intent (PaperFiller) ->
-                                        Producer.publish(ord.orders) (state events)
-                                        Producer.publish(ord.fills)  (fill events)
-                                        fincept_db.audit.append      (audit trail)
+        Bus -> Consumer(md.trades)     -> LivePrices.update           (price feed)
+        Bus -> Consumer(events.alerts) -> KillSwitchState.apply       (kill switch)
+        Bus -> Consumer(ord.orders)    -> risk.check_intent ->
+                                          process_intent (PaperFiller) ->
+                                          publish state events + Fill
+                                          fincept_db.audit.append
 
   - ``"alpaca"``
-        Bus -> Consumer(ord.orders)  -> alpaca.submit_intent ->
-                                        publish state events + (optional) Fill
-                                        fincept_db.audit.append
-        + background task tailing pending Alpaca orders, emitting
-          Fill / terminal-unfilled events when they finally land.
+        Bus -> Consumer(md.trades)     -> LivePrices.update           (price feed)
+        Bus -> Consumer(events.alerts) -> KillSwitchState.apply       (kill switch)
+        Bus -> Consumer(ord.orders)    -> risk.check_intent ->
+                                          alpaca.submit_intent ->
+                                          publish state events + Fill
+                                          fincept_db.audit.append
+        + background poll task tailing pending Alpaca orders.
 
-Both branches publish identical event shapes to ``ord.orders`` and
-``ord.fills``, so downstream services (portfolio, API, dashboard)
-don't know or care which router fed the events.
+Both routers share the same risk gate.  When ``check_intent`` rejects an
+intent, no order is submitted; we publish a single
+``Order(status=REJECTED)`` with the rejection reasons in tags, audit
+the rejection, and return early.
 
-Out of scope for this commit:
-  - HA / leadership election (deferred to Phase H).
-  - Cancel / replace / partial fills (Phase H refinements).
-  - Direct exchange routing (TASK-075 - distinct from Alpaca paper).
+Risk-context staleness: the per-symbol / gross notional snapshot is
+rebuilt for every intent.  Each rebuild is a single Redis HGETALL per
+strategy hash (small, sub-millisecond).  This keeps decisions consistent
+even if multiple intents arrive in quick succession.
 """
 
 from __future__ import annotations
@@ -39,11 +43,24 @@ from redis.asyncio import Redis
 
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
-from fincept_bus.streams import STREAM_FILLS, STREAM_MD_TRADES, STREAM_ORDERS
+from fincept_bus.streams import (
+    STREAM_ALERTS,
+    STREAM_FILLS,
+    STREAM_MD_TRADES,
+    STREAM_ORDERS,
+)
+from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
 from fincept_core.events import Event
 from fincept_core.logging import configure_logging, get_logger
-from fincept_core.schemas import Fill, Order, OrderIntent, TradeEvent
+from fincept_core.schemas import (
+    AlertEvent,
+    Fill,
+    Order,
+    OrderIntent,
+    OrderStatus,
+    TradeEvent,
+)
 from fincept_core.tracing import configure_tracing
 from fincept_db import audit
 from oms.alpaca import AlpacaClient, poll_pending_orders, submit_intent
@@ -51,6 +68,8 @@ from oms.alpaca.runtime import PendingOrder
 from oms.paper import PaperFiller
 from oms.prices import LivePrices
 from oms.processor import IntentResult, process_intent
+from portfolio.store import PositionStore
+from risk import KillSwitchState, build_context, check_intent
 
 log = get_logger(__name__)
 
@@ -102,11 +121,6 @@ async def _publish_result(
             )
 
 
-# ---------------------------------------------------------------------------
-# Sim router (the original PaperFiller path)
-# ---------------------------------------------------------------------------
-
-
 def _make_price_handler(prices: LivePrices) -> Any:
     async def handler(event: Event) -> None:
         payload = event.payload
@@ -116,13 +130,80 @@ def _make_price_handler(prices: LivePrices) -> Any:
     return handler
 
 
-def _make_sim_intent_handler(producer: Producer, prices: LivePrices, filler: PaperFiller) -> Any:
+def _make_alert_handler(kill: KillSwitchState) -> Any:
+    async def handler(event: Event) -> None:
+        payload = event.payload
+        if isinstance(payload, AlertEvent):
+            kill.apply(payload)
+
+    return handler
+
+
+async def _emit_rejection(
+    intent: OrderIntent,
+    reasons: list[str],
+    *,
+    producer: Producer,
+    actor: str,
+) -> None:
+    """Publish a single ``Order(status=REJECTED)`` for a risk-rejected intent."""
+    ts = now_ns()
+    rejected = Order(
+        **intent.model_dump(),
+        status=OrderStatus.REJECTED,
+        created_at=ts,
+        updated_at=ts,
+    )
+    rejected = rejected.model_copy(
+        update={"tags": {**intent.tags, "risk_reasons": ";".join(reasons)}}
+    )
+    await _publish_result(
+        IntentResult(order_states=[rejected], fill=None),
+        producer=producer,
+        actor=actor,
+    )
+    log.warning(
+        "oms.risk.rejected",
+        order_id=intent.order_id,
+        symbol=intent.symbol,
+        reasons=reasons,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sim router (PaperFiller)
+# ---------------------------------------------------------------------------
+
+
+def _make_sim_intent_handler(
+    *,
+    producer: Producer,
+    prices: LivePrices,
+    filler: PaperFiller,
+    store: PositionStore,
+    kill: KillSwitchState,
+) -> Any:
     async def handler(event: Event) -> None:
         payload = event.payload
         if not isinstance(payload, OrderIntent):
             return
-        result = process_intent(payload, prices=prices, filler=filler)
         await _audit_intent(payload, actor="oms.sim")
+
+        # Risk gate: snapshot live state, run check, short-circuit on reject.
+        ctx = await build_context(store=store, get_price=prices.get, kill_switch=kill)
+        decision = check_intent(
+            payload,
+            ctx=ctx,
+            settings=get_settings(),
+            last_price=prices.get(payload.symbol),
+        )
+        if not decision.approved:
+            await _emit_rejection(
+                payload, list(decision.reasons), producer=producer, actor="oms.sim"
+            )
+            return
+
+        result = process_intent(payload, prices=prices, filler=filler)
         await _publish_result(result, producer=producer, actor="oms.sim")
         log.info(
             "oms.sim.processed",
@@ -137,7 +218,10 @@ def _make_sim_intent_handler(producer: Producer, prices: LivePrices, filler: Pap
 async def _run_sim(stop: asyncio.Event, redis: Redis[Any], producer: Producer) -> None:
     prices = LivePrices()
     filler = PaperFiller()
+    kill = KillSwitchState()
+    store = PositionStore(redis)
     price_consumer = Consumer(redis)
+    alert_consumer = Consumer(redis)
     intent_consumer = Consumer(redis)
 
     price_task = asyncio.create_task(
@@ -148,38 +232,70 @@ async def _run_sim(stop: asyncio.Event, redis: Redis[Any], producer: Producer) -
             handler=_make_price_handler(prices),
         )
     )
+    alert_task = asyncio.create_task(
+        alert_consumer.consume(
+            streams=[STREAM_ALERTS],
+            group=CONSUMER_GROUP,
+            consumer_name="oms-alerts",
+            handler=_make_alert_handler(kill),
+        )
+    )
     intent_task = asyncio.create_task(
         intent_consumer.consume(
             streams=[STREAM_ORDERS],
             group=CONSUMER_GROUP,
             consumer_name="oms-intents",
-            handler=_make_sim_intent_handler(producer, prices, filler),
+            handler=_make_sim_intent_handler(
+                producer=producer,
+                prices=prices,
+                filler=filler,
+                store=store,
+                kill=kill,
+            ),
         )
     )
     try:
         await stop.wait()
     finally:
-        for task in (price_task, intent_task):
+        for task in (price_task, alert_task, intent_task):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
 
 # ---------------------------------------------------------------------------
-# Alpaca router (real paper-broker path)
+# Alpaca router
 # ---------------------------------------------------------------------------
 
 
 def _make_alpaca_intent_handler(
+    *,
     producer: Producer,
     client: AlpacaClient,
     pending: dict[str, PendingOrder],
+    prices: LivePrices,
+    store: PositionStore,
+    kill: KillSwitchState,
 ) -> Any:
     async def handler(event: Event) -> None:
         payload = event.payload
         if not isinstance(payload, OrderIntent):
             return
         await _audit_intent(payload, actor="oms.alpaca")
+
+        ctx = await build_context(store=store, get_price=prices.get, kill_switch=kill)
+        decision = check_intent(
+            payload,
+            ctx=ctx,
+            settings=get_settings(),
+            last_price=prices.get(payload.symbol),
+        )
+        if not decision.approved:
+            await _emit_rejection(
+                payload, list(decision.reasons), producer=producer, actor="oms.alpaca"
+            )
+            return
+
         result = await submit_intent(payload, client=client, pending=pending)
         await _publish_result(result, producer=producer, actor="oms.alpaca")
         log.info(
@@ -199,6 +315,9 @@ async def _run_alpaca(stop: asyncio.Event, redis: Redis[Any], producer: Producer
         raise RuntimeError("OMS_ROUTER=alpaca but ALPACA_API_KEY / ALPACA_API_SECRET not set")
 
     pending: dict[str, PendingOrder] = {}
+    prices = LivePrices()
+    kill = KillSwitchState()
+    store = PositionStore(redis)
 
     async with httpx.AsyncClient(
         base_url=settings.ALPACA_BASE_URL,
@@ -224,13 +343,38 @@ async def _run_alpaca(stop: asyncio.Event, redis: Redis[Any], producer: Producer
                 actor="oms.alpaca.poll",
             )
 
+        price_consumer = Consumer(redis)
+        alert_consumer = Consumer(redis)
         intent_consumer = Consumer(redis)
+        price_task = asyncio.create_task(
+            price_consumer.consume(
+                streams=[STREAM_MD_TRADES],
+                group=CONSUMER_GROUP,
+                consumer_name="oms-alpaca-prices",
+                handler=_make_price_handler(prices),
+            )
+        )
+        alert_task = asyncio.create_task(
+            alert_consumer.consume(
+                streams=[STREAM_ALERTS],
+                group=CONSUMER_GROUP,
+                consumer_name="oms-alpaca-alerts",
+                handler=_make_alert_handler(kill),
+            )
+        )
         intent_task = asyncio.create_task(
             intent_consumer.consume(
                 streams=[STREAM_ORDERS],
                 group=CONSUMER_GROUP,
                 consumer_name="oms-alpaca-intents",
-                handler=_make_alpaca_intent_handler(producer, client, pending),
+                handler=_make_alpaca_intent_handler(
+                    producer=producer,
+                    client=client,
+                    pending=pending,
+                    prices=prices,
+                    store=store,
+                    kill=kill,
+                ),
             )
         )
         poll_task = asyncio.create_task(
@@ -245,7 +389,7 @@ async def _run_alpaca(stop: asyncio.Event, redis: Redis[Any], producer: Producer
         try:
             await stop.wait()
         finally:
-            for task in (intent_task, poll_task):
+            for task in (price_task, alert_task, intent_task, poll_task):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task

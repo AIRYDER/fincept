@@ -1536,8 +1536,10 @@ dependencies = [
     { name = "fincept-core" },
     { name = "fincept-db" },
     { name = "httpx" },
+    { name = "portfolio" },
     { name = "pydantic" },
     { name = "redis" },
+    { name = "risk" },
 ]
 
 [package.dev-dependencies]
@@ -1557,8 +1559,10 @@ requires-dist = [
     { name = "fincept-core", editable = "libs/fincept-core" },
     { name = "fincept-db", editable = "libs/fincept-db" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "portfolio", editable = "services/portfolio" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "redis", specifier = ">=5.0" },
+    { name = "risk", editable = "services/risk" },
 ]
 
 [package.metadata.requires-dev]
@@ -2252,6 +2256,42 @@ wheels = [
 name = "risk"
 version = "0.1.0"
 source = { editable = "services/risk" }
+dependencies = [
+    { name = "fincept-bus" },
+    { name = "fincept-core" },
+    { name = "portfolio" },
+    { name = "pydantic" },
+    { name = "redis" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "fakeredis" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+    { name = "types-redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fincept-bus", editable = "libs/fincept-bus" },
+    { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "portfolio", editable = "services/portfolio" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "redis", specifier = ">=5.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "fakeredis", specifier = ">=2.25" },
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.7" },
+    { name = "types-redis", specifier = ">=4.6" },
+]
 
 [[package]]
 name = "ruff"
