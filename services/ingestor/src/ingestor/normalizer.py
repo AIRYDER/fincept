@@ -50,12 +50,22 @@ def to_coinbase_symbol(canonical: str) -> str:
 
 
 def to_kraken_symbol(canonical: str) -> str:
-    """``BTC-USD`` → ``BTC/USD`` (Kraken WS format).
+    """``BTC-USD`` → ``XBT/USD`` (Kraken v2 WS format).
 
-    NOTE: the BTC↔XBT mapping Kraken uses is applied in TASK-013 alongside
-    the Kraken adapter itself; this helper is kept pure-syntactic here.
+    Kraken's legacy ticker for Bitcoin is ``XBT``; canonical (and every other
+    venue) uses ``BTC``.  This helper applies the substitution and the
+    separator change atomically so callers never juggle both.
     """
-    return canonical.upper().replace("-", "/")
+    return canonical.upper().replace("BTC", "XBT").replace("-", "/")
+
+
+def from_kraken_symbol(venue_symbol: str) -> str:
+    """``XBT/USD`` → ``BTC-USD`` (Kraken → canonical).
+
+    Inverse of :func:`to_kraken_symbol`.  Used by the Kraken adapter to map
+    inbound symbols back to canonical form.
+    """
+    return venue_symbol.upper().replace("XBT", "BTC").replace("/", "-")
 
 
 def iso8601_to_ns(s: str) -> int:

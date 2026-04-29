@@ -31,12 +31,14 @@ from fincept_core.tracing import configure_tracing
 from ingestor.base import VenueAdapter
 from ingestor.binance import BinanceAdapter
 from ingestor.coinbase import CoinbaseAdapter
+from ingestor.kraken import KrakenAdapter
 from ingestor.quality import QualityMonitor
 from ingestor.writer import Writer
 
 VENUE_ADAPTERS: dict[str, type[VenueAdapter]] = {
     "binance": BinanceAdapter,
     "coinbase": CoinbaseAdapter,
+    "kraken": KrakenAdapter,
 }
 
 log = get_logger(__name__)
@@ -139,9 +141,9 @@ async def _main(venue: str) -> None:
 def main() -> None:
     """Synchronous CLI entrypoint.
 
-    ``python -m ingestor.main --venue {binance,coinbase}`` selects which
-    adapter to run.  Only one venue per process for now — a future task will
-    fan multiple venues into a single supervisor.
+    ``python -m ingestor.main --venue {binance,coinbase,kraken}`` selects
+    which adapter to run.  Only one venue per process for now — a future
+    task will fan multiple venues into a single supervisor.
     """
     parser = argparse.ArgumentParser(prog="ingestor")
     parser.add_argument(

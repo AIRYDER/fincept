@@ -24,7 +24,7 @@
 | 010 | Ingestor base class + normalizer + writer (Redis + Timescale batch) | 002–004 | `services/ingestor/{base,normalizer,writer}.py` | [x] |
 | 011 | Binance spot WS adapter | 010 | `services/ingestor/binance.py` | [x] |
 | 012 | Coinbase Advanced Trade adapter | 010 | `services/ingestor/coinbase.py` | [x] |
-| 013 | Kraken WS adapter | 010 | `services/ingestor/kraken.py` | [ ] |
+| 013 | Kraken WS adapter | 010 | `services/ingestor/kraken.py` | [x] |
 | 014 | Quality monitor (gaps, cross-spread, staleness alerts) | 011 | `services/ingestor/quality.py` | [ ] |
 | 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` | [ ] |
 | 016 | Features: online transforms (returns, vol, microstructure) | 002–004, 011 | `services/features/online.py`, `transforms/*` | [ ] |

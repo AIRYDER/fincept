@@ -2,6 +2,19 @@
 
 **Phase:** D · **Depends on:** TASK-010 · **Blocks:** TASK-014 (cross-venue quality checks)
 
+**Status:** [x] Implemented and verified.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| Inline `to_canonical` / `to_venue` defined inside `kraken.py` | Centralised as `to_kraken_symbol` + `from_kraken_symbol` in `ingestor.normalizer` | One place owns the BTC ↔ XBT swap; tests + Coinbase + Binance import from the same module so symbol drift is impossible. |
+| Inline `datetime.fromisoformat(...).timestamp() * 1e9` | `iso8601_to_ns` in `normalizer` (integer math on `epoch_s` + `microsecond`) | Float seconds × 1e9 loses sub-microsecond precision; the integer path is exact and shared with Coinbase. |
+| Instance methods `_parse_trades` / `_parse_book` | Class/static methods (`@classmethod _parse_envelope`, `@staticmethod _parse_trades`, `@staticmethod _parse_book`) | Mirrors Binance + Coinbase. Tests call the parsers directly without instantiating the adapter — no hidden state, no async machinery. |
+| Dispatch on `(channel, type)` inside `stream` | Single `_parse_envelope` that early-exits when `type` is not in `{snapshot, update}` | Subscription acks (`method: subscribe`) and heartbeats both miss that pair, so they're rejected up-front rather than re-checked per-channel. |
+| `trade_id` always coerced via `int(tr.get("trade_id", 0))` | `int(trade_id) if trade_id else None` | Defensive: a missing `trade_id` keeps the canonical `seq=None` contract instead of silently storing `seq=0`. |
+| No CLI venue dispatch | Added `kraken` to `VENUE_ADAPTERS` in `main.py`, available via `--venue kraken` | Required by the spec's "Done when" manual smoke test (`python -m ingestor.main --venue kraken`). |
+
 ## Goal
 
 Kraken v2 WebSocket adapter implementing `VenueAdapter`, normalizing trade + book channels to canonical `TradeEvent` and `BookDeltaEvent` / `BookSnapshotEvent`.
