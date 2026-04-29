@@ -2,6 +2,21 @@
 
 **Phase:** D · **Depends on:** TASK-010, TASK-012, TASK-013 · **Blocks:** Phase D checkpoint
 
+**Status:** [x] Implemented and verified.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| Single `QualityMonitor` class in `quality.py` | Two classes in `quality.py`: `LatencyTracker` (sync, in-process counters) + `QualityMonitor` (async, alert-emitting) | TASK-010 already shipped a sync `QualityMonitor` wired into `ingestor.main`. Renaming preserves that diagnostic surface (and its 9 tests) and gives the new async event-driven monitor its own class without overloading one name with two responsibilities. |
+| `await self.producer.publish(STREAM_ALERTS, ev)` taking an `AlertEvent` directly | Wrapped: `await self.producer.publish(STREAM_ALERTS, Event(type="alert", payload=ev))` | `Producer.publish` is typed `(stream, Event)`. Extending the `Event.payload` union (and `_EVENT_SCHEMAS["alert"]`) to accept `AlertEvent` keeps the bus contract uniform — every stream message is still an `Event`, deserializable via `parse_event`. |
+| `staleness_loop` as an in-class infinite-loop coroutine | `staleness_check()` does one sweep; `_staleness_loop` in `quality_main.py` drives it on a cancellable schedule | One-shot is testable without `asyncio.sleep` shenanigans. The loop driver lives in the entrypoint where shutdown coordination already happens. |
+| Inline `Producer(redis)` construction inside `QualityMonitor` | Constructor takes any `_AlertProducer` (Protocol with `async publish(stream, Event)`) | Tests inject a `FakeProducer` that captures publishes in-memory — no live Redis required. Same DI applied to `clock` (defaults to `now_ns`) and `id_factory` (defaults to `new_id`) per session-opener rule 11 (determinism). |
+| Test file uses live `Redis.from_url(.../15)` and `xrange` byte-grepping | Tests use injected fakes (`FakeProducer` + `FakeClock`) | Spec test snippet was illustrative; running against a live Redis breaks the "tests run anywhere" invariant and is non-deterministic. The fakes pin behavior more strictly (alert payloads are typed `AlertEvent`, not byte slurps). |
+| Cross-spread compares any venue with any other on the same symbol | Cross-spread compares **canonical symbols only** | Binance ingests `BTC-USDT`; Coinbase/Kraken ingest `BTC-USD`. They are different markets and must not be compared. In the default config, cross-spread is structurally Coinbase ↔ Kraken (Binance never participates because we don't track top-of-book from deltas). Documented in the module docstring and locked by `test_cross_spread_only_compares_canonical_symbol`. |
+| Spec footnote "dedup identical alerts within 30 s window" listed as a landmine | Implemented as a `(code, frozenset(tags.items()))` dedup table with TTL = `dedup_window_ns` (default 30 s) and lazy GC at >1024 keys | Avoids alert flood when a venue has a sustained gap or a stuck top-of-book. Tested with three paths: same key within window (1 alert), different keys (both fire), same key after window expires (refires). |
+| Spec stub had no clock-skew handling for negative deltas | `on_trade` only emits `clock_skew` if `skew > budget`; negative skew (host clock behind venue) is intentionally ignored | Negative skew is a host-side issue, not a venue-quality issue. The `LatencyTracker` already clamps it for metrics; the alerting monitor stays silent. Pinned by `test_negative_skew_does_not_alert`. |
+
 ## Goal
 
 A long-running quality monitor that consumes `md.trades` and `md.books` from all configured venues and emits **AlertEvent**s when:

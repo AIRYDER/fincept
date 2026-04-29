@@ -11,7 +11,8 @@ Public surface:
   - CoinbaseAdapter — Coinbase Advanced Trade WS adapter (TASK-012)
   - KrakenAdapter   — Kraken v2 WS adapter (TASK-013)
   - Writer          — fan-out + batched DB writer
-  - QualityMonitor  — gap + latency observer
+  - LatencyTracker  — sync in-process gap + latency counters (used by main.run_loop)
+  - QualityMonitor  — async event-driven monitor that publishes AlertEvents (TASK-014)
   - run_loop        — entrypoint coroutine (also wired in main.py)
 """
 
@@ -20,13 +21,14 @@ from ingestor.binance import BinanceAdapter
 from ingestor.coinbase import CoinbaseAdapter
 from ingestor.kraken import KrakenAdapter
 from ingestor.main import run_loop
-from ingestor.quality import QualityMonitor
+from ingestor.quality import LatencyTracker, QualityMonitor
 from ingestor.writer import Writer
 
 __all__ = [
     "BinanceAdapter",
     "CoinbaseAdapter",
     "KrakenAdapter",
+    "LatencyTracker",
     "QualityMonitor",
     "VenueAdapter",
     "Writer",

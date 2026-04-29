@@ -211,3 +211,16 @@ class Position(BaseModel):
     realized_pnl: Decimal = Decimal(0)
     unrealized_pnl: Decimal = Decimal(0)
     updated_at: int
+
+
+class AlertEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    event_type: str = "alert"
+    alert_id: str
+    ts_event: int
+    severity: str
+    source: str
+    code: str
+    message: str
+    tags: dict[str, str] = Field(default_factory=dict)

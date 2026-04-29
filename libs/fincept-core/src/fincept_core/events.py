@@ -9,7 +9,11 @@ from . import schemas
 from .errors import ContractError
 
 EventPayload = (
-    schemas.TradeEvent | schemas.BookDeltaEvent | schemas.BookSnapshotEvent | schemas.BarEvent
+    schemas.TradeEvent
+    | schemas.BookDeltaEvent
+    | schemas.BookSnapshotEvent
+    | schemas.BarEvent
+    | schemas.AlertEvent
 )
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
@@ -17,6 +21,7 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "book_delta": schemas.BookDeltaEvent,
     "book_snapshot": schemas.BookSnapshotEvent,
     "bar": schemas.BarEvent,
+    "alert": schemas.AlertEvent,
 }
 
 

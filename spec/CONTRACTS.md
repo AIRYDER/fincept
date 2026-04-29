@@ -140,6 +140,24 @@ class RegimeSignal(BaseModel):
     ts_event: int
     regime: str                       # "trend_up", "trend_down", "mean_revert", "high_vol", "low_liq"
     confidence: float
+
+class AlertEvent(BaseModel):
+    """Operational alerts emitted by ingestor.quality, risk gate, and other watchdogs.
+
+    Consumers (PagerDuty bridge, dashboard, audit log) branch on `code` and `severity`.
+    `tags` are free-form key-value pairs for context (always str on the wire — Decimals
+    must be stringified by the producer).
+    """
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    event_type: str = "alert"
+    alert_id: str                     # ULID
+    ts_event: int                     # nanoseconds since epoch
+    severity: str                     # "info" | "warning" | "critical"
+    source: str                       # e.g. "ingestor.quality", "risk.gate"
+    code: str                         # machine-readable: "seq_gap", "stale", "cross_spread", "clock_skew"
+    message: str                      # human-readable
+    tags: dict[str, str] = Field(default_factory=dict)
 ```
 
 ## 4. Decisions, orders, fills
@@ -243,6 +261,9 @@ STREAM_DECISIONS   = "ord.decisions"      # Decision
 STREAM_ORDERS      = "ord.orders"         # Order (state transitions)
 STREAM_FILLS       = "ord.fills"          # Fill
 STREAM_POSITIONS   = "ord.positions"      # Position (snapshots after fills)
+
+# Operational events (200k retention)
+STREAM_ALERTS      = "events.alerts"      # AlertEvent
 ```
 
 ## 7. Agent interface

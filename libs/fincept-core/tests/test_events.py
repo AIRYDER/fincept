@@ -5,6 +5,7 @@ import pytest
 from fincept_core.errors import ContractError
 from fincept_core.events import Event, make_event, parse_event
 from fincept_core.schemas import (
+    AlertEvent,
     AssetClass,
     BarEvent,
     BookDeltaEvent,
@@ -100,6 +101,19 @@ def test_make_and_parse_trade_event_round_trip():
                 "vwap": Decimal("190.25"),
             },
             BarEvent,
+        ),
+        (
+            "alert",
+            {
+                "alert_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+                "ts_event": 9,
+                "severity": "warning",
+                "source": "ingestor.quality",
+                "code": "seq_gap",
+                "message": "seq gap on binance:BTC-USDT: 1 -> 10",
+                "tags": {"venue": "binance", "symbol": "BTC-USDT"},
+            },
+            AlertEvent,
         ),
     ],
 )

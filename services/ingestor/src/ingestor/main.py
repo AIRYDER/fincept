@@ -32,7 +32,7 @@ from ingestor.base import VenueAdapter
 from ingestor.binance import BinanceAdapter
 from ingestor.coinbase import CoinbaseAdapter
 from ingestor.kraken import KrakenAdapter
-from ingestor.quality import QualityMonitor
+from ingestor.quality import LatencyTracker
 from ingestor.writer import Writer
 
 VENUE_ADAPTERS: dict[str, type[VenueAdapter]] = {
@@ -50,7 +50,7 @@ MAX_BACKOFF_S = 60.0
 async def run_loop(
     adapter: VenueAdapter,
     writer: Writer,
-    quality: QualityMonitor,
+    latency: LatencyTracker,
     stop: asyncio.Event,
     *,
     initial_backoff_s: float = INITIAL_BACKOFF_S,
@@ -78,7 +78,7 @@ async def run_loop(
                 venue = getattr(event, "venue", None)
                 symbol = getattr(event, "symbol", None)
                 if ts_event is not None and ts_recv is not None and venue is not None:
-                    quality.observe(
+                    latency.observe(
                         venue=str(getattr(venue, "value", venue)),
                         symbol=str(symbol) if symbol is not None else "",
                         seq=int(seq) if seq is not None else None,
@@ -121,7 +121,7 @@ async def _main(venue: str) -> None:
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     adapter = adapter_cls(list(settings.UNIVERSE))
     writer = Writer(redis)
-    quality = QualityMonitor()
+    latency = LatencyTracker()
     stop = asyncio.Event()
 
     loop = asyncio.get_running_loop()
@@ -133,7 +133,7 @@ async def _main(venue: str) -> None:
             loop.add_signal_handler(sig, stop.set)
 
     try:
-        await run_loop(adapter, writer, quality, stop)
+        await run_loop(adapter, writer, latency, stop)
     finally:
         await redis.aclose()  # type: ignore[attr-defined]
 
