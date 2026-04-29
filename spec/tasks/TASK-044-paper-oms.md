@@ -2,6 +2,23 @@
 
 **Phase:** O · **Depends on:** TASK-041, TASK-010 (live mid-price feed) · **Blocks:** TASK-045 (portfolio)
 
+**Status:** [x] Implemented and verified.  Includes TASK-045 (Portfolio service) which is the natural downstream of Fills.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| `consumer.read(STREAM, Schema)` async-iterator API | Wired through the existing `Consumer.consume(streams, group, name, handler)` API; handler narrows on `isinstance(payload, OrderIntent)` | Spec snippet didn't match the actual `fincept_bus.Consumer` shape from earlier tasks. Aligning with what the bus exposes. |
+| `producer.publish(stream, fill)` directly with a Pydantic model | Wrapped: `Event(type="fill", payload=fill)` etc. via the existing producer surface | `Producer.publish` is typed `(stream, Event)`. Extending the `Event.payload` union to accept `OrderIntent`, `Order`, `Fill`, `Position` keeps every stream message a deserializable Event. Same pattern as `AlertEvent` (TASK-014) and `FeatureFrame` (TASK-016). |
+| `s.trading_mode` (lowercase) | Reads `s.TRADING_MODE` (the actual `Settings` field) | Lowercase form would `AttributeError` at startup. |
+| OMS pipeline expressed inline in `main.py` | Extracted `process_intent(intent, prices, filler) -> IntentResult` as a pure synchronous function in `oms.processor` | Lets tests exercise the full intent -> states -> fill flow without a Redis consumer loop. `main.py` is thin: tail streams, dispatch through `process_intent`, publish results. Pinned by `test_processor.py`. |
+| `Leader(redis, role="oms")` HA / leadership election | **Skipped** | Single-process OMS for v1.  HA election + dual-writer suppression is a Phase H (TASK-072+) concern; adding it now would over-engineer without test coverage of the failure modes. Deferred. |
+| `random.gauss` directly inside `PaperFiller` | `rng: Callable[[float, float], float]` injected at construction (defaults to `random.gauss`) | Tests use `lambda mu, _sigma: mu` for deterministic fills; production wires the real RNG. Same DI rule used in TASK-014 (clock) and TASK-016 (producer). |
+| Spec didn't address strategy attribution for Fills | Portfolio service recovers `strategy_id` by querying the OMS audit log: `audit.read_by_correlation(fill.order_id)` returns the `oms.intent` row whose payload includes `strategy_id` | `Fill` schema has no `strategy_id` field. The audit trail already carries it. Resolver is injectable so tests use a constant; production wires the audit lookup. Documented in `services/portfolio/src/portfolio/main.py`. |
+| Spec didn't address position math drift between backtester and live | Extracted `apply_fill_to_position(prev, fill, *, strategy_id)` to `fincept_core.portfolio` and refactored both the backtester engine and the portfolio service to call it | Same problem TASK-017 solved with `FeatureComputer` — kill drift risk by centralising the kernel. The four-case decision tree (open-fresh / open-more / exact-close / cross-flip) lives in one place. Pinned by 12 tests in `libs/fincept-core/tests/test_portfolio.py`. |
+| **TASK-045 spec doesn't exist** | Designed Portfolio service from BUILD_ORDER + CONTRACTS.md §5: `PositionStore` (Redis hash for fast UI reads under `positions:{strategy_id}`), `PortfolioState` (in-memory, hydrated from store on startup), `apply_fill` (consumer-loop entry point that mutates state + store + publishes to STREAM_POSITIONS) | The Redis hash IS the UI integration: `/positions` REST endpoint (TASK-050) does HGETALL — sub-millisecond, no DB. Streams handle the change log for WebSocket (TASK-051). Same online/offline split TASK-017 used for features. |
+| Schemas without `event_type` field (`OrderIntent`, `Order`, `Fill`, `Position`) couldn't be wrapped via `make_event` because `extra="forbid"` rejected the auto-injected `event_type` key | Modified `make_event` to only inject `event_type` for schemas that declare it (market events, alerts, feature frames) | The auto-injection was a convenience for market-data events; it doesn't generalise to schemas that don't carry an `event_type` field. The contract surface is unchanged. |
+
 ## Goal
 
 Consume `OrderIntent` from `ord.orders`, persist immutable state transitions, simulate fills using live market mid-price + a small Gaussian latency, emit `Fill` events. Full audit trail via append-only log.

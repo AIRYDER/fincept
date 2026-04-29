@@ -15,6 +15,10 @@ EventPayload = (
     | schemas.BarEvent
     | schemas.AlertEvent
     | schemas.FeatureFrame
+    | schemas.OrderIntent
+    | schemas.Order
+    | schemas.Fill
+    | schemas.Position
 )
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
@@ -24,6 +28,10 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "bar": schemas.BarEvent,
     "alert": schemas.AlertEvent,
     "feature_frame": schemas.FeatureFrame,
+    "order_intent": schemas.OrderIntent,
+    "order": schemas.Order,
+    "fill": schemas.Fill,
+    "position": schemas.Position,
 }
 
 
@@ -44,7 +52,11 @@ def make_event(type: str, payload: dict[str, Any] | BaseModel, **kwargs: Any) ->
     model_cls = _payload_model(type)
     payload_dict = payload.model_dump() if isinstance(payload, BaseModel) else dict(payload)
     payload_dict.update(kwargs)
-    payload_dict["event_type"] = type
+    # Only set event_type for schemas that declare it (market events, alerts,
+    # feature frames).  Order / Fill / Position etc. don't define event_type
+    # and would reject it under ``extra="forbid"``.
+    if "event_type" in model_cls.model_fields:
+        payload_dict["event_type"] = type
     model = model_cls.model_validate(payload_dict)
     return Event(type=type, payload=model)
 

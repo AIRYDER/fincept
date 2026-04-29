@@ -48,7 +48,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["libs", "services"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers --strict-config -m 'not long and not gpu and not live'"
+addopts = "-ra --strict-markers --strict-config --import-mode=importlib -m 'not long and not gpu and not live'"
 filterwarnings = ["error"]
 markers = [
     "long: tests that take >30s; run only in nightly.yml",

@@ -36,7 +36,8 @@ from backtester.blotter import Blotter
 from backtester.broker import SimBroker
 from backtester.datasource import BarsDataSource
 from fincept_core.logging import get_logger
-from fincept_core.schemas import Fill, OrderIntent, Position, Side
+from fincept_core.portfolio import apply_fill_to_position
+from fincept_core.schemas import Fill, OrderIntent, Position
 from fincept_sdk import Strategy, StrategyContext
 
 log = get_logger(__name__)
@@ -138,67 +139,14 @@ class BacktestEngine:
         return self.blotter
 
     # ------------------------------------------------------------------
-    # Position book — four cases isolated for testability.
+    # Position book — delegates to the shared apply_fill_to_position so the
+    # backtester and the live portfolio service evolve identically.
     # ------------------------------------------------------------------
 
     def _update_positions(self, ctx: _Context, fill: Fill) -> None:
-        signed_qty = fill.quantity if fill.side == Side.BUY else -fill.quantity
         prev = ctx.positions.get(fill.symbol)
-
-        if prev is None:
-            # Case 1: open a fresh position.
-            ctx.positions[fill.symbol] = Position(
-                strategy_id=self.strategy.strategy_id,
-                symbol=fill.symbol,
-                quantity=signed_qty,
-                avg_cost=fill.price,
-                realized_pnl=Decimal(0),
-                unrealized_pnl=Decimal(0),
-                updated_at=fill.ts_event,
-            )
-            return
-
-        new_qty = prev.quantity + signed_qty
-        same_direction = (prev.quantity > 0) == (signed_qty > 0)
-
-        if same_direction:
-            # Case 2: open more in the same direction -> weighted avg cost.
-            total_cost = prev.avg_cost * abs(prev.quantity) + fill.price * abs(signed_qty)
-            new_cost = total_cost / abs(new_qty)
-            ctx.positions[fill.symbol] = prev.model_copy(
-                update={
-                    "quantity": new_qty,
-                    "avg_cost": new_cost,
-                    "updated_at": fill.ts_event,
-                }
-            )
-            return
-
-        # Cases 3 & 4: opposite direction.  Realize P&L on the closed portion;
-        # if there's leftover (case 4), open a new position at fill.price.
-        closed_qty = min(abs(prev.quantity), abs(signed_qty))
-        direction = Decimal(1) if prev.quantity > 0 else Decimal(-1)
-        realized = (fill.price - prev.avg_cost) * closed_qty * direction
-
-        if new_qty == 0:
-            # Case 3: exact close - flat position, retain realized P&L.
-            ctx.positions[fill.symbol] = prev.model_copy(
-                update={
-                    "quantity": Decimal(0),
-                    "realized_pnl": prev.realized_pnl + realized,
-                    "updated_at": fill.ts_event,
-                }
-            )
-            return
-
-        # Case 4: cross-flip - close out the prior side, open opposite at fill.price.
-        ctx.positions[fill.symbol] = prev.model_copy(
-            update={
-                "quantity": new_qty,
-                "avg_cost": fill.price,
-                "realized_pnl": prev.realized_pnl + realized,
-                "updated_at": fill.ts_event,
-            }
+        ctx.positions[fill.symbol] = apply_fill_to_position(
+            prev, fill, strategy_id=self.strategy.strategy_id
         )
 
     # ------------------------------------------------------------------
@@ -206,16 +154,17 @@ class BacktestEngine:
     # ------------------------------------------------------------------
 
     def _compute_equity(self, ctx: _Context) -> Decimal:
-        cash = self.blotter.starting_cash
-        realized = sum(
-            (pos.realized_pnl for pos in ctx.positions.values()),
-            Decimal(0),
-        )
-        unrealized = Decimal(0)
+        cash: Decimal = self.blotter.starting_cash
+        realized: Decimal = Decimal(0)
+        for pos in ctx.positions.values():
+            realized += pos.realized_pnl
+        unrealized: Decimal = Decimal(0)
         for pos in ctx.positions.values():
             last = self._last_close.get(pos.symbol)
             if last is None or pos.quantity == 0:
                 continue
             unrealized += (last - pos.avg_cost) * pos.quantity
-        fees = sum((fill.fee for fill in self.blotter.fills), Decimal(0))
+        fees: Decimal = Decimal(0)
+        for fill in self.blotter.fills:
+            fees += fill.fee
         return cash + realized + unrealized - fees

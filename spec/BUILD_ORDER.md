@@ -71,8 +71,8 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 | 041 | Risk gate: pre-trade checks + kill switch | 002 | `services/risk/{gate,limits,kill_switch}.py` |
 | 042 | Kelly-optimal sizing (correlated-assets variant) | 041 | `services/risk/kelly.py` |
 | 043 | Real-time VaR | 041 | `services/risk/var.py` |
-| 044 | Paper OMS (fill simulator uses live mid + random latency) | 002–004, 011 | `services/oms/{main,paper,state,audit}.py` |
-| 045 | Portfolio service (positions, P&L, attribution) | 044 | `services/portfolio/*` |
+| 044 | Paper OMS (fill simulator uses live mid + random latency) | 002–004, 011 | `services/oms/{main,paper,state,audit}.py` | [x] |
+| 045 | Portfolio service (positions, P&L, attribution) | 044 | `services/portfolio/*` | [x] |
 
 **Checkpoint O:** end-to-end paper trading — decision → risk → OMS → fill → position — works for one strategy with full audit trail reconstructable from `ord.*` streams.
 
