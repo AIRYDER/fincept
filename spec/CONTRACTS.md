@@ -264,6 +264,9 @@ STREAM_POSITIONS   = "ord.positions"      # Position (snapshots after fills)
 
 # Operational events (200k retention)
 STREAM_ALERTS      = "events.alerts"      # AlertEvent
+
+# Online features (5M retention; ~14 days of 1m bars across a small universe)
+STREAM_FEATURES_ONLINE = "features.online"  # FeatureFrame
 ```
 
 ## 7. Agent interface

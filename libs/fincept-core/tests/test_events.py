@@ -10,6 +10,7 @@ from fincept_core.schemas import (
     BarEvent,
     BookDeltaEvent,
     BookSnapshotEvent,
+    FeatureFrame,
     Side,
     TradeEvent,
     Venue,
@@ -114,6 +115,17 @@ def test_make_and_parse_trade_event_round_trip():
                 "tags": {"venue": "binance", "symbol": "BTC-USDT"},
             },
             AlertEvent,
+        ),
+        (
+            "feature_frame",
+            {
+                "symbol": "BTC-USD",
+                "ts_event": 11,
+                "freq": "1m",
+                "values": {"ret_log_1": 0.01, "vol_rs_20": None},
+                "tags": {"runner": "features.online"},
+            },
+            FeatureFrame,
         ),
     ],
 )

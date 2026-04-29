@@ -492,6 +492,38 @@ wheels = [
 name = "features"
 version = "0.1.0"
 source = { editable = "services/features" }
+dependencies = [
+    { name = "fincept-bus" },
+    { name = "fincept-core" },
+    { name = "pydantic" },
+    { name = "redis" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+    { name = "types-redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fincept-bus", editable = "libs/fincept-bus" },
+    { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "redis", specifier = ">=5.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.7" },
+    { name = "types-redis", specifier = ">=4.6" },
+]
 
 [[package]]
 name = "filelock"

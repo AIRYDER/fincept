@@ -11,6 +11,8 @@ STREAM_POSITIONS = "ord.positions"
 
 STREAM_ALERTS = "events.alerts"
 
+STREAM_FEATURES_ONLINE = "features.online"
+
 RETENTION: dict[str, int] = {
     STREAM_MD_TRADES: 1_000_000,
     STREAM_MD_BOOKS: 1_000_000,
@@ -23,4 +25,5 @@ RETENTION: dict[str, int] = {
     STREAM_FILLS: 1_000_000,
     STREAM_POSITIONS: 100_000,
     STREAM_ALERTS: 200_000,
+    STREAM_FEATURES_ONLINE: 5_000_000,
 }

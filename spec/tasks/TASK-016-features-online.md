@@ -2,6 +2,22 @@
 
 **Phase:** D · **Depends on:** TASK-002, TASK-003, TASK-004, TASK-010 · **Blocks:** TASK-017 (feature store + PIT joins), TASK-031 (GBM)
 
+**Status:** [x] Implemented and verified.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| Three transform families plus a `microstructure.py` | Shipped `price.py`, `volatility.py`, `cross.py` only | Spec's own out-of-scope says "Tick-level features (microstructure) — stub only in v1; full implementation in TASK-096 (Phase Y)." Done-when checklist doesn't require microstructure features. Skipping the stub file avoids dead code + a misleading import surface. |
+| `consumer.read(STREAM, BarEvent)` async-iterator API | Wired through the existing `Consumer.consume(streams, group, consumer_name, handler)` API with `OnlineRunner.handle_event` as the dispatcher | Spec snippet didn't match the actual `fincept_bus.Consumer` shape from earlier tasks. Aligning with the existing API keeps the bus contract uniform — `quality_main.py` uses the same pattern. |
+| Loader did `await self.producer.publish(STREAM, ff)` directly with a `FeatureFrame` | Wrapped: `Event(type="feature_frame", payload=ff)` | `Producer.publish` is typed `(stream, Event)`. Extending `Event.payload` union and `_EVENT_SCHEMAS["feature_frame"]` keeps every stream message a deserializable Event — same pattern as `AlertEvent` from TASK-014. |
+| Inline `Producer(redis)` and `get_settings().universe[0]` (lowercase) inside `OnlineRunner` | Constructor takes any `_FeaturePublisher` (Protocol with `async publish(stream, Event)`) and an optional `benchmark_symbol`; `_default_benchmark()` reads `Settings.UNIVERSE` (correct uppercase) and falls back to `BTC-USD` | DI lets tests inject `FakeProducer` (capture-list) and call `on_bar` directly without Redis, a consumer loop, or settings setup. The lowercase typo would've crashed at startup. |
+| Test snippet relied on imports working without unique-feature-key transform-level docs | Each transform exposes a `feature_keys` property, and the bootstrap path uses `dict.fromkeys(self.feature_keys)` so missing windows always emit `None` for every key | Spec landmine #3 (bootstrap nulls): downstream consumers must see consistent key-sets, not a moving feature surface. |
+| Test for "perfect correlation" used `sym = bench` only | Added 6 cross-feature tests including beta = 2 when sym = 2*bench, beta = None on constant benchmark (var = 0), and a runner-level test that ETH bars use the BTC bench deque positionally | Pinned the corner cases the spec lists as landmines — no defaulting to zero, no NaNs leaking out. |
+| Volatility used parameter name `l` for bar low | Renamed to `low` | Ruff E741 — single-letter `l` is ambiguous with `1`. |
+| Garman-Klass formula returns NaN-prone values for degenerate bars | `_garman_klass` returns `None` when accumulator ≤ 0 instead of `sqrt(negative)` | The GK estimator is a sample formula that can dip below zero on close-to-open-dominated bars. Pinned by `test_gk_returns_none_when_close_to_open_dominates`. |
+| Tests asserted "beta ≈ 1.0" for the non-benchmark-uses-bench-history case | Test uses 61 bars on both BTC and ETH (matched counts) so the last-60 windows are positionally aligned with the same alternation phase | With mismatched bar counts the deque tails fall out of phase and beta flips sign — that's mathematically correct but a fragile test target. Documented inline. |
+
 ## Goal
 
 Real-time feature engineering. Subscribes to `md.bars.1m` (and optionally `md.trades`, `md.books`), computes per-symbol features incrementally as bars close, and publishes a `FeatureFrame` for each (symbol, ts_event) to a `features.online` Redis stream. Implements four families:

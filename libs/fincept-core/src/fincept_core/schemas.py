@@ -224,3 +224,14 @@ class AlertEvent(BaseModel):
     code: str
     message: str
     tags: dict[str, str] = Field(default_factory=dict)
+
+
+class FeatureFrame(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    event_type: str = "feature_frame"
+    symbol: str
+    ts_event: int
+    freq: str
+    values: dict[str, float | None] = Field(default_factory=dict)
+    tags: dict[str, str] = Field(default_factory=dict)

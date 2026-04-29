@@ -14,6 +14,7 @@ EventPayload = (
     | schemas.BookSnapshotEvent
     | schemas.BarEvent
     | schemas.AlertEvent
+    | schemas.FeatureFrame
 )
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
@@ -22,6 +23,7 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "book_snapshot": schemas.BookSnapshotEvent,
     "bar": schemas.BarEvent,
     "alert": schemas.AlertEvent,
+    "feature_frame": schemas.FeatureFrame,
 }
 
 
