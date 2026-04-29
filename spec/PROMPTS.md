@@ -48,6 +48,8 @@ You are implementing a task from a contract-first codebase. Your job is to produ
 6. Run: `uv run ruff check <package>` and `uv run mypy <package>`. Fix any violations.
 7. Stop. Do not move on to other tasks. Do not modify files outside this task.
 
+Windows shortcut: `powershell -ExecutionPolicy Bypass -File .\scripts\task-check.ps1 -PackagePath <package> -PytestPath <task-test-path>` wraps steps 5-6 without changing the verification bar. Add `-Sync` if the task also needs a fresh workspace sync first.
+
 ## What to output
 
 A single message containing the contents of every file you created or changed, with absolute paths. No prose explanation unless I ask.

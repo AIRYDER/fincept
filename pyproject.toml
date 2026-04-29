@@ -47,5 +47,28 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["libs", "services"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers --strict-config"
+addopts = "-ra --strict-markers --strict-config -m 'not long and not gpu and not live'"
 filterwarnings = ["error"]
+markers = [
+    "long: tests that take >30s; run only in nightly.yml",
+    "gpu: tests that require a GPU; not run in CI by default",
+    "live: tests that hit external APIs; manual only",
+]
+
+[tool.coverage.run]
+source = ["fincept_core", "fincept_bus", "fincept_db", "fincept_tools"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

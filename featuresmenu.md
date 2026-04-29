@@ -1,6 +1,6 @@
 # Fincept Terminal Features Menu
 
-Last updated: 2026-04-26
+Last updated: 2026-04-28
 
 ## Local Analysis Snapshot
 
@@ -59,3 +59,44 @@ The local project is no longer just planning docs. It has a monorepo scaffold wi
 | Trading safety engineering | Encode paper-only order submission and second live confirmation in schemas before OMS code exists. | Tests prove live mode is rejected without explicit second confirmation fields. |
 | Audit-grade observability | Add provenance hashes and latency traces to bus envelopes. | One decision can be traced from market event to risk result to simulated fill. |
 | Repo hygiene | Isolate this folder as its own Git repo or document why it is intentionally under `C:/Users/nolan`. | `git status --short -- .` reports only Fincept Terminal files. |
+
+## Automation Additions — 2026-04-27 America/Chicago
+
+| Feature | Build next action | Why it fits this repo | Dependencies | Risk |
+|---|---|---|---|---|
+| Tool-call black box | In `fincept-tools`, wrap every tool invocation with caller ID, run ID, input hash, output hash, duration, and explicit side-effect classification. | The next task is tools; adding audit metadata now prevents opaque agent behavior later. | `TASK-005`, core IDs, audit tables. | Low-medium: needs consistent wrapper discipline. |
+| Paper-exec capability firewall | Split tools into `read`, `analysis`, `paper_exec`, and `blocked_live_exec`, then make live execution unimportable unless a separate confirmation module is present. | Keeps the paper-first safety model enforceable at import time, not just by convention. | `fincept-tools`, order schemas, risk gate. | Low if done before OMS. |
+| CI parity launcher | Add a local command that mirrors `.github/workflows/ci.yml`: ruff, format check, mypy, alembic upgrade, pytest, pnpm checks, and secret scan. | The CI workflow exists but needs a repeatable local preflight before push. | Task 006, Docker dev stack, uv, pnpm. | Medium: Windows/Linux parity can drift. |
+| Redis-to-Timescale replay drill | Publish fixture market events through Redis Streams, consume them, write ticks/bars into Timescale, and assert deterministic readback. | Tasks 002-004 now exist separately; this proves the spine works as one system. | Redis service, Timescale service, bus consumer, db writers. | Medium: requires service orchestration. |
+| Schema version covenant | Add `schema_version` and migration notes to event payloads; fail tests when version changes without a compatibility note. | The project is contract-first; versioning needs to start before external adapters generate data. | Core schemas, docs, replay fixtures. | Low. |
+| Run-quality receipt | After every test/backtest/paper run, emit a compact receipt with git hash, config hash, data window, skipped checks, and pass/fail gates. | The current test run had meaningful skips; receipts make those boundaries visible. | Core IDs, jobs service, CI artifacts. | Low. |
+| Tool sandbox fuzz pack | Fuzz malformed tool arguments, unknown symbols, bad decimals, stale timestamps, and oversized payloads before agent tool use begins. | Prevents future LLM agents from discovering untested tool edges. | `fincept-tools`, Hypothesis or custom fixtures. | Medium. |
+
+## Next Skills To Deepen — 2026-04-27
+
+| Skill to deepen | First concrete exercise | Done when |
+|---|---|---|
+| Tool-protocol design | Implement typed `fincept-tools` registry with side-effect classes and audit wrappers. | A paper order tool can be called in tests and produces an audit record without any live venue import. |
+| CI/service-container debugging | Run Redis and Timescale-backed tests locally, then align failures with `.github/workflows/ci.yml`. | The 11 skipped DB/Redis tests either pass locally or are documented as CI-only with reasons. |
+| Cross-library integration testing | Build the Redis-to-Timescale replay drill using current core schemas. | One fixture proves event serialize, bus consume, DB write, and DB readback in order. |
+| Financial safety controls | Encode capability firewalls before OMS work. | Live execution paths fail closed at import/config/test time. |
+
+## Automation Additions — 2026-04-28 America/Chicago
+
+| Feature | Build next action | Why it fits this repo | Dependencies | Risk |
+|---|---|---|---|---|
+| Tool manifest compiler | Add a manifest object for every `fincept-tools` function with side-effect class, capability, schema version, and audit policy. | The tools package exists as a stub; a manifest-first implementation keeps later agents inspectable. | `TASK-005`, pydantic/msgspec schemas, audit hash helper. | Low. |
+| Paper order dry-run lens | Implement one paper order proposal tool that returns a proposed `OrderEvent`, risk precheck status, and audit receipt without touching a venue. | It proves the paper-first boundary before OMS or live adapters exist. | Core order schemas, tool registry, audit wrapper. | Low-medium. |
+| Service skip explainer | Extend preflight output or pytest reporting so skipped Redis/Timescale checks list the exact missing service and command to enable it. | The current verification boundary is defined by skipped service-backed tests. | `scripts/preflight.ps1`, pytest markers, Docker Compose. | Low. |
+| Event causality DAG | Record parent event IDs from core event, Redis stream ID, DB row ID, and tool run ID into a queryable graph/table. | Tasks 002-004 are separate; this shows whether the spine is causally reconstructable. | Core IDs, bus consumer, DB audit table, tools registry. | Medium. |
+| Secret-safe preflight profile | Add an env validation phase that checks required variables by name and shape but never prints values. | CI and local scripts now touch secret scanning and service configs; safer diagnostics avoid token leakage. | `.env.example`, preflight script, gitleaks. | Low. |
+| Tool replay cassette | Persist tool request/response/audit triples as JSON fixtures that can be replayed without external services. | Gives `fincept-tools` deterministic tests before real data adapters exist. | Tool registry, audit wrapper, fixture directory. | Medium. |
+
+## Next Skills To Deepen — 2026-04-28
+
+| Skill to deepen | First concrete exercise | Done when |
+|---|---|---|
+| Manifest-driven tool design | Build `manifest.py` and make tests assert every tool has schema, side-effect, capability, and audit metadata. | Adding a tool without a manifest entry fails tests. |
+| Fail-closed execution safety | Implement `blocked_live_exec` as an explicit capability class and prove it cannot be imported through normal registry loading. | A live execution test fails closed before runtime config is read. |
+| Verification reporting | Add a preflight summary that separates pass, fail, skipped, and not-installed checks. | A user can tell whether Redis, Timescale, JS, secret scan, or Python checks blocked Foundation completion. |
+| Financial event traceability | Connect one tool run ID to one core event ID, one Redis stream ID, and one DB audit row. | A replay fixture can reconstruct the decision path from one ID. |

@@ -7,6 +7,10 @@ fincept-terminal/
 ├── README.md                         # user-facing intro
 ├── IMPLEMENTATION.md                 # how to use the spec/ directory
 ├── Makefile                          # `make dev`, `make test`, `make lint`, `make build`
+├── scripts/                          # Windows-friendly wrappers around the existing dev/CI commands
+│   ├── dev-setup.ps1                 # copy env, start docker, sync Python deps, install JS deps, install hooks
+│   ├── preflight.ps1                 # local CI-parity checks: lint, typecheck, migrate, test, JS checks, gitleaks
+│   └── task-check.ps1                # per-task pytest + ruff + mypy wrapper for Windows contributors
 ├── pyproject.toml                    # uv workspace root
 ├── pnpm-workspace.yaml               # JS workspace root
 ├── .env.example                      # required env vars with safe defaults

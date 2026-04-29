@@ -15,31 +15,9 @@ env:
   PNPM_VERSION: "9"
 
 jobs:
-  python:
-    name: Python (lint + typecheck + test)
+  py-lint-typecheck:
+    name: Python lint + typecheck
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 10
-      postgres:
-        image: timescale/timescaledb:latest-pg16
-        env:
-          POSTGRES_DB: fincept
-          POSTGRES_USER: fincept
-          POSTGRES_PASSWORD: fincept
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U fincept"
-          --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      DATABASE_URL: postgresql+asyncpg://fincept:fincept@localhost:5432/fincept
-      REDIS_URL: redis://localhost:6379/0
-      JWT_SECRET: ci-secret
-      TRADING_MODE: paper
     steps:
       - uses: actions/checkout@v4
 
@@ -64,13 +42,56 @@ jobs:
       - name: Mypy
         run: uv run mypy libs services
 
-      - name: Pytest
+  py-test:
+    name: Python tests + coverage
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: fincept
+          POSTGRES_USER: fincept
+          POSTGRES_PASSWORD: fincept
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fincept"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      FINCEPT_DB_URL: postgresql+asyncpg://fincept:fincept@localhost:5432/fincept
+      FINCEPT_REDIS_URL: redis://localhost:6379/0
+      FINCEPT_TRADING_MODE: paper
+      FINCEPT_LOG_LEVEL: WARNING
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages --all-groups
+
+      - name: Alembic upgrade (validates migration)
+        run: uv run alembic -c libs/fincept-db/alembic.ini upgrade head
+
+      - name: Pytest + coverage
         run: |
           set +e
-          uv run pytest --cov=libs --cov=services --cov-report=xml
+          uv run pytest --cov --cov-report=xml --cov-report=term-missing
           ec=$?
           if [ $ec -eq 5 ]; then
-            echo "::notice::No tests collected — scaffold phase, exiting 0"
+            echo "::notice::No tests collected (scaffold phase); coverage gate skipped"
             exit 0
           fi
           exit $ec
@@ -83,8 +104,8 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
-  js:
-    name: JS (lint + build)
+  js-lint-typecheck-test:
+    name: JS lint + typecheck + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,8 +117,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
-      - run: pnpm -r lint || true   # tolerate during scaffold; tighten in TASK-052
-      - run: pnpm -r build || true
+      - run: pnpm -r --if-present lint
+      - run: pnpm -r --if-present typecheck
+      - run: pnpm -r --if-present test
+      - run: pnpm -r --if-present build
 
   security:
     name: Secret scan

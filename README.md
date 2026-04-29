@@ -33,7 +33,17 @@ This repo contains:
 
 ## Current status
 
-**Foundation scaffold exists.** The repo now has a uv Python workspace, pnpm dashboard workspace, Docker dev stack, Makefile commands, quality config, contract docs, build-order specs, and empty package/service modules. The next engineering step is still Phase F implementation: fill `fincept-core`, `fincept-bus`, and `fincept-db` from `spec/CONTRACTS.md`, then make `make ci` meaningful beyond scaffold validation.
+**Foundation implementation is partially complete.** The repo now has a uv Python workspace, pnpm dashboard workspace, Docker dev stack, Makefile commands, quality config, contract docs, build-order specs, and implemented library packages for `fincept-core`, `fincept-bus`, and `fincept-db`. The next engineering step is to finish `fincept-tools`, harden CI around live Redis/Postgres service containers, and keep all execution paths paper-only until the OMS/risk gates exist.
+
+## Local automation commands
+
+The repo now includes Windows-friendly wrappers for the repetitive setup and verification flows that were previously split across README notes, CI, and workflow docs:
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\dev-setup.ps1` — copies `.env` from `.env.example` if needed, starts Docker services, syncs the uv workspace, installs pnpm dependencies, and installs pre-commit hooks.
+- `powershell -ExecutionPolicy Bypass -File .\scripts\preflight.ps1` — mirrors the current local CI/parity flow: Docker up, `uv sync`, `pnpm install`, Python lint/format/typecheck, Alembic upgrade, pytest coverage run, JS workspace checks, and a gitleaks pre-commit scan.
+- `powershell -ExecutionPolicy Bypass -File .\scripts\task-check.ps1 -PackagePath libs/fincept-core -PytestPath libs/fincept-core/tests` — runs the task-level verification loop used throughout `spec/tasks` and `spec/prompts`: `pytest`, `ruff check`, and `mypy` for one package or slice. Add `-Sync` when a fresh `uv sync` is part of the workflow.
+
+For WSL/Git Bash users, the existing `Makefile` remains available. On Windows without `make`, prefer the PowerShell scripts above.
 
 ## Local progression snapshot — 2026-04-26
 
@@ -41,3 +51,17 @@ This repo contains:
 - Service directories exist for ingestor, features, agents, orchestrator, risk, OMS, portfolio, API, backtester, and jobs, but they currently contain package stubs only.
 - `docs/ROADMAP.md` remains strategically useful, but the active path should now narrow from blueprint selection to "prove the Foundation phase with executable contracts."
 - `featuresmenu.md` is the working backlog for new innovative features and skill-deepening recommendations.
+
+## Local progression snapshot — 2026-04-27
+
+- `spec/BUILD_ORDER.md` now marks Tasks 001-004 complete: monorepo scaffold, `fincept-core`, `fincept-bus`, and `fincept-db`.
+- Local tests passed with `uv run pytest libs -q`: 29 passed, 11 skipped. The skipped tests require Postgres/Timescale or a real Redis latency assertion, so CI service-container validation is still the next proof point.
+- `.github/workflows/ci.yml` now includes Python lint/typecheck, Python tests with Redis and Timescale services, JS lint/typecheck/test/build, coverage artifact upload, and gitleaks scanning.
+- New local workflows exist for GHCR image builds and nightly long/security/dependency scans, but service Dockerfiles and long-test coverage are still future work.
+- `fincept-tools` remains the next unchecked foundation task and should be implemented before any agent or OMS work.
+
+## Local progression snapshot — 2026-04-28
+
+- `libs/fincept-tools` is present in the uv workspace, but it is still a stub package with only `pyproject.toml` and `src/fincept_tools/__init__.py`.
+- Treat `TASK-005-fincept-tools` as implementation-ready: the folder and workspace wiring exist, but the registry, typed tool protocol, audit wrapper, and paper execution guard do not.
+- Keep `TASK-006` open until the Redis/Timescale-backed CI path and local `scripts/preflight.ps1` run are recorded without skips.

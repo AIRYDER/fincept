@@ -2,7 +2,7 @@
 
 > **Source:** Derived from `BLUEPRINT.md` with realistic scoping applied.
 > **Audience:** Engineering leadership, product, founding team.
-> **Last updated:** 2026-04-25
+> **Last updated:** 2026-04-28
 
 ---
 
@@ -247,3 +247,67 @@ Add these two tasks to Phase F before `fincept-bus` and `fincept-db` are conside
 2. Implement `libs/fincept-core` models directly from `spec/CONTRACTS.md`.
 3. Add replay fixtures for `md.*`, `sig.*`, and `ord.*`.
 4. Add a paper-only guard to the order/decision schemas before OMS work begins.
+
+## 10. Automation Review Update — 2026-04-27 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Build sequence | `spec/BUILD_ORDER.md` now marks Tasks 001, 002, 003, and 004 complete. | Foundation is no longer scaffold-only; the next unchecked task is `TASK-005-fincept-tools`. |
+| Core contracts | `libs/fincept-core` contains schemas, events, config, tracing/logging, clocks, IDs, errors, and leadership tests. | Treat `fincept-core` as the source library for future fixtures; stop copying examples from docs into service code. |
+| Event bus | `libs/fincept-bus` now has Redis Streams producer/consumer code, stale pending-message claiming, acknowledgement behavior, and consumer tests. | Add real Redis latency and replay checks in CI before venue ingestors are trusted. |
+| Database layer | `libs/fincept-db` now has async SQLAlchemy engine/session helpers, ORM models, Alembic migration, and ticks/bars/audit access tests. | Keep Postgres/Timescale service-container tests as a Phase F gate, because local DB tests were skipped without the service running. |
+| CI surface | `.github/workflows/ci.yml` now runs Python lint/typecheck, Python tests with Redis and Timescale, JS workspace checks, coverage upload, and gitleaks. New `build-images.yml` and `nightly.yml` exist. | Finish `TASK-006` by proving these workflows against the current repo and adding a local preflight command that mirrors CI. |
+| Local verification | `uv run pytest libs -q` passed with 29 passed and 11 skipped. | Good unit signal, but not enough to mark Foundation checkpoint complete until Redis/Postgres-backed tests run. |
+
+### Local automation landed
+
+- `scripts/dev-setup.ps1` now wraps the repeated Windows bootstrap path: copy `.env`, start Docker, sync `uv`, install `pnpm` deps, install hooks.
+- `scripts/preflight.ps1` now provides the Phase F `0.11` local CI-parity command on Windows: Docker up, `uv sync`, ruff, format-check, mypy, Alembic upgrade, pytest coverage, JS workspace checks, and gitleaks.
+
+### Roadmap refinement
+
+Move these items ahead of market-data ingestion:
+
+| # | Deliverable | Exit criteria |
+|---|---|---|
+| 0.10 | Tool protocol and audit-safe registry | `fincept-tools` exposes typed data, analytics, and paper-exec tools; every tool call records input hash, output hash, caller, and run ID. |
+| 0.11 | CI parity preflight | One local command runs ruff, mypy, pytest, alembic upgrade against local services, and JS workspace checks with the same env defaults as CI. |
+| 0.12 | Redis/Postgres replay proof | A checked-in fixture suite publishes representative `md.*`, `sig.*`, and `ord.*` events through Redis, persists to Timescale, and can replay from a recorded stream ID. |
+
+### Recommended next local sequence
+
+1. Implement `TASK-005-fincept-tools` with a paper-only execution tool and no live venue path.
+2. Finish `TASK-006` by running the new GitHub Actions logic locally or in CI and recording the result.
+3. Add replay fixtures that exercise `fincept-core`, `fincept-bus`, and `fincept-db` together.
+4. Only then start `TASK-010` ingestor base class and normalizer.
+
+## 11. Automation Review Update — 2026-04-28 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Tools package | `libs/fincept-tools` exists and is listed in the root uv workspace, but it is still a stub package. | Start `TASK-005` directly in that package; do not spend another pass on folder scaffolding. |
+| Build sequence | `spec/BUILD_ORDER.md` still marks Tasks 001-004 complete and 005-006 open. | Keep Phase F focused on tool protocol plus CI/service proof before any ingestor or agent work. |
+| Local automation | `scripts/dev-setup.ps1` and `scripts/preflight.ps1` are present and documented. | Use `preflight.ps1` as the official Windows Phase F gate, but record skipped or missing service checks explicitly. |
+| Verification boundary | The last recorded library test signal remains `uv run pytest libs -q` with 29 passed and 11 skipped. | Do not claim Foundation complete until Redis latency and Timescale tests pass under local Docker or CI services. |
+
+### Roadmap refinement
+
+Move these implementation details into `TASK-005`:
+
+| Deliverable | First file to create | Exit criteria |
+|---|---|---|
+| Typed tool manifest | `libs/fincept-tools/src/fincept_tools/manifest.py` | Every tool declares name, input schema, output schema, side-effect class, required capability, and audit policy. |
+| Audit wrapper | `libs/fincept-tools/src/fincept_tools/registry.py` | Test calls record caller ID, run ID, input hash, output hash, duration, and success/failure without leaking secrets. |
+| Paper execution guard | `libs/fincept-tools/src/fincept_tools/paper_exec.py` | Paper order tools can emit an order proposal, while live execution imports fail closed. |
+| Contract fixtures | `libs/fincept-tools/tests/test_registry.py` | Malformed arguments, unknown tools, blocked live tools, and replayable audit records are covered. |
+
+### Recommended next local sequence
+
+1. Implement the minimal `fincept-tools` manifest and registry before adding analytics helpers.
+2. Add one paper-only order proposal tool that returns a typed decision/order payload and an audit receipt.
+3. Run `powershell -ExecutionPolicy Bypass -File .\scripts\preflight.ps1`; if Docker or service-backed checks fail, record the exact missing gate in this roadmap.
+4. Add the Redis-to-Timescale replay drill only after the tool audit wrapper has a stable run ID format.

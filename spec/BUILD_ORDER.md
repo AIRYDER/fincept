@@ -11,7 +11,7 @@
 | 003 | `fincept-bus`: Redis Streams producer, consumer, stream constants | 002 | `libs/fincept-bus` | [x] |
 | 004 | `fincept-db`: async SQLAlchemy engine, ORM models, alembic migrations, ticks/bars access | 002 | `libs/fincept-db` | [x] |
 | 005 | `fincept-tools`: tool protocol, registry, data tools, analytics tools, exec tools (paper) | 002 | `libs/fincept-tools` | [x] |
-| 006 | CI pipeline (GitHub Actions): lint, typecheck, test, build matrix | 001 | `.github/workflows` | [ ] |
+| 006 | CI pipeline (GitHub Actions): lint, typecheck, test, build matrix | 001 | `.github/workflows` | [x] |
 
 **Checkpoint F:** `make dev` spins up the stack; `pytest libs/` is green; CI passes on a PR.
 
