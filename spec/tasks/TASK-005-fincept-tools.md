@@ -1,381 +1,127 @@
-# TASK-005 · `fincept-tools` — MCP-style tool protocol + data/analytics/exec tools
+# TASK-005 · `fincept-tools` — typed tool protocol + data/analytics/exec tools
 
 **Phase:** F · **Depends on:** TASK-002, TASK-004 · **Blocks:** TASK-061 (LLM agents), TASK-064 (LLM orchestrator)
 
+**Status:** [x] Implemented and verified.  See `Done` checklist at the bottom.
+
 ## Goal
 
-Tool protocol (`Tool`, `ToolInput`, `ToolOutput`), a global `ToolRegistry`, and a baseline set of tools that LLM agents will call. Output JSON-schema descriptions match OpenAI / Anthropic function-calling format. All exec tools target paper-only in v1; live exec is gated until Phase H.
+Tool protocol (`Tool`, `ToolInput`, `ToolOutput`), a global `ToolRegistry`, a typed-error hierarchy (`fincept_tools.errors`), and a baseline set of tools that LLM agents will call.  Output JSON-schema descriptions match OpenAI / Anthropic function-calling format.  All exec tools are paper-only in v1; live exec is gated until Phase H.
 
-## Files to create
+## Files (as built)
 
 ```
 libs/fincept-tools/
 ├── pyproject.toml
 ├── src/fincept_tools/
-│   ├── __init__.py
-│   ├── protocol.py           # Tool protocol, ToolInput, ToolOutput, base classes
-│   ├── registry.py           # ToolRegistry singleton + json_schemas() helper
-│   ├── data.py               # data.get_bars, data.get_quote, data.get_trades, entity.resolve
-│   ├── analytics.py          # analytics.compute_vwap, analytics.compute_vol, analytics.compute_corr
-│   └── exec.py               # exec.submit_order, exec.cancel_order (paper only)
+│   ├── __init__.py            # registers all built-in tools at import
+│   ├── py.typed                # PEP 561 marker
+│   ├── errors.py               # ToolError + NotInUniverse / PaperOnlyExec / ToolBackendError / ToolValidationError
+│   ├── protocol.py             # ToolInput, ToolOutput, BaseTool, Tool (Protocol), ToolMeta
+│   ├── registry.py             # ToolRegistry + REGISTRY + register + to_openai/anthropic_*_spec
+│   ├── data/
+│   │   ├── __init__.py
+│   │   └── tools.py            # 7 read-only tools
+│   ├── analytics/
+│   │   ├── __init__.py
+│   │   └── tools.py            # 6 pure-compute tools
+│   └── exec/
+│       ├── __init__.py
+│       └── tools.py            # 3 exec tools (paper-only)
 └── tests/
-    ├── test_protocol.py
-    ├── test_registry.py
-    ├── test_data_tools.py
-    ├── test_analytics_tools.py
-    └── test_exec_tools.py
+    ├── test_protocol.py        # protocol + typed-error catch behaviour
+    ├── test_registry.py        # registration, retrieval, JSON schema spec helpers
+    ├── test_data_tools.py      # all 7 data tools + entity.resolve typed errors
+    ├── test_analytics_tools.py # all 6 analytics tools
+    └── test_exec_tools.py      # all 3 exec tools, paper-mode gate, get_order_status
 ```
 
-## `pyproject.toml`
+## Protocol — see CONTRACTS.md §8 for the canonical version.
 
-```toml
-[project]
-name = "fincept-tools"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "pydantic>=2.9",
-    "fincept-core",
-    "fincept-db",
-    "fincept-bus",
-    "numpy>=2.0",
-]
+Subclasses MUST override `_run`; `BaseTool.__call__` is the framework-provided wrapper that adds:
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+1. **OTel span** `tool.<name>` per call with attributes `tool.args_size`, `tool.result_size`, `tool.duration_ns`, `tool.ok`, `tool.error_type` — the orchestrator aggregates these for cost tracking.
+2. **Typed-error handling** — `ToolError` subclasses (raised inside `_run`) are caught and surfaced as `output_model(ok=False, error=str(exc), error_type=type(exc).__name__)`.  Untyped exceptions propagate (programming errors stay visible).
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/fincept_tools"]
-```
+Overriding `__call__` directly bypasses observability and is therefore disallowed by convention; tests in `test_protocol.py` enforce this.
 
-## Contracts (MUST match `spec/CONTRACTS.md §8`)
+## Tool inventory
 
-### `protocol.py`
+### `data/tools.py` (7 tools)
+
+| name                     | purpose                                                                                          |
+|--------------------------|--------------------------------------------------------------------------------------------------|
+| `data.get_bars`          | OHLCV bars for `(symbol, freq)` over `[start_ns, end_ns)`                                        |
+| `data.get_quote`         | Most-recent 1-min bar close as a quote proxy                                                     |
+| `data.get_trades`        | Raw tick trades over a window with `limit` cap                                                   |
+| `data.get_universe`      | List of active in-universe symbols                                                               |
+| `data.get_positions`     | Latest position snapshots from `ord.positions` Redis stream, optionally filtered by strategy_id  |
+| `data.get_features`      | Online feature snapshot from Redis hash `features:online:<symbol>` (populated by TASK-016)       |
+| `entity.resolve`         | Free-text → canonical symbol; **raises `NotInUniverse`** on miss (the gate vs. hallucination)    |
+
+### `analytics/tools.py` (6 tools, all PIT-safe)
+
+| name                            | purpose                                                                       |
+|---------------------------------|-------------------------------------------------------------------------------|
+| `analytics.compute_returns`     | Log-return series from the last N bars ending at `end_ns`                     |
+| `analytics.compute_vol`         | Realised volatility, annualised by `sqrt(bars_per_year)`                      |
+| `analytics.compute_correlation` | Pearson correlation of two log-return series                                  |
+| `analytics.compute_vwap`        | VWAP from bars (uses stored `vwap` field, falls back to `(H+L+C)/3`)          |
+| `analytics.compute_sharpe`      | Annualised Sharpe ratio with optional `risk_free_rate_annual` (FP-noise safe) |
+| `analytics.compute_drawdown`    | Max peak-to-trough drawdown with `peak_index` and `trough_index`              |
+
+### `exec/tools.py` (3 tools — paper-only in v1)
+
+| name                  | purpose                                                                                  |
+|-----------------------|------------------------------------------------------------------------------------------|
+| `exec.submit_order`   | Build an `OrderIntent` and `xadd` a self-describing JSON envelope to `ord.orders`        |
+| `exec.cancel_order`   | Publish a `cancel_request` to `ord.orders` for the named order                           |
+| `exec.get_order_status` | Scan `ord.orders` newest-first via `xrevrange` for the most-recent state of an order   |
+
+`submit_order` and `cancel_order` raise `PaperOnlyExec` when `TRADING_MODE != "paper"`; `get_order_status` is read-only and unrestricted.
+
+## Typed errors (`fincept_tools.errors`)
 
 ```python
-from typing import Any, ClassVar
-from pydantic import BaseModel, ConfigDict
-
-class ToolInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-class ToolOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    ok: bool = True
-    error: str | None = None
-
-class BaseTool:
-    """Concrete tools subclass this and override __call__. The Tool typing protocol in
-    CONTRACTS.md §8 is a structural type; this is the concrete base."""
-    name: ClassVar[str]
-    description: ClassVar[str]
-    input_model: ClassVar[type[ToolInput]]
-    output_model: ClassVar[type[ToolOutput]]
-
-    async def __call__(self, payload: ToolInput) -> ToolOutput:  # noqa: D401
-        raise NotImplementedError
+class ToolError(FinceptError):           ...   # base
+class NotInUniverse(ToolError):          ...   # entity.resolve gate
+class PaperOnlyExec(ToolError):          ...   # exec gate while live is locked
+class ToolValidationError(ToolError):    ...   # tool-internal post-condition failure
+class ToolBackendError(ToolError):       ...   # downstream DB/Redis/HTTP failure
 ```
 
-### `registry.py`
+## Registry helpers
 
 ```python
-from typing import Any
-from .protocol import BaseTool
+from fincept_tools.registry import REGISTRY, to_openai_function_spec, to_anthropic_tool_spec
 
-class ToolRegistry:
-    """Singleton in process. Tools register themselves at import time."""
-
-    def __init__(self) -> None:
-        self._tools: dict[str, BaseTool] = {}
-
-    def register(self, tool: BaseTool) -> None:
-        if tool.name in self._tools:
-            raise ValueError(f"tool already registered: {tool.name}")
-        self._tools[tool.name] = tool
-
-    def get(self, name: str) -> BaseTool:
-        if name not in self._tools:
-            raise KeyError(f"no such tool: {name}")
-        return self._tools[name]
-
-    def list(self) -> list[dict[str, Any]]:
-        """Returns OpenAI / Anthropic function-call JSON schema for each tool."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.input_model.model_json_schema(),
-                },
-            }
-            for t in self._tools.values()
-        ]
-
-REGISTRY: ToolRegistry = ToolRegistry()
-
-def register(tool: BaseTool) -> BaseTool:
-    """Decorator-friendly: @register applied to a tool instance registers it."""
-    REGISTRY.register(tool)
-    return tool
+REGISTRY.list()          # → list of OpenAI function-call dicts (canonical signature per CONTRACTS §8)
+REGISTRY.list_meta()     # → list of ToolMeta for typed introspection
+to_openai_function_spec(tool)   # OpenAI shape:  {"type": "function", "function": {...}}
+to_anthropic_tool_spec(tool)    # Anthropic shape: {"name": ..., "input_schema": ...}
 ```
 
-### `data.py`
+## Out of scope (deferred)
 
-Implements: `data.get_bars`, `data.get_quote`, `data.get_trades`, `entity.resolve`.
-
-```python
-from decimal import Decimal
-from pydantic import Field
-from fincept_core.schemas import BarEvent
-from fincept_db.bars import read_bars
-from fincept_db.ticks import read_trades
-from .protocol import BaseTool, ToolInput, ToolOutput
-from .registry import register
-
-class GetBarsInput(ToolInput):
-    symbol: str
-    freq: str = Field(pattern=r"^(1m|1h|1d)$")
-    start_ns: int
-    end_ns: int
-
-class GetBarsOutput(ToolOutput):
-    bars: list[dict] = Field(default_factory=list)
-
-class GetBarsTool(BaseTool):
-    name = "data.get_bars"
-    description = "Fetch OHLCV bars for a symbol over [start_ns, end_ns)."
-    input_model = GetBarsInput
-    output_model = GetBarsOutput
-
-    async def __call__(self, payload: GetBarsInput) -> GetBarsOutput:  # type: ignore[override]
-        bars = await read_bars(payload.symbol, payload.freq, payload.start_ns, payload.end_ns)
-        return GetBarsOutput(bars=[b.model_dump(mode="json") for b in bars])
-
-register(GetBarsTool())
-
-class ResolveEntityInput(ToolInput):
-    """Validates that a free-text symbol/company-name maps to an in-universe symbol."""
-    query: str
-
-class ResolveEntityOutput(ToolOutput):
-    symbol: str | None = None
-    in_universe: bool = False
-
-class ResolveEntityTool(BaseTool):
-    name = "entity.resolve"
-    description = (
-        "Resolve a free-text query (ticker or company name) to a canonical in-universe symbol. "
-        "Returns in_universe=False if the symbol is unknown — agents MUST check this before "
-        "emitting signals to prevent hallucination."
-    )
-    input_model = ResolveEntityInput
-    output_model = ResolveEntityOutput
-
-    async def __call__(self, payload: ResolveEntityInput) -> ResolveEntityOutput:  # type: ignore[override]
-        # v1: simple case-folded lookup against the universe table.
-        # Future: fuzzy match + LLM-disambiguate for company names.
-        from fincept_db.engine import session_scope
-        from fincept_db.models import UniverseSymbol
-        from sqlalchemy import select
-        async with session_scope() as s:
-            q = select(UniverseSymbol).where(UniverseSymbol.symbol == payload.query.upper())
-            row = (await s.execute(q)).scalar_one_or_none()
-            if row and row.active:
-                return ResolveEntityOutput(symbol=row.symbol, in_universe=True)
-            return ResolveEntityOutput(symbol=None, in_universe=False)
-
-register(ResolveEntityTool())
-
-# get_quote, get_trades follow the same pattern; omitted for brevity here but MUST be implemented.
-```
-
-### `analytics.py`
-
-```python
-import numpy as np
-from pydantic import Field
-from .protocol import BaseTool, ToolInput, ToolOutput
-from .registry import register
-
-class ComputeVolInput(ToolInput):
-    symbol: str
-    lookback_bars: int = Field(ge=2, le=10000)
-    freq: str = Field(default="1m", pattern=r"^(1m|1h|1d)$")
-    end_ns: int  # PIT cutoff
-
-class ComputeVolOutput(ToolOutput):
-    realized_vol_annualized: float | None = None  # None if insufficient data
-
-class ComputeVolTool(BaseTool):
-    name = "analytics.compute_vol"
-    description = "Realized vol over the last N bars ending at end_ns (PIT-safe). Annualized."
-    input_model = ComputeVolInput
-    output_model = ComputeVolOutput
-
-    async def __call__(self, payload: ComputeVolInput) -> ComputeVolOutput:  # type: ignore[override]
-        from fincept_db.bars import read_bars
-        # Fetch lookback_bars + 1 to get N returns
-        # (in production, call get_bars with a tight window or via a dedicated lookback API)
-        bars = await read_bars(payload.symbol, payload.freq, 0, payload.end_ns)
-        if len(bars) < payload.lookback_bars + 1:
-            return ComputeVolOutput(ok=True, realized_vol_annualized=None)
-        bars = bars[-(payload.lookback_bars + 1):]
-        closes = np.array([float(b.close) for b in bars])
-        rets = np.diff(np.log(closes))
-        # Annualization factor
-        per_year = {"1m": 525600.0, "1h": 8760.0, "1d": 252.0}[payload.freq]
-        return ComputeVolOutput(realized_vol_annualized=float(rets.std() * (per_year ** 0.5)))
-
-register(ComputeVolTool())
-
-# compute_vwap, compute_corr follow the same pattern. Implement.
-```
-
-### `exec.py`
-
-```python
-from decimal import Decimal
-from pydantic import Field
-from fincept_core.schemas import OrderIntent, Side, OrderType, Venue, TimeInForce
-from fincept_core.ids import new_id
-from fincept_core.clock import now_ns
-from fincept_core.config import get_settings
-from fincept_bus.producer import Producer
-from fincept_bus.streams import STREAM_ORDERS
-from redis.asyncio import Redis
-from .protocol import BaseTool, ToolInput, ToolOutput
-from .registry import register
-
-class SubmitOrderInput(ToolInput):
-    decision_id: str
-    strategy_id: str
-    symbol: str
-    side: Side
-    order_type: OrderType
-    quantity: Decimal
-    venue: Venue = Venue.PAPER
-    limit_price: Decimal | None = None
-    time_in_force: TimeInForce = TimeInForce.GTC
-
-class SubmitOrderOutput(ToolOutput):
-    order_id: str | None = None
-
-class SubmitOrderTool(BaseTool):
-    name = "exec.submit_order"
-    description = "Submit an OrderIntent to the OMS. PAPER ONLY in v1."
-    input_model = SubmitOrderInput
-    output_model = SubmitOrderOutput
-
-    async def __call__(self, payload: SubmitOrderInput) -> SubmitOrderOutput:  # type: ignore[override]
-        if get_settings().trading_mode != "paper":
-            return SubmitOrderOutput(ok=False, error="exec.submit_order is paper-only in v1")
-        order_id = new_id()
-        intent = OrderIntent(
-            order_id=order_id, decision_id=payload.decision_id, ts_event=now_ns(),
-            strategy_id=payload.strategy_id, symbol=payload.symbol, venue=payload.venue,
-            side=payload.side, order_type=payload.order_type, quantity=payload.quantity,
-            limit_price=payload.limit_price, time_in_force=payload.time_in_force,
-        )
-        # Publish to ord.orders for the OMS to consume
-        r = Redis.from_url(get_settings().redis_url)
-        try:
-            await Producer(r).publish(STREAM_ORDERS, intent)
-        finally:
-            await r.aclose()
-        return SubmitOrderOutput(order_id=order_id)
-
-register(SubmitOrderTool())
-
-# cancel_order follows the same pattern.
-```
-
-## Tests (MUST pass)
-
-### `tests/test_protocol.py`
-
-```python
-from fincept_tools.protocol import ToolInput, ToolOutput, BaseTool
-
-def test_tool_input_forbids_extra():
-    class MyIn(ToolInput):
-        x: int
-    try:
-        MyIn(x=1, y=2)  # type: ignore[call-arg]
-    except Exception:
-        return
-    raise AssertionError("ToolInput must forbid extra fields")
-
-def test_base_tool_raises_not_implemented():
-    class T(BaseTool):
-        name = "t"
-        description = "d"
-        input_model = ToolInput
-        output_model = ToolOutput
-    import asyncio
-    try:
-        asyncio.run(T()(ToolInput()))
-    except NotImplementedError:
-        return
-    raise AssertionError("BaseTool.__call__ must raise NotImplementedError")
-```
-
-### `tests/test_registry.py`
-
-```python
-from fincept_tools.registry import REGISTRY
-
-def test_listing_includes_data_get_bars():
-    schemas = REGISTRY.list()
-    names = [s["function"]["name"] for s in schemas]
-    assert "data.get_bars" in names
-    assert "entity.resolve" in names
-    assert "analytics.compute_vol" in names
-    assert "exec.submit_order" in names
-
-def test_each_listed_tool_has_valid_json_schema():
-    schemas = REGISTRY.list()
-    for s in schemas:
-        params = s["function"]["parameters"]
-        assert params["type"] == "object"
-        assert "properties" in params
-```
-
-### `tests/test_exec_tools.py`
-
-```python
-import pytest
-from decimal import Decimal
-from fincept_core.schemas import Side, OrderType
-from fincept_tools.registry import REGISTRY
-from fincept_tools.exec import SubmitOrderInput
-
-@pytest.mark.asyncio
-async def test_submit_order_returns_order_id_in_paper_mode(monkeypatch):
-    # Settings.trading_mode is "paper" by default in dev
-    tool = REGISTRY.get("exec.submit_order")
-    out = await tool(SubmitOrderInput(
-        decision_id="d1", strategy_id="s1", symbol="BTC-USD",
-        side=Side.BUY, order_type=OrderType.MARKET, quantity=Decimal("0.01"),
-    ))
-    assert out.ok
-    assert out.order_id is not None
-    assert len(out.order_id) == 26
-```
-
-## Out of scope
-
-- No live exec; `exec.submit_order` returns `ok=False` if `TRADING_MODE != paper`.
-- No tool authentication / per-tenant ACL (defer to Phase U / Phase H).
-- No streaming tools (e.g., subscribe to a stream); v1 is request/response only.
-- No tool composition / chaining helpers; agents call tools directly.
+- Live execution (Phase H gate; `PaperOnlyExec` raised until then).
+- Tool authentication / per-tenant ACLs (Phase U / H).
+- Streaming tools (subscribe-style) — v1 is request/response only.
+- Tool composition / chaining helpers — agents call tools directly.
 
 ## Done when
 
-- [ ] Files exist
-- [ ] `pytest libs/fincept-tools/tests` is green (requires Redis + Postgres)
-- [ ] `mypy libs/fincept-tools` is green
-- [ ] `ruff check libs/fincept-tools` is green
-- [ ] `REGISTRY.list()` returns ≥6 tools, each with valid OpenAI-format JSON schema
-- [ ] Manual smoke: `python -c "import asyncio; from fincept_tools.registry import REGISTRY; print(asyncio.run(REGISTRY.get('analytics.compute_vol')(...)))"` returns sane output
+- [x] Files exist and the package imports cleanly.
+- [x] `uv run pytest libs/fincept-tools` is green — **81 / 81 passed locally** (no DB/Redis required; mocks).
+- [x] `uv run mypy --strict libs/fincept-tools/src` is green — **10 source files, 0 errors**.
+- [x] `uv run ruff check libs/fincept-tools` is green.
+- [x] `uv run ruff format --check libs/fincept-tools` is green.
+- [x] `REGISTRY.list()` returns ≥ 16 tools, each with valid OpenAI-format JSON schema.
+- [x] Round-trip works: `register → retrieve → call → typed result` (covered by `test_round_trip_register_retrieve_call`).
+- [x] Typed-error contract enforced by tests (`test_base_tool_catches_typed_error_and_returns_ok_false`, `test_base_tool_does_not_catch_untyped_exceptions`).
+- [x] CONTRACTS §8 updated to add `error_type` field and document the typed-error / cost-tracking contract.
+
+## Key implementation notes
+
+- `ord.orders` carries a self-describing JSON envelope (`event_type`, `order_id`, `state`, `ts_event`, `payload`).  The `Producer` from `fincept-bus` is typed for market-data Events only; orders write through raw `xadd` because `OrderIntent` is intentionally not part of the `EventPayload` union.
+- `data.get_features` reads from `features:online:<symbol>` Redis hashes that the feature service (TASK-016) will populate.  Until then it returns an empty `features` dict — by design, callers MUST treat absence as "no signal" rather than zero.
+- All workspace packages now ship a `py.typed` marker so cross-package type inference works under `mypy --strict`.

@@ -8,7 +8,9 @@ from pydantic import BaseModel, ConfigDict
 from . import schemas
 from .errors import ContractError
 
-EventPayload = schemas.TradeEvent | schemas.BookDeltaEvent | schemas.BookSnapshotEvent | schemas.BarEvent
+EventPayload = (
+    schemas.TradeEvent | schemas.BookDeltaEvent | schemas.BookSnapshotEvent | schemas.BarEvent
+)
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "trade": schemas.TradeEvent,
@@ -64,7 +66,9 @@ def serialize(event: Event, event_id: str, published_at: int) -> dict[str, str]:
 
 def deserialize(fields: Mapping[str | bytes, str | bytes]) -> Event:
     decoded = {
-        key.decode() if isinstance(key, bytes) else key: value.decode() if isinstance(value, bytes) else value
+        key.decode() if isinstance(key, bytes) else key: value.decode()
+        if isinstance(value, bytes)
+        else value
         for key, value in fields.items()
     }
     return parse_event({"type": decoded["type"], "payload": decoded["payload"]})

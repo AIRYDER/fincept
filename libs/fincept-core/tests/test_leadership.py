@@ -13,7 +13,9 @@ class FakeRedis:
         self.store[key] = value
         return True
 
-    async def eval(self, script: str, numkeys: int, key: str, token: str, ttl: int | None = None) -> int:
+    async def eval(
+        self, script: str, numkeys: int, key: str, token: str, ttl: int | None = None
+    ) -> int:
         if "pexpire" in script:
             return int(self.store.get(key) == token)
         if "del" in script:

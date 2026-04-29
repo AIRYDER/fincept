@@ -38,8 +38,10 @@ async def write_trades(events: Iterable[TradeEvent]) -> int:
     if not rows:
         return 0
     async with session_scope() as session:
-        stmt = pg_insert(Trade).values(rows).on_conflict_do_nothing(
-            index_elements=["venue", "symbol", "ts_event", "seq"]
+        stmt = (
+            pg_insert(Trade)
+            .values(rows)
+            .on_conflict_do_nothing(index_elements=["venue", "symbol", "ts_event", "seq"])
         )
         result = cast("CursorResult[Any]", await session.execute(stmt))
         return int(result.rowcount or 0)
@@ -80,18 +82,28 @@ async def read_trades(
 
 def _payload_to_jsonable(event: BookDeltaEvent) -> dict[str, Any]:
     return {
-        "bids_add": [{"price": str(level.price), "size": str(level.size)} for level in event.bids_add],
+        "bids_add": [
+            {"price": str(level.price), "size": str(level.size)} for level in event.bids_add
+        ],
         "bids_remove": [str(price) for price in event.bids_remove],
-        "asks_add": [{"price": str(level.price), "size": str(level.size)} for level in event.asks_add],
+        "asks_add": [
+            {"price": str(level.price), "size": str(level.size)} for level in event.asks_add
+        ],
         "asks_remove": [str(price) for price in event.asks_remove],
     }
 
 
 def _payload_from_jsonable(payload: dict[str, Any]) -> dict[str, Any]:
     return {
-        "bids_add": [BookLevel(price=Decimal(level["price"]), size=Decimal(level["size"])) for level in payload.get("bids_add", [])],
+        "bids_add": [
+            BookLevel(price=Decimal(level["price"]), size=Decimal(level["size"]))
+            for level in payload.get("bids_add", [])
+        ],
         "bids_remove": [Decimal(price) for price in payload.get("bids_remove", [])],
-        "asks_add": [BookLevel(price=Decimal(level["price"]), size=Decimal(level["size"])) for level in payload.get("asks_add", [])],
+        "asks_add": [
+            BookLevel(price=Decimal(level["price"]), size=Decimal(level["size"]))
+            for level in payload.get("asks_add", [])
+        ],
         "asks_remove": [Decimal(price) for price in payload.get("asks_remove", [])],
     }
 
@@ -112,8 +124,10 @@ async def write_book_deltas(events: Iterable[BookDeltaEvent]) -> int:
     if not rows:
         return 0
     async with session_scope() as session:
-        stmt = pg_insert(BookDelta).values(rows).on_conflict_do_nothing(
-            index_elements=["venue", "symbol", "ts_event", "seq"]
+        stmt = (
+            pg_insert(BookDelta)
+            .values(rows)
+            .on_conflict_do_nothing(index_elements=["venue", "symbol", "ts_event", "seq"])
         )
         result = cast("CursorResult[Any]", await session.execute(stmt))
         return int(result.rowcount or 0)

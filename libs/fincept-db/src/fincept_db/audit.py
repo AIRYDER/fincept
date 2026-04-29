@@ -20,14 +20,18 @@ async def append(
 ) -> str:
     event_id: str = new_id()
     async with session_scope() as session:
-        stmt = pg_insert(AuditLog).values(
-            event_id=event_id,
-            ts_event=now_ns(),
-            actor=actor,
-            event_type=event_type,
-            correlation_id=correlation_id,
-            payload=payload,
-        ).on_conflict_do_nothing(index_elements=["event_id"])
+        stmt = (
+            pg_insert(AuditLog)
+            .values(
+                event_id=event_id,
+                ts_event=now_ns(),
+                actor=actor,
+                event_type=event_type,
+                correlation_id=correlation_id,
+                payload=payload,
+            )
+            .on_conflict_do_nothing(index_elements=["event_id"])
+        )
         await session.execute(stmt)
     return event_id
 

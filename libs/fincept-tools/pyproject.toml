@@ -1,9 +1,24 @@
 [project]
 name = "fincept-tools"
 version = "0.1.0"
-description = "Stub for fincept-tools — implemented by a later TASK in spec/BUILD_ORDER.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "pydantic>=2.7",
+  "fincept-core",
+  "fincept-db",
+  "fincept-bus",
+  "numpy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.7",
+  "fakeredis>=2.25",
+  "types-redis>=4.6",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +26,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fincept_tools"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+  "long: tests that take >30s; run only in nightly.yml",
+  "live: tests that hit external APIs; manual only",
+]

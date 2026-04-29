@@ -34,7 +34,9 @@ class Consumer:
         await self.ensure_groups(streams, group)
         stream_offsets = {stream: ">" for stream in streams}
         while True:
-            await self._claim_stale(streams, group, consumer_name, handler, claim_idle_ms, batch, block_ms)
+            await self._claim_stale(
+                streams, group, consumer_name, handler, claim_idle_ms, batch, block_ms
+            )
             response = await self.redis.xreadgroup(
                 group,
                 consumer_name,
@@ -140,7 +142,9 @@ class Consumer:
         claimed = await redis.xclaim(stream, group, consumer_name, min_idle_ms, message_ids)
         return cast(ClaimedMessages, claimed)
 
-    async def _xack(self, stream: str, group: ConsumerGroupName, message_id: StreamID | bytes) -> None:
+    async def _xack(
+        self, stream: str, group: ConsumerGroupName, message_id: StreamID | bytes
+    ) -> None:
         redis = cast(Any, self.redis)
         await redis.xack(stream, group, message_id)
 

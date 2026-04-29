@@ -279,12 +279,13 @@ class Agent(ABC):
 from typing import Any, Protocol
 
 class ToolInput(BaseModel):
-    """Per-tool input schema; subclasses define fields."""
+    """Per-tool input schema; subclasses define fields. extra='forbid'."""
 
 class ToolOutput(BaseModel):
-    """Per-tool output schema; subclasses define fields."""
+    """Per-tool output schema; subclasses define fields. extra='forbid'."""
     ok: bool = True
     error: str | None = None
+    error_type: str | None = None   # class name of typed error on failure
 
 class Tool(Protocol):
     name: str                              # unique, e.g. "data.get_bars"
@@ -302,6 +303,10 @@ class ToolRegistry:
 ```
 
 Every tool in `libs/fincept-tools/src/fincept_tools/` declares its `ToolInput`/`ToolOutput` subclass. The registry exposes OpenAI / Anthropic function-call JSON schemas automatically.
+
+**Typed errors.** Tool implementations raise subclasses of `fincept_tools.errors.ToolError` (itself a `FinceptError`) for known failure modes — e.g. `NotInUniverse`, `PaperOnlyExec`, `ToolBackendError`. The `BaseTool` runner catches them and returns `ToolOutput(ok=False, error=str(exc), error_type=type(exc).__name__)`. Untyped exceptions propagate (programming errors must be visible). Callers branch on `error_type` to recover from specific failure modes without parsing strings.
+
+**Cost tracking.** `BaseTool.__call__` opens an OTel span `tool.<name>` for every invocation, with attributes `tool.args_size`, `tool.result_size`, `tool.duration_ns`, `tool.ok`, and `tool.error_type`. The orchestrator aggregates these for per-tool cost accounting.
 
 ## 9. Strategy interface (for research + backtesting)
 

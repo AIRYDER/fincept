@@ -51,7 +51,9 @@ async def test_publish_serializes_event_and_uses_stream_retention(redis_client: 
     assert len(messages) == 1
     _, fields = messages[0]
     decoded = {
-        key.decode() if isinstance(key, bytes) else key: value.decode() if isinstance(value, bytes) else value
+        key.decode() if isinstance(key, bytes) else key: value.decode()
+        if isinstance(value, bytes)
+        else value
         for key, value in fields.items()
     }
     assert decoded["type"] == "trade"

@@ -55,11 +55,15 @@ async def test_consume_acks_after_handler_success(redis_client: FakeRedis) -> No
         seen.append(received)
 
     task = asyncio.create_task(
-        consumer.consume([STREAM_MD_TRADES], "test-group", "consumer-1", handler, block_ms=100, batch=1)
+        consumer.consume(
+            [STREAM_MD_TRADES], "test-group", "consumer-1", handler, block_ms=100, batch=1
+        )
     )
     try:
         await asyncio.wait_for(_until(lambda: len(seen) == 1), timeout=5)
-        await asyncio.wait_for(_pending_count(redis_client, STREAM_MD_TRADES, "test-group", 0), timeout=5)
+        await asyncio.wait_for(
+            _pending_count(redis_client, STREAM_MD_TRADES, "test-group", 0), timeout=5
+        )
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -82,11 +86,15 @@ async def test_handler_failure_leaves_entry_pending(redis_client: FakeRedis) -> 
         raise ValueError(received.type)
 
     task = asyncio.create_task(
-        consumer.consume([STREAM_MD_TRADES], "fail-group", "consumer-1", handler, block_ms=100, batch=1)
+        consumer.consume(
+            [STREAM_MD_TRADES], "fail-group", "consumer-1", handler, block_ms=100, batch=1
+        )
     )
     try:
         await asyncio.wait_for(_until(lambda: calls == 1), timeout=5)
-        await asyncio.wait_for(_pending_count(redis_client, STREAM_MD_TRADES, "fail-group", 1), timeout=5)
+        await asyncio.wait_for(
+            _pending_count(redis_client, STREAM_MD_TRADES, "fail-group", 1), timeout=5
+        )
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -106,10 +114,19 @@ async def test_claims_pending_entries_after_consumer_crash(redis_client: FakeRed
         raise RuntimeError(received.type)
 
     failing_task = asyncio.create_task(
-        failed_consumer.consume([STREAM_MD_TRADES], "claim-group", "dead-consumer", failing_handler, block_ms=100, batch=1)
+        failed_consumer.consume(
+            [STREAM_MD_TRADES],
+            "claim-group",
+            "dead-consumer",
+            failing_handler,
+            block_ms=100,
+            batch=1,
+        )
     )
     try:
-        await asyncio.wait_for(_pending_count(redis_client, STREAM_MD_TRADES, "claim-group", 1), timeout=5)
+        await asyncio.wait_for(
+            _pending_count(redis_client, STREAM_MD_TRADES, "claim-group", 1), timeout=5
+        )
     finally:
         failing_task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -149,11 +166,15 @@ async def test_integration_consumes_1000_events_without_loss(redis_client: FakeR
         seen.add(received.payload.seq)
 
     task = asyncio.create_task(
-        consumer.consume([STREAM_MD_TRADES], "bulk-group", "consumer-1", handler, block_ms=100, batch=100)
+        consumer.consume(
+            [STREAM_MD_TRADES], "bulk-group", "consumer-1", handler, block_ms=100, batch=100
+        )
     )
     try:
         await asyncio.wait_for(_until(lambda: len(seen) == total), timeout=10)
-        await asyncio.wait_for(_pending_count(redis_client, STREAM_MD_TRADES, "bulk-group", 0), timeout=5)
+        await asyncio.wait_for(
+            _pending_count(redis_client, STREAM_MD_TRADES, "bulk-group", 0), timeout=5
+        )
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -162,7 +183,9 @@ async def test_integration_consumes_1000_events_without_loss(redis_client: FakeR
     assert seen == set(range(total))
 
 
-@pytest.mark.skip(reason="p99 latency assertion is meaningful only against real Redis; re-enabled in TASK-006 CI service container")
+@pytest.mark.skip(
+    reason="p99 latency assertion is meaningful only against real Redis; re-enabled in TASK-006 CI service container"
+)
 @pytest.mark.asyncio
 async def test_round_trip_latency_p99_under_5ms(redis_client: FakeRedis) -> None:
     producer = Producer(redis_client)
@@ -176,14 +199,18 @@ async def test_round_trip_latency_p99_under_5ms(redis_client: FakeRedis) -> None
         latencies_ns.append(time.perf_counter_ns() - sent_at[received.payload.ts_event])
 
     task = asyncio.create_task(
-        consumer.consume([STREAM_MD_TRADES], "latency-group", "consumer-1", handler, block_ms=100, batch=10)
+        consumer.consume(
+            [STREAM_MD_TRADES], "latency-group", "consumer-1", handler, block_ms=100, batch=10
+        )
     )
     try:
         for seq in range(total):
             sent_at[seq] = time.perf_counter_ns()
             await producer.publish(STREAM_MD_TRADES, event(seq))
             expected = seq + 1
-            await asyncio.wait_for(_until(lambda expected=expected: len(latencies_ns) == expected), timeout=5)
+            await asyncio.wait_for(
+                _until(lambda expected=expected: len(latencies_ns) == expected), timeout=5
+            )
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -207,7 +234,9 @@ async def test_slow_handler_violates_backpressure_contract(redis_client: FakeRed
 
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(
-            consumer.consume([STREAM_MD_TRADES], "backpressure-group", "consumer-1", handler, block_ms=1, batch=1),
+            consumer.consume(
+                [STREAM_MD_TRADES], "backpressure-group", "consumer-1", handler, block_ms=1, batch=1
+            ),
             timeout=1,
         )
 

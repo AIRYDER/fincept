@@ -21,9 +21,7 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         url = get_settings().DB_URL
         if not url:
-            raise RuntimeError(
-                "FINCEPT_DB_URL is empty; set it to a postgresql+asyncpg:// URL"
-            )
+            raise RuntimeError("FINCEPT_DB_URL is empty; set it to a postgresql+asyncpg:// URL")
         _engine = create_async_engine(
             url,
             pool_size=20,
