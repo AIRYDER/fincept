@@ -21,14 +21,14 @@
 
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
-| 010 | Ingestor base class + normalizer + writer (Redis + Timescale batch) | 002–004 | `services/ingestor/{base,normalizer,writer}.py` |
-| 011 | Binance spot WS adapter | 010 | `services/ingestor/binance.py` |
-| 012 | Coinbase Advanced Trade adapter | 010 | `services/ingestor/coinbase.py` |
-| 013 | Kraken WS adapter | 010 | `services/ingestor/kraken.py` |
-| 014 | Quality monitor (gaps, cross-spread, staleness alerts) | 011 | `services/ingestor/quality.py` |
-| 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` |
-| 016 | Features: online transforms (returns, vol, microstructure) | 002–004, 011 | `services/features/online.py`, `transforms/*` |
-| 017 | Features: online + offline store with PIT joins | 016 | `services/features/{store,pit}.py` |
+| 010 | Ingestor base class + normalizer + writer (Redis + Timescale batch) | 002–004 | `services/ingestor/{base,normalizer,writer}.py` | [x] |
+| 011 | Binance spot WS adapter | 010 | `services/ingestor/binance.py` | [x] |
+| 012 | Coinbase Advanced Trade adapter | 010 | `services/ingestor/coinbase.py` | [ ] |
+| 013 | Kraken WS adapter | 010 | `services/ingestor/kraken.py` | [ ] |
+| 014 | Quality monitor (gaps, cross-spread, staleness alerts) | 011 | `services/ingestor/quality.py` | [ ] |
+| 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` | [ ] |
+| 016 | Features: online transforms (returns, vol, microstructure) | 002–004, 011 | `services/features/online.py`, `transforms/*` | [ ] |
+| 017 | Features: online + offline store with PIT joins | 016 | `services/features/{store,pit}.py` | [ ] |
 
 **Checkpoint D:** 24-hour soak test on 5 crypto pairs with zero dropped messages; feature store serves online reads in <10 ms at p99; offline backfill reproduces live features bit-exact.
 

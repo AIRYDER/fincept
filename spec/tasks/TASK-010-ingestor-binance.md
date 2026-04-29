@@ -2,6 +2,19 @@
 
 **Phase:** D · **Depends on:** TASK-002, TASK-003, TASK-004 · **Blocks:** all features + agents
 
+**Status:** [x] Implemented and verified (also covers TASK-011 — Binance adapter ships with the base infrastructure).
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| `Producer.publish(stream, ev)` directly | `Producer.publish(stream, Event(type=..., payload=ev))` | `Producer.publish` is typed for `Event`; `OrderIntent` and market-data payloads must be wrapped per CONTRACTS §1. |
+| `batch_insert_trades` / `batch_insert_book_deltas` | `write_trades` / `write_book_deltas` | The actual fincept-db API names ship under `write_*` (TASK-004); spec was speculative. |
+| `normalizer.py` not present (logic inside `binance.py`) | Extracted as `normalizer.py` with `to_canonical`, `to_binance_symbol`, `to_coinbase_symbol`, `to_kraken_symbol` | TASK-012/013 (Coinbase/Kraken) will reuse the canonical-symbol helpers; pre-extracting prevents copy-paste drift. |
+| `main.py` has no reconnect / backoff | `run_loop` has capped exponential backoff (`INITIAL_BACKOFF_S=1`, cap `MAX_BACKOFF_S=60`) and quality-monitor wiring | A bare `connect → stream` loop crashes the process on the first WS disconnect. The wrapper here is the minimum for "doesn't crash"; full snapshot-sync still belongs to TASK-014. |
+| `quality.py` was a single-counter helper | `QualityMonitor` records gap counts, max latency, and rolling p99 (1024-sample window); clamps negative latencies to 0; non-monotonic seqs don't fake gaps | The richer surface area is needed by TASK-014 (`Snapshot` rows feed Prometheus / OTel). |
+| No `py.typed` marker | Added | All workspace packages have `py.typed` (PEP 561) so cross-package mypy strict resolves correctly. |
+
 ## Goal
 
 Long-running process that connects to Binance spot WebSocket, normalizes trades and L2 book updates to canonical schemas, publishes to Redis Streams, and persists to Timescale.
