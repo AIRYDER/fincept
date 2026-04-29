@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark theme is the default - finance terminals are dark.
+       The light variant lives below as .light because most users will
+       never want it.  Variables follow shadcn/ui convention. */
+    --background: 222 47% 5%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 6%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217 33% 14%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 12%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 16%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 14%;
+    --input: 217 33% 14%;
+    --ring: 217 91% 60%;
+    --radius: 0.5rem;
+    /* Finance semantics. */
+    --long: 142 71% 45%;
+    --long-foreground: 144 80% 10%;
+    --short: 0 84% 60%;
+    --short-foreground: 0 80% 10%;
+    --warn: 38 92% 55%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
+  }
+  /* Tabular figures for any numeric value - keeps columns aligned in
+     tables and prevents fonts from "dancing" as digits change. */
+  .num,
+  .font-mono,
+  td.num,
+  td.numeric {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer utilities {
+  /* A subtle gradient background used on hero cards / sign-in. */
+  .gradient-mesh {
+    background:
+      radial-gradient(at 20% 0%, hsla(217, 91%, 60%, 0.18) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, hsla(280, 71%, 55%, 0.12) 0px, transparent 50%),
+      radial-gradient(at 80% 100%, hsla(142, 71%, 45%, 0.08) 0px, transparent 50%),
+      radial-gradient(at 20% 100%, hsla(0, 75%, 55%, 0.06) 0px, transparent 50%);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  /* Live "pulse" effect on rows that just updated via WebSocket. */
+  .pulse-update {
+    animation: rowPulse 700ms ease-out;
+  }
+  @keyframes rowPulse {
+    0% {
+      background-color: hsl(var(--primary) / 0.18);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+}

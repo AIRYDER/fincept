@@ -84,12 +84,12 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 |---|---|---|---|
 | 050 | FastAPI app with auth, health, universe, bars, positions, orders, strategies routes | 004, 044 | `services/api/*` | [x] |
 | 051 | WebSocket streaming endpoint (positions, fills, predictions) | 050 | `services/api/ws.py` | [x] |
-| 052 | Next.js dashboard shell + auth + typed API client | 050 | `apps/dashboard/*` |
-| 053 | Positions + P&L panel (WS-driven, 10 Hz) | 051, 052 | `apps/dashboard/src/app/positions/*` |
-| 054 | Strategy control panel (start/stop/param) | 052 | `apps/dashboard/src/app/strategies/*` |
-| 055 | Live chart (TradingView Lightweight Charts) + fill overlays | 052 | `apps/dashboard/src/components/chart/*` |
-| 056 | Command palette (cmdk, Bloomberg-style mnemonics) | 052 | `apps/dashboard/src/components/command-palette/*` |
-| 057 | Risk panel + kill switch button | 041, 052 | `apps/dashboard/src/components/risk-panel/*` |
+| 052 | Next.js dashboard shell + auth + typed API client | 050 | `apps/dashboard/*` | [x] |
+| 053 | Positions + P&L panel (WS-driven, 10 Hz) | 051, 052 | `apps/dashboard/src/app/positions/*` | [x] |
+| 054 | Strategy control panel (start/stop/param) | 052 | `apps/dashboard/src/app/strategies/*` | [x] |
+| 055 | Live chart (TradingView Lightweight Charts) + fill overlays | 052 | `apps/dashboard/src/components/chart/*` | [x] |
+| 056 | Command palette (cmdk, Bloomberg-style mnemonics) | 052 | `apps/dashboard/src/components/command-palette/*` | [x] |
+| 057 | Risk panel + kill switch button | 041, 052 | `apps/dashboard/src/components/risk-panel/*` | [x] |
 
 **Checkpoint U:** operator can sign in, see live P&L update at 10 Hz, start/stop a strategy, and trigger kill switch in under 3 seconds.
 
