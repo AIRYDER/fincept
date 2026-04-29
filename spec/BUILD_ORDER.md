@@ -26,7 +26,7 @@
 | 012 | Coinbase Advanced Trade adapter | 010 | `services/ingestor/coinbase.py` | [x] |
 | 013 | Kraken WS adapter | 010 | `services/ingestor/kraken.py` | [x] |
 | 014 | Quality monitor (gaps, cross-spread, staleness alerts) | 011 | `services/ingestor/quality.py` | [x] |
-| 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` | [ ] |
+| 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` | [x] |
 | 016 | Features: online transforms (returns, vol, microstructure) | 002–004, 011 | `services/features/online.py`, `transforms/*` | [ ] |
 | 017 | Features: online + offline store with PIT joins | 016 | `services/features/{store,pit}.py` | [ ] |
 

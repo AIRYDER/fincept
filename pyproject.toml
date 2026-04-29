@@ -29,6 +29,7 @@ fincept-bus = { workspace = true }
 fincept-db = { workspace = true }
 fincept-tools = { workspace = true }
 fincept-sdk = { workspace = true }
+ingestor = { workspace = true }
 
 [dependency-groups]
 dev = [
