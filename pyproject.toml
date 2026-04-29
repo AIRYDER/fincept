@@ -34,6 +34,8 @@ features = { workspace = true }
 portfolio = { workspace = true }
 risk = { workspace = true }
 agents = { workspace = true }
+oms = { workspace = true }
+orchestrator = { workspace = true }
 
 [dependency-groups]
 dev = [

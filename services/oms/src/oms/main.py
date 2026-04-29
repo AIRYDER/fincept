@@ -184,6 +184,11 @@ def _make_sim_intent_handler(
     kill: KillSwitchState,
 ) -> Any:
     async def handler(event: Event) -> None:
+        # Only act on incoming intents.  Order subclasses OrderIntent so
+        # an isinstance() check would also match our own published state
+        # events on the same stream and re-trigger processing.
+        if event.type != "order_intent":
+            return
         payload = event.payload
         if not isinstance(payload, OrderIntent):
             return
@@ -278,6 +283,8 @@ def _make_alpaca_intent_handler(
     kill: KillSwitchState,
 ) -> Any:
     async def handler(event: Event) -> None:
+        if event.type != "order_intent":
+            return
         payload = event.payload
         if not isinstance(payload, OrderIntent):
             return

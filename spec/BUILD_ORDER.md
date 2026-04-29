@@ -67,7 +67,7 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
-| 040 | Orchestrator: fan-in router, regime-adaptive weighting, decisions emitter | 031–033 | `services/orchestrator/{router,regime,consensus,allocator,decisions}.py` |
+| 040 | Orchestrator: fan-in router, regime-adaptive weighting, decisions emitter | 031–033 | `services/orchestrator/{router,regime,consensus,allocator,decisions}.py` | [x] |
 | 041 | Risk gate: pre-trade checks + kill switch | 002 | `services/risk/{gate,limits,kill_switch}.py` | [x] |
 | 042 | Kelly-optimal sizing (correlated-assets variant) | 041 | `services/risk/kelly.py` |
 | 043 | Real-time VaR | 041 | `services/risk/var.py` |

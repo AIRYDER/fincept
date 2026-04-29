@@ -22,6 +22,7 @@ EventPayload = (
     | schemas.Prediction
     | schemas.RegimeSignal
     | schemas.SentimentSignal
+    | schemas.Decision
 )
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
@@ -38,6 +39,7 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "prediction": schemas.Prediction,
     "regime": schemas.RegimeSignal,
     "sentiment": schemas.SentimentSignal,
+    "decision": schemas.Decision,
 }
 
 
@@ -96,4 +98,5 @@ def deserialize(fields: Mapping[str | bytes, str | bytes]) -> Event:
         else value
         for key, value in fields.items()
     }
+    return parse_event({"type": decoded["type"], "payload": decoded["payload"]})
     return parse_event({"type": decoded["type"], "payload": decoded["payload"]})
