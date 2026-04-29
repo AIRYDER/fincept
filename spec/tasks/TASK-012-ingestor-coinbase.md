@@ -2,6 +2,19 @@
 
 **Phase:** D · **Depends on:** TASK-010 · **Blocks:** TASK-014 (quality monitor uses cross-venue spread)
 
+**Status:** [x] Implemented and verified.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| Instance methods `_parse_trades` / `_parse_l2` | Class/static methods (`@classmethod _parse_envelope`, `@staticmethod _parse_trades`, `@staticmethod _parse_l2`) | Mirrors the `BinanceAdapter` pattern. Lets tests call the parsers directly (no `CoinbaseAdapter([])` instantiation) and prevents accidental hidden state. |
+| `side == "offer"` vs `"ask"` not called out | Explicit check: Coinbase uses ``"bid"`` and ``"offer"`` (not ``"ask"``) | Coinbase L2 uses ``offer``; easy to miss, so pinned in code + test. |
+| Buggy placeholder `_iso_to_ns` via `if False else ...` | Moved to `ingestor.normalizer.iso8601_to_ns`, shared with TASK-013 Kraken | Single source of truth for ISO-8601 → ns; integer-math on ``epoch_s`` + ``microsecond`` avoids float drift that corrupts cross-venue latency arithmetic. |
+| Coinbase symbol conversion as adapter-local `to_canonical`/`to_venue` | Reuse `ingestor.normalizer.to_coinbase_symbol` (pass-through) + `str(...).upper()` in the parsers | Prevents symbol-format drift between adapters; normalizer is the single home. |
+| No CLI venue dispatch | Added `VENUE_ADAPTERS` registry in `main.py` + `--venue {binance,coinbase}` argparse flag | Enables the spec's "Done when" manual smoke test `python -m ingestor.main --venue coinbase`. |
+| `trade_id` forced to `int(...)` (would raise on missing field) | `int(tr["trade_id"]) if tr.get("trade_id") else None` | Defensive against malformed / partial events; `None` keeps the TradeEvent.seq contract. |
+
 ## Goal
 
 Coinbase Advanced Trade WebSocket adapter implementing `VenueAdapter`, normalizing market_trades + level2 channels to canonical `TradeEvent` and `BookDeltaEvent` / `BookSnapshotEvent`. Reuses `services/ingestor/{base,normalizer,writer,quality}.py` from TASK-010.

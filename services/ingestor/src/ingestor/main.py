@@ -17,6 +17,7 @@ responsibility of TASK-014 (quality monitor).
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import signal
@@ -29,8 +30,14 @@ from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 from ingestor.base import VenueAdapter
 from ingestor.binance import BinanceAdapter
+from ingestor.coinbase import CoinbaseAdapter
 from ingestor.quality import QualityMonitor
 from ingestor.writer import Writer
+
+VENUE_ADAPTERS: dict[str, type[VenueAdapter]] = {
+    "binance": BinanceAdapter,
+    "coinbase": CoinbaseAdapter,
+}
 
 log = get_logger(__name__)
 
@@ -98,15 +105,19 @@ async def _sleep_or_stop(seconds: float, stop: asyncio.Event) -> None:
         return
 
 
-async def _main() -> None:
+async def _main(venue: str) -> None:
     configure_logging()
     configure_tracing("ingestor")
     settings = get_settings()
     if not settings.UNIVERSE:
         raise RuntimeError("FINCEPT_UNIVERSE is empty; nothing to ingest")
 
+    adapter_cls = VENUE_ADAPTERS.get(venue)
+    if adapter_cls is None:
+        raise ValueError(f"Unknown venue {venue!r}; supported: {sorted(VENUE_ADAPTERS)}")
+
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
-    adapter = BinanceAdapter(list(settings.UNIVERSE))
+    adapter = adapter_cls(list(settings.UNIVERSE))
     writer = Writer(redis)
     quality = QualityMonitor()
     stop = asyncio.Event()
@@ -126,8 +137,21 @@ async def _main() -> None:
 
 
 def main() -> None:
-    """Synchronous CLI entrypoint."""
-    asyncio.run(_main())
+    """Synchronous CLI entrypoint.
+
+    ``python -m ingestor.main --venue {binance,coinbase}`` selects which
+    adapter to run.  Only one venue per process for now — a future task will
+    fan multiple venues into a single supervisor.
+    """
+    parser = argparse.ArgumentParser(prog="ingestor")
+    parser.add_argument(
+        "--venue",
+        choices=sorted(VENUE_ADAPTERS),
+        default="binance",
+        help="venue adapter to run (default: binance)",
+    )
+    args = parser.parse_args()
+    asyncio.run(_main(args.venue))
 
 
 if __name__ == "__main__":

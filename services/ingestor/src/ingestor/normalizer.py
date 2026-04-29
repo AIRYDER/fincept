@@ -13,6 +13,10 @@ casing+separator convention.
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from fincept_core.clock import now_ns
+
 # Quote currencies are tried longest-first so e.g. "USDT" wins over "USD".
 _KNOWN_QUOTES: tuple[str, ...] = ("USDT", "USDC", "USD", "BUSD", "BTC", "ETH", "EUR", "GBP")
 
@@ -46,5 +50,32 @@ def to_coinbase_symbol(canonical: str) -> str:
 
 
 def to_kraken_symbol(canonical: str) -> str:
-    """``BTC-USD`` → ``BTC/USD`` (Kraken WS format)."""
+    """``BTC-USD`` → ``BTC/USD`` (Kraken WS format).
+
+    NOTE: the BTC↔XBT mapping Kraken uses is applied in TASK-013 alongside
+    the Kraken adapter itself; this helper is kept pure-syntactic here.
+    """
     return canonical.upper().replace("-", "/")
+
+
+def iso8601_to_ns(s: str) -> int:
+    """ISO-8601 UTC timestamp → integer nanoseconds since epoch.
+
+    Accepts ``2024-12-01T12:00:00.123Z`` (trailing ``Z``) or the explicit
+    ``+00:00`` offset form.  Returns ``now_ns()`` if the input is empty or
+    unparseable — callers should log separately if they need to distinguish.
+
+    Central to Coinbase and Kraken adapters so timestamp handling is a single
+    place to audit for float-precision issues.
+    """
+    if not s:
+        return now_ns()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return now_ns()
+    # ``dt.timestamp()`` returns float seconds; convert to ns via integer math
+    # on the epoch seconds and microseconds to avoid float drift for sub-second
+    # precision (important for cross-venue latency arithmetic).
+    epoch_s = int(dt.timestamp())
+    return epoch_s * 1_000_000_000 + dt.microsecond * 1_000
