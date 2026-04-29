@@ -125,6 +125,36 @@ wheels = [
 name = "backtester"
 version = "0.1.0"
 source = { editable = "services/backtester" }
+dependencies = [
+    { name = "fincept-core" },
+    { name = "fincept-db" },
+    { name = "fincept-sdk" },
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "fincept-db", editable = "libs/fincept-db" },
+    { name = "fincept-sdk", editable = "libs/fincept-sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.7" },
+]
 
 [[package]]
 name = "beautifulsoup4"
@@ -655,6 +685,32 @@ dev = [
 name = "fincept-sdk"
 version = "0.1.0"
 source = { editable = "libs/fincept-sdk" }
+dependencies = [
+    { name = "fincept-core" },
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.7" },
+]
 
 [[package]]
 name = "fincept-terminal"

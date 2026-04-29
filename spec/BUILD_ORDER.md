@@ -40,11 +40,11 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
-| 020 | Backtester engine (deterministic event loop, replay from Timescale) | 004, 017 | `services/backtester/{engine,datasource}.py` |
-| 021 | Cost model (spread + slippage + fees + borrow) | 020 | `services/backtester/costs.py` |
-| 022 | Broker simulator (fills, partial fills, cancellations) | 020, 021 | `services/backtester/broker.py` |
-| 023 | Walk-forward runner + report (QuantStats + custom) | 020–022 | `services/backtester/{walk_forward,report}.py` |
-| 024 | SDK Strategy base + StrategyContext + backtest runner | 020 | `libs/fincept-sdk/strategy.py` |
+| 020 | Backtester engine (deterministic event loop, replay from Timescale) | 004, 017 | `services/backtester/{engine,datasource}.py` | [x] |
+| 021 | Cost model (spread + slippage + fees + borrow) | 020 | `services/backtester/costs.py` | [x] |
+| 022 | Broker simulator (fills, partial fills, cancellations) | 020, 021 | `services/backtester/broker.py` | [x] |
+| 023 | Walk-forward runner + report (QuantStats + custom) | 020–022 | `services/backtester/{walk_forward,report}.py` | [ ] |
+| 024 | SDK Strategy base + StrategyContext + backtest runner | 020 | `libs/fincept-sdk/strategy.py` | [x] |
 
 **Checkpoint B:** reference MA-crossover strategy produces known-good Sharpe on 2 yr of BTC 1m bars; walk-forward IS/OOS split respects PIT.
 

@@ -1,9 +1,20 @@
 [project]
 name = "fincept-sdk"
 version = "0.1.0"
-description = "Stub for fincept-sdk — implemented by a later TASK in spec/BUILD_ORDER.md"
+description = "Strategy SDK: Strategy ABC + StrategyContext Protocol used by both the backtester and live trading."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "fincept-core",
+  "pydantic>=2.7",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.7",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +22,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fincept_sdk"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
