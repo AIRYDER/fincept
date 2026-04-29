@@ -7,6 +7,8 @@ from sqlalchemy import BigInteger, Boolean, Index, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+JSONDict = dict[str, Any]
+
 
 class Base(DeclarativeBase):
     pass
@@ -93,3 +95,19 @@ class UniverseSymbol(Base):
     asset_class: Mapped[str] = mapped_column(String(16), nullable=False)
     venue_default: Mapped[str] = mapped_column(String(32), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Feature(Base):
+    __tablename__ = "features"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    freq: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts_event: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # JSONB lets us add new feature names without a migration; the trade-off
+    # is generic JSON-key queries are slower than native columns.  When a
+    # specific feature becomes hot (e.g. ret_log_1 for many strategies), it
+    # gets materialized as its own column in a follow-up migration.
+    values: Mapped[JSONDict] = mapped_column(JSONB, nullable=False)
+    tags: Mapped[JSONDict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (Index("ix_features_sym_freq_ts", "symbol", "freq", "ts_event"),)

@@ -2,6 +2,20 @@
 
 **Phase:** D · **Depends on:** TASK-016 · **Blocks:** TASK-031 (GBM training + inference), Phase D checkpoint
 
+**Status:** [x] Implemented and verified.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| Separate `persist_main.py` consumer process subscribes to `features.online` stream and persists to Timescale | **No persistor process.** Online runner writes to `OnlineStore` (Redis cache, optional); offline data lives in Timescale only via `backfill()`. | Bit-identical guarantee comes from sharing `FeatureComputer`, not from streaming. Online = ephemeral hot path, offline = canonical history rebuilt from bars. One fewer process, one fewer failure mode, same end state. The streaming-to-DB design assumed "live features must be in Timescale immediately" — but training and backtests don't need real-time DB persistence; they replay from bars through the same kernel. |
+| `OnlineRunner` would inline the per-symbol price/vol state | Extracted `FeatureComputer` (new `services/features/src/features/computer.py`) — sole owner of the per-symbol state | Sharing the kernel with `offline.backfill` is the entire bit-identical contract. If we'd kept the state in `OnlineRunner`, copy-pasting it into `backfill` would be the obvious anti-pattern landmine #2 calls out. The refactor preserved all 9 existing runner tests. |
+| Spec snippet `OfflineStore.put_many` constructed a fresh `pg_insert` with `pg_insert(FeatureModel).excluded.values` | Real implementation captures `stmt = pg_insert(...).values(rows)` once and uses `stmt.excluded.values` — matches the pattern in `bars.write_bars` | The spec snippet's nested `pg_insert(...).excluded` was a typo that wouldn't compile. |
+| Tests would use a live Redis (`Redis.from_url(...)`) and live Postgres for store round-trip | `OnlineStore` tests use `fakeredis.aioredis.FakeRedis`; `OfflineStore` tests inject `_FakeDb` for read/write; PIT and backfill tests use the same fake. Live DB-backed integration tests for `fincept_db.features` are gated by the `_postgres_reachable` skip pattern in `libs/fincept-db/tests/conftest.py` | Tests run in milliseconds anywhere; no service dependencies. The DB-gated layer covers the actual SQL round-trip when a Timescale instance is available. |
+| `PITJoiner` returned `(bar, feature_or_None)` but only validated PIT inside the loop | `PITJoiner` ALSO sorts by `ts_event` defensively before the two-pointer scan, preserves input order in the output (so callers can correlate by index), and partitions by `(symbol, freq)` so a 1d feature never satisfies a 1m bar's request | The defensive sort means callers can pass bars in any order and still get correct PIT pairs. The freq-partitioning prevents accidental cross-frequency leakage. Both pinned by tests. |
+| Backfill processed symbols in `[benchmark, *others]` order via list concatenation in the test | `backfill()` enforces bench-first ordering **internally** regardless of caller-provided order | If caller passes `["ETH-USD", "BTC-USD"]` with benchmark=BTC, the spec's flat list comprehension would respect caller order — wrong. Pinned by `test_backfill_processes_benchmark_first` which deliberately passes ETH first. |
+| Drive-by: not in TASK-017 scope | **Added `Venue.ALPACA = "alpaca"` to `schemas.py` + CONTRACTS.md §1**, plus `ALPACA_API_KEY`/`ALPACA_API_SECRET`/`ALPACA_BASE_URL` to `Settings` + CONTRACTS.md §10 | User flagged Alpaca as primary brokerage; while contracts were already being touched (FeatureFrame), folded the venue + env additions in to pre-empt a future micro-task. `ALPACA_BASE_URL` defaults to the paper endpoint so live trading requires explicit operator opt-in. Stored in memory `04b3ca01`. |
+
 ## Goal
 
 Persist `FeatureFrame`s produced by the online runner to a queryable store, and provide PIT-correct join helpers for training/backtesting. Two physical layers:

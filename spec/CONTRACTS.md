@@ -19,6 +19,7 @@ class Venue(StrEnum):
     KRAKEN = "kraken"
     NASDAQ = "nasdaq"
     NYSE = "nyse"
+    ALPACA = "alpaca"        # primary brokerage; paper + live via ALPACA_BASE_URL
     PAPER = "paper"
 
 class AssetClass(StrEnum):
@@ -375,6 +376,9 @@ BINANCE_API_KEY=
 BINANCE_API_SECRET=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
+ALPACA_API_KEY=
+ALPACA_API_SECRET=
+ALPACA_BASE_URL=https://paper-api.alpaca.markets   # paper-api.alpaca.markets for paper, api.alpaca.markets for live
 POLYGON_API_KEY=
 
 # Behavior

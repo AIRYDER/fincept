@@ -495,12 +495,14 @@ source = { editable = "services/features" }
 dependencies = [
     { name = "fincept-bus" },
     { name = "fincept-core" },
+    { name = "fincept-db" },
     { name = "pydantic" },
     { name = "redis" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "fakeredis" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -512,12 +514,14 @@ dev = [
 requires-dist = [
     { name = "fincept-bus", editable = "libs/fincept-bus" },
     { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "fincept-db", editable = "libs/fincept-db" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "redis", specifier = ">=5.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fakeredis", specifier = ">=2.25" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },

@@ -28,7 +28,7 @@
 | 014 | Quality monitor (gaps, cross-spread, staleness alerts) | 011 | `services/ingestor/quality.py` | [x] |
 | 015 | EOD equity loader (yfinance → bars_1d) | 004 | `services/ingestor/eod_equity.py` | [x] |
 | 016 | Features: online transforms (returns, vol, microstructure) | 002–004, 011 | `services/features/online.py`, `transforms/*` | [x] |
-| 017 | Features: online + offline store with PIT joins | 016 | `services/features/{store,pit}.py` | [ ] |
+| 017 | Features: online + offline store with PIT joins | 016 | `services/features/{store,pit}.py` | [x] |
 
 **Checkpoint D:** 24-hour soak test on 5 crypto pairs with zero dropped messages; feature store serves online reads in <10 ms at p99; offline backfill reproduces live features bit-exact.
 

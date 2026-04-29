@@ -12,6 +12,7 @@ class Venue(StrEnum):
     KRAKEN = "kraken"
     NASDAQ = "nasdaq"
     NYSE = "nyse"
+    ALPACA = "alpaca"
     PAPER = "paper"
 
 
