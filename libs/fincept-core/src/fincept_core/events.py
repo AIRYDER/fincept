@@ -19,6 +19,9 @@ EventPayload = (
     | schemas.Order
     | schemas.Fill
     | schemas.Position
+    | schemas.Prediction
+    | schemas.RegimeSignal
+    | schemas.SentimentSignal
 )
 
 _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
@@ -32,6 +35,9 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "order": schemas.Order,
     "fill": schemas.Fill,
     "position": schemas.Position,
+    "prediction": schemas.Prediction,
+    "regime": schemas.RegimeSignal,
+    "sentiment": schemas.SentimentSignal,
 }
 
 

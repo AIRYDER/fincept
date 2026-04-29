@@ -54,8 +54,8 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
-| 030 | Agent base class + process template | 002–003 | `services/agents/base.py` |
-| 031 | `gbm_predictor`: LightGBM trainer + online inference agent | 017, 030 | `services/agents/gbm_predictor/*` |
+| 030 | Agent base class + process template | 002–003 | `services/agents/base.py` | [x] |
+| 031 | `gbm_predictor`: LightGBM trainer + online inference agent | 017, 030 | `services/agents/gbm_predictor/*` | [x] |
 | 032 | `regime`: HMM-based regime detector | 017, 030 | `services/agents/regime/*` |
 | 033 | `pairs`: cointegration pairs strategy agent | 017, 030 | `services/agents/pairs/*` |
 
@@ -68,7 +68,7 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
 | 040 | Orchestrator: fan-in router, regime-adaptive weighting, decisions emitter | 031–033 | `services/orchestrator/{router,regime,consensus,allocator,decisions}.py` |
-| 041 | Risk gate: pre-trade checks + kill switch | 002 | `services/risk/{gate,limits,kill_switch}.py` |
+| 041 | Risk gate: pre-trade checks + kill switch | 002 | `services/risk/{gate,limits,kill_switch}.py` | [x] |
 | 042 | Kelly-optimal sizing (correlated-assets variant) | 041 | `services/risk/kelly.py` |
 | 043 | Real-time VaR | 041 | `services/risk/var.py` |
 | 044 | Paper OMS (fill simulator uses live mid + random latency) | 002–004, 011 | `services/oms/{main,paper,state,audit}.py` | [x] |

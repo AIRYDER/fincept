@@ -30,8 +30,10 @@ fincept-db = { workspace = true }
 fincept-tools = { workspace = true }
 fincept-sdk = { workspace = true }
 ingestor = { workspace = true }
+features = { workspace = true }
 portfolio = { workspace = true }
 risk = { workspace = true }
+agents = { workspace = true }
 
 [dependency-groups]
 dev = [
