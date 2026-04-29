@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     ALPACA_API_KEY: str | None = Field(default=None)
     ALPACA_API_SECRET: str | None = Field(default=None)
     ALPACA_BASE_URL: str = Field(default="https://paper-api.alpaca.markets")
+    # API auth secret (HS256 JWT signing).  The dev default is intentionally
+    # unsafe so production deploys must set FINCEPT_JWT_SECRET explicitly.
+    JWT_SECRET: str = Field(default="dev-only-change-me")
     UNIVERSE: list[str] = Field(default_factory=lambda: ["BTC-USD", "ETH-USD", "SOL-USD"])
     DEFAULT_VENUE: str = Field(default="binance")
     MAX_NOTIONAL_USD_PER_SYMBOL: int = Field(default=10000)

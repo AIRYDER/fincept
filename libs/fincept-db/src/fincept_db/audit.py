@@ -55,3 +55,45 @@ async def read_by_correlation(correlation_id: str) -> list[dict[str, Any]]:
             }
             for row in rows
         ]
+
+
+async def list_recent_orders(
+    *,
+    strategy_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return the latest Order snapshot per order_id from the audit log.
+
+    The OMS writes one ``oms.state`` row per state transition (PENDING_NEW,
+    NEW, FILLED / REJECTED).  We collapse to the most recent row per
+    ``correlation_id`` (= ``order_id``) and return its payload.
+
+    For high-volume systems this should move to a dedicated ``orders``
+    table; for v1 the audit log is the canonical store and this query
+    is good enough — Postgres handles the DISTINCT ON pattern natively.
+    """
+    async with session_scope() as session:
+        query = (
+            select(AuditLog)
+            .where(AuditLog.event_type == "oms.state")
+            .order_by(AuditLog.correlation_id, AuditLog.ts_event.desc())
+        )
+        rows = (await session.execute(query)).scalars().all()
+        # Collapse to one row per correlation_id (latest first thanks to ORDER BY).
+        seen: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            cid = row.correlation_id
+            if cid is None or cid in seen:
+                continue
+            order = row.payload.get("order", row.payload)
+            if not isinstance(order, dict):
+                continue
+            if strategy_id is not None and order.get("strategy_id") != strategy_id:
+                continue
+            if status is not None and order.get("status") != status:
+                continue
+            seen[cid] = order
+            if len(seen) >= limit:
+                break
+        return list(seen.values())

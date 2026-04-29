@@ -379,6 +379,7 @@ ANTHROPIC_API_KEY=
 ALPACA_API_KEY=
 ALPACA_API_SECRET=
 ALPACA_BASE_URL=https://paper-api.alpaca.markets   # paper-api.alpaca.markets for paper, api.alpaca.markets for live
+JWT_SECRET=dev-only-change-me                       # HS256 signing key for API bearer tokens; MUST be overridden in production
 POLYGON_API_KEY=
 
 # Behavior

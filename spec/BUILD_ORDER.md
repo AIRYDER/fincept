@@ -82,8 +82,8 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 
 | # | Task | Depends on | File(s) |
 |---|---|---|---|
-| 050 | FastAPI app with auth, health, universe, bars, positions, orders, strategies routes | 004, 044 | `services/api/*` |
-| 051 | WebSocket streaming endpoint (positions, fills, predictions) | 050 | `services/api/ws.py` |
+| 050 | FastAPI app with auth, health, universe, bars, positions, orders, strategies routes | 004, 044 | `services/api/*` | [x] |
+| 051 | WebSocket streaming endpoint (positions, fills, predictions) | 050 | `services/api/ws.py` | [x] |
 | 052 | Next.js dashboard shell + auth + typed API client | 050 | `apps/dashboard/*` |
 | 053 | Positions + P&L panel (WS-driven, 10 Hz) | 051, 052 | `apps/dashboard/src/app/positions/*` |
 | 054 | Strategy control panel (start/stop/param) | 052 | `apps/dashboard/src/app/strategies/*` |

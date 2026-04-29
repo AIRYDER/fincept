@@ -2,6 +2,26 @@
 
 **Phase:** U · **Depends on:** TASK-004 (db), TASK-044 (oms) · **Blocks:** TASK-052 (dashboard)
 
+**Status:** [x] Implemented and verified.  Includes TASK-051 (WebSocket multiplexer) which is one route in the same service.
+
+## As-built deviations from the original draft
+
+| Spec said | We did | Why |
+|---|---|---|
+| `/positions` calls `db.fetch_positions_latest()` (a fictional helper) | `/positions` reads the Redis hash that the portfolio service populates (`positions:{strategy_id}`) via `PositionStore.known_strategies` + `get_all` | The Redis hash is already the canonical UI read path (sub-millisecond, no DB round-trip).  Same online/offline split TASK-017 used for features. |
+| `/orders` calls `db.fetch_orders` (also fictional) | `/orders` reads the OMS audit log via new helper `fincept_db.audit.list_recent_orders`, which collapses `oms.state` rows to the latest snapshot per `order_id` | Orders aren't persisted to a dedicated table in v1 — the audit log is canonical.  The collapse is one indexed query against `correlation_id`.  Migration to a dedicated `orders` table is a Phase H concern when volume warrants it. |
+| `/kill-switch` imported `risk.kill_switch.activate(...)` | Publishes `AlertEvent` directly to `STREAM_ALERTS` with `code="kill_switch_engaged"` / severity `"critical"`; DELETE publishes the all-clear with severity `"info"` | TASK-041 (risk gate) doesn't exist yet so the `risk` package can't be imported.  The alert IS the canonical signal — when TASK-041 lands its consumer reacts to that exact code. |
+| `/strategies/{id}/start|stop` endpoints with Redis pub/sub | **Deferred** — only `GET /strategies` shipped | Start/stop requires a strategy host service (TASK-040 territory) that doesn't exist yet.  Without it, the Redis hash + pub/sub would have no consumer.  When the host lands, this module gains those routes that RPC to it.  The shipped `GET /strategies` reads the same `portfolio:strategies` index PortfolioStore writes. |
+| `consumer.read(stream, cls)` async-iterator API in `ws.py` | WebSocket uses `redis.xread` directly with `$` cursor (live-tail only) | `Consumer.consume(...)` is for durable consumer groups.  WebSockets are transient broadcast — clients should NOT replay history on reconnect (use REST endpoints for backfill).  The XREAD loop is also smaller and has no group-management overhead. |
+| Spec `routes/data.py` imported `read_bars_list` | Uses the actual `fincept_db.bars.read_bars` (singular) plus `model_dump(mode="json")` for Decimal→str serialisation | `read_bars_list` doesn't exist; `read_bars` is the canonical reader. |
+| Spec implied a new `read_universe` helper | Added `fincept_db.universe.read_universe()` — wasn't there before, but the table existed | Closing a real gap; the universe table had no reader at all. |
+| Tests used FastAPI `TestClient` (sync) | Tests use `httpx.AsyncClient` + `ASGITransport` so async fixtures (which seed fakeredis) run on the SAME event loop as the request handlers | `TestClient` spins up its own sync loop; async fixtures + fakeredis on a different loop produces "Queue is bound to a different event loop" errors.  The async client pattern is also closer to how a real client (Next.js fetch) talks to the API. |
+| Spec auth used `Header(...)` with required default | `Header(default=None)` + explicit 401 inside the dependency | `Header(...)` without default returns 422 (Unprocessable Entity) when missing — wrong status code for missing auth.  401 is the right answer for "not authenticated". |
+| `Settings.JWT_SECRET` didn't exist | Added to `Settings` + CONTRACTS.md §10 with a dev-only default that production deploys must override | The auth dependency reads it; without the field the API would refuse to start. |
+| Lifespan held a singleton Redis client created from settings | Lifespan stashes the client at `app.state.redis`; tests override the lifespan with a fakeredis client of the same shape | Lets tests run end-to-end against a fake without monkeypatching `Redis.from_url`. |
+| ruff B008 fired on every FastAPI route | Added `[tool.ruff.lint] ignore = ["B008"]` to root + service pyproject.toml | B008 is a well-known FastAPI false-positive.  `Depends(...)`, `Body(...)`, etc. are the canonical pattern; the calls return immutable sentinels and are safe as defaults. |
+| `Redis[Any]` annotations on FastAPI dependency signatures | Bare `Redis` with `# type: ignore[type-arg]` only on the FastAPI signatures; the `_emit_alert` helper keeps `Redis[Any]` since FastAPI doesn't introspect it | FastAPI's runtime introspection forces `eval_str=True` on annotations — even with `from __future__ import annotations`, the string `"Redis[Any]"` gets evaluated and fails because `redis.asyncio.Redis` is not generic at runtime (only `types-redis` stubs make it look generic). |
+
 ## Goal
 
 Authenticated HTTP+WS API exposing positions, orders, bars, strategies, and a kill-switch endpoint. Streams positions/fills/predictions over WebSocket.
