@@ -125,6 +125,7 @@ Do not enter this phase without risk-committee approval.
 | 073 | mTLS between all services via service mesh | all | `infra/k8s/istio/*` |
 | 074 | Audit log archival (7 yr, WORM to object storage) | 044 | `services/jobs/archive.py` |
 | 075 | Live venue adapter (Binance) with staged limits | 044 | `services/oms/venue/binance.py` |
+| 075a | Alpaca paper-broker OMS adapter (separate from Binance live) | 044 | `services/oms/alpaca/*` | [x] |
 | 076 | Gradual rollout harness (simulation → paper → shadow → limited → full) | all | `services/oms/rollout.py` |
 
 **Checkpoint H:** SOC-2-equivalent internal audit passes; DR drill completes within RTO; first $1k live capital allocation monitored 24×7 for 7 days without incident.

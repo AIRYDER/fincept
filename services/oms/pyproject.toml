@@ -9,6 +9,7 @@ dependencies = [
   "fincept-db",
   "redis>=5.0",
   "pydantic>=2.7",
+  "httpx>=0.27",
 ]
 
 [dependency-groups]
@@ -19,6 +20,7 @@ dev = [
   "ruff>=0.7",
   "fakeredis>=2.25",
   "types-redis>=4.6",
+  "respx>=0.21",
 ]
 
 [build-system]

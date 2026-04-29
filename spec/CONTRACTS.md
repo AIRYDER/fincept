@@ -386,6 +386,7 @@ POLYGON_API_KEY=
 TRADING_MODE=paper                    # paper | live (paper-only until Gate 5)
 UNIVERSE=BTC-USD,ETH-USD,SOL-USD
 DEFAULT_VENUE=binance
+OMS_ROUTER=sim                        # sim | alpaca (alpaca requires ALPACA_API_KEY+SECRET)
 MAX_NOTIONAL_USD_PER_SYMBOL=10000
 MAX_GROSS_NOTIONAL_USD=50000
 MAX_DAILY_LOSS_USD=2000

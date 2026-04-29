@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     JWT_SECRET: str = Field(default="dev-only-change-me")
     UNIVERSE: list[str] = Field(default_factory=lambda: ["BTC-USD", "ETH-USD", "SOL-USD"])
     DEFAULT_VENUE: str = Field(default="binance")
+    # OMS routing: "sim" sends OrderIntents through the in-process PaperFiller;
+    # "alpaca" submits to Alpaca via REST (paper or live based on ALPACA_BASE_URL).
+    # Explicit setting prevents silent route changes when operators provision
+    # ALPACA_API_KEY for other reasons (e.g., the future equity data loader).
+    OMS_ROUTER: str = Field(default="sim")
     MAX_NOTIONAL_USD_PER_SYMBOL: int = Field(default=10000)
     MAX_GROSS_NOTIONAL_USD: int = Field(default=50000)
     MAX_DAILY_LOSS_USD: int = Field(default=2000)
