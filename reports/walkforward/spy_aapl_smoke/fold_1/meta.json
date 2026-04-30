@@ -1,0 +1,1 @@
+{"features": ["ret_1m", "ret_5m", "rv_5m", "mom_z_5m"], "horizon_bars": 3, "horizon_ns": 259200000000000, "train_rows": 138, "train_pos_rate": 0.5434782608695652, "num_boost_round": 50, "per_symbol_rows": {"AAPL": 69, "SPY": 69}, "window_bars": 2}

@@ -3,7 +3,8 @@ export function PageHeader({
   description,
   action,
 }: {
-  title: string;
+  /** Accepts a string or richer JSX (e.g. with a back-arrow link). */
+  title: React.ReactNode;
   description?: string;
   action?: React.ReactNode;
 }) {

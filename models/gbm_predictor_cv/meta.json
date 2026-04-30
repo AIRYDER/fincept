@@ -1,0 +1,70 @@
+{
+  "features": [
+    "ret_1m",
+    "ret_5m",
+    "ret_15m",
+    "ret_60m",
+    "rv_5m",
+    "rv_30m",
+    "mom_z_30m",
+    "mom_z_240m",
+    "book_imbalance_1",
+    "spread_bps"
+  ],
+  "horizon_bars": 15,
+  "bar_seconds": 60,
+  "horizon_ns": 900000000000,
+  "trained_at": 1777520374,
+  "eval_mode": "walk_forward",
+  "cv_folds": [
+    {
+      "fold": 0,
+      "train_rows": 7182,
+      "val_rows": 7197,
+      "best_iter": 1,
+      "best_auc": 0.5046542275401856
+    },
+    {
+      "fold": 1,
+      "train_rows": 14379,
+      "val_rows": 7197,
+      "best_iter": 26,
+      "best_auc": 0.5001192345004519
+    },
+    {
+      "fold": 2,
+      "train_rows": 21576,
+      "val_rows": 7197,
+      "best_iter": 1,
+      "best_auc": 0.49795399887946307
+    },
+    {
+      "fold": 3,
+      "train_rows": 28773,
+      "val_rows": 7197,
+      "best_iter": 11,
+      "best_auc": 0.5198975198237239
+    },
+    {
+      "fold": 4,
+      "train_rows": 35970,
+      "val_rows": 7200,
+      "best_iter": 52,
+      "best_auc": 0.5159643984580975
+    }
+  ],
+  "cv_summary": {
+    "n_folds": 5,
+    "n_scored": 5,
+    "n_skipped": 0,
+    "mean_auc": 0.5077178758403844,
+    "std_auc": 0.009731488160523081,
+    "min_auc": 0.49795399887946307,
+    "max_auc": 0.5198975198237239,
+    "median_best_iter": 11
+  },
+  "final_train_rows": 43185,
+  "final_num_boost_round": 11,
+  "purge_bars": 15,
+  "embargo_bars": 0
+}

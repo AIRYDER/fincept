@@ -36,6 +36,7 @@ risk = { workspace = true }
 agents = { workspace = true }
 oms = { workspace = true }
 orchestrator = { workspace = true }
+backtester = { workspace = true }
 
 [dependency-groups]
 dev = [

@@ -7,7 +7,12 @@ dependencies = [
   "fincept-core",
   "fincept-db",
   "fincept-sdk",
+  "risk",
   "pydantic>=2.7",
+  "polars>=1.0",
+  "tzdata>=2024.1; sys_platform == 'win32'",
+  "lightgbm>=4.5",
+  "numpy>=2.0",
 ]
 
 [dependency-groups]

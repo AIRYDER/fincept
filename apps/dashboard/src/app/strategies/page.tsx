@@ -69,18 +69,14 @@ export default function StrategiesPage() {
           {strategies?.map((s) => {
             const pos = positionsByStrategy.get(s.strategy_id) ?? [];
             const realized = pos.reduce(
-              (acc, p) => acc + asNum(p.realized_pnl_usd),
+              (acc, p) => acc + asNum(p.realized_pnl),
               0,
             );
             const unrealized = pos.reduce(
-              (acc, p) => acc + asNum(p.unrealized_pnl_usd),
+              (acc, p) => acc + asNum(p.unrealized_pnl),
               0,
             );
-            const fees = pos.reduce(
-              (acc, p) => acc + asNum(p.fees_paid_usd),
-              0,
-            );
-            const total = realized + unrealized - fees;
+            const total = realized + unrealized;
             return (
               <Card key={s.strategy_id} className="relative overflow-hidden">
                 <CardHeader className="pb-3">
@@ -97,10 +93,9 @@ export default function StrategiesPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <Stat label="Realized" value={realized} />
                     <Stat label="Unrealized" value={unrealized} />
-                    <Stat label="Fees" value={-fees} negative />
                   </div>
                   <div className="rounded-md border border-border/40 bg-background/30 p-3">
                     <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -128,23 +123,16 @@ export default function StrategiesPage() {
 function Stat({
   label,
   value,
-  negative = false,
 }: {
   label: string;
   value: number;
-  negative?: boolean;
 }) {
   return (
     <div className="rounded-md bg-background/40 p-2">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
-      <div
-        className={cn(
-          "num text-sm font-medium",
-          negative ? "text-warn" : pnlClass(value),
-        )}
-      >
+      <div className={cn("num text-sm font-medium", pnlClass(value))}>
         {formatUsd(value, { signed: true })}
       </div>
     </div>

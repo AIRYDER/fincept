@@ -26,6 +26,7 @@ from typing import Any
 from redis.asyncio import Redis
 
 from fincept_core.config import get_settings
+from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 from ingestor.base import VenueAdapter
@@ -132,9 +133,13 @@ async def _main(venue: str) -> None:
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
 
+    heartbeat_task = asyncio.create_task(beat_periodically(redis, "ingestor"))
     try:
         await run_loop(adapter, writer, latency, stop)
     finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
         await redis.aclose()  # type: ignore[attr-defined]
 
 

@@ -91,21 +91,19 @@ export default function PositionsPage() {
     });
     return filtered.sort(
       (a, b) =>
-        Math.abs(asNum(b.unrealized_pnl_usd)) -
-        Math.abs(asNum(a.unrealized_pnl_usd)),
+        Math.abs(asNum(b.unrealized_pnl)) - Math.abs(asNum(a.unrealized_pnl)),
     );
   }, [byKey, filter, includeFlat]);
 
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, p) => {
-        acc.realized += asNum(p.realized_pnl_usd);
-        acc.unrealized += asNum(p.unrealized_pnl_usd);
-        acc.fees += asNum(p.fees_paid_usd);
-        acc.gross += Math.abs(asNum(p.quantity)) * asNum(p.current_mark_price ?? p.avg_entry_price);
+        acc.realized += asNum(p.realized_pnl);
+        acc.unrealized += asNum(p.unrealized_pnl);
+        acc.gross += Math.abs(asNum(p.quantity)) * asNum(p.avg_cost);
         return acc;
       },
-      { realized: 0, unrealized: 0, fees: 0, gross: 0 },
+      { realized: 0, unrealized: 0, gross: 0 },
     );
   }, [rows]);
 
@@ -145,12 +143,14 @@ export default function PositionsPage() {
           colorClass={pnlClass(totals.unrealized)}
         />
         <SummaryTile
-          label="Fees paid"
-          value={formatUsd(-totals.fees, { signed: true })}
-          colorClass="text-warn"
+          label="Total P&L"
+          value={formatUsd(totals.realized + totals.unrealized, {
+            signed: true,
+          })}
+          colorClass={pnlClass(totals.realized + totals.unrealized)}
         />
         <SummaryTile
-          label="Gross exposure"
+          label="Cost basis"
           value={formatUsd(totals.gross, { compact: true })}
           colorClass="text-foreground"
         />
@@ -173,12 +173,12 @@ export default function PositionsPage() {
                 <th className="px-4 py-2 text-left">Symbol</th>
                 <th className="px-4 py-2 text-left">Strategy</th>
                 <th className="px-4 py-2 text-right">Qty</th>
-                <th className="px-4 py-2 text-right">Avg entry</th>
-                <th className="px-4 py-2 text-right">Mark</th>
-                <th className="px-4 py-2 text-right">Notional</th>
+                <th className="px-4 py-2 text-right">Avg cost</th>
+                <th className="px-4 py-2 text-right">Market</th>
+                <th className="px-4 py-2 text-right">Cost basis</th>
                 <th className="px-4 py-2 text-right">Unrealized</th>
                 <th className="px-4 py-2 text-right">Realized</th>
-                <th className="px-4 py-2 text-right">Fees</th>
+                <th className="px-4 py-2 text-right">Total P&L</th>
               </tr>
             </thead>
             <tbody>
@@ -200,15 +200,24 @@ export default function PositionsPage() {
               ) : (
                 rows.map((p) => {
                   const qty = asNum(p.quantity);
-                  const mark = asNum(
-                    p.current_mark_price ?? p.avg_entry_price,
-                  );
-                  const notional = qty * mark;
+                  const cost = asNum(p.avg_cost);
+                  const costBasis = qty * cost;
+                  const unrealized = asNum(p.unrealized_pnl);
+                  // Prefer the live server-side mark (md:last:{symbol});
+                  // fall back to implied (cost + unrealized/qty) when the
+                  // scheduler hasn't written a mark yet.
+                  const mark = p.mark_px
+                    ? asNum(p.mark_px)
+                    : qty !== 0
+                      ? (costBasis + unrealized) / qty
+                      : cost;
+                  const market = mark * qty;
+                  const total = unrealized + asNum(p.realized_pnl);
                   const k = posKey(p);
                   const pulse = pulseSet.has(k);
                   return (
                     <tr
-                      key={p.position_id}
+                      key={k}
                       className={cn(
                         "border-b border-border/30 hover:bg-accent/30",
                         pulse && "pulse-update",
@@ -233,34 +242,37 @@ export default function PositionsPage() {
                         {formatNumber(p.quantity, 6)}
                       </td>
                       <td className="num px-4 py-2 text-right text-muted-foreground">
-                        {formatUsd(p.avg_entry_price)}
+                        {formatUsd(cost)}
                       </td>
                       <td className="num px-4 py-2 text-right">
-                        {p.current_mark_price
-                          ? formatUsd(p.current_mark_price)
-                          : "—"}
+                        {formatUsd(mark)}
                       </td>
                       <td className="num px-4 py-2 text-right text-muted-foreground">
-                        {formatUsd(notional, { compact: true })}
+                        {formatUsd(costBasis, { compact: true })}
                       </td>
                       <td
                         className={cn(
                           "num px-4 py-2 text-right",
-                          pnlClass(p.unrealized_pnl_usd),
+                          pnlClass(unrealized),
                         )}
                       >
-                        {formatUsd(p.unrealized_pnl_usd, { signed: true })}
+                        {formatUsd(unrealized, { signed: true })}
                       </td>
                       <td
                         className={cn(
                           "num px-4 py-2 text-right",
-                          pnlClass(p.realized_pnl_usd),
+                          pnlClass(p.realized_pnl),
                         )}
                       >
-                        {formatUsd(p.realized_pnl_usd, { signed: true })}
+                        {formatUsd(p.realized_pnl, { signed: true })}
                       </td>
-                      <td className="num px-4 py-2 text-right text-warn">
-                        {formatUsd(-asNum(p.fees_paid_usd), { signed: true })}
+                      <td
+                        className={cn(
+                          "num px-4 py-2 text-right",
+                          pnlClass(total),
+                        )}
+                      >
+                        {formatUsd(total, { signed: true })}
                       </td>
                     </tr>
                   );

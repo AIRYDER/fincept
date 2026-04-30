@@ -10,10 +10,27 @@
  */
 
 import type {
+  BacktestRunDetailResponse,
+  BacktestRunRequest,
+  BacktestRunResponse,
+  BacktestRunsListResponse,
+  BacktestStrategiesResponse,
   Bar,
+  FeatureImportanceResponse,
+  ModelRecord,
+  ModelsResponse,
+  NewsResponse,
   OrderRecord,
   Position,
+  PromoteResponse,
+  PromotionStateResponse,
+  RegimeResponse,
+  RollbackResponse,
+  ServicesResponse,
   StrategyRow,
+  TrainModelBody,
+  TrainingRun,
+  TrainingRunsResponse,
   UniverseRow,
 } from "@/lib/types";
 
@@ -122,6 +139,109 @@ export const api = {
   // --- strategies ---------------------------------------------------------
   strategies: (token: string | null) =>
     request<StrategyRow[]>("/strategies", token),
+
+  // --- news ---------------------------------------------------------------
+  news: (
+    token: string | null,
+    args?: { limit?: number; only_book?: boolean },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.limit) q.set("limit", String(args.limit));
+    if (args?.only_book) q.set("only_book", "true");
+    return request<NewsResponse>(
+      `/news${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
+
+  // --- services -----------------------------------------------------------
+  services: (token: string | null) =>
+    request<ServicesResponse>("/services", token),
+
+  // --- models -------------------------------------------------------------
+  models: (token: string | null) => request<ModelsResponse>("/models", token),
+  modelDetail: (token: string | null, name: string) =>
+    request<ModelRecord>(`/models/${encodeURIComponent(name)}`, token),
+  modelFeatureImportance: (token: string | null, name: string) =>
+    request<FeatureImportanceResponse>(
+      `/models/${encodeURIComponent(name)}/feature-importance`,
+      token,
+    ),
+  trainModel: (token: string | null, body: TrainModelBody) =>
+    request<TrainingRun>("/models/train", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  modelRuns: (
+    token: string | null,
+    args?: { status?: string; limit?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.status) q.set("status", args.status);
+    if (args?.limit) q.set("limit", String(args.limit));
+    return request<TrainingRunsResponse>(
+      `/models/runs${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
+  modelRunDetail: (token: string | null, runId: string) =>
+    request<TrainingRun>(
+      `/models/runs/${encodeURIComponent(runId)}`,
+      token,
+    ),
+  modelPromotionState: (
+    token: string | null,
+    args?: { agent_id?: string; history_limit?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.agent_id) q.set("agent_id", args.agent_id);
+    if (args?.history_limit) q.set("history_limit", String(args.history_limit));
+    return request<PromotionStateResponse>(
+      `/models/promote/active${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
+  promoteModel: (
+    token: string | null,
+    name: string,
+    body: { agent_id?: string; promoted_by?: string } = {},
+  ) =>
+    request<PromoteResponse>(
+      `/models/${encodeURIComponent(name)}/promote`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  rollbackPromotion: (
+    token: string | null,
+    body: { agent_id?: string; promoted_by?: string } = {},
+  ) =>
+    request<RollbackResponse>("/models/promote/rollback", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // --- regime -------------------------------------------------------------
+  regime: (token: string | null, history = 0) =>
+    request<RegimeResponse>(
+      `/regime${history > 0 ? `?history=${history}` : ""}`,
+      token,
+    ),
+
+  // --- backtest -----------------------------------------------------------
+  backtestStrategies: (token: string | null) =>
+    request<BacktestStrategiesResponse>("/backtest/strategies", token),
+  backtestRuns: (token: string | null) =>
+    request<BacktestRunsListResponse>("/backtest/runs", token),
+  backtestRun: (token: string | null, runId: string) =>
+    request<BacktestRunDetailResponse>(
+      `/backtest/runs/${encodeURIComponent(runId)}`,
+      token,
+    ),
+  runBacktest: (token: string | null, body: BacktestRunRequest) =>
+    request<BacktestRunResponse>("/backtest/run", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // --- control ------------------------------------------------------------
   tripKillSwitch: (token: string | null, reason: string) =>

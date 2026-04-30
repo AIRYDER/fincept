@@ -44,6 +44,7 @@ dependencies = [
     { name = "features" },
     { name = "fincept-bus" },
     { name = "fincept-core" },
+    { name = "httpx" },
     { name = "lightgbm" },
     { name = "numpy" },
     { name = "polars" },
@@ -66,6 +67,7 @@ requires-dist = [
     { name = "features", editable = "services/features" },
     { name = "fincept-bus", editable = "libs/fincept-bus" },
     { name = "fincept-core", editable = "libs/fincept-core" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "lightgbm", specifier = ">=4.5" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "polars", specifier = ">=1.0" },
@@ -133,10 +135,12 @@ name = "api"
 version = "0.1.0"
 source = { editable = "services/api" }
 dependencies = [
+    { name = "backtester" },
     { name = "fastapi" },
     { name = "fincept-bus" },
     { name = "fincept-core" },
     { name = "fincept-db" },
+    { name = "oms" },
     { name = "portfolio" },
     { name = "pydantic" },
     { name = "pyjwt" },
@@ -157,10 +161,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backtester", editable = "services/backtester" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fincept-bus", editable = "libs/fincept-bus" },
     { name = "fincept-core", editable = "libs/fincept-core" },
     { name = "fincept-db", editable = "libs/fincept-db" },
+    { name = "oms", editable = "services/oms" },
     { name = "portfolio", editable = "services/portfolio" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyjwt", specifier = ">=2.9" },
@@ -239,7 +245,12 @@ dependencies = [
     { name = "fincept-core" },
     { name = "fincept-db" },
     { name = "fincept-sdk" },
+    { name = "lightgbm" },
+    { name = "numpy" },
+    { name = "polars" },
     { name = "pydantic" },
+    { name = "risk" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -255,7 +266,12 @@ requires-dist = [
     { name = "fincept-core", editable = "libs/fincept-core" },
     { name = "fincept-db", editable = "libs/fincept-db" },
     { name = "fincept-sdk", editable = "libs/fincept-sdk" },
+    { name = "lightgbm", specifier = ">=4.5" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "polars", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "risk", editable = "services/risk" },
+    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
 ]
 
 [package.metadata.requires-dev]

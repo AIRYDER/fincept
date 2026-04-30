@@ -8,6 +8,8 @@ dependencies = [
   "fincept-bus",
   "fincept-db",
   "portfolio",
+  "backtester",
+  "oms",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "redis>=5.0",
@@ -28,6 +30,8 @@ dev = [
 
 [tool.uv.sources]
 portfolio = { workspace = true }
+backtester = { workspace = true }
+oms = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

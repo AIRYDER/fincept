@@ -4,15 +4,25 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { CommandPalette } from "@/components/shell/command-palette";
-import { Sidebar } from "@/components/shell/sidebar";
-import { Topbar } from "@/components/shell/topbar";
+import { NavTabs } from "@/components/shell/nav-tabs";
+import { StatusBar } from "@/components/shell/status-bar";
+import { TitleBar } from "@/components/shell/title-bar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 
 /**
- * The default authenticated shell.  Pages render inside <main> with the
- * sidebar + topbar fixed.  When unauthenticated, the user is bounced to
- * /login so no API call is attempted.
+ * Bloomberg-terminal authenticated shell.
+ *
+ *   ┌ TitleBar  (branding · clock · API/WS pills · kill · logout) ┐
+ *   ├ NavTabs   (OVERVIEW · POSITIONS · ORDERS · … · search/cmd) ┤
+ *   │                                                             │
+ *   │                  main (widget grid pages)                   │
+ *   │                                                             │
+ *   ├ StatusBar (version · session · feeds · mem · latency · rdy) ┤
+ *
+ * All four strips are single-line, monospace, uppercase.  The layout
+ * is a vertical flex column so the main area expands to the remaining
+ * space with its own scroll container.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const token = useAuth((s) => s.token);
@@ -30,14 +40,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">
-            {children}
-          </main>
-        </div>
+      <div className="flex h-screen flex-col overflow-hidden bg-background">
+        <TitleBar />
+        <NavTabs />
+        <main className="scrollbar-thin flex-1 overflow-y-auto p-2">
+          {children}
+        </main>
+        <StatusBar />
       </div>
       <CommandPalette />
     </TooltipProvider>

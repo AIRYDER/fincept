@@ -52,6 +52,7 @@ from fincept_bus.streams import (
 from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
 from fincept_core.events import Event
+from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import (
     AlertEvent,
@@ -418,6 +419,7 @@ async def run(stop: asyncio.Event) -> None:
     producer = Producer(redis)
 
     log.info("oms.start", router=settings.OMS_ROUTER)
+    heartbeat_task = asyncio.create_task(beat_periodically(redis, "oms"))
     try:
         if settings.OMS_ROUTER == "alpaca":
             await _run_alpaca(stop, redis, producer)
@@ -428,6 +430,9 @@ async def run(stop: asyncio.Event) -> None:
                 f"unknown OMS_ROUTER={settings.OMS_ROUTER!r}; expected 'sim' or 'alpaca'"
             )
     finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
         await redis.aclose()  # type: ignore[attr-defined]
 
 

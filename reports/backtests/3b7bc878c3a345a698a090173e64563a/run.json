@@ -1,0 +1,26 @@
+{
+  "run_id": "3b7bc878c3a345a698a090173e64563a",
+  "status": "complete",
+  "started_at": 1777526020,
+  "finished_at": 1777526021,
+  "parquet_path": "data\\real_eq_2024h1.parquet",
+  "strategy_name": "buy_and_hold",
+  "strategy_params": {},
+  "starting_cash": 100000.0,
+  "freq": "1d",
+  "venue": "nasdaq",
+  "asset_class": "equity",
+  "bars_per_year": 252,
+  "symbols": [
+    "AAPL",
+    "SPY"
+  ],
+  "start_ns": 1704229200000000000,
+  "end_ns": 1719604800000000001,
+  "n_bars": 248,
+  "n_fills": 2,
+  "final_equity": 102970.2833753527,
+  "total_return_pct": 2.9702833753526936,
+  "sharpe": 1.6188079033469362,
+  "max_drawdown_pct": 1.4078640019120512
+}

@@ -1,0 +1,22 @@
+{
+  "features": [
+    "ret_1m",
+    "ret_5m",
+    "ret_15m",
+    "ret_60m",
+    "rv_5m",
+    "rv_30m",
+    "mom_z_30m",
+    "mom_z_240m",
+    "book_imbalance_1",
+    "spread_bps"
+  ],
+  "horizon_bars": 15,
+  "bar_seconds": 60,
+  "horizon_ns": 900000000000,
+  "trained_at": 1777516092,
+  "train_rows": 34548,
+  "val_rows": 8637,
+  "best_iter": 10,
+  "best_auc": 0.5085886469589646
+}

@@ -5,10 +5,13 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  Brain,
   Briefcase,
   CircuitBoard,
   Coins,
+  FlaskConical,
   LayoutDashboard,
+  Newspaper,
   ScrollText,
   ShieldAlert,
 } from "lucide-react";
@@ -30,8 +33,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/positions", label: "Positions", icon: Briefcase, mnemonic: "PS" },
   { href: "/orders", label: "Orders", icon: ScrollText, mnemonic: "OR" },
   { href: "/strategies", label: "Strategies", icon: Bot, mnemonic: "ST" },
+  { href: "/news", label: "News", icon: Newspaper, mnemonic: "NW" },
   { href: "/predictions", label: "Predictions", icon: Activity, mnemonic: "PR" },
   { href: "/markets", label: "Markets", icon: BarChart3, mnemonic: "MK" },
+  { href: "/backtest", label: "Backtest", icon: FlaskConical, mnemonic: "BT" },
+  { href: "/models", label: "Models", icon: Brain, mnemonic: "ML" },
   { href: "/risk", label: "Risk", icon: ShieldAlert, mnemonic: "RK" },
 ];
 

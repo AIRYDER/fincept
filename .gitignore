@@ -70,3 +70,15 @@ mlruns/
 uv.lock
 !uv.lock
 .uv-cache/
+
+# --- Claude Code / IDE session metadata -------------------------------------
+.claude/
+.windsurf/
+
+# --- start.ps1 captured stdout / stderr (local-only) ------------------------
+/tmp_*.err
+/tmp_*.out
+
+# --- Leftover test scratch files --------------------------------------------
+/services/*/t.txt
+/services/*/*.tmp

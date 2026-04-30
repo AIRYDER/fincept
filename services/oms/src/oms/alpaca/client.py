@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -92,18 +92,85 @@ class AlpacaClient:
         """POST /v2/orders.  Returns Alpaca's order JSON on success."""
         body = self._intent_to_body(intent)
         response = await self._http.post("/v2/orders", json=body, headers=self._headers)
-        return self._parse(response)
+        return cast(dict[str, Any], self._parse(response))
 
     async def get_order(self, alpaca_order_id: str) -> dict[str, Any]:
         """GET /v2/orders/{id}.  Returns the latest order JSON."""
         response = await self._http.get(f"/v2/orders/{alpaca_order_id}", headers=self._headers)
-        return self._parse(response)
+        return cast(dict[str, Any], self._parse(response))
 
     async def cancel_order(self, alpaca_order_id: str) -> None:
         """DELETE /v2/orders/{id}.  Returns 204 No Content on success."""
         response = await self._http.delete(f"/v2/orders/{alpaca_order_id}", headers=self._headers)
         if response.status_code not in (200, 204):
             self._raise(response)
+
+    # ------------------------------------------------------------------
+    # Read endpoints (account + positions + orders) used by the sync job
+    # ------------------------------------------------------------------
+
+    async def get_account(self) -> dict[str, Any]:
+        """GET /v2/account - cash, equity, buying power, status."""
+        response = await self._http.get("/v2/account", headers=self._headers)
+        return cast(dict[str, Any], self._parse(response))
+
+    async def list_positions(self) -> list[dict[str, Any]]:
+        """GET /v2/positions - all open positions on the account."""
+        response = await self._http.get("/v2/positions", headers=self._headers)
+        data = self._parse(response)
+        # Alpaca returns a JSON array directly; _parse always returns dict
+        # by signature, so we have to call response.json() again here for
+        # the list case.  Cleaner: parse manually.
+        if isinstance(data, list):
+            return cast(list[dict[str, Any]], data)
+        # Fallback: if Alpaca ever wraps it (they don't today), look for
+        # a common 'positions' key.
+        return list(cast(dict[str, Any], data).get("positions", []))
+
+    async def list_orders(
+        self,
+        *,
+        status: str = "all",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """GET /v2/orders - recent orders (default: all statuses, 100 rows)."""
+        params = {"status": status, "limit": str(limit), "direction": "desc"}
+        response = await self._http.get(
+            "/v2/orders", headers=self._headers, params=params
+        )
+        data = self._parse(response)
+        if isinstance(data, list):
+            return cast(list[dict[str, Any]], data)
+        return list(cast(dict[str, Any], data).get("orders", []))
+
+    async def list_activities(
+        self,
+        *,
+        activity_types: str = "FILL",
+        date: str | None = None,
+        page_size: int = 100,
+    ) -> list[dict[str, Any]]:
+        """GET /v2/account/activities - fills / dividends / transfers.
+
+        ``activity_types`` is a comma-separated set; ``FILL`` is the
+        default because that's what drives realised P&L.  ``date`` is an
+        ISO YYYY-MM-DD string; omitting it returns the most recent
+        ``page_size`` activities across all days.
+        """
+        params: dict[str, str] = {
+            "activity_types": activity_types,
+            "page_size": str(page_size),
+            "direction": "desc",
+        }
+        if date:
+            params["date"] = date
+        response = await self._http.get(
+            "/v2/account/activities", headers=self._headers, params=params
+        )
+        data = self._parse(response)
+        if isinstance(data, list):
+            return cast(list[dict[str, Any]], data)
+        return list(cast(dict[str, Any], data).get("activities", []))
 
     # ------------------------------------------------------------------
     # Internals
@@ -129,11 +196,14 @@ class AlpacaClient:
         return body
 
     @staticmethod
-    def _parse(response: httpx.Response) -> dict[str, Any]:
+    def _parse(response: httpx.Response) -> Any:
+        """Parse a 2xx response.  Returns dict (for single-object endpoints)
+        or list (for /v2/positions, /v2/orders).  Raises AlpacaError on
+        any non-2xx."""
         if response.status_code >= 400:
             AlpacaClient._raise(response)
         try:
-            return response.json()  # type: ignore[no-any-return]
+            return response.json()
         except ValueError as exc:
             raise AlpacaError(response.status_code, response.text) from exc
 

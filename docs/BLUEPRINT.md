@@ -23,14 +23,14 @@
 
 ### 1.3 Success Metrics
 
-| Metric | Target |
-|---|---|
-| Order-to-ack latency (p99) | <100μs |
-| Orders/sec per node | ≥10,000 |
+| Metric                                | Target                               |
+| ------------------------------------- | ------------------------------------ |
+| Order-to-ack latency (p99)            | <100μs                               |
+| Orders/sec per node                   | ≥10,000                              |
 | Predictive agent directional accuracy | ≥55% short-horizon, p<0.01 over ≥6mo |
-| Sharpe improvement vs baseline | ≥+0.5 |
-| Max drawdown reduction | ≥20% |
-| Prediction calibration (Brier) | <0.25 |
+| Sharpe improvement vs baseline        | ≥+0.5                                |
+| Max drawdown reduction                | ≥20%                                 |
+| Prediction calibration (Brier)        | <0.25                                |
 
 ---
 

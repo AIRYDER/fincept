@@ -6,8 +6,10 @@ Sequencing per bar (the order is the contract):
   1. ``ctx.now_ns`` is set to ``bar.ts_event``.
   2. ``strategy.on_bar(ctx, bar)`` runs — it may submit / cancel orders
      for execution starting at the *next* bar (PIT-correct: no peeking).
-     Newly-submitted orders enter the broker's open book but do NOT fill
-     against the current bar.
+     Newly-submitted orders that pass the optional risk gate enter the
+     broker's open book; rejections are appended to ``blotter.rejections``
+     and never fill.  Newly-accepted orders do NOT fill against the
+     current bar (PIT integrity, see ``submitted_in_bar``).
   3. ``broker.on_bar(bar)`` runs — open orders submitted on prior bars
      are evaluated against this bar's OHLC.  Any fills are appended to
      the blotter and dispatched to ``strategy.on_fill``.
@@ -21,6 +23,14 @@ bar T-1 is paying bar-T execution costs, not bar T-1 prices.  The
 ``submitted_in_bar`` set tracks orders new this tick and excludes them
 from the broker's first-bar fill scan.
 
+Risk gate (optional): pass ``risk_settings`` (a :class:`Settings`
+instance carrying ``MAX_NOTIONAL_USD_PER_SYMBOL`` and
+``MAX_GROSS_NOTIONAL_USD``) to mirror the live OMS gating in
+``services/oms/src/oms/main.py``.  The same ``risk.check_intent``
+function gates both surfaces, so a backtest result reflects exactly
+what the live OMS would let through.  Without ``risk_settings``, the
+engine behaves as before (no gate).
+
 Position math is split out in ``_update_positions`` so the four cases
 (open more / close some / cross flat / cross flip) are individually
 testable.  Spec landmines around partial-flip realized P&L caught one
@@ -32,13 +42,15 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from backtester.blotter import Blotter
+from backtester.blotter import Blotter, RejectedIntent
 from backtester.broker import SimBroker
 from backtester.datasource import BarsDataSource
+from fincept_core.config import Settings
 from fincept_core.logging import get_logger
 from fincept_core.portfolio import apply_fill_to_position
-from fincept_core.schemas import Fill, OrderIntent, Position
+from fincept_core.schemas import BarEvent, Fill, OrderIntent, Position
 from fincept_sdk import Strategy, StrategyContext
+from risk.checks import RiskContext, check_intent
 
 log = get_logger(__name__)
 
@@ -61,6 +73,34 @@ class _Context(StrategyContext):
         self._submitted_this_bar: set[str] = set()
 
     def submit(self, intent: OrderIntent) -> str:
+        # Optional pre-trade risk gate.  When ``risk_settings`` is None
+        # the engine behaves like the original ungated version.  When
+        # set, every intent runs through ``risk.check_intent`` with the
+        # same logic the live OMS uses (per-symbol cap, gross cap,
+        # kill-switch — kill-switch is always False in backtest because
+        # there's no alert stream).  Rejections are recorded on the
+        # blotter and the intent never reaches the broker's open book.
+        if self._engine.risk_settings is not None:
+            decision = self._engine._gate_intent(intent, ctx=self)
+            if not decision.approved:
+                self._engine.blotter.add_rejection(
+                    RejectedIntent(
+                        ts_ns=self.now_ns,
+                        order_id=intent.order_id,
+                        strategy_id=intent.strategy_id,
+                        symbol=intent.symbol,
+                        side=intent.side,
+                        quantity=intent.quantity,
+                        reasons=list(decision.reasons),
+                    )
+                )
+                log.warning(
+                    "backtest.risk.rejected",
+                    order_id=intent.order_id,
+                    symbol=intent.symbol,
+                    reasons=list(decision.reasons),
+                )
+                return intent.order_id
         order = self._engine.broker.submit(intent)
         self._submitted_this_bar.add(order.order_id)
         return order.order_id
@@ -87,16 +127,77 @@ class BacktestEngine:
         broker: SimBroker | None = None,
         blotter: Blotter | None = None,
         features: dict[tuple[str, str], float] | None = None,
+        risk_settings: Settings | None = None,
     ) -> None:
         self.strategy = strategy
         self.datasource = datasource
         self.broker = broker if broker is not None else SimBroker()
         self.blotter = blotter if blotter is not None else Blotter()
         self.features = features if features is not None else {}
+        self.risk_settings = risk_settings
         self._last_close: dict[str, Decimal] = {}
+        # Timestamp of the most recently processed bar; ``None`` until the
+        # first bar lands, so the first bar charges no borrow (no
+        # elapsed interval yet).  Reset on every ``run()`` call.
+        self._prev_bar_ts: int | None = None
+
+    # ------------------------------------------------------------------
+    # Risk gate plumbing (active only when ``risk_settings`` is set).
+    # ------------------------------------------------------------------
+
+    def _build_risk_context(self, ctx: _Context) -> RiskContext:
+        """Snapshot per-symbol notionals + gross from current positions.
+
+        Mirrors what :func:`risk.snapshot.build_context` does in the
+        live OMS but reads from the in-process engine state instead of
+        Redis.  Stale-price protection: if a symbol has no observed
+        last-close yet (warmup), it's omitted from notional rather than
+        priced at zero — same fail-safe the live snapshot uses.
+        """
+        notional_by_symbol: dict[str, Decimal] = {}
+        gross = Decimal(0)
+        for symbol, pos in ctx.positions.items():
+            if pos.quantity == 0:
+                continue
+            price = self._last_close.get(symbol)
+            if price is None:
+                continue
+            notional = (Decimal(pos.quantity) * price).copy_abs()
+            notional_by_symbol[symbol] = (
+                notional_by_symbol.get(symbol, Decimal(0)) + notional
+            )
+            gross += notional
+        return RiskContext(
+            notional_by_symbol=notional_by_symbol,
+            gross_notional=gross,
+            kill_switch_engaged=False,
+        )
+
+    def _gate_intent(self, intent: OrderIntent, *, ctx: _Context) -> Any:
+        """Run the live ``risk.check_intent`` gate with backtest state.
+
+        Last-price preference order matches the live OMS:
+          1. ``intent.limit_price`` if it's a LIMIT order
+          2. last observed close for the symbol
+          3. None (will be rejected as ``no_reference_price``)
+        """
+        risk_ctx = self._build_risk_context(ctx)
+        last_price = self._last_close.get(intent.symbol)
+        # ``risk_settings`` is guaranteed non-None by the caller.
+        assert self.risk_settings is not None
+        return check_intent(
+            intent,
+            ctx=risk_ctx,
+            settings=self.risk_settings,
+            last_price=last_price,
+        )
 
     async def run(self) -> Blotter:
         ctx = _Context(self)
+        # Reset borrow-tracking state so a single engine instance can be
+        # re-used across walk-forward windows without leaking elapsed
+        # time from the previous run.
+        self._prev_bar_ts = None
         self.strategy.on_start(ctx)
         try:
             async for bar in self.datasource.replay():
@@ -131,8 +232,12 @@ class BacktestEngine:
                     self._update_positions(ctx, fill)
                     self.strategy.on_fill(ctx, fill)
 
-                # 3. Mark-to-market: update last-close, then snapshot equity.
+                # 3. Mark-to-market: update last-close, accrue borrow on
+                #    any short positions for the elapsed interval, then
+                #    snapshot equity.
                 self._last_close[bar.symbol] = bar.close
+                self._accrue_borrow_for_bar(ctx, bar)
+                self._prev_bar_ts = bar.ts_event
                 self.blotter.mark_equity(bar.ts_event, self._compute_equity(ctx))
         finally:
             self.strategy.on_stop(ctx)
@@ -148,6 +253,46 @@ class BacktestEngine:
         ctx.positions[fill.symbol] = apply_fill_to_position(
             prev, fill, strategy_id=self.strategy.strategy_id
         )
+
+    # ------------------------------------------------------------------
+    # Borrow cost accrual — short positions only, prorated per bar.
+    # ------------------------------------------------------------------
+
+    def _accrue_borrow_for_bar(self, ctx: _Context, bar: BarEvent) -> None:
+        """Charge per-bar borrow on any short position in the book.
+
+        Skipped on the first bar (no previous timestamp).  Elapsed time
+        is the wall-clock delta from the last processed bar in *any*
+        symbol — chronologically increasing in the engine's bar feed —
+        so a short held across a multi-symbol bar stream still gets
+        charged exactly once per elapsed interval.
+
+        Marks: uses ``_last_close[symbol]`` for the symbol's most recent
+        observed close.  If the symbol hasn't published a bar yet (warmup
+        for a paired ticker) the position is skipped — same
+        stale-price fail-safe used by ``_build_risk_context``.
+        """
+        if self._prev_bar_ts is None:
+            return
+        elapsed_ns = bar.ts_event - self._prev_bar_ts
+        if elapsed_ns <= 0:
+            return
+        elapsed_seconds = Decimal(elapsed_ns) / Decimal(1_000_000_000)
+        cost_model = self.broker.cost_model
+        for symbol, position in ctx.positions.items():
+            if position.quantity >= 0:
+                continue
+            mark = self._last_close.get(symbol)
+            if mark is None:
+                continue
+            charge = cost_model.accrue_borrow(
+                quantity=position.quantity,
+                mark_price=mark,
+                elapsed_seconds=elapsed_seconds,
+                symbol=symbol,
+            )
+            if charge > 0:
+                self.blotter.add_borrow(charge)
 
     # ------------------------------------------------------------------
     # Equity snapshot — full mark-to-market across all positions.
@@ -167,4 +312,8 @@ class BacktestEngine:
         fees: Decimal = Decimal(0)
         for fill in self.blotter.fills:
             fees += fill.fee
-        return cash + realized + unrealized - fees
+        # Borrow accrual is tracked aggregate on the blotter (parallel
+        # to fees) so we can subtract it in one shot here.
+        return (
+            cash + realized + unrealized - fees - self.blotter.borrow_paid
+        )

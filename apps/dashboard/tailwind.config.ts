@@ -57,15 +57,21 @@ const config: Config = {
           foreground: "hsl(var(--short-foreground))",
         },
         warn: "hsl(var(--warn))",
+        cyan: "hsl(var(--cyan))",
+        info: "hsl(var(--info))",
       },
       borderRadius: {
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        md: "var(--radius)",
+        sm: "var(--radius)",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
+        sans: ["var(--font-mono)", "ui-monospace", "monospace"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+      },
+      fontSize: {
+        "2xs": ["0.65rem", { lineHeight: "0.85rem" }],
+        xxs: ["0.55rem", { lineHeight: "0.75rem" }],
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",

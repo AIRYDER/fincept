@@ -91,15 +91,11 @@ export default function HomePage() {
   // Compute KPIs.
   const kpis = useMemo(() => {
     const equity = (positions ?? []).reduce(
-      (acc, p) =>
-        acc +
-        asNum(p.realized_pnl_usd) +
-        asNum(p.unrealized_pnl_usd) -
-        asNum(p.fees_paid_usd),
+      (acc, p) => acc + asNum(p.realized_pnl) + asNum(p.unrealized_pnl),
       0,
     );
     const unrealized = (positions ?? []).reduce(
-      (acc, p) => acc + asNum(p.unrealized_pnl_usd),
+      (acc, p) => acc + asNum(p.unrealized_pnl),
       0,
     );
     const open = (positions ?? []).filter((p) => asNum(p.quantity) !== 0).length;
@@ -133,7 +129,7 @@ export default function HomePage() {
           value={formatUsd(kpis.equity, { signed: true, compact: false })}
           icon={DollarSign}
           delta={kpis.equity}
-          sub="Realized + unrealized − fees"
+          sub="Realized + unrealized"
         >
           <Sparkline
             data={equityHistory.length > 1 ? equityHistory : [{ x: 0, y: 0 }, { x: 1, y: kpis.equity }]}
@@ -278,46 +274,64 @@ export default function HomePage() {
                 .filter((p) => asNum(p.quantity) !== 0)
                 .sort(
                   (a, b) =>
-                    Math.abs(asNum(b.unrealized_pnl_usd)) -
-                    Math.abs(asNum(a.unrealized_pnl_usd)),
+                    Math.abs(asNum(b.unrealized_pnl)) -
+                    Math.abs(asNum(a.unrealized_pnl)),
                 )
                 .slice(0, 8)
-                .map((p) => (
-                  <tr
-                    key={p.position_id}
-                    className="border-b border-border/30 last:border-b-0 hover:bg-accent/40"
-                  >
-                    <td className="px-6 py-2 font-mono">{p.symbol}</td>
-                    <td className="px-6 py-2 font-mono text-xs text-muted-foreground">
-                      {p.strategy_id}
-                    </td>
-                    <td className="num px-6 py-2 text-right">
-                      {formatNumber(p.quantity, 6)}
-                    </td>
-                    <td className="num px-6 py-2 text-right text-muted-foreground">
-                      {formatUsd(p.avg_entry_price)}
-                    </td>
-                    <td className="num px-6 py-2 text-right text-muted-foreground">
-                      {p.current_mark_price ? formatUsd(p.current_mark_price) : "—"}
-                    </td>
-                    <td
-                      className={cn(
-                        "num px-6 py-2 text-right",
-                        pnlClass(p.unrealized_pnl_usd),
-                      )}
+                .map((p) => {
+                  const qty = asNum(p.quantity);
+                  const avg = asNum(p.avg_cost);
+                  // Prefer live mark from the server; fall back to implied
+                  // (avg_cost + unrealized/qty) until the scheduler has
+                  // delivered a mark for this symbol.
+                  const mark = p.mark_px
+                    ? asNum(p.mark_px)
+                    : qty !== 0
+                      ? avg + asNum(p.unrealized_pnl) / Math.abs(qty)
+                      : avg;
+                  return (
+                    <tr
+                      key={`${p.strategy_id}:${p.symbol}`}
+                      className="border-b border-border/30 last:border-b-0 hover:bg-accent/40"
                     >
-                      {formatUsd(p.unrealized_pnl_usd, { signed: true })}
-                    </td>
-                    <td
-                      className={cn(
-                        "num px-6 py-2 text-right",
-                        pnlClass(p.realized_pnl_usd),
-                      )}
-                    >
-                      {formatUsd(p.realized_pnl_usd, { signed: true })}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-6 py-2 font-mono">{p.symbol}</td>
+                      <td className="px-6 py-2 font-mono text-xs text-muted-foreground">
+                        {p.strategy_id}
+                      </td>
+                      <td className="num px-6 py-2 text-right">
+                        {formatNumber(p.quantity, 6)}
+                      </td>
+                      <td className="num px-6 py-2 text-right text-muted-foreground">
+                        {formatUsd(p.avg_cost)}
+                      </td>
+                      <td
+                        className={cn(
+                          "num px-6 py-2 text-right",
+                          p.mark_px ? "text-foreground" : "text-muted-foreground",
+                        )}
+                        title={p.mark_px ? "Live mark" : "Implied from P&L"}
+                      >
+                        {formatUsd(mark)}
+                      </td>
+                      <td
+                        className={cn(
+                          "num px-6 py-2 text-right",
+                          pnlClass(p.unrealized_pnl),
+                        )}
+                      >
+                        {formatUsd(p.unrealized_pnl, { signed: true })}
+                      </td>
+                      <td
+                        className={cn(
+                          "num px-6 py-2 text-right",
+                          pnlClass(p.realized_pnl),
+                        )}
+                      >
+                        {formatUsd(p.realized_pnl, { signed: true })}
+                      </td>
+                    </tr>
+                  );
+                })}
               {(positions ?? []).filter((p) => asNum(p.quantity) !== 0).length ===
               0 ? (
                 <tr>

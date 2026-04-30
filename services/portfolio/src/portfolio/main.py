@@ -36,6 +36,7 @@ from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FILLS, STREAM_POSITIONS
 from fincept_core.config import get_settings
 from fincept_core.events import Event
+from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import Fill
 from fincept_core.tracing import configure_tracing
@@ -114,13 +115,15 @@ async def run(stop: asyncio.Event) -> None:
             handler=handler,
         )
     )
+    heartbeat_task = asyncio.create_task(beat_periodically(redis, "portfolio"))
 
     try:
         await stop.wait()
     finally:
-        consume_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await consume_task
+        for task in (heartbeat_task, consume_task):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await redis.aclose()  # type: ignore[attr-defined]
 
 

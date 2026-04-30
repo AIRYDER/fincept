@@ -1,0 +1,27 @@
+{
+  "run_id": "96840fc0ce7f46ef8d6bcd808c54e356",
+  "status": "complete",
+  "started_at": 1777521951,
+  "finished_at": 1777521951,
+  "parquet_path": "data\\synth_ohlcv.parquet",
+  "strategy_name": "buy_and_hold",
+  "strategy_params": {},
+  "starting_cash": 100000.0,
+  "freq": "1m",
+  "venue": "paper",
+  "asset_class": "crypto_spot",
+  "bars_per_year": 525600,
+  "symbols": [
+    "BTC-USD",
+    "ETH-USD",
+    "SOL-USD"
+  ],
+  "start_ns": 1777221872000000000,
+  "end_ns": 1777521812000000001,
+  "n_bars": 15000,
+  "n_fills": 3,
+  "final_equity": 98167.50804735927,
+  "total_return_pct": -1.832491952640732,
+  "sharpe": -11.02223437770265,
+  "max_drawdown_pct": 2.008229067763479
+}

@@ -1,0 +1,1 @@
+{"features": ["ret_1m", "ret_5m", "rv_5m", "mom_z_5m"], "horizon_bars": 5, "horizon_ns": 432000000000000, "trained_at": 0}
