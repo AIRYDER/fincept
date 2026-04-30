@@ -107,7 +107,12 @@ function Wait-ForHeartbeat {
         [string]$Name,
         [int]$TimeoutSec = 30
     )
-    $out = uv run python scripts/wait_heartbeat.py $Name --timeout $TimeoutSec 2>&1
+    # --package fincept-core is required: scripts/wait_heartbeat.py imports
+    # fincept_core.config and fincept_core.heartbeat, but the root project
+    # (fincept-terminal) doesn't list fincept-core as a dependency, so a
+    # bare `uv run` may not have it installed.  Same fix pattern as the
+    # service launches above.
+    $out = uv run --package fincept-core python scripts/wait_heartbeat.py $Name --timeout $TimeoutSec 2>&1
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -126,6 +131,58 @@ function Start-Service-WithHeartbeat {
         Write-Host "    WARN: $ServiceName never reported a heartbeat (check '$WindowTitle' window)" `
             -ForegroundColor Yellow
     }
+}
+
+# Parallel-wait variant: spawn every service window, then poll Redis once
+# for every expected heartbeat key.  Total startup = O(slowest service),
+# not O(sum of services).  A service that never beats still doesn't block
+# the others -- it just lands in the "WARN" bucket at the end.
+function Wait-ForAllHeartbeats {
+    param(
+        [string[]]$Names,
+        [int]$TimeoutSec = 30,
+        [double]$PollIntervalSec = 0.5
+    )
+    if ($Names.Count -eq 0) { return @{} }
+    $remaining = [System.Collections.Generic.HashSet[string]]::new($Names)
+    $found = @{}
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ($remaining.Count -gt 0 -and (Get-Date) -lt $deadline) {
+        $script = @"
+import asyncio, json, sys
+from redis.asyncio import Redis
+from fincept_core.heartbeat import read_all
+from fincept_core.config import get_settings
+
+async def go():
+    r = Redis.from_url(get_settings().REDIS_URL)
+    try:
+        return await read_all(r)
+    finally:
+        await r.aclose()
+
+print(json.dumps(asyncio.run(go())))
+"@
+        $raw = uv run --package fincept-core python -c $script 2>$null
+        if ($LASTEXITCODE -eq 0 -and $raw) {
+            try {
+                $live = $raw | ConvertFrom-Json -AsHashtable
+                foreach ($name in @($remaining)) {
+                    if ($live.ContainsKey($name)) {
+                        $found[$name] = $true
+                        [void]$remaining.Remove($name)
+                    }
+                }
+            } catch {
+                # Bad JSON; just keep polling.
+            }
+        }
+        if ($remaining.Count -gt 0) {
+            Start-Sleep -Milliseconds ([int]($PollIntervalSec * 1000))
+        }
+    }
+    foreach ($name in $remaining) { $found[$name] = $false }
+    return $found
 }
 
 # ---------------------------------------------------------------------
@@ -179,38 +236,47 @@ if (Test-TcpPort -Port 8000) {
 # ---------------------------------------------------------------------
 
 if (-not $NoServices) {
-    Write-Step "Trading services"
+    Write-Step "Trading services (spawning all windows, then waiting in parallel)"
+
+    # Build the list of services we expect to see beat.  Each block
+    # spawns its window and, if the spawn happened, appends to
+    # $expectedServices.  After every block runs we wait ONCE on all
+    # of them concurrently -- worst case 30s total instead of 30s
+    # per service.
+    $expectedServices = New-Object System.Collections.Generic.List[string]
 
     # Ingestor: reads venue WebSocket, publishes md.trades + md.bars.1m.
     # Default is coinbase because binance returns HTTP 451 from US IPs
     # (geo-block).  Override with: $env:FINCEPT_INGESTOR_VENUE = "binance"
     # before running this script.  Supported: binance, coinbase, kraken.
     $ingestorVenue = if ($env:FINCEPT_INGESTOR_VENUE) { $env:FINCEPT_INGESTOR_VENUE } else { "coinbase" }
-    Write-Host "    venue: $ingestorVenue (override with `$env:FINCEPT_INGESTOR_VENUE)" -ForegroundColor DarkGray
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-ingestor" `
-        -ServiceName "ingestor" `
+    Write-Host "    spawn: ingestor (venue=$ingestorVenue)" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-ingestor" `
         -Command "uv run --package ingestor python -m ingestor.main --venue $ingestorVenue"
+    $expectedServices.Add("ingestor")
 
     # Features: consumes bars, publishes online feature snapshots.
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-features" `
-        -ServiceName "features" `
+    Write-Host "    spawn: features" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-features" `
         -Command "uv run --package features python -m features.main"
+    $expectedServices.Add("features")
 
     # GBM predictor: consumes features, publishes Predictions.  Needs a
     # trained model; opt-in flag because most dev sessions don't have one.
     if ($WithGbm) {
         $modelDir = Join-Path $RepoRoot "models\gbm_predictor"
         if (Test-Path (Join-Path $modelDir "model.txt")) {
-            Start-Service-WithHeartbeat `
-                -WindowTitle "fincept-gbm" `
-                -ServiceName "gbm_predictor" `
+            Write-Host "    spawn: gbm_predictor" -ForegroundColor DarkGray
+            Start-InNewWindow `
+                -Title "fincept-gbm" `
                 -Command "uv run --package agents python -m agents.gbm_predictor.main"
+            $expectedServices.Add("gbm_predictor")
         } else {
             Write-Host "    SKIP: gbm_predictor (no model.txt at $modelDir)" `
                 -ForegroundColor Yellow
-            Write-Host "         Train with: uv run python -m agents.gbm_predictor.train --input <bars.parquet>" `
+            Write-Host "         Train with: uv run --package agents python -m agents.gbm_predictor.train --input <bars.parquet>" `
                 -ForegroundColor DarkGray
         }
     }
@@ -224,6 +290,7 @@ if (-not $NoServices) {
     $hasNewsAPI = $false
     $hasAnthropic = $false
     $hasOpenAI = $false
+    $envText = ""
     if (Test-Path $envFile) {
         $envText = Get-Content $envFile -Raw
         if ($envText -match '(?m)^FINCEPT_NEWSAPI_API_KEY=\S') { $hasNewsAPI = $true }
@@ -231,10 +298,11 @@ if (-not $NoServices) {
         if ($envText -match '(?m)^FINCEPT_OPENAI_API_KEY=\S') { $hasOpenAI = $true }
     }
     if ($hasNewsAPI -and ($hasAnthropic -or $hasOpenAI)) {
-        Start-Service-WithHeartbeat `
-            -WindowTitle "fincept-sentiment" `
-            -ServiceName "sentiment_agent" `
+        Write-Host "    spawn: sentiment_agent" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-sentiment" `
             -Command "uv run --package agents python -m agents.sentiment_agent.main"
+        $expectedServices.Add("sentiment_agent")
     } else {
         Write-Host "    SKIP: sentiment_agent (need NEWSAPI_API_KEY plus ANTHROPIC_API_KEY or OPENAI_API_KEY in .env)" `
             -ForegroundColor Yellow
@@ -243,42 +311,60 @@ if (-not $NoServices) {
     # Regime agent: polls FRED, classifies macro regime, publishes RegimeSignal
     # whenever the label changes.  Gated on FRED_API_KEY.
     $hasFred = $false
-    if (Test-Path $envFile) {
-        if ($envText -match '(?m)^FINCEPT_FRED_API_KEY=\S') { $hasFred = $true }
-    }
+    if ($envText -match '(?m)^FINCEPT_FRED_API_KEY=\S') { $hasFred = $true }
     if ($hasFred) {
-        Start-Service-WithHeartbeat `
-            -WindowTitle "fincept-regime" `
-            -ServiceName "regime_agent" `
+        Write-Host "    spawn: regime_agent" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-regime" `
             -Command "uv run --package agents python -m agents.regime_agent.main"
+        $expectedServices.Add("regime_agent")
     } else {
         Write-Host "    SKIP: regime_agent (missing FRED_API_KEY in .env)" `
             -ForegroundColor Yellow
     }
 
     # Orchestrator: consumes Predictions + sentiment + regime + price feed, publishes OrderIntents.
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-orchestrator" `
-        -ServiceName "orchestrator" `
+    Write-Host "    spawn: orchestrator" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-orchestrator" `
         -Command "uv run --package orchestrator python -m orchestrator.main"
+    $expectedServices.Add("orchestrator")
 
     # OMS: consumes OrderIntents, applies risk gate, fills via sim or Alpaca.
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-oms" `
-        -ServiceName "oms" `
+    Write-Host "    spawn: oms" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-oms" `
         -Command "uv run --package oms python -m oms.main"
+    $expectedServices.Add("oms")
 
     # Portfolio: consumes Fills, updates PositionStore.
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-portfolio" `
-        -ServiceName "portfolio" `
+    Write-Host "    spawn: portfolio" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-portfolio" `
         -Command "uv run --package portfolio python -m portfolio.main"
+    $expectedServices.Add("portfolio")
 
     # Jobs: APScheduler for cron tasks (EOD load).
-    Start-Service-WithHeartbeat `
-        -WindowTitle "fincept-jobs" `
-        -ServiceName "jobs" `
+    Write-Host "    spawn: jobs" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-jobs" `
         -Command "uv run --package jobs python -m jobs.main"
+    $expectedServices.Add("jobs")
+
+    # ------ wait for all heartbeats in parallel ------
+    if ($expectedServices.Count -gt 0) {
+        Write-Host ""
+        Write-Host "    waiting up to 30s for heartbeats from: $($expectedServices -join ', ')"
+        $results = Wait-ForAllHeartbeats -Names $expectedServices.ToArray() -TimeoutSec 30
+        foreach ($name in $expectedServices) {
+            if ($results[$name]) {
+                Write-Host "    OK   $name" -ForegroundColor Green
+            } else {
+                Write-Host "    WARN $name (no heartbeat in 30s; check 'fincept-$name' window)" `
+                    -ForegroundColor Yellow
+            }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------
