@@ -46,7 +46,7 @@ export function PromotionHistoryPanel({
 }: { agentId?: string } = {}) {
   const token = useAuth((s) => s.token);
   const queryClient = useQueryClient();
-  const [showRestart, setShowRestart] = useState(false);
+  const [showReload, setShowReload] = useState(false);
 
   const state = useQuery({
     queryKey: ["models", "promote", agentId],
@@ -69,8 +69,8 @@ export function PromotionHistoryPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["models"] });
       queryClient.invalidateQueries({ queryKey: ["models", "promote"] });
-      setShowRestart(true);
-      window.setTimeout(() => setShowRestart(false), 5_000);
+      setShowReload(true);
+      window.setTimeout(() => setShowReload(false), 5_000);
     },
   });
 
@@ -103,7 +103,7 @@ export function PromotionHistoryPanel({
             Which model was active for{" "}
             <code className="font-mono text-[11px]">{agentId}</code>, and
             when.  Rollback restores the previous binding; the agent
-            still needs a manual restart to load the change.
+            picks up the change automatically within ~30s.
           </CardDescription>
         </div>
         <Button
@@ -122,14 +122,14 @@ export function PromotionHistoryPanel({
         </Button>
       </CardHeader>
       <CardContent>
-        {showRestart ? (
-          <div className="mb-3 flex items-center gap-2 rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs text-warn">
+        {showReload ? (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             <RefreshCw className="h-3.5 w-3.5" />
-            Rolled back.  Restart{" "}
+            Rolled back.{" "}
             <code className="font-mono">
               {agentId.split(".")[0]}
             </code>{" "}
-            for the change to take effect.
+            will hot-reload within ~30s.
           </div>
         ) : null}
         {errorMsg ? (

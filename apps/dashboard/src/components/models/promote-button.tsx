@@ -11,7 +11,7 @@
  *     (with a tooltip explaining what active means)
  *   - Mutation in flight                       -> spinner
  *   - Mutation just succeeded                  -> short-lived "promoted ✓"
- *     state with a "restart required" hint
+ *     state with a "hot-reload pending" hint
  *   - Mutation errored                         -> inline destructive text
  *
  * On success we invalidate the promotion-state and models queries so
@@ -99,7 +99,7 @@ export function PromoteButton({ modelName, agentId, compact }: Props) {
         variant="outline"
         disabled
         className="gap-2 border-long/40 bg-long/5 text-long"
-        title={`Active model for ${aid} (restart the agent to actually load it)`}
+        title={`Active model for ${aid}`}
       >
         <CheckCircle2 className="h-3.5 w-3.5" />
         Active
@@ -123,16 +123,16 @@ export function PromoteButton({ modelName, agentId, compact }: Props) {
         {mutation.isPending
           ? "Promoting…"
           : recentlyPromoted
-            ? "Promoted - restart required"
+            ? "Promoted - hot-reload pending"
             : compact
               ? "Promote"
               : "Promote to active"}
       </Button>
       {recentlyPromoted ? (
-        <div className="flex items-center gap-1.5 text-[11px] text-warn">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <RefreshCw className="h-3 w-3" />
-          Restart <code className="font-mono">{aid.split(".")[0]}</code> to
-          load this model.
+          <code className="font-mono">{aid.split(".")[0]}</code> will
+          hot-reload within ~30s.
         </div>
       ) : null}
       {errorMsg ? (

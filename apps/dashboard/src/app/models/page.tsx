@@ -279,7 +279,7 @@ function ModelCard({
               {isActive ? (
                 <span
                   className="shrink-0 rounded border border-long/40 bg-long/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-long"
-                  title="Active model -- restart the agent to actually load it"
+                  title="Active model"
                 >
                   Active
                 </span>
