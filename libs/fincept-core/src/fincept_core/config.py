@@ -22,8 +22,14 @@ class Settings(BaseSettings):
 
     TRADING_MODE: str = Field(default="paper")
     DB_URL: str = Field(default="")
-    REDIS_URL: str = Field(default="redis://localhost:6379/0")
-    OTEL_EXPORTER_OTLP_ENDPOINT: str = Field(default="http://localhost:4318")
+    # Default uses 127.0.0.1 (not localhost) on purpose: on Windows,
+    # 'localhost' resolves to ::1 (IPv6) first, but Memurai/Redis are
+    # typically bound to IPv4 only.  The async resolver then blocks
+    # waiting for an IPv6 connect that will never succeed.  Explicit
+    # IPv4 dodges the tarpit.  On Linux/macOS dual-stack works either
+    # way, so this default is safe everywhere.
+    REDIS_URL: str = Field(default="redis://127.0.0.1:6379/0")
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = Field(default="http://127.0.0.1:4318")
     LOG_LEVEL: str = Field(default="INFO")
     BINANCE_API_KEY: str | None = Field(default=None)
     BINANCE_API_SECRET: str | None = Field(default=None)
