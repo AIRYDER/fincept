@@ -160,7 +160,7 @@ if (Test-TcpPort -Port 8000) {
 } else {
     Start-InNewWindow `
         -Title "fincept-api" `
-        -Command "uv run uvicorn api.main:app --reload --port 8000"
+        -Command "uv run --package api uvicorn api.main:app --reload --port 8000"
     $ok = Wait-ForHttp -Url "http://127.0.0.1:8000/health" -TimeoutSec 30 -Label "API"
     if (-not $ok) {
         Write-Host "    API window opened but /health never responded." -ForegroundColor Yellow
@@ -186,13 +186,13 @@ if (-not $NoServices) {
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-ingestor" `
         -ServiceName "ingestor" `
-        -Command "uv run python -m ingestor.main --venue $ingestorVenue"
+        -Command "uv run --package ingestor python -m ingestor.main --venue $ingestorVenue"
 
     # Features: consumes bars, publishes online feature snapshots.
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-features" `
         -ServiceName "features" `
-        -Command "uv run python -m features.main"
+        -Command "uv run --package features python -m features.main"
 
     # GBM predictor: consumes features, publishes Predictions.  Needs a
     # trained model; opt-in flag because most dev sessions don't have one.
@@ -202,7 +202,7 @@ if (-not $NoServices) {
             Start-Service-WithHeartbeat `
                 -WindowTitle "fincept-gbm" `
                 -ServiceName "gbm_predictor" `
-                -Command "uv run python -m agents.gbm_predictor.main"
+                -Command "uv run --package agents python -m agents.gbm_predictor.main"
         } else {
             Write-Host "    SKIP: gbm_predictor (no model.txt at $modelDir)" `
                 -ForegroundColor Yellow
@@ -230,7 +230,7 @@ if (-not $NoServices) {
         Start-Service-WithHeartbeat `
             -WindowTitle "fincept-sentiment" `
             -ServiceName "sentiment_agent" `
-            -Command "uv run python -m agents.sentiment_agent.main"
+            -Command "uv run --package agents python -m agents.sentiment_agent.main"
     } else {
         Write-Host "    SKIP: sentiment_agent (need NEWSAPI_API_KEY plus ANTHROPIC_API_KEY or OPENAI_API_KEY in .env)" `
             -ForegroundColor Yellow
@@ -246,7 +246,7 @@ if (-not $NoServices) {
         Start-Service-WithHeartbeat `
             -WindowTitle "fincept-regime" `
             -ServiceName "regime_agent" `
-            -Command "uv run python -m agents.regime_agent.main"
+            -Command "uv run --package agents python -m agents.regime_agent.main"
     } else {
         Write-Host "    SKIP: regime_agent (missing FRED_API_KEY in .env)" `
             -ForegroundColor Yellow
@@ -256,25 +256,25 @@ if (-not $NoServices) {
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-orchestrator" `
         -ServiceName "orchestrator" `
-        -Command "uv run python -m orchestrator.main"
+        -Command "uv run --package orchestrator python -m orchestrator.main"
 
     # OMS: consumes OrderIntents, applies risk gate, fills via sim or Alpaca.
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-oms" `
         -ServiceName "oms" `
-        -Command "uv run python -m oms.main"
+        -Command "uv run --package oms python -m oms.main"
 
     # Portfolio: consumes Fills, updates PositionStore.
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-portfolio" `
         -ServiceName "portfolio" `
-        -Command "uv run python -m portfolio.main"
+        -Command "uv run --package portfolio python -m portfolio.main"
 
     # Jobs: APScheduler for cron tasks (EOD load).
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-jobs" `
         -ServiceName "jobs" `
-        -Command "uv run python -m jobs.main"
+        -Command "uv run --package jobs python -m jobs.main"
 }
 
 # ---------------------------------------------------------------------
@@ -336,7 +336,7 @@ if (-not $NoDashboard) {
 Write-Step "Dev JWT"
 $token = $null
 try {
-    $out = uv run python -W ignore -c "import warnings; warnings.filterwarnings('ignore', category=UserWarning, module='cryptography'); from api.auth import encode_token; print(encode_token({'sub':'operator'}))" 2>$null
+    $out = uv run --package api python -W ignore -c "import warnings; warnings.filterwarnings('ignore', category=UserWarning, module='cryptography'); from api.auth import encode_token; print(encode_token({'sub':'operator'}))" 2>$null
     # Keep only the JWT-shaped line (3 base64url segments separated by dots).
     $token = ($out | Where-Object { $_ -match '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' } |
         Select-Object -First 1)
