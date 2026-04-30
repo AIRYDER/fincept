@@ -73,6 +73,18 @@ DEFAULT_MODEL_DIR = "models/gbm_predictor"
 DEFAULT_RELOAD_POLL_S = 30.0
 
 
+def _models_root() -> pathlib.Path:
+    return pathlib.Path(os.environ.get("MODELS_DIR", "models"))
+
+
+def _active_dir() -> pathlib.Path:
+    """Where the active + shadow pointers live.  Override is for tests."""
+    override = os.environ.get("ACTIVE_MODELS_DIR")
+    if override:
+        return pathlib.Path(override)
+    return _models_root() / "active"
+
+
 def _resolve_model_dir() -> pathlib.Path:
     """Pick the model directory the agent should load on startup.
 
@@ -87,14 +99,8 @@ def _resolve_model_dir() -> pathlib.Path:
     the env-var path than refuse to start, since a model-loading
     failure later will produce a clearer error in setup().
     """
-    models_root = pathlib.Path(os.environ.get("MODELS_DIR", "models"))
-    active_dir_override = os.environ.get("ACTIVE_MODELS_DIR")
-    active_dir = (
-        pathlib.Path(active_dir_override)
-        if active_dir_override
-        else models_root / "active"
-    )
-    pointer = active_dir / f"{AGENT_ID}.json"
+    models_root = _models_root()
+    pointer = _active_dir() / f"{AGENT_ID}.json"
     if pointer.is_file():
         try:
             data = json.loads(pointer.read_text())
@@ -112,6 +118,42 @@ def _resolve_model_dir() -> pathlib.Path:
     if env_override:
         return pathlib.Path(env_override)
     return models_root / "gbm_predictor"
+
+
+def _resolve_shadow_model_dir() -> pathlib.Path | None:
+    """Pick the SHADOW model directory if one is set, else ``None``.
+
+    Phase E2: a shadow binding (set via ``POST /models/{name}/shadow``)
+    causes the agent to run a second inference loop in parallel.  Its
+    predictions are recorded to the JSONL store but NOT published to
+    Redis -- the orchestrator must never see shadow predictions.
+
+    Returns ``None`` (the most common state) when:
+      * the shadow pointer file doesn't exist, OR
+      * the file is malformed (logged as a warning).
+
+    Unlike ``_resolve_model_dir`` there is no env-var fallback: shadow
+    is an explicit operator action, not a default state.
+    """
+    pointer = _active_dir() / f"{AGENT_ID}.shadow.json"
+    if not pointer.is_file():
+        return None
+    try:
+        data = json.loads(pointer.read_text())
+        name = data.get("model_name")
+        if name and isinstance(name, str):
+            resolved = _models_root() / name
+            log.info(
+                "gbm.shadow.from_pointer",
+                pointer=str(pointer),
+                model=name,
+            )
+            return resolved
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        logging.getLogger(__name__).warning(
+            "gbm.shadow.pointer_ignored: %s (%s)", pointer, exc
+        )
+    return None
 
 
 async def _build_agent(
@@ -150,6 +192,7 @@ async def run(
     poll_interval_s: float | None = None,
     build_agent: Any = None,
     publish_loop: Any = None,
+    shadow_loop: Any = None,
     heartbeat: Any = None,
 ) -> None:
     """Long-running entrypoint: load model, publish, hot-reload.
@@ -164,17 +207,22 @@ async def run(
     The control flow is:
 
       1. Resolve the active model dir, build & setup() the agent.
-      2. Spawn the publish task (yields predictions until cancelled).
-      3. Loop: sleep for the reload poll interval, re-resolve.  If the
-         pointer now points elsewhere, build the new agent in the
-         background -- on success, swap it in atomically; on failure,
-         keep the current agent running.
-      4. On stop: cancel publish + heartbeat tasks, teardown the
-         current agent, close Redis.
+      2. Spawn the active publish task (yields predictions until
+         cancelled).  If a shadow pointer is also present, build a
+         second agent and spawn a parallel shadow task that records
+         predictions to the same JSONL log but does NOT publish to
+         Redis.
+      3. Loop: sleep for the reload poll interval, re-resolve both
+         pointers.  Active and shadow are managed independently --
+         changing one never disturbs the other.
+      4. On stop: cancel all tasks, teardown all loaded agents, close
+         Redis.
 
     This shape keeps the failure mode strict on cold-start (a missing
-    model is a hard exit) while making in-flight reloads forgiving (a
-    bad pointer becomes a logged warning, not an outage).
+    active model is a hard exit) while making in-flight reloads
+    forgiving (a bad pointer becomes a logged warning).  A failed
+    SHADOW load is always a warning, never fatal -- shadow is a
+    candidate, not the production path.
     """
     settings = get_settings()
     if redis is None:
@@ -187,6 +235,8 @@ async def run(
         build_agent = _build_agent
     if publish_loop is None:
         publish_loop = _publish_loop
+    if shadow_loop is None:
+        shadow_loop = _shadow_loop
     if heartbeat is None:
         heartbeat = beat_periodically
 
@@ -216,55 +266,156 @@ async def run(
     )
     heartbeat_task = asyncio.create_task(heartbeat(redis, "gbm_predictor"))
 
+    # Shadow slot starts unbound; loaded below if a pointer exists.
+    # All shadow state lives in three locals that move together --
+    # they are always in one of two consistent states:
+    #     (None, None, None)             -- no shadow loaded
+    #     (Path, GBMPredictor, Task)     -- shadow loaded and running
+    current_shadow_dir: pathlib.Path | None = None
+    current_shadow_agent: GBMPredictor | None = None
+    shadow_task: asyncio.Task[None] | None = None
+
+    initial_shadow_dir = _resolve_shadow_model_dir()
+    if initial_shadow_dir is not None:
+        try:
+            current_shadow_agent = await build_agent(initial_shadow_dir, redis)
+            shadow_task = asyncio.create_task(
+                shadow_loop(
+                    current_shadow_agent,
+                    prediction_log=prediction_log,
+                    model_name=initial_shadow_dir.name,
+                )
+            )
+            current_shadow_dir = initial_shadow_dir
+            log.info("gbm.shadow.loaded", model_dir=str(initial_shadow_dir))
+        except (FileNotFoundError, OSError) as exc:
+            log.warning(
+                "gbm.shadow.load_failed",
+                shadow_dir=str(initial_shadow_dir),
+                error=str(exc),
+            )
+
     try:
         while True:
             stopped = await _wait_or_timeout(stop, poll_interval_s)
             if stopped:
                 break
 
+            # ---- Active slot reload ----------------------------------- #
+
             new_dir = _resolve_model_dir()
-            if new_dir == current_dir:
-                continue
+            if new_dir != current_dir:
+                # Build the *new* agent before tearing down the old one
+                # -- if setup() raises, we keep serving predictions
+                # from the currently-loaded model and just log it.
+                try:
+                    new_agent = await build_agent(new_dir, redis)
+                except (FileNotFoundError, OSError) as exc:
+                    log.warning(
+                        "gbm.reload_failed",
+                        new_dir=str(new_dir),
+                        error=str(exc),
+                    )
+                else:
+                    log.info(
+                        "gbm.reload",
+                        from_dir=str(current_dir),
+                        to_dir=str(new_dir),
+                    )
+                    publish_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await publish_task
+                    await current_agent.teardown()
 
-            # Build the *new* agent before tearing down the old one --
-            # if setup() raises, we keep serving predictions from the
-            # currently-loaded model and just log the failure.
-            try:
-                new_agent = await build_agent(new_dir, redis)
-            except (FileNotFoundError, OSError) as exc:
-                log.warning(
-                    "gbm.reload_failed",
-                    new_dir=str(new_dir),
-                    error=str(exc),
-                )
-                continue
+                    current_agent = new_agent
+                    current_dir = new_dir
+                    publish_task = asyncio.create_task(
+                        publish_loop(
+                            current_agent,
+                            producer,
+                            prediction_log=prediction_log,
+                            model_name=current_dir.name,
+                        )
+                    )
 
-            log.info(
-                "gbm.reload",
-                from_dir=str(current_dir),
-                to_dir=str(new_dir),
-            )
-            publish_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await publish_task
-            await current_agent.teardown()
+            # ---- Shadow slot reload ----------------------------------- #
+            #
+            # Four transitions to handle:
+            #   None  -> None   (most common; no-op)
+            #   None  -> Path   (operator just set a shadow)
+            #   Path  -> None   (operator cleared shadow)
+            #   Path  -> Path'  (operator switched shadow candidate)
+            new_shadow_dir = _resolve_shadow_model_dir()
+            if new_shadow_dir != current_shadow_dir:
+                # Build new shadow first (if any) so a failure leaves
+                # the previous shadow untouched.
+                new_shadow_agent: GBMPredictor | None = None
+                if new_shadow_dir is not None:
+                    try:
+                        new_shadow_agent = await build_agent(
+                            new_shadow_dir, redis
+                        )
+                    except (FileNotFoundError, OSError) as exc:
+                        log.warning(
+                            "gbm.shadow.load_failed",
+                            shadow_dir=str(new_shadow_dir),
+                            error=str(exc),
+                        )
+                        # Don't change current_shadow_*.  Next poll
+                        # may either resolve to None (operator
+                        # cleared the bad pointer) or to a fixed dir.
+                        continue
 
-            current_agent = new_agent
-            current_dir = new_dir
-            publish_task = asyncio.create_task(
-                publish_loop(
-                    current_agent,
-                    producer,
-                    prediction_log=prediction_log,
-                    model_name=current_dir.name,
-                )
-            )
+                # Tear down the previous shadow if there was one.
+                if shadow_task is not None:
+                    log.info(
+                        "gbm.shadow.swap",
+                        from_dir=(
+                            str(current_shadow_dir)
+                            if current_shadow_dir
+                            else None
+                        ),
+                        to_dir=(
+                            str(new_shadow_dir) if new_shadow_dir else None
+                        ),
+                    )
+                    shadow_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await shadow_task
+                    if current_shadow_agent is not None:
+                        await current_shadow_agent.teardown()
+                    shadow_task = None
+                    current_shadow_agent = None
+
+                # Spawn the new shadow task if we have one.
+                if new_shadow_agent is not None and new_shadow_dir is not None:
+                    current_shadow_agent = new_shadow_agent
+                    current_shadow_dir = new_shadow_dir
+                    shadow_task = asyncio.create_task(
+                        shadow_loop(
+                            current_shadow_agent,
+                            prediction_log=prediction_log,
+                            model_name=new_shadow_dir.name,
+                        )
+                    )
+                    log.info(
+                        "gbm.shadow.loaded",
+                        model_dir=str(new_shadow_dir),
+                    )
+                else:
+                    current_shadow_dir = None
     finally:
-        for task in (heartbeat_task, publish_task):
+        # Cancel & await all running tasks, then teardown all agents.
+        running_tasks: list[asyncio.Task[Any]] = [heartbeat_task, publish_task]
+        if shadow_task is not None:
+            running_tasks.append(shadow_task)
+        for task in running_tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await current_agent.teardown()
+        if current_shadow_agent is not None:
+            await current_shadow_agent.teardown()
         await redis.aclose()  # type: ignore[attr-defined]
 
 
@@ -308,6 +459,46 @@ async def _publish_loop(
             symbol=event_payload.symbol,
             direction=event_payload.direction,
             confidence=event_payload.confidence,
+        )
+
+
+async def _shadow_loop(
+    agent: GBMPredictor,
+    *,
+    prediction_log: PredictionLog,
+    model_name: str,
+) -> None:
+    """Run a shadow agent's inference loop -- record only, never publish.
+
+    The crucial invariant of the shadow slot (Phase E2): predictions
+    from the shadow booster must NEVER reach ``STREAM_SIG_PREDICT`` --
+    the orchestrator would treat them as live signals and trade on
+    them.  Defence in depth: this loop has no ``producer`` parameter
+    at all, so there is no path -- not even an exception path -- by
+    which a shadow prediction can land in Redis.
+
+    The recorded JSONL row carries the shadow model's name, so the
+    dashboard can compare active-vs-shadow per model without joining
+    against the promotion history.
+    """
+    async for event_payload in agent.run():
+        if not isinstance(event_payload, Prediction):
+            continue
+        prediction_log.append(
+            agent_id=event_payload.agent_id,
+            model_name=model_name,
+            ts_event=event_payload.ts_event,
+            horizon_ns=event_payload.horizon_ns,
+            symbol=event_payload.symbol,
+            direction=event_payload.direction,
+            confidence=event_payload.confidence,
+        )
+        log.info(
+            "gbm.shadow.pred",
+            symbol=event_payload.symbol,
+            direction=event_payload.direction,
+            confidence=event_payload.confidence,
+            shadow_model=model_name,
         )
 
 

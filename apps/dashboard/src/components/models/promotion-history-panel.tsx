@@ -90,6 +90,7 @@ export function PromotionHistoryPanel({
 
   const history = state.data?.history ?? [];
   const active = state.data?.active ?? null;
+  const shadow = state.data?.shadow ?? null;
 
   return (
     <Card className="mt-6">
@@ -122,6 +123,24 @@ export function PromotionHistoryPanel({
         </Button>
       </CardHeader>
       <CardContent>
+        {shadow ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warn">
+                Shadow
+              </span>
+              <code className="truncate font-mono text-warn">
+                {shadow.model_name}
+              </code>
+              <span className="shrink-0 text-muted-foreground">
+                set by {shadow.promoted_by}
+              </span>
+            </div>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              recording predictions, not publishing
+            </span>
+          </div>
+        ) : null}
         {showReload ? (
           <div className="mb-3 flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             <RefreshCw className="h-3.5 w-3.5" />

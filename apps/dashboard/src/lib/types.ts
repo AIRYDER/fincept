@@ -362,6 +362,8 @@ export interface PromotionStateResponse {
   agent_id: string;
   /** ``null`` when no model has been promoted (or rollback cleared it). */
   active: ActiveBinding | null;
+  /** Phase E1: shadow candidate.  ``null`` when no shadow is bound. */
+  shadow: ActiveBinding | null;
   /** Newest first.  Bounded by ``history_limit`` query (default 10). */
   history: ActiveBinding[];
 }
@@ -369,7 +371,7 @@ export interface PromotionStateResponse {
 export interface PromoteResponse {
   agent_id: string;
   active: ActiveBinding;
-  /** Always true today; the api never restarts the agent itself. */
+  /** Legacy field; agents hot-reload now (Phase D1) so always ignored. */
   restart_required: boolean;
 }
 
@@ -377,7 +379,27 @@ export interface RollbackResponse {
   agent_id: string;
   /** ``null`` when rollback cleared the only history entry. */
   active: ActiveBinding | null;
+  /** Shadow is preserved across rollback. */
+  shadow: ActiveBinding | null;
   history: ActiveBinding[];
+}
+
+/** Response from ``POST /models/{name}/shadow`` (Phase E1). */
+export interface ShadowResponse {
+  agent_id: string;
+  /** May be ``null`` if no model has ever been promoted active. */
+  active: ActiveBinding | null;
+  /** Always non-null on success; the binding that was just set. */
+  shadow: ActiveBinding;
+}
+
+/** Response from ``POST /models/promote/shadow/clear`` (Phase E1). */
+export interface ClearShadowResponse {
+  agent_id: string;
+  /** ``true`` if a file was removed; ``false`` if shadow was already clear. */
+  cleared: boolean;
+  active: ActiveBinding | null;
+  shadow: null;
 }
 
 // --- /models/{name}/predictions, /prediction-stats -----------------------

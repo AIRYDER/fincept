@@ -72,6 +72,7 @@ export default function ModelsPage() {
   const models = data?.models ?? [];
   const summary = data?.summary;
   const activeModelName = promotion.data?.active?.model_name ?? null;
+  const shadowModelName = promotion.data?.shadow?.model_name ?? null;
 
   return (
     <AppShell>
@@ -165,6 +166,7 @@ export default function ModelsPage() {
                   m={m}
                   index={i}
                   isActive={activeModelName === m.name}
+                  isShadow={shadowModelName === m.name}
                 />
               ))}
             </div>
@@ -216,10 +218,12 @@ function ModelCard({
   m,
   index,
   isActive,
+  isShadow,
 }: {
   m: ModelRecord;
   index: number;
   isActive: boolean;
+  isShadow: boolean;
 }) {
   const ageLabel = formatAge(m.age_seconds);
   const evalBadge =
@@ -268,7 +272,9 @@ function ModelCard({
             "flex h-full flex-col gap-2 rounded-md border bg-background/30 p-4 transition-colors hover:bg-accent/40",
             isActive
               ? "border-long/50 hover:border-long/70 ring-1 ring-long/20"
-              : "border-border/40 hover:border-primary/40",
+              : isShadow
+                ? "border-warn/50 hover:border-warn/70 ring-1 ring-warn/20"
+                : "border-border/40 hover:border-primary/40",
           )}
         >
           <div className="flex items-center justify-between gap-2">
@@ -282,6 +288,14 @@ function ModelCard({
                   title="Active model"
                 >
                   Active
+                </span>
+              ) : null}
+              {isShadow ? (
+                <span
+                  className="shrink-0 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warn"
+                  title="Shadow candidate - predictions recorded but not published"
+                >
+                  Shadow
                 </span>
               ) : null}
             </div>

@@ -16,6 +16,7 @@ import type {
   BacktestRunsListResponse,
   BacktestStrategiesResponse,
   Bar,
+  ClearShadowResponse,
   FeatureImportanceResponse,
   ModelRecord,
   ModelsResponse,
@@ -29,6 +30,7 @@ import type {
   RegimeResponse,
   RollbackResponse,
   ServicesResponse,
+  ShadowResponse,
   StrategyRow,
   TrainModelBody,
   TrainingRun,
@@ -218,6 +220,24 @@ export const api = {
     body: { agent_id?: string; promoted_by?: string } = {},
   ) =>
     request<RollbackResponse>("/models/promote/rollback", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  setShadow: (
+    token: string | null,
+    name: string,
+    body: { agent_id?: string; promoted_by?: string } = {},
+  ) =>
+    request<ShadowResponse>(
+      `/models/${encodeURIComponent(name)}/shadow`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  clearShadow: (
+    token: string | null,
+    body: { agent_id?: string; promoted_by?: string } = {},
+  ) =>
+    request<ClearShadowResponse>("/models/promote/shadow/clear", token, {
       method: "POST",
       body: JSON.stringify(body),
     }),

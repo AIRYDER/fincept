@@ -1,13 +1,28 @@
 """
 api.promotions - filesystem-backed agent-to-model bindings.
 
+Two single-slot bindings per agent
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  * ``active``  -- the model whose predictions feed the orchestrator.
+                   Lives at ``models/active/<agent_id>.json``.
+  * ``shadow``  -- a candidate model that runs in parallel for
+                   evaluation.  Predictions are recorded but NOT
+                   consumed by the orchestrator.  Lives at
+                   ``models/active/<agent_id>.shadow.json``.
+
+The shadow slot was added in Phase E1 so an operator can A/B-test a
+freshly trained model against the live one before swapping it in.
+The two slots are independent: changing the shadow doesn't touch the
+active pointer, and rollback only walks the active history.
+
 Why filesystem and not Redis or Postgres?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   Same reasoning as ``api.training``: an operator workflow needs a
   durable, ``cat``-able trail of "which model was deployed when".  A
-  flat-file pointer in ``models/active/<agent_id>.json`` plus an
-  append-only ``<agent_id>.history.jsonl`` gives us:
+  flat-file pointer plus an append-only ``<agent_id>.history.jsonl``
+  gives us:
 
     * Zero infra dependency (no DB, no Redis schema migration).
     * Operator-readable state (just open the file).
@@ -28,10 +43,12 @@ Why not the strategies table?
 Operational reality
 ~~~~~~~~~~~~~~~~~~~
 
-  Promotion writes a new pointer; the agent doesn't observe the change
-  until it's restarted.  The API never restarts the agent -- that's an
-  operator action.  This module's job ends at "the file on disk
-  matches the operator's intent".
+  As of Phase D1, the running agent polls the active pointer every
+  ~30s and hot-reloads on change.  The shadow pointer is observed by
+  the same loop (Phase E2) so promoting a candidate to shadow takes
+  effect within the same window.  The api never restarts the agent --
+  this module's job ends at "the file on disk matches the operator's
+  intent".
 """
 
 from __future__ import annotations
@@ -260,6 +277,100 @@ class PromotionStore:
         self._append_history(self._history_path(agent_id), binding)
         return binding
 
+    # ------ shadow slot ----------------------------------------------- #
+
+    def get_shadow(self, agent_id: str) -> ActiveBinding | None:
+        """Return the current shadow binding or ``None`` if not set.
+
+        Mirrors :meth:`get_active`: malformed JSON is logged and treated
+        as "no shadow" so a hand-edited file doesn't 500 the dashboard.
+        """
+        _validate_agent_id(agent_id)
+        path = self._shadow_path(agent_id)
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            return ActiveBinding(
+                agent_id=data["agent_id"],
+                model_name=data["model_name"],
+                promoted_at=float(data.get("promoted_at", 0.0)),
+                promoted_by=str(data.get("promoted_by", "unknown")),
+            )
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning("shadow binding %s malformed: %s", path.name, exc)
+            return None
+
+    def set_shadow(
+        self,
+        *,
+        agent_id: str,
+        model_name: str,
+        promoted_by: str = "operator",
+    ) -> ActiveBinding:
+        """Bind ``model_name`` as the shadow for ``agent_id``.
+
+        Validation parallels :meth:`promote` -- model name + agent id
+        anti-traversal, model.txt + meta.json must exist on disk.  An
+        extra check rejects setting the same model that's currently
+        active: the agent would do redundant inference work and the
+        dashboard's "active vs shadow" comparison would be a no-op.
+        """
+        _validate_agent_id(agent_id)
+        _validate_model_name(model_name)
+
+        model_dir = self._models_dir / model_name
+        if not model_dir.is_dir():
+            raise PromotionError(
+                f"model directory not found: {model_dir!s}"
+            )
+        if not (model_dir / "model.txt").is_file():
+            raise PromotionError(
+                f"model.txt missing in {model_dir!s} -- can't set as "
+                "shadow with no booster file"
+            )
+        if not (model_dir / "meta.json").is_file():
+            raise PromotionError(
+                f"meta.json missing in {model_dir!s} -- the agent needs it "
+                "to know feature names + horizon"
+            )
+
+        # Refuse "shadow == active" because the parallel inference
+        # would burn cycles for a comparison that's tautologically
+        # equal.  The operator probably wants to demote rather than
+        # mirror; raising here surfaces the mistake.
+        active = self.get_active(agent_id)
+        if active is not None and active.model_name == model_name:
+            raise PromotionError(
+                f"model {model_name!r} is already active for {agent_id!r}; "
+                "shadow must be a different candidate"
+            )
+
+        binding = ActiveBinding(
+            agent_id=agent_id,
+            model_name=model_name,
+            promoted_at=time.time(),
+            promoted_by=promoted_by,
+        )
+        self._active_dir.mkdir(parents=True, exist_ok=True)
+        self._atomic_write_json(self._shadow_path(agent_id), binding.to_dict())
+        return binding
+
+    def clear_shadow(self, agent_id: str) -> bool:
+        """Remove the shadow pointer.
+
+        Idempotent: returns ``True`` if a file was removed, ``False`` if
+        there was no shadow set.  We deliberately don't raise on the
+        no-op case so the dashboard can wire a "Clear shadow" button
+        without first reading state.
+        """
+        _validate_agent_id(agent_id)
+        path = self._shadow_path(agent_id)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
     def rollback(
         self, *, agent_id: str, promoted_by: str = "operator"
     ) -> ActiveBinding | None:
@@ -319,6 +430,9 @@ class PromotionStore:
 
     def _history_path(self, agent_id: str) -> pathlib.Path:
         return self._active_dir / f"{agent_id}.history.jsonl"
+
+    def _shadow_path(self, agent_id: str) -> pathlib.Path:
+        return self._active_dir / f"{agent_id}.shadow.json"
 
     @staticmethod
     def _atomic_write_json(path: pathlib.Path, data: dict[str, Any]) -> None:

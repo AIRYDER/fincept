@@ -50,6 +50,7 @@ import {
 
 import { LivePredictionsCard } from "@/components/models/live-predictions-card";
 import { PromoteButton } from "@/components/models/promote-button";
+import { ShadowButton } from "@/components/models/shadow-button";
 import { AppShell } from "@/components/shell/app-shell";
 import { EmptyState } from "@/components/widgets/empty-state";
 import { PageHeader } from "@/components/widgets/page-header";
@@ -152,7 +153,10 @@ export default function ModelDetailPage() {
             <div className="flex items-center gap-3">
               <EvalModeBadge eval_mode={detail.data.eval_mode} />
               {detail.data.model_file_exists ? (
-                <PromoteButton modelName={name} />
+                <>
+                  <PromoteButton modelName={name} />
+                  <ShadowButton modelName={name} />
+                </>
               ) : null}
             </div>
           ) : undefined

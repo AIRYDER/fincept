@@ -446,10 +446,16 @@ async def get_active_promotion(
     history_limit: int = 10,
     _: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
-    """Return the currently active model for an agent + recent history.
+    """Return the active + shadow model bindings + recent history.
 
     ``history_limit`` is bounded so a long-lived deployment doesn't
     spam the dashboard with thousands of past promotions.
+
+    The shadow binding (Phase E1) is returned alongside the active one
+    so the dashboard can render both with a single round-trip.
+    ``shadow`` is ``null`` when no shadow is set, which is the
+    default state.  Shadow events do not appear in ``history`` --
+    that timeline is for the active pointer only.
     """
     if history_limit <= 0 or history_limit > 200:
         raise HTTPException(
@@ -458,12 +464,14 @@ async def get_active_promotion(
     store = get_promotion_store()
     try:
         active = store.get_active(agent_id)
+        shadow = store.get_shadow(agent_id)
         history = store.get_history(agent_id, limit=history_limit)
     except PromotionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "agent_id": agent_id,
         "active": active.to_dict() if active else None,
+        "shadow": shadow.to_dict() if shadow else None,
         "history": [h.to_dict() for h in history],
     }
 
@@ -489,10 +497,43 @@ async def post_rollback_promotion(
     return {
         "agent_id": body.agent_id,
         "active": new_active.to_dict() if new_active else None,
+        "shadow": (
+            store.get_shadow(body.agent_id).to_dict()
+            if store.get_shadow(body.agent_id)
+            else None
+        ),
         "history": [
             h.to_dict()
             for h in store.get_history(body.agent_id, limit=10)
         ],
+    }
+
+
+@router.post("/promote/shadow/clear")
+async def post_clear_shadow(
+    body: PromoteBody,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Remove the shadow pointer for ``agent_id``.
+
+    Idempotent: clearing an already-empty shadow returns
+    ``cleared=False`` rather than 404, so the dashboard can wire a
+    "Clear shadow" button without first reading state.
+
+    Returns the active binding alongside so a single mutation refreshes
+    the dashboard's promotion-state query in one round-trip.
+    """
+    store = get_promotion_store()
+    try:
+        cleared = store.clear_shadow(body.agent_id)
+        active = store.get_active(body.agent_id)
+    except PromotionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "agent_id": body.agent_id,
+        "cleared": cleared,
+        "active": active.to_dict() if active else None,
+        "shadow": None,
     }
 
 
@@ -715,4 +756,46 @@ async def post_promote(
         # restart is no longer required.  Kept ``True`` so older
         # dashboard builds still render their "promoted" toast.
         "restart_required": True,
+    }
+
+
+@router.post("/{name}/shadow")
+async def post_shadow(
+    name: str,
+    body: PromoteBody,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Bind ``name`` as the shadow model for ``body.agent_id`` (Phase E1).
+
+    Shadow models run in parallel with the active model; their
+    predictions are recorded but NOT consumed by the orchestrator, so
+    operators can validate a candidate against live features before
+    swapping it into production.
+
+    Validation matches :meth:`PromotionStore.set_shadow`:
+
+      * Path-traversal + identity check (same 400/404 behaviour the
+        detail route offers).
+      * ``model.txt`` and ``meta.json`` must exist on disk.
+      * Refuses to set the same model that's currently active --
+        the resulting "compare against itself" would be tautological.
+
+    Returns ``{ active, shadow }`` so the dashboard's promotion-state
+    query refreshes in one round-trip.
+    """
+    _resolve_model_dir(name)
+    try:
+        store = get_promotion_store()
+        shadow = store.set_shadow(
+            agent_id=body.agent_id,
+            model_name=name,
+            promoted_by=body.promoted_by,
+        )
+        active = store.get_active(body.agent_id)
+    except PromotionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "agent_id": body.agent_id,
+        "active": active.to_dict() if active else None,
+        "shadow": shadow.to_dict(),
     }
