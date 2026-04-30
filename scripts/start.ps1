@@ -182,7 +182,11 @@ if (-not $NoServices) {
     Write-Step "Trading services"
 
     # Ingestor: reads venue WebSocket, publishes md.trades + md.bars.1m.
-    $ingestorVenue = if ($env:FINCEPT_INGESTOR_VENUE) { $env:FINCEPT_INGESTOR_VENUE } else { "binance" }
+    # Default is coinbase because binance returns HTTP 451 from US IPs
+    # (geo-block).  Override with: $env:FINCEPT_INGESTOR_VENUE = "binance"
+    # before running this script.  Supported: binance, coinbase, kraken.
+    $ingestorVenue = if ($env:FINCEPT_INGESTOR_VENUE) { $env:FINCEPT_INGESTOR_VENUE } else { "coinbase" }
+    Write-Host "    venue: $ingestorVenue (override with `$env:FINCEPT_INGESTOR_VENUE)" -ForegroundColor DarkGray
     Start-Service-WithHeartbeat `
         -WindowTitle "fincept-ingestor" `
         -ServiceName "ingestor" `

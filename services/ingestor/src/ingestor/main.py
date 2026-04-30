@@ -63,7 +63,20 @@ async def run_loop(
         try:
             await adapter.connect()
         except Exception as exc:
-            log.warning("ingestor.connect_failed", error=str(exc), retry_in_s=backoff)
+            err_str = str(exc)
+            log.warning("ingestor.connect_failed", error=err_str, retry_in_s=backoff)
+            # HTTP 451 = "Unavailable For Legal Reasons" -- typical for
+            # Binance from US IPs.  Surface a one-line actionable hint
+            # so the operator doesn't sit watching exponential backoff.
+            if "451" in err_str:
+                log.warning(
+                    "ingestor.geo_blocked",
+                    hint=(
+                        "venue rejected with HTTP 451 (geo-block). "
+                        "Try --venue coinbase or --venue kraken; both "
+                        "work from US IPs without an account."
+                    ),
+                )
             await _sleep_or_stop(backoff, stop)
             backoff = min(backoff * 2, max_backoff_s)
             continue
