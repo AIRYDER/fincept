@@ -22,6 +22,8 @@ import type {
   NewsResponse,
   OrderRecord,
   Position,
+  PredictionsResponse,
+  PredictionStatsResponse,
   PromoteResponse,
   PromotionStateResponse,
   RegimeResponse,
@@ -219,6 +221,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  modelPredictions: (
+    token: string | null,
+    name: string,
+    args?: { agent_id?: string; limit?: number; since_ns?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.agent_id) q.set("agent_id", args.agent_id);
+    if (args?.limit) q.set("limit", String(args.limit));
+    if (args?.since_ns !== undefined) q.set("since_ns", String(args.since_ns));
+    return request<PredictionsResponse>(
+      `/models/${encodeURIComponent(name)}/predictions${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
+  modelPredictionStats: (
+    token: string | null,
+    name: string,
+    args?: { agent_id?: string; since_ns?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.agent_id) q.set("agent_id", args.agent_id);
+    if (args?.since_ns !== undefined) q.set("since_ns", String(args.since_ns));
+    return request<PredictionStatsResponse>(
+      `/models/${encodeURIComponent(name)}/prediction-stats${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
 
   // --- regime -------------------------------------------------------------
   regime: (token: string | null, history = 0) =>

@@ -380,6 +380,46 @@ export interface RollbackResponse {
   history: ActiveBinding[];
 }
 
+// --- /models/{name}/predictions, /prediction-stats -----------------------
+// Mirrors services/api/src/api/routes/models.py (Phase D2).
+
+export interface PredictionRow {
+  /** uuid hex generated at write time. */
+  id: string;
+  /** Wall-clock ns when the row hit disk. */
+  ts_recorded: number;
+  /** Original Prediction.ts_event. */
+  ts_event: number;
+  /** Prediction horizon in nanoseconds (echoed from the model). */
+  horizon_ns: number;
+  symbol: string;
+  /** -1.0 .. +1.0 directional signal. */
+  direction: number;
+  /** 0.0 .. 1.0; |direction| in the gbm calibration. */
+  confidence: number;
+}
+
+export interface PredictionsResponse {
+  model: string;
+  agent_id: string;
+  count: number;
+  predictions: PredictionRow[];
+}
+
+export interface PredictionStats {
+  count: number;
+  mean_confidence: number;
+  long_count: number;
+  short_count: number;
+  flat_count: number;
+}
+
+export interface PredictionStatsResponse {
+  model: string;
+  agent_id: string;
+  stats: PredictionStats;
+}
+
 // --- /regime -------------------------------------------------------------
 // Mirrors services/api/src/api/routes/regime.py response shape.
 

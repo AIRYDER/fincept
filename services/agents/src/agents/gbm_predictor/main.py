@@ -57,6 +57,8 @@ from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import Prediction
 from fincept_core.tracing import configure_tracing
 
+from fincept_core.prediction_log import PredictionLog
+
 from agents.gbm_predictor.infer import GBMPredictor
 
 log = get_logger(__name__)
@@ -189,6 +191,10 @@ async def run(
         heartbeat = beat_periodically
 
     producer = Producer(redis)
+    # The prediction log is shared across reloads -- it's keyed by
+    # (agent_id, model_name) inside, so each appended row carries the
+    # name of the booster that emitted it even after a hot-reload.
+    prediction_log = PredictionLog()
 
     current_dir = _resolve_model_dir()
     log.info(
@@ -200,7 +206,14 @@ async def run(
     # Initial load: a failure here SHOULD take the process down so the
     # operator notices and runs the trainer.
     current_agent = await build_agent(current_dir, redis)
-    publish_task = asyncio.create_task(publish_loop(current_agent, producer))
+    publish_task = asyncio.create_task(
+        publish_loop(
+            current_agent,
+            producer,
+            prediction_log=prediction_log,
+            model_name=current_dir.name,
+        )
+    )
     heartbeat_task = asyncio.create_task(heartbeat(redis, "gbm_predictor"))
 
     try:
@@ -239,7 +252,12 @@ async def run(
             current_agent = new_agent
             current_dir = new_dir
             publish_task = asyncio.create_task(
-                publish_loop(current_agent, producer)
+                publish_loop(
+                    current_agent,
+                    producer,
+                    prediction_log=prediction_log,
+                    model_name=current_dir.name,
+                )
             )
     finally:
         for task in (heartbeat_task, publish_task):
@@ -250,13 +268,41 @@ async def run(
         await redis.aclose()  # type: ignore[attr-defined]
 
 
-async def _publish_loop(agent: GBMPredictor, producer: Producer) -> None:
+async def _publish_loop(
+    agent: GBMPredictor,
+    producer: Producer,
+    *,
+    prediction_log: PredictionLog | None = None,
+    model_name: str | None = None,
+) -> None:
+    """Publish predictions to Redis and (optionally) record to disk.
+
+    The two side effects are independent: a Redis publish failure
+    must NOT prevent the disk record (and vice-versa), but currently
+    we don't have a real failure scenario for either, so we let the
+    natural error-propagation path take over.  If/when this becomes
+    a concern, we'll add try/except around each side effect.
+
+    ``prediction_log`` and ``model_name`` are optional so the existing
+    hot-reload tests can keep injecting a stand-in publish loop without
+    needing to materialise a log on disk.
+    """
     async for event_payload in agent.run():
         if not isinstance(event_payload, Prediction):
             continue
         await producer.publish(
             STREAM_SIG_PREDICT, Event(type="prediction", payload=event_payload)
         )
+        if prediction_log is not None and model_name is not None:
+            prediction_log.append(
+                agent_id=event_payload.agent_id,
+                model_name=model_name,
+                ts_event=event_payload.ts_event,
+                horizon_ns=event_payload.horizon_ns,
+                symbol=event_payload.symbol,
+                direction=event_payload.direction,
+                confidence=event_payload.confidence,
+            )
         log.info(
             "gbm.pred",
             symbol=event_payload.symbol,

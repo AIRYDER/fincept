@@ -82,13 +82,17 @@ def _write_pointer(active_dir: pathlib.Path, model_name: str) -> None:
     )
 
 
-async def _quiet_publish(agent: Any, producer: Any) -> None:
+async def _quiet_publish(agent: Any, producer: Any, **kwargs: Any) -> None:
     """Stand-in for ``_publish_loop`` -- sleeps until cancelled.
 
     We don't care what gets published in the watcher tests; we only
     care that the watcher cancels the loop and spawns a new one with
     the new agent.  An infinite sleep is the simplest faithful
     stand-in that respects ``asyncio.CancelledError``.
+
+    The ``**kwargs`` absorbs ``prediction_log`` and ``model_name``,
+    which the production loop accepts (Phase D2) but the watcher tests
+    don't need to assert on.
     """
     try:
         while True:

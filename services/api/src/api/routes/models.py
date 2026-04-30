@@ -29,6 +29,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from fincept_core.prediction_log import PredictionLog
+
 from api.auth import require_user
 from api.feature_importance import compute_feature_importance
 from api.promotions import (
@@ -40,6 +42,17 @@ from api.training import (
     TrainingValidationError,
     get_store,
 )
+
+
+def _get_prediction_log() -> PredictionLog:
+    """Return a :class:`PredictionLog` rooted at ``$PREDICTIONS_DIR``.
+
+    A fresh instance per request is fine -- the constructor is cheap
+    (just stores the directory path) and there is no in-memory state
+    to share.  Tests monkey-patch this function to inject a fixture
+    directory.
+    """
+    return PredictionLog()
 
 # Default agent_id when the dashboard hits /models/promote/* without
 # specifying one.  Today only ``gbm_predictor.v1`` has a model-backed
@@ -565,6 +578,103 @@ async def get_feature_importance(
     return {"model": name, **payload}
 
 
+@router.get("/{name}/predictions")
+async def get_predictions(
+    name: str,
+    agent_id: str = _DEFAULT_AGENT_ID,
+    limit: int = 100,
+    since_ns: int | None = None,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Recent predictions emitted by ``agent_id`` while ``name`` was active.
+
+    The JSONL log is appended by the agent's publish loop (Phase D2);
+    this endpoint reads the tail filtered to one model so the dashboard
+    can show a "what's the model doing right now" tail without joining
+    against the active-pointer history.
+
+    Limits:
+      * ``limit``    -- 1..1000 (max chosen so a misbehaving query
+                        can't read an unbounded JSONL into memory).
+      * ``since_ns`` -- optional, drop rows with ``ts_recorded`` older
+                        than this nanosecond timestamp.
+
+    Response::
+
+        {
+          "model": "gbm_predictor",
+          "agent_id": "gbm_predictor.v1",
+          "count": 42,
+          "predictions": [{...}, ...]
+        }
+    """
+    if limit < 1 or limit > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 1000",
+        )
+    log = _get_prediction_log()
+    rows = log.read(
+        agent_id=agent_id,
+        model_name=name,
+        limit=limit,
+        since_ns=since_ns,
+    )
+    return {
+        "model": name,
+        "agent_id": agent_id,
+        "count": len(rows),
+        "predictions": [
+            {
+                "id": r.id,
+                "ts_recorded": r.ts_recorded,
+                "ts_event": r.ts_event,
+                "horizon_ns": r.horizon_ns,
+                "symbol": r.symbol,
+                "direction": r.direction,
+                "confidence": r.confidence,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/{name}/prediction-stats")
+async def get_prediction_stats(
+    name: str,
+    agent_id: str = _DEFAULT_AGENT_ID,
+    since_ns: int | None = None,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Summary of recent predictions for the dashboard's KPI tiles.
+
+    Returns count, mean confidence, and direction distribution over
+    the optional ``since_ns`` window.  Hit-rate / Brier-score will land
+    in Phase E once the settlement worker writes a settlements log.
+
+    Response::
+
+        {
+          "model":    "gbm_predictor",
+          "agent_id": "gbm_predictor.v1",
+          "stats": {
+            "count":           42,
+            "mean_confidence": 0.41,
+            "long_count":      22,
+            "short_count":     19,
+            "flat_count":      1
+          }
+        }
+    """
+    log = _get_prediction_log()
+    stats = log.stats(agent_id=agent_id, model_name=name, since_ns=since_ns)
+    return {
+        "model": name,
+        "agent_id": agent_id,
+        "stats": stats.to_dict(),
+    }
+
+
 @router.post("/{name}/promote")
 async def post_promote(
     name: str,
@@ -573,10 +683,12 @@ async def post_promote(
 ) -> dict[str, Any]:
     """Bind ``name`` as the active model for ``body.agent_id``.
 
-    The pointer is written immediately, but the running agent doesn't
-    pick up the change until it's restarted -- the api has no
-    service-control authority by design.  The dashboard surfaces the
-    "restart required" hint to the operator after a successful promote.
+    The pointer is written immediately.  As of Phase D1, the running
+    ``gbm_predictor`` agent polls ``models/active/<agent_id>.json``
+    every ~30s and hot-reloads on change, so promotion takes effect
+    without a service restart.  The ``restart_required`` field in the
+    response is kept for backward-compatibility with older dashboard
+    builds; new clients can ignore it.
 
     Validates the model name twice (once via ``_resolve_model_dir`` for
     path-traversal defence, once inside ``PromotionStore.promote`` for
@@ -599,7 +711,8 @@ async def post_promote(
     return {
         "agent_id": body.agent_id,
         "active": binding.to_dict(),
-        # Operator UX: surface the constraint clearly so the dashboard
-        # can render a "Restart required" banner.
+        # Legacy field; agents hot-reload now (Phase D1) so a manual
+        # restart is no longer required.  Kept ``True`` so older
+        # dashboard builds still render their "promoted" toast.
         "restart_required": True,
     }

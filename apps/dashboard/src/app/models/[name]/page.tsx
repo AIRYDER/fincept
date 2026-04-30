@@ -48,6 +48,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { LivePredictionsCard } from "@/components/models/live-predictions-card";
 import { PromoteButton } from "@/components/models/promote-button";
 import { AppShell } from "@/components/shell/app-shell";
 import { EmptyState } from "@/components/widgets/empty-state";
@@ -226,6 +227,9 @@ export default function ModelDetailPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Live predictions (Phase D2) */}
+      <LivePredictionsCard modelName={name} />
     </AppShell>
   );
 }
