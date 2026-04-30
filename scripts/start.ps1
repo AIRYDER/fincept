@@ -133,56 +133,82 @@ function Start-Service-WithHeartbeat {
     }
 }
 
-# Parallel-wait variant: spawn every service window, then poll Redis once
-# for every expected heartbeat key.  Total startup = O(slowest service),
-# not O(sum of services).  A service that never beats still doesn't block
-# the others -- it just lands in the "WARN" bucket at the end.
+# Parallel-wait variant: spawn every service window, then run ONE Python
+# process that polls Redis in a loop and prints results as services come
+# online.  Total startup = O(slowest service), not O(sum of services).
+#
+# Why a single process instead of polling from PowerShell:
+#   * Each `uv run` spawn costs ~1-2s, so polling every 500ms from the
+#     shell is silly -- you'd get maybe 10 polls in a 30s window.
+#   * If REDIS_URL points at 'localhost' on Windows, every spawn opens
+#     a fresh Redis client and hits the IPv6 tarpit (::1 -> 60s OS
+#     timeout).  A 30s shell-side deadline turns into hours.
+#   * One long-lived Python process with socket_connect_timeout=2 fails
+#     fast and gives PowerShell a deterministic completion time.
 function Wait-ForAllHeartbeats {
     param(
         [string[]]$Names,
-        [int]$TimeoutSec = 30,
-        [double]$PollIntervalSec = 0.5
+        [int]$TimeoutSec = 30
     )
     if ($Names.Count -eq 0) { return @{} }
-    $remaining = [System.Collections.Generic.HashSet[string]]::new($Names)
-    $found = @{}
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    while ($remaining.Count -gt 0 -and (Get-Date) -lt $deadline) {
-        $script = @"
-import asyncio, json, sys
+    $namesJson = ($Names | ConvertTo-Json -Compress)
+    if ($Names.Count -eq 1) {
+        # ConvertTo-Json on a 1-element array yields a scalar string;
+        # force array shape so the Python side can json.loads() it as
+        # a list.
+        $namesJson = "[$namesJson]"
+    }
+    $py = @"
+import asyncio, json, sys, time
 from redis.asyncio import Redis
-from fincept_core.heartbeat import read_all
 from fincept_core.config import get_settings
+from fincept_core.heartbeat import HEARTBEAT_PREFIX
 
-async def go():
-    r = Redis.from_url(get_settings().REDIS_URL)
+NAMES = json.loads('''$namesJson''')
+DEADLINE = time.monotonic() + $TimeoutSec
+
+async def main():
+    settings = get_settings()
+    # socket_connect_timeout fails the connect attempt fast if the URL
+    # is unreachable (e.g. IPv6 tarpit, wrong port).  Without it the
+    # async resolver can hang the whole process indefinitely.
+    redis = Redis.from_url(settings.REDIS_URL, socket_connect_timeout=2.0)
+    found = {}
     try:
-        return await read_all(r)
+        while time.monotonic() < DEADLINE and len(found) < len(NAMES):
+            for name in NAMES:
+                if name in found:
+                    continue
+                try:
+                    val = await redis.get(f"{HEARTBEAT_PREFIX}{name}")
+                except Exception:
+                    val = None
+                if val is not None:
+                    found[name] = True
+            if len(found) == len(NAMES):
+                break
+            await asyncio.sleep(0.5)
     finally:
-        await r.aclose()
+        try:
+            await redis.aclose()
+        except Exception:
+            pass
+    print(json.dumps({n: (n in found) for n in NAMES}))
 
-print(json.dumps(asyncio.run(go())))
+asyncio.run(main())
 "@
-        $raw = uv run --package fincept-core python -c $script 2>$null
-        if ($LASTEXITCODE -eq 0 -and $raw) {
-            try {
-                $live = $raw | ConvertFrom-Json -AsHashtable
-                foreach ($name in @($remaining)) {
-                    if ($live.ContainsKey($name)) {
-                        $found[$name] = $true
-                        [void]$remaining.Remove($name)
-                    }
-                }
-            } catch {
-                # Bad JSON; just keep polling.
-            }
-        }
-        if ($remaining.Count -gt 0) {
-            Start-Sleep -Milliseconds ([int]($PollIntervalSec * 1000))
+    $raw = uv run --package fincept-core python -c $py 2>$null
+    $result = @{}
+    foreach ($n in $Names) { $result[$n] = $false }
+    if ($LASTEXITCODE -eq 0 -and $raw) {
+        try {
+            $parsed = $raw | ConvertFrom-Json -AsHashtable
+            foreach ($k in $parsed.Keys) { $result[$k] = [bool]$parsed[$k] }
+        } catch {
+            # Bad JSON; leave $result all-false.
         }
     }
-    foreach ($name in $remaining) { $found[$name] = $false }
-    return $found
+    return $result
 }
 
 # ---------------------------------------------------------------------
