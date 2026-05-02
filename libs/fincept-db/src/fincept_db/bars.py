@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, select
+from sqlalchemy import CursorResult, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from fincept_core.schemas import AssetClass, BarEvent, Venue
 
 from .engine import session_scope
 from .models import Bar
+
+
+@dataclass(frozen=True)
+class BarCoverage:
+    """Aggregated bar availability for one symbol."""
+
+    bar_count: int
+    last_ts_event: int | None
 
 
 async def write_bars(events: Iterable[BarEvent]) -> int:
@@ -89,3 +98,47 @@ async def read_bars(
             )
             for row in rows
         ]
+
+
+async def read_bar_coverage(
+    symbols: Iterable[str],
+    freq: str,
+    start_ns: int,
+    end_ns: int,
+    venue: str | None = None,
+) -> dict[str, BarCoverage]:
+    """Return grouped bar counts and latest timestamps by symbol.
+
+    This is the batch companion to :func:`read_bars`; callers that need
+    health/coverage summaries should use this instead of issuing one
+    range scan per symbol.
+    """
+    symbol_list = list(dict.fromkeys(symbols))
+    if not symbol_list:
+        return {}
+
+    async with session_scope() as session:
+        query = (
+            select(
+                Bar.symbol,
+                func.count().label("bar_count"),
+                func.max(Bar.ts_event).label("last_ts_event"),
+            )
+            .where(Bar.symbol.in_(symbol_list))
+            .where(Bar.freq == freq)
+            .where(Bar.ts_event >= start_ns)
+            .where(Bar.ts_event < end_ns)
+            .group_by(Bar.symbol)
+        )
+        if venue is not None:
+            query = query.where(Bar.venue == venue)
+        rows = (await session.execute(query)).all()
+        return {
+            str(row.symbol): BarCoverage(
+                bar_count=int(row.bar_count or 0),
+                last_ts_event=int(row.last_ts_event)
+                if row.last_ts_event is not None
+                else None,
+            )
+            for row in rows
+        }

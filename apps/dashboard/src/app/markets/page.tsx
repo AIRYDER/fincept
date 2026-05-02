@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -37,6 +37,27 @@ export default function MarketsPage() {
     queryFn: () => api.universe(token),
     enabled: !!token,
   });
+  const { data: coverage } = useQuery({
+    queryKey: ["data-coverage", freq],
+    queryFn: () =>
+      api.dataCoverage(token, {
+        freq,
+        lookback_ns:
+          freq === "1d"
+            ? 90 * 24 * 60 * 60 * 1_000_000_000
+            : freq === "1h"
+              ? 14 * 24 * 60 * 60 * 1_000_000_000
+              : 24 * 60 * 60 * 1_000_000_000,
+        stale_after_ns:
+          freq === "1d"
+            ? 3 * 24 * 60 * 60 * 1_000_000_000
+            : freq === "1h"
+              ? 6 * 60 * 60 * 1_000_000_000
+              : 60 * 60 * 1_000_000_000,
+      }),
+    enabled: !!token,
+    refetchInterval: 60_000,
+  });
 
   const symbols = useMemo(
     () =>
@@ -49,11 +70,22 @@ export default function MarketsPage() {
         .sort((a, b) => a.symbol.localeCompare(b.symbol)),
     [universe, filter],
   );
+  const fallbackSymbol = symbols[0]?.symbol ?? null;
+  const selectedStillVisible = useMemo(
+    () => !!selected && symbols.some((row) => row.symbol === selected),
+    [selected, symbols],
+  );
 
   // Default-select the first symbol when the universe loads.
-  if (!selected && symbols[0]) {
-    setSelected(symbols[0].symbol);
-  }
+  useEffect(() => {
+    if (!fallbackSymbol) {
+      if (selected !== null) setSelected(null);
+      return;
+    }
+    if (!selectedStillVisible) {
+      setSelected(fallbackSymbol);
+    }
+  }, [fallbackSymbol, selected, selectedStillVisible]);
 
   const range = useMemo(() => {
     const end = Date.now() * 1_000_000;
@@ -95,9 +127,16 @@ export default function MarketsPage() {
     <AppShell>
       <PageHeader
         title="Markets"
-        description="Universe browser + bar chart.  Bars come from /data/bars (PIT-clean Timescale reads).  Freq: 1m/1h/1d."
+        description="Universe browser, bar chart, and data coverage. Bars come from /data/bars with PIT-clean Timescale reads."
         action={<Badge variant="muted">{symbols.length} symbols</Badge>}
       />
+
+      <div className="mb-4 grid gap-2 md:grid-cols-4">
+        <CoverageTile label="Coverage" value={`${coverage?.summary.coverage_pct ?? 0}%`} tone="primary" />
+        <CoverageTile label="Fresh" value={String(coverage?.summary.ok ?? 0)} tone="long" />
+        <CoverageTile label="Stale" value={String(coverage?.summary.stale ?? 0)} tone="warn" />
+        <CoverageTile label="Empty" value={String(coverage?.summary.empty ?? 0)} tone="short" />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
         <Card>
@@ -124,6 +163,8 @@ export default function MarketsPage() {
               <ScrollArea className="h-[28rem]">
                 <ul className="space-y-0.5">
                   {symbols.map((u) => (
+                    // Coverage is advisory; the chart remains the source of truth
+                    // for the selected range.
                     <li key={u.symbol}>
                       <button
                         onClick={() => setSelected(u.symbol)}
@@ -134,7 +175,10 @@ export default function MarketsPage() {
                         )}
                       >
                         <span className="font-mono">{u.symbol}</span>
-                        <Badge variant="muted">{u.asset_class}</Badge>
+                        <div className="flex items-center gap-1">
+                          <CoverageDot status={coverage?.rows.find((row) => row.symbol === u.symbol)?.status} />
+                          <Badge variant="muted">{u.asset_class}</Badge>
+                        </div>
                       </button>
                     </li>
                   ))}
@@ -257,5 +301,49 @@ export default function MarketsPage() {
         </Card>
       </div>
     </AppShell>
+  );
+}
+
+function CoverageTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "primary" | "long" | "warn" | "short";
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between p-3">
+        <span className="text-xs uppercase tracking-widest text-muted-foreground">{label}</span>
+        <span
+          className={cn(
+            "font-mono text-lg font-semibold",
+            tone === "primary" && "text-primary",
+            tone === "long" && "text-long",
+            tone === "warn" && "text-warn",
+            tone === "short" && "text-short",
+          )}
+        >
+          {value}
+        </span>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CoverageDot({ status }: { status?: "ok" | "stale" | "empty" | "error" }) {
+  return (
+    <span
+      title={status ?? "unknown"}
+      className={cn(
+        "h-2 w-2 rounded-full",
+        status === "ok" && "bg-long",
+        status === "stale" && "bg-warn",
+        (status === "empty" || status === "error") && "bg-short",
+        !status && "bg-muted-foreground/40",
+      )}
+    />
   );
 }

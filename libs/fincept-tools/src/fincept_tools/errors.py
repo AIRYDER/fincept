@@ -57,3 +57,11 @@ class ToolBackendError(ToolError):
     exc``) so the original traceback is preserved while still surfacing a
     typed error to the caller.
     """
+
+
+class MissingExaApiKey(ToolError):
+    """EXA_API_KEY is required before an Exa-backed research tool can run."""
+
+
+class OpenBBUnavailable(ToolError):
+    """The optional OpenBB package is not installed or could not be loaded."""

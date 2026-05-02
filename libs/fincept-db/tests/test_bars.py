@@ -5,13 +5,19 @@ from decimal import Decimal
 import pytest
 
 from fincept_core.schemas import AssetClass, BarEvent, Venue
-from fincept_db.bars import read_bars, write_bars
+from fincept_db.bars import read_bar_coverage, read_bars, write_bars
 
 
-def _bar(ts: int, freq: str = "1m", close: str = "101") -> BarEvent:
+def _bar(
+    ts: int,
+    freq: str = "1m",
+    close: str = "101",
+    symbol: str = "BTC-USD",
+    venue: Venue = Venue.BINANCE,
+) -> BarEvent:
     return BarEvent(
-        venue=Venue.BINANCE,
-        symbol="BTC-USD",
+        venue=venue,
+        symbol=symbol,
         asset_class=AssetClass.CRYPTO_SPOT,
         ts_event=ts,
         ts_recv=ts,
@@ -61,3 +67,45 @@ async def test_read_bars_filters_by_freq() -> None:
 
     assert [bar.ts_event for bar in minute] == [100]
     assert [bar.ts_event for bar in hour] == [200]
+
+
+@pytest.mark.asyncio
+async def test_read_bar_coverage_groups_by_symbol() -> None:
+    await write_bars(
+        [
+            _bar(ts=100, symbol="BTC-USD"),
+            _bar(ts=200, symbol="BTC-USD"),
+            _bar(ts=300, symbol="ETH-USD"),
+        ]
+    )
+
+    coverage = await read_bar_coverage(
+        ["BTC-USD", "ETH-USD", "DOGE-USD"],
+        "1m",
+        0,
+        1_000,
+    )
+
+    assert coverage["BTC-USD"].bar_count == 2
+    assert coverage["BTC-USD"].last_ts_event == 200
+    assert coverage["ETH-USD"].bar_count == 1
+    assert coverage["ETH-USD"].last_ts_event == 300
+    assert "DOGE-USD" not in coverage
+
+
+@pytest.mark.asyncio
+async def test_read_bar_coverage_filters_explicit_venue() -> None:
+    await write_bars(
+        [
+            _bar(ts=100, symbol="AAPL", venue=Venue.NASDAQ),
+            _bar(ts=200, symbol="AAPL", venue=Venue.PAPER),
+        ]
+    )
+
+    all_venues = await read_bar_coverage(["AAPL"], "1m", 0, 1_000)
+    paper_only = await read_bar_coverage(["AAPL"], "1m", 0, 1_000, venue="paper")
+
+    assert all_venues["AAPL"].bar_count == 2
+    assert all_venues["AAPL"].last_ts_event == 200
+    assert paper_only["AAPL"].bar_count == 1
+    assert paper_only["AAPL"].last_ts_event == 200

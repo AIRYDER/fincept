@@ -17,11 +17,27 @@ import type {
   BacktestStrategiesResponse,
   Bar,
   ClearShadowResponse,
+  CreateStrategyConfigBody,
+  DataCoverageResponse,
+  ExaResearchRequest,
+  ExaResearchResponse,
   FeatureImportanceResponse,
   ModelRecord,
   ModelsResponse,
+  NewsImpactOptimizeResponse,
+  NewsImpactPredictBody,
+  NewsImpactPredictResponse,
+  NewsImpactStatus,
   NewsResponse,
+  OpenBBCallRequest,
+  OpenBBCallResponse,
+  OpenBBHealthHistoryResponse,
+  OpenBBHealthResponse,
+  OpenBBQuoteRequest,
+  OpenBBQuoteResponse,
   OrderRecord,
+  PlaceOrderBody,
+  PlaceOrderResponse,
   Position,
   PredictionsResponse,
   PredictionStatsResponse,
@@ -31,15 +47,18 @@ import type {
   RollbackResponse,
   ServicesResponse,
   ShadowResponse,
+  StrategyConfigRow,
   StrategyRow,
+  SymbolMatch,
   TrainModelBody,
   TrainingRun,
   TrainingRunsResponse,
   UniverseRow,
+  UpdateStrategyConfigBody,
 } from "@/lib/types";
 
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 export class ApiError extends Error {
   status: number;
@@ -94,6 +113,26 @@ export const api = {
       token,
     );
   },
+  /**
+   * Typeahead matcher backed by the universe + curated well-known list.
+   * Use this for ticker autocomplete on the strategy + manual-order
+   * forms.  Throttle the caller (debounce 150-200ms is plenty); the
+   * endpoint itself is sub-millisecond on a fakeredis but doesn't
+   * need to be hammered on every keystroke.
+   */
+  searchSymbols: (
+    token: string | null,
+    q: string,
+    args?: { limit?: number },
+  ) => {
+    const params = new URLSearchParams();
+    params.set("q", q);
+    if (args?.limit) params.set("limit", String(args.limit));
+    return request<SymbolMatch[]>(
+      `/data/symbols/search?${params}`,
+      token,
+    );
+  },
   bars: (
     token: string | null,
     symbol: string,
@@ -105,6 +144,27 @@ export const api = {
     if (args.freq) q.set("freq", args.freq);
     if (args.venue) q.set("venue", args.venue);
     return request<Bar[]>(`/data/bars/${symbol}?${q}`, token);
+  },
+  dataCoverage: (
+    token: string | null,
+    args?: {
+      asset_class?: string;
+      freq?: string;
+      venue?: string;
+      lookback_ns?: number;
+      stale_after_ns?: number;
+    },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.asset_class) q.set("asset_class", args.asset_class);
+    if (args?.freq) q.set("freq", args.freq);
+    if (args?.venue) q.set("venue", args.venue);
+    if (args?.lookback_ns !== undefined) q.set("lookback_ns", String(args.lookback_ns));
+    if (args?.stale_after_ns !== undefined) q.set("stale_after_ns", String(args.stale_after_ns));
+    return request<DataCoverageResponse>(
+      `/data/coverage${q.size ? `?${q}` : ""}`,
+      token,
+    );
   },
 
   // --- positions ----------------------------------------------------------
@@ -139,10 +199,75 @@ export const api = {
       token,
     );
   },
+  placeOrder: (token: string | null, body: PlaceOrderBody) =>
+    request<PlaceOrderResponse>("/orders", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  openbbCall: (token: string | null, body: OpenBBCallRequest) =>
+    request<OpenBBCallResponse>("/research/openbb", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  openbbHealth: (token: string | null) =>
+    request<OpenBBHealthResponse>("/research/openbb/health", token),
+  openbbHealthHistory: (token: string | null, limit = 120) =>
+    request<OpenBBHealthHistoryResponse>(
+      `/research/openbb/health/history?limit=${encodeURIComponent(String(limit))}`,
+      token,
+    ),
 
   // --- strategies ---------------------------------------------------------
   strategies: (token: string | null) =>
     request<StrategyRow[]>("/strategies", token),
+
+  // Phase F: StrategyConfig CRUD + lifecycle.
+  strategyConfigs: (token: string | null) =>
+    request<StrategyConfigRow[]>("/strategies/configs", token),
+  strategyConfig: (token: string | null, id: string) =>
+    request<StrategyConfigRow>(
+      `/strategies/configs/${encodeURIComponent(id)}`,
+      token,
+    ),
+  createStrategyConfig: (
+    token: string | null,
+    body: CreateStrategyConfigBody,
+  ) =>
+    request<StrategyConfigRow>("/strategies/configs", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateStrategyConfig: (
+    token: string | null,
+    id: string,
+    body: UpdateStrategyConfigBody,
+  ) =>
+    request<StrategyConfigRow>(
+      `/strategies/configs/${encodeURIComponent(id)}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteStrategyConfig: (token: string | null, id: string) =>
+    request<null>(`/strategies/configs/${encodeURIComponent(id)}`, token, {
+      method: "DELETE",
+    }),
+  startStrategy: (token: string | null, id: string) =>
+    request<StrategyConfigRow>(
+      `/strategies/configs/${encodeURIComponent(id)}/start`,
+      token,
+      { method: "POST" },
+    ),
+  stopStrategy: (token: string | null, id: string) =>
+    request<StrategyConfigRow>(
+      `/strategies/configs/${encodeURIComponent(id)}/stop`,
+      token,
+      { method: "POST" },
+    ),
+  strategyHistory: (token: string | null, id: string, limit = 50) =>
+    request<StrategyConfigRow[]>(
+      `/strategies/configs/${encodeURIComponent(id)}/history?limit=${limit}`,
+      token,
+    ),
 
   // --- news ---------------------------------------------------------------
   news: (
@@ -157,6 +282,38 @@ export const api = {
       token,
     );
   },
+  newsImpactStatus: (token: string | null) =>
+    request<NewsImpactStatus>("/news-impact/status", token),
+  newsImpactPredict: (token: string | null, body: NewsImpactPredictBody) =>
+    request<NewsImpactPredictResponse>("/news-impact/predict", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  newsImpactOptimize: (
+    token: string | null,
+    body: {
+      horizon: string;
+      mode?: "leave-one-out" | "walk-forward";
+      min_train_events?: number;
+      top_k?: number;
+    },
+  ) =>
+    request<NewsImpactOptimizeResponse>("/news-impact/optimize", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // --- research ----------------------------------------------------------
+  exaResearch: (token: string | null, body: ExaResearchRequest) =>
+    request<ExaResearchResponse>("/research/exa", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  openbbQuote: (token: string | null, body: OpenBBQuoteRequest) =>
+    request<OpenBBQuoteResponse>("/research/openbb/quote", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // --- services -----------------------------------------------------------
   services: (token: string | null) =>

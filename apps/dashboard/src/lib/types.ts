@@ -10,6 +10,7 @@
 
 export type Side = "buy" | "sell";
 export type OrderType = "market" | "limit" | "stop" | "stop_limit";
+export type TimeInForce = "gtc" | "ioc" | "fok" | "day";
 export type OrderStatus =
   | "pending_new"
   | "new"
@@ -18,8 +19,23 @@ export type OrderStatus =
   | "cancelled"
   | "rejected"
   | "expired";
-export type Venue = "binance" | "alpaca" | "sim";
-export type AssetClass = "crypto" | "equity" | "fx" | "future" | "option";
+export type Venue =
+  | "binance"
+  | "coinbase"
+  | "kraken"
+  | "nasdaq"
+  | "nyse"
+  | "alpaca"
+  | "paper"
+  | "sim";
+export type AssetClass =
+  | "crypto"
+  | "crypto_spot"
+  | "crypto_perp"
+  | "equity"
+  | "fx"
+  | "future"
+  | "option";
 export type AlertSeverity = "info" | "warning" | "critical";
 
 export interface Position {
@@ -59,6 +75,27 @@ export interface OrderRecord {
   venue_order_id?: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface PlaceOrderBody {
+  symbol: string;
+  side: Side;
+  order_type: OrderType;
+  quantity: string;
+  limit_price?: string | null;
+  stop_price?: string | null;
+  time_in_force?: TimeInForce;
+  venue?: Venue;
+  strategy_id?: string;
+  tags?: Record<string, string>;
+}
+
+export interface PlaceOrderResponse {
+  ok: boolean;
+  order_id: string;
+  decision_id: string;
+  ts_event: number;
+  strategy_id: string;
 }
 
 export interface Fill {
@@ -110,6 +147,8 @@ export interface AlertEvent {
 export interface UniverseRow {
   symbol: string;
   asset_class: AssetClass;
+  venue_default: Venue;
+  /** Temporary backward-compatible alias for older callers. Prefer venue_default. */
   venue: Venue;
   active: boolean;
   base_ccy?: string;
@@ -129,10 +168,81 @@ export interface Bar {
   volume: string;
 }
 
+export type DataCoverageStatus = "ok" | "stale" | "empty" | "error";
+
+export interface DataCoverageRow {
+  symbol: string;
+  asset_class?: string | null;
+  venue?: string | null;
+  venue_default?: string | null;
+  freq: string;
+  status: DataCoverageStatus;
+  bar_count: number;
+  last_ts_event: number | null;
+  age_ns: number | null;
+  error_type?: string;
+  error?: string;
+  debug?: string;
+}
+
+export interface DataCoverageResponse {
+  freq: string;
+  venue?: string | null;
+  as_of_ns: number;
+  lookback_ns: number;
+  stale_after_ns: number;
+  summary: {
+    total: number;
+    ok: number;
+    stale: number;
+    empty: number;
+    error: number;
+    coverage_pct: number;
+  };
+  rows: DataCoverageRow[];
+}
+
 export interface StrategyRow {
   strategy_id: string;
   position_count: number;
   open_positions: number;
+}
+
+/**
+ * Mirrors ``fincept_core.strategy_config.StrategyConfig.to_dict``.
+ *
+ * One persistent strategy instance config as served by the Phase F
+ * ``/strategies/configs`` endpoints.  Timestamps are wall-clock
+ * seconds (``time.time()`` on the server).
+ */
+export interface StrategyConfigRow {
+  strategy_id: string;
+  class_name: string;
+  symbols: string[];
+  params: Record<string, unknown>;
+  model_binding: string | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Body for ``POST /strategies/configs``. */
+export interface CreateStrategyConfigBody {
+  strategy_id: string;
+  class_name: string;
+  symbols: string[];
+  params?: Record<string, unknown>;
+  model_binding?: string | null;
+  enabled?: boolean;
+}
+
+/** Body for ``PATCH /strategies/configs/{id}``.  All fields optional. */
+export interface UpdateStrategyConfigBody {
+  class_name?: string;
+  symbols?: string[];
+  params?: Record<string, unknown>;
+  model_binding?: string | null;
+  enabled?: boolean;
 }
 
 export interface NewsSymbolImpact {
@@ -145,6 +255,21 @@ export interface NewsSymbolImpact {
   /** Compact close-price series from publish → now (float, length <= 60). */
   sparkline: number[];
 }
+
+/** One scored ticker suggestion from `GET /data/symbols/search`. */
+export interface SymbolMatch {
+  symbol: string;
+  name: string;
+  asset_class: string;
+  /** Match score: higher = more relevant.  Tier ranges:
+   * 1000=exact symbol, 800=exact name, 500+=prefix, 300=word-prefix,
+   * 200=symbol-substring, 100=name-substring, 50=1-edit fuzzy. */
+  score: number;
+  /** Where the candidate originated. */
+  source: "universe" | "well_known";
+}
+
+export type NewsTier = "alert" | "impact" | "universe";
 
 export interface NewsArticle {
   id: string;
@@ -163,13 +288,261 @@ export interface NewsArticle {
   has_impact_math: boolean;
   /** Aggregate signed dollar impact across all in-book symbols. */
   total_dollar_impact: string | null;
+  /** True when the signed total impact is negative — the story is
+   * hurting our position direction.  Drives the "adverse" boost in
+   * server scoring + UI highlight. */
+  is_adverse: boolean;
+  /** Hours since publish at the time of this response. */
+  age_hours: number;
+  /** Composite priority: |$ impact| × decay × adverse-boost.  Higher
+   * is more urgent.  0 for stories without impact math. */
+  score: number;
+  /** |$ impact| / gross book equity, as a Decimal string (e.g. "0.012"
+   * = 1.2%).  Null when has_impact_math is false. */
+  pct_of_book: string | null;
+  /** Server-classified lane: "alert" | "impact" | "universe". */
+  tier: NewsTier;
 }
 
 export interface NewsResponse {
+  /** Top-priority lane: book stories above the alert threshold. */
+  alert: NewsArticle[];
+  /** Other book-touching stories, sorted by composite score. */
   impact: NewsArticle[];
+  /** Non-book stories, time-sorted. */
   universe: NewsArticle[];
   book_symbols: string[];
+  /** Net signed $ impact summed across alert + impact lanes. */
   book_total_impact: string;
+  /** Gross notional book equity (Σ |qty| × mark) used for pct_of_book. */
+  book_equity_usd: string;
+  /** Threshold (decimal, e.g. 0.005 = 0.5%) above which a book story
+   * is promoted to the alert lane. */
+  alert_pct_of_book: number;
+  /** Half-life used for the recency decay component, in hours. */
+  recency_half_life_h: number;
+}
+
+// --- /news-impact ---------------------------------------------------------
+// Experimental bridge for experiments/news-impact-model.  This is separate
+// from the production /news feed and does not emit trading signals.
+
+export interface NewsImpactDatasetProfile {
+  path: string;
+  event_count: number;
+  horizons: string[];
+  sources: Record<string, number>;
+  event_types: Record<string, number>;
+  symbols: Record<string, number>;
+}
+
+export interface NewsImpactStatus {
+  app: string;
+  dataset_loaded: boolean;
+  profile: NewsImpactDatasetProfile;
+  last_optimization: NewsImpactOptimization | null;
+  experiment_root: string;
+  sample_data: string;
+  mode: "experimental_demo";
+}
+
+export interface NewsImpactHorizon {
+  expected_return: number;
+  p_up: number;
+  q10: number;
+  q50: number;
+  q90: number;
+  sample_size: number;
+}
+
+export interface NewsImpactSimilarEvent {
+  event_id: string;
+  source: string;
+  headline: string;
+  event_type: string;
+  score: number;
+  abnormal_returns: Record<string, number>;
+}
+
+export interface NewsImpactPrediction {
+  event_id: string;
+  symbol: string;
+  event_type: string;
+  horizons: Record<string, NewsImpactHorizon>;
+  volatility_impact: number;
+  volume_impact: number;
+  confidence: number;
+  similar_events: NewsImpactSimilarEvent[];
+  model_version: string;
+}
+
+export interface NewsImpactPredictBody {
+  event: {
+    event_id?: string;
+    source: string;
+    headline: string;
+    body?: string;
+    symbols: string[];
+    event_type: string;
+    language?: string;
+    available_at_ns?: number;
+  };
+  context: {
+    symbol: string;
+    market_regime?: string;
+    pre_event_return?: number | null;
+    realized_volatility?: number | null;
+    relative_volume?: number | null;
+    spread_bps?: number | null;
+    liquidity_score?: number | null;
+  };
+  horizons: string[];
+  top_k?: number;
+  weights?: Record<string, number> | null;
+}
+
+export interface NewsImpactPredictResponse {
+  prediction: NewsImpactPrediction;
+  dataset_profile: NewsImpactDatasetProfile;
+  mode: "experimental_demo";
+}
+
+export interface NewsImpactOptimization {
+  mode: string;
+  horizon: string;
+  n_predictions: number;
+  metrics: {
+    mae: number | null;
+    directional_accuracy: number | null;
+  };
+  candidates_tested: number;
+  weights: Record<string, number>;
+  folds: Array<{
+    target_event_id: string;
+    train_events: number;
+    predicted: number;
+    actual: number;
+    abs_error: number;
+    direction_hit: boolean;
+  }>;
+}
+
+export interface NewsImpactOptimizeResponse {
+  optimization: NewsImpactOptimization;
+  dataset_profile: NewsImpactDatasetProfile;
+  mode: "experimental_demo";
+}
+
+// --- /research/exa -------------------------------------------------------
+
+export type ExaSearchType =
+  | "auto"
+  | "fast"
+  | "instant"
+  | "deep-lite"
+  | "deep"
+  | "deep-reasoning";
+
+export interface ExaResearchRequest {
+  query: string;
+  symbol?: string | null;
+  search_type?: ExaSearchType;
+  num_results?: number;
+  max_age_hours?: number | null;
+}
+
+export interface ExaResearchBrief {
+  headline: string;
+  summary: string;
+  bull_case: string[];
+  bear_case: string[];
+  catalysts: string[];
+  risks: string[];
+  watch_items: string[];
+}
+
+export interface ExaResearchCitation {
+  url: string;
+  title?: string | null;
+}
+
+export interface ExaResearchGrounding {
+  field: string;
+  citations: ExaResearchCitation[];
+  confidence?: "low" | "medium" | "high" | null;
+}
+
+export interface ExaResearchResponse {
+  ok: boolean;
+  error?: string | null;
+  error_type?: string | null;
+  request_id?: string | null;
+  brief: ExaResearchBrief;
+  grounding: ExaResearchGrounding[];
+  sources: ExaResearchCitation[];
+  cost_dollars?: number | null;
+}
+
+// --- /research/openbb ----------------------------------------------------
+
+export interface OpenBBQuoteRequest {
+  symbol: string;
+  provider?: string;
+}
+
+export interface OpenBBQuoteResponse {
+  ok: boolean;
+  error?: string | null;
+  error_type?: string | null;
+  provider: string;
+  results: Array<Record<string, unknown>>;
+}
+
+export interface OpenBBCallRequest {
+  path: string;
+  params?: Record<string, string>;
+}
+
+export interface OpenBBCallResponse {
+  ok: boolean;
+  error?: string | null;
+  error_type?: string | null;
+  path: string;
+  provider?: string | null;
+  results: Array<Record<string, unknown>>;
+}
+
+export interface OpenBBHealthResponse {
+  ok: boolean;
+  url: string;
+  latency_ms?: number;
+  warning?: string;
+  error?: string;
+  error_type?: string;
+}
+
+export interface OpenBBHealthEntry {
+  id: string;
+  ts_ms: number;
+  ok: boolean;
+  latency_ms: number | null;
+  url: string | null;
+  error_type: string | null;
+  error: string | null;
+  warning: string | null;
+}
+
+export interface OpenBBHealthSummary {
+  samples: number;
+  uptime_pct: number | null;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  last_error_type: string | null;
+}
+
+export interface OpenBBHealthHistoryResponse {
+  entries: OpenBBHealthEntry[];
+  summary: OpenBBHealthSummary;
 }
 
 export interface ServiceStatus {
