@@ -10,6 +10,7 @@ by asset class as needed.
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .engine import session_scope
 from .models import UniverseSymbol
@@ -44,3 +45,34 @@ async def read_universe(
             }
             for row in rows
         ]
+
+
+async def upsert_universe_symbols(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if not rows:
+        return []
+    values_by_symbol: dict[str, dict[str, object]] = {}
+    for row in rows:
+        symbol = str(row.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        values_by_symbol[symbol] = {
+            "symbol": symbol,
+            "asset_class": str(row.get("asset_class") or "equity"),
+            "venue_default": str(row.get("venue_default") or "alpaca"),
+            "active": bool(row.get("active", True)),
+        }
+    values = list(values_by_symbol.values())
+    if not values:
+        return []
+    async with session_scope() as session:
+        stmt = pg_insert(UniverseSymbol).values(values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["symbol"],
+            set_={
+                "active": stmt.excluded.active,
+            },
+        )
+        await session.execute(stmt)
+    return await read_universe(active_only=False)

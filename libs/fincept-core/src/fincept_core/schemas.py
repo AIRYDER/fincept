@@ -128,6 +128,30 @@ class SentimentSignal(BaseModel):
     entities: list[str] = Field(default_factory=list)
 
 
+class InformationEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    event_id: str
+    source: str
+    source_type: str
+    headline: str
+    body: str = ""
+    url: str | None = None
+    published_at: str | None = None
+    ts_event: int
+    symbols: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    information_type: str = "news"
+    event_category: str | None = None
+    raw_payload_ref: str | None = None
+    source_quality: float | None = Field(default=None, ge=0.0, le=1.0)
+    dedupe_key: str
+    dedupe_group_id: str | None = None
+    novelty_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    recency_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
 class RegimeSignal(BaseModel):
     model_config = ConfigDict(frozen=True)
     schema_version: int = 1

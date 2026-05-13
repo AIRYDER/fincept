@@ -40,6 +40,7 @@ GetJson = Callable[..., Awaitable[dict[str, object]]]
 OPENBB_API_URL = "http://127.0.0.1:6900"
 OPENBB_DATA_TIMEOUT_SEC = 15.0
 OPENBB_HEALTH_TIMEOUT_SEC = 2.0
+OPENBB_READINESS_TIMEOUT_SEC = 5.0
 
 # Keep the dispatcher hard-locked to the OpenBB read-only namespace.
 # A bare ``/api/v1/...`` is enough to prevent path traversal; the
@@ -365,3 +366,95 @@ async def check_openbb_health(
         }
     latency_ms = int((time.perf_counter() - started) * 1000)
     return {"ok": True, "url": base_url, "latency_ms": latency_ms}
+
+
+async def check_openbb_readiness(
+    *,
+    symbol: str = "NVDA",
+    provider: str = "yfinance",
+    get_json: GetJson = _get_json,
+) -> dict[str, object]:
+    """Probe OpenBB reachability and provider-backed data paths.
+
+    Unlike :func:`check_openbb_health`, this intentionally calls real
+    data endpoints so operators can distinguish:
+
+    * API process unreachable;
+    * API reachable but quote provider failing;
+    * dispatcher/fundamental path failing.
+
+    The result is JSON-serialisable and safe to expose to the dashboard.
+    """
+    base_url = _resolve_openbb_url()
+    clean_symbol = symbol.strip().upper()
+    clean_provider = provider.strip()
+    checks: list[dict[str, object]] = []
+
+    async def probe(
+        name: str,
+        path: str,
+        params: dict[str, str],
+        *,
+        required: bool,
+    ) -> None:
+        started = time.perf_counter()
+        try:
+            response = await get_json(
+                f"{base_url}{path}",
+                params,
+                request_timeout=OPENBB_READINESS_TIMEOUT_SEC,
+            )
+            rows = _normalize_openbb_result(response)
+        except (OpenBBUnavailable, ToolBackendError) as exc:
+            checks.append(
+                {
+                    "name": name,
+                    "ok": False,
+                    "required": required,
+                    "path": path,
+                    "provider": clean_provider,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            return
+        checks.append(
+            {
+                "name": name,
+                "ok": True,
+                "required": required,
+                "path": path,
+                "provider": str(response.get("provider") or clean_provider),
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "results_count": len(rows),
+                "first_result_keys": sorted(rows[0].keys())[:20] if rows else [],
+            }
+        )
+
+    await probe("openapi", "/openapi.json", {}, required=True)
+    await probe(
+        "quote",
+        "/api/v1/equity/price/quote",
+        {"symbol": clean_symbol, "provider": clean_provider},
+        required=True,
+    )
+    await probe(
+        "fundamentals_income",
+        "/api/v1/equity/fundamental/income",
+        {"symbol": clean_symbol, "provider": clean_provider, "period": "annual", "limit": "1"},
+        required=False,
+    )
+
+    required_checks = [check for check in checks if check["required"]]
+    required_ok = all(bool(check["ok"]) for check in required_checks)
+    provider_ok = all(bool(check["ok"]) for check in checks if check["name"] != "openapi")
+    return {
+        "ok": required_ok,
+        "url": base_url,
+        "symbol": clean_symbol,
+        "provider": clean_provider,
+        "api_reachable": bool(checks and checks[0]["ok"]),
+        "provider_ready": provider_ok,
+        "checks": checks,
+    }

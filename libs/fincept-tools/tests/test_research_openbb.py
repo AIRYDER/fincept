@@ -219,3 +219,40 @@ async def test_check_openbb_health_returns_unavailable_when_api_down(
     assert result["error_type"] == "OpenBBUnavailable"
     assert result["url"] == "http://127.0.0.1:6900"
     assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_check_openbb_readiness_separates_api_from_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fincept_tools.errors import ToolBackendError
+    from fincept_tools.research.openbb import check_openbb_readiness
+
+    async def fake_get_json(
+        url: str,
+        params: dict[str, str],
+        *,
+        request_timeout: float = 15.0,
+    ) -> dict[str, object]:
+        assert request_timeout <= 5.0
+        if url.endswith("/openapi.json"):
+            return {"openapi": "3.1.0"}
+        if url.endswith("/api/v1/equity/price/quote"):
+            return {"provider": "yfinance", "results": [{"symbol": params["symbol"], "last_price": 100}]}
+        raise ToolBackendError("provider failed for fundamentals")
+
+    monkeypatch.setenv("OPENBB_API_URL", "http://127.0.0.1:6900")
+    result = await check_openbb_readiness(
+        symbol="nvda",
+        provider="yfinance",
+        get_json=fake_get_json,
+    )
+
+    assert result["ok"] is True
+    assert result["api_reachable"] is True
+    assert result["provider_ready"] is False
+    checks = {check["name"]: check for check in result["checks"]}  # type: ignore[index]
+    assert checks["openapi"]["ok"] is True
+    assert checks["quote"]["ok"] is True
+    assert checks["fundamentals_income"]["ok"] is False
+    assert checks["fundamentals_income"]["error_type"] == "ToolBackendError"

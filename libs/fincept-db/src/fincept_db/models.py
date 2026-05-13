@@ -111,3 +111,30 @@ class Feature(Base):
     tags: Mapped[JSONDict] = mapped_column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (Index("ix_features_sym_freq_ts", "symbol", "freq", "ts_event"),)
+
+
+class ProviderData(Base):
+    __tablename__ = "provider_data"
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    dataset: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(256), nullable=False)
+    symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ts_event: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ts_observed: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request: Mapped[JSONDict] = mapped_column(JSONB, nullable=False)
+    normalized: Mapped[JSONDict] = mapped_column(JSONB, nullable=False)
+    raw: Mapped[JSONDict] = mapped_column(JSONB, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("ix_provider_data_provider_dataset_ts", "provider", "dataset", "ts_event"),
+        Index("ix_provider_data_symbol_ts", "symbol", "ts_event"),
+        Index("ix_provider_data_request_hash", "request_hash"),
+    )

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-import fincept_tools  # noqa: F401 — side-effect: registers all built-in tools
+import fincept_tools.analytics  # side-effect: registers analytics tools
+import fincept_tools.data  # side-effect: registers data tools
+import fincept_tools.research  # noqa: F401 — side-effect: registers research tools
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
 from fincept_tools.registry import (
     REGISTRY,
@@ -132,6 +134,8 @@ def test_registry_len() -> None:
 
 
 def test_global_registry_has_all_expected_tools() -> None:
+    import fincept_tools.exec  # noqa: F401 — side-effect: registers execution tools
+
     names = {s["function"]["name"] for s in REGISTRY.list()}
     required = {
         # data

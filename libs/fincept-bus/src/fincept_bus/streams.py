@@ -4,6 +4,8 @@ STREAM_MD_BARS_1M = "md.bars.1m"
 STREAM_SIG_PREDICT = "sig.predict"
 STREAM_SIG_SENT = "sig.sentiment"
 STREAM_SIG_REGIME = "sig.regime"
+STREAM_INFO_RAW = "info.raw"
+STREAM_INFO_ENRICHED = "info.enriched"
 STREAM_DECISIONS = "ord.decisions"
 STREAM_ORDERS = "ord.orders"
 STREAM_FILLS = "ord.fills"
@@ -20,6 +22,8 @@ RETENTION: dict[str, int] = {
     STREAM_SIG_PREDICT: 100_000,
     STREAM_SIG_SENT: 50_000,
     STREAM_SIG_REGIME: 10_000,
+    STREAM_INFO_RAW: 200_000,
+    STREAM_INFO_ENRICHED: 200_000,
     STREAM_DECISIONS: 1_000_000,
     STREAM_ORDERS: 1_000_000,
     STREAM_FILLS: 1_000_000,
