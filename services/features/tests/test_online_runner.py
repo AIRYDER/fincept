@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import fakeredis.aioredis
+
 from features.online import OnlineRunner
+from features.store import OnlineStore
 from fincept_bus.streams import STREAM_FEATURES_ONLINE
 from fincept_core.events import Event
 from fincept_core.schemas import (
@@ -192,6 +195,27 @@ async def test_handle_event_dispatches_bar_to_on_bar() -> None:
     bar = _bar("BTC-USD", ts_event=1_000, close="100")
     await runner.handle_event(Event(type="bar", payload=bar))
     assert len(producer.frames) == 1
+
+
+async def test_on_bar_caches_latest_frame_when_store_is_wired() -> None:
+    redis = fakeredis.aioredis.FakeRedis()
+    try:
+        store = OnlineStore(redis)
+        producer = FakeProducer()
+        runner = OnlineRunner(
+            producer,
+            benchmark_symbol="BTC-USD",
+            online_store=store,
+        )
+
+        await runner.on_bar(_bar("BTC-USD", ts_event=1_000, close="100"))
+
+        cached = await store.get_latest("BTC-USD", freq="1m")
+        assert cached is not None
+        assert cached.symbol == "BTC-USD"
+        assert cached.ts_event == 1_000
+    finally:
+        await redis.aclose()
 
 
 # ---------------------------------------------------------------------------

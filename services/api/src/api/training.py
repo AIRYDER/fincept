@@ -54,10 +54,11 @@ import os
 import pathlib
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -428,10 +429,18 @@ class TrainingStore:
             # we keep a strong reference to avoid GC cancelling it.
             task = asyncio.create_task(self._run_subprocess(run))
             self._tasks[run_id] = task
-            task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
+            task.add_done_callback(self._forget_task(run_id))
             return run
 
     # ------ internals ------------------------------------------------- #
+
+    def _forget_task(
+        self, run_id: str
+    ) -> Callable[[asyncio.Task[None]], None]:
+        def done(_task: asyncio.Task[None]) -> None:
+            self._tasks.pop(run_id, None)
+
+        return done
 
     def _reload_from_disk(self) -> None:
         if not self._runs_dir.is_dir():
@@ -485,17 +494,17 @@ class TrainingStore:
                     f"$ {' '.join(cmd)}\n".encode("utf-8")
                 )
                 logf.flush()
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
+                proc = subprocess.Popen(
+                    cmd,
                     stdout=logf,
-                    stderr=asyncio.subprocess.STDOUT,
+                    stderr=subprocess.STDOUT,
                 )
                 run.status = "running"
                 run.started_at = time.time()
                 run.pid = proc.pid
                 _persist(run)
-                exit_code = await proc.wait()
-        except (OSError, asyncio.CancelledError) as exc:
+                exit_code = await asyncio.to_thread(proc.wait)
+        except (OSError, asyncio.CancelledError, Exception) as exc:
             run.status = "failed"
             run.finished_at = time.time()
             run.error = f"subprocess launch failed: {exc!r}"

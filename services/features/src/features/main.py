@@ -22,6 +22,7 @@ from typing import Any
 from redis.asyncio import Redis
 
 from features.online import OnlineRunner
+from features.store import OnlineStore
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_MD_BARS_1M
@@ -41,7 +42,7 @@ async def run(stop: asyncio.Event) -> None:
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     consumer = Consumer(redis)
-    runner = OnlineRunner(producer)
+    runner = OnlineRunner(producer, online_store=OnlineStore(redis))
 
     consume_task = asyncio.create_task(
         consumer.consume(

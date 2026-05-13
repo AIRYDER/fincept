@@ -30,7 +30,7 @@ from decimal import Decimal
 class VolatilityFeatures:
     """Per-symbol OHLC + log-return history -> vol estimators."""
 
-    DEFAULT_WINDOWS = (20, 60, 240)
+    DEFAULT_WINDOWS = (5, 20, 30, 60, 240)
     _GK_K = 2.0 * math.log(2.0) - 1.0
     _PARK_NORM = 4.0 * math.log(2.0)
 

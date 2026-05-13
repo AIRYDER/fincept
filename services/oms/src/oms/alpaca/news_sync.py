@@ -47,8 +47,12 @@ from typing import Any
 import httpx
 from redis.asyncio import Redis
 
+from fincept_bus.producer import Producer
+from fincept_bus.streams import STREAM_INFO_RAW
 from fincept_core.clock import now_ns
+from fincept_core.events import Event
 from fincept_core.logging import get_logger
+from fincept_core.schemas import InformationEvent
 from oms.alpaca.data import AlpacaDataClient, AlpacaDataError
 from oms.alpaca.marks import read_mark
 
@@ -186,6 +190,41 @@ def _alpaca_to_internal(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _information_dedupe_key(article: dict[str, Any]) -> str:
+    url = str(article.get("url") or "").strip().lower().rstrip("/")
+    if url:
+        return f"url:{url}"
+    return f"alpaca_news:{article['id']}"
+
+
+def _article_to_information_event(
+    article: dict[str, Any],
+    *,
+    raw_payload_ref: str,
+) -> InformationEvent:
+    symbols = [
+        str(s).strip().upper()
+        for s in article.get("symbols", [])
+        if str(s).strip()
+    ]
+    return InformationEvent(
+        event_id=f"alpaca_news:{article['id']}",
+        source=str(article.get("source") or "alpaca"),
+        source_type="alpaca_news",
+        headline=str(article.get("headline") or ""),
+        body=str(article.get("summary") or ""),
+        url=str(article.get("url") or "") or None,
+        published_at=str(article.get("created_at") or "") or None,
+        ts_event=int(article["ts_event_ns"]),
+        symbols=symbols,
+        entities=symbols,
+        information_type="news",
+        raw_payload_ref=raw_payload_ref,
+        source_quality=0.75,
+        dedupe_key=_information_dedupe_key(article),
+    )
+
+
 async def sync_recent_news(
     *,
     redis: Redis[Any],
@@ -216,10 +255,21 @@ async def sync_recent_news(
             )
         except AlpacaDataError as exc:
             log.warning("news.fetch_failed", error=str(exc))
-            return {"fetched": 0, "written": 0, "skipped": 0, "error": str(exc)}
+            return {
+                "fetched": 0,
+                "written": 0,
+                "info_published": 0,
+                "info_publish_failed": 0,
+                "skipped": 0,
+                "filtered": 0,
+                "error": str(exc),
+            }
 
         articles: list[dict[str, Any]] = list(payload.get("news") or [])
+        producer = Producer(redis)
         written = 0
+        info_published = 0
+        info_publish_failed = 0
         skipped = 0
         filtered = 0
 
@@ -260,6 +310,25 @@ async def sync_recent_news(
                 NEWS_INDEX_KEY,
                 {article["id"]: article["ts_event_ns"]},
             )
+            try:
+                await producer.publish(
+                    STREAM_INFO_RAW,
+                    Event(
+                        type="information",
+                        payload=_article_to_information_event(
+                            article,
+                            raw_payload_ref=key,
+                        ),
+                    ),
+                )
+                info_published += 1
+            except Exception as exc:
+                info_publish_failed += 1
+                log.warning(
+                    "news.info_publish_failed",
+                    article_id=article["id"],
+                    error=str(exc),
+                )
             written += 1
 
     # Cap the index to the most recent N and extend TTL.
@@ -269,6 +338,8 @@ async def sync_recent_news(
     return {
         "fetched": len(articles),
         "written": written,
+        "info_published": info_published,
+        "info_publish_failed": info_publish_failed,
         "skipped": skipped,
         "filtered": filtered,
     }

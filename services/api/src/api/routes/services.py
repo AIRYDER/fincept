@@ -9,8 +9,6 @@ which background services are alive.
 
 from __future__ import annotations
 
-import os
-import pathlib
 import time
 from typing import Any
 
@@ -19,7 +17,6 @@ from redis.asyncio import Redis
 
 from api.auth import require_user
 from api.deps import get_redis
-from fincept_core.config import get_settings
 from fincept_core.heartbeat import DEFAULT_TTL_SEC, read_all
 
 router = APIRouter()
@@ -27,34 +24,16 @@ router = APIRouter()
 # Always-expected services.  Each must heartbeat or it shows as DOWN.
 _CORE_EXPECTED_SERVICES: list[str] = [
     "api",
-    "ingestor",
-    "features",
+    "strategy_host",
     "orchestrator",
     "oms",
     "portfolio",
-    "jobs",
 ]
-
-# gbm_predictor is opt-in - only counted as expected when a trained
-# model exists on disk.  Otherwise we still surface its heartbeat if
-# present (rogue lane), but a missing key isn't an error.
-_GBM_MODEL_DIR = pathlib.Path(
-    os.environ.get("GBM_MODEL_DIR", "models/gbm_predictor")
-)
 
 
 def _expected_services() -> list[str]:
-    expected = list(_CORE_EXPECTED_SERVICES)
-    if (_GBM_MODEL_DIR / "model.txt").exists():
-        expected.append("gbm_predictor")
-    settings = get_settings()
-    if settings.NEWSAPI_API_KEY and (
-        settings.ANTHROPIC_API_KEY or settings.OPENAI_API_KEY
-    ):
-        expected.append("sentiment_agent")
-    if settings.FRED_API_KEY:
-        expected.append("regime_agent")
-    return expected
+    return list(_CORE_EXPECTED_SERVICES)
+
 
 # A heartbeat older than this many seconds is reported as STALE; older
 # than DEFAULT_TTL_SEC is automatically gone (key expired) so we only

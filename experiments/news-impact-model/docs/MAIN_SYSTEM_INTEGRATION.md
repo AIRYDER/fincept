@@ -14,6 +14,25 @@ news vendor/API
   -> orchestrator/risk/OMS consume only after their own gates
 ```
 
+## Standalone Workbench First
+
+The implemented workbench should remain the primary interaction surface until
+the model has real backfilled data, calibration checks, and frozen holdout
+results. It is deliberately local:
+
+```powershell
+python experiments/news-impact-model/scripts/serve_workbench.py
+```
+
+The workbench can later become either:
+
+- a standalone analyst tool that reads exported normalized datasets
+- the design reference for a Fincept dashboard model page
+- a thin front end over a future `news_impact_agent` API
+
+Do not connect it to order routing. Its output is still raw predicted market
+effect, not a trade decision.
+
 ## Promotion Slice 1: Contract Only
 
 Add schemas to `libs/fincept-core`:

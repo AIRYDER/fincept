@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from typing import Any, cast
 
 _SPLIT_FEATURE_PREFIX = "split_feature="
 
@@ -94,7 +94,7 @@ def _load_sidecar(model_dir: pathlib.Path) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    return data
+    return cast(dict[str, Any], data)
 
 
 def compute_feature_importance(
@@ -126,9 +126,11 @@ def compute_feature_importance(
     sidecar = _load_sidecar(model_dir)
 
     if sidecar is not None:
-        gain_map = sidecar.get("gain") if isinstance(sidecar.get("gain"), dict) else {}
+        raw_gain = sidecar.get("gain")
+        raw_split = sidecar.get("split")
+        gain_map = cast(dict[str, Any], raw_gain) if isinstance(raw_gain, dict) else {}
         split_map = (
-            sidecar.get("split") if isinstance(sidecar.get("split"), dict) else {}
+            cast(dict[str, Any], raw_split) if isinstance(raw_split, dict) else {}
         )
         rows: list[dict[str, Any]] = []
         for feat in features:

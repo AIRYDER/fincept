@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>News Impact Workbench</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="Workbench sections">
+        <div class="brand">
+          <div class="brand-mark">NI</div>
+          <div>
+            <strong>News Impact</strong>
+            <span>Workbench</span>
+          </div>
+        </div>
+        <nav class="rail-nav">
+          <a href="#dataset" class="active">Dataset</a>
+          <a href="#optimize">Optimize</a>
+          <a href="#predict">Predict</a>
+          <a href="#evidence">Evidence</a>
+        </nav>
+        <div class="rail-note">
+          Raw impact only. No order routing, sizing, or trade advice.
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>News Impact Workbench</h1>
+            <p>Inspect history, tune analog weights, and predict raw market impact.</p>
+          </div>
+          <div class="status-strip" id="statusStrip">
+            <span>Dataset: not loaded</span>
+            <span>Mode: idle</span>
+            <span>Leakage guard: walk-forward ready</span>
+          </div>
+        </header>
+
+        <section class="grid">
+          <form class="panel panel-dataset" id="datasetForm">
+            <div class="panel-heading">
+              <h2 id="dataset">Dataset</h2>
+              <button type="submit">Load</button>
+            </div>
+            <label>
+              Historical outcome file
+              <input
+                id="datasetPath"
+                name="datasetPath"
+                value="experiments/news-impact-model/sample_data/historical_outcomes.jsonl"
+                autocomplete="off"
+              />
+            </label>
+            <div class="metric-row" id="datasetMetrics">
+              <div><span>Events</span><strong>-</strong></div>
+              <div><span>Horizons</span><strong>-</strong></div>
+              <div><span>Sources</span><strong>-</strong></div>
+              <div><span>Types</span><strong>-</strong></div>
+            </div>
+            <div class="compact-list" id="datasetBreakdown"></div>
+          </form>
+
+          <form class="panel panel-optimize" id="optimizeForm">
+            <div class="panel-heading">
+              <h2 id="optimize">Optimize</h2>
+              <button type="submit">Run</button>
+            </div>
+            <div class="form-grid">
+              <label>
+                Horizon
+                <select id="horizon">
+                  <option>5m</option>
+                  <option>30m</option>
+                  <option>1h</option>
+                </select>
+              </label>
+              <label>
+                Validation
+                <select id="mode">
+                  <option value="walk-forward">Walk-forward</option>
+                  <option value="leave-one-out">Leave-one-out</option>
+                </select>
+              </label>
+              <label>
+                Min prior events
+                <input id="minTrainEvents" type="number" min="1" value="2" />
+              </label>
+              <label>
+                Top analogs
+                <input id="topK" type="number" min="1" value="5" />
+              </label>
+            </div>
+            <div class="metric-row" id="optimizerMetrics">
+              <div><span>MAE</span><strong>-</strong></div>
+              <div><span>Direction</span><strong>-</strong></div>
+              <div><span>Predictions</span><strong>-</strong></div>
+              <div><span>Candidates</span><strong>-</strong></div>
+            </div>
+            <div class="weights" id="weights"></div>
+          </form>
+
+          <form class="panel panel-predict" id="predictForm">
+            <div class="panel-heading">
+              <h2 id="predict">Predict</h2>
+              <button type="submit">Score</button>
+            </div>
+            <div class="form-grid">
+              <label>
+                Symbol
+                <input id="symbol" value="ACME" />
+              </label>
+              <label>
+                Source
+                <input id="source" value="benzinga" />
+              </label>
+              <label>
+                Event type
+                <select id="eventType">
+                  <option value="regulatory">Regulatory</option>
+                  <option value="earnings">Earnings</option>
+                  <option value="litigation">Litigation</option>
+                  <option value="guidance">Guidance</option>
+                  <option value="contract">Contract</option>
+                  <option value="general">General</option>
+                </select>
+              </label>
+              <label>
+                Regime
+                <select id="marketRegime">
+                  <option value="risk_on">Risk on</option>
+                  <option value="risk_off">Risk off</option>
+                  <option value="risk_neutral">Risk neutral</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Headline
+              <input id="headline" value="Acme receives FDA approval for new device" />
+            </label>
+            <label>
+              Body
+              <textarea id="body" rows="4">Regulator clears commercial launch and management expects revenue contribution this quarter.</textarea>
+            </label>
+          </form>
+
+          <section class="panel panel-impact">
+            <div class="panel-heading">
+              <h2>Impact Curve</h2>
+              <span id="modelVersion">No prediction</span>
+            </div>
+            <div class="impact-grid" id="impactGrid"></div>
+          </section>
+
+          <section class="panel panel-evidence">
+            <div class="panel-heading">
+              <h2 id="evidence">Similar Events</h2>
+              <span id="confidence">Confidence -</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Score</th>
+                    <th>Source</th>
+                    <th>Type</th>
+                    <th>Headline</th>
+                    <th>5m</th>
+                    <th>30m</th>
+                  </tr>
+                </thead>
+                <tbody id="evidenceRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel panel-export">
+            <div class="panel-heading">
+              <h2>Export</h2>
+              <button type="button" id="copyWeights">Copy</button>
+            </div>
+            <textarea
+              id="exportBox"
+              rows="8"
+              readonly
+              aria-label="Optimized weights JSON"
+            ></textarea>
+          </section>
+        </section>
+
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </main>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

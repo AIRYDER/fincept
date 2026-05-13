@@ -102,6 +102,7 @@ class GBMPredictor(Agent):
                     symbol,
                     feature_names=self._features,
                     freq=self._freq,
+                    allow_compat_defaults=True,
                 )
                 if row is None:
                     continue

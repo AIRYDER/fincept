@@ -52,6 +52,16 @@ Provider-specific Reuters/Benzinga/Polygon/NewsAPI adapters should normalize
 into this contract rather than feeding provider payloads straight into
 training.
 
+For interactive inspection, run the local workbench:
+
+```powershell
+python experiments/news-impact-model/scripts/serve_workbench.py
+```
+
+Use the workbench to load the dataset, compare validation modes, inspect
+similar-event evidence, and export candidate weights before promoting anything
+into the main Fincept runtime.
+
 ## Feature Families
 
 Text:

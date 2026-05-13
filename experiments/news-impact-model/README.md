@@ -22,6 +22,9 @@ runtime. It is intentionally outside the uv workspace and main service graph.
 - Source/event prior helper in `src/news_impact_model/training.py`.
 - Demo script in `scripts/demo.py`.
 - File-driven optimizer script in `scripts/optimize_weights.py`.
+- Standalone local workbench in `workbench/` served by
+  `scripts/serve_workbench.py`.
+- Sample normalized history in `sample_data/historical_outcomes.jsonl`.
 - Focused tests in `tests/`.
 
 The current model is a baseline, not the final ML stack. It uses similar
@@ -38,6 +41,22 @@ From the repo root:
 python -m pytest experiments/news-impact-model/tests -q
 python experiments/news-impact-model/scripts/demo.py
 ```
+
+Run the standalone workbench:
+
+```powershell
+python experiments/news-impact-model/scripts/serve_workbench.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The workbench loads the sample dataset by default. It can load another
+normalized JSONL/JSON/CSV file, run the analog-weight optimizer, score a manual
+news event, show similar historical events, and export optimized weights.
 
 ## Historical Outcome Data Format
 
@@ -146,5 +165,7 @@ exists.
 - No learned market-context encoder.
 - No calibrated probability model.
 - No Fincept bus/API/dashboard wiring.
+- Workbench is local-only and intentionally does not submit orders or emit
+  trading signals.
 
 See `docs/IMPLEMENTATION_STATUS.md` for the full status and next steps.

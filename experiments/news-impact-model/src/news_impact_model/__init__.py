@@ -31,6 +31,7 @@ from news_impact_model.training import (
     walk_forward_evaluate_analog_weights,
     walk_forward_optimize_analog_weights,
 )
+from news_impact_model.workbench import WorkbenchState
 
 __all__ = [
     "AnalogScoringWeights",
@@ -53,5 +54,6 @@ __all__ = [
     "optimize_analog_weights",
     "walk_forward_evaluate_analog_weights",
     "walk_forward_optimize_analog_weights",
+    "WorkbenchState",
     "write_historical_outcomes_jsonl",
 ]

@@ -7,6 +7,7 @@ dependencies = [
   "fincept-core",
   "fincept-bus",
   "fincept-db",
+  "fincept-tools",
   "portfolio",
   "backtester",
   "oms",

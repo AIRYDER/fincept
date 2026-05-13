@@ -42,21 +42,24 @@ from redis.asyncio import Redis
 
 from agents.sentiment_agent.llm import LLMRouter, pick_providers
 from agents.sentiment_agent.news import Article, fetch_articles, query_for_symbol
+from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
-from fincept_bus.streams import STREAM_SIG_SENT
+from fincept_bus.streams import STREAM_INFO_ENRICHED, STREAM_SIG_SENT
 from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
-from fincept_core.schemas import SentimentSignal
+from fincept_core.schemas import InformationEvent, SentimentSignal
 from fincept_core.tracing import configure_tracing
 
 log = get_logger(__name__)
 
 AGENT_ID = "sentiment_agent.v1"
 DEDUP_KEY_PREFIX = "sentiment:seen_url:"
+INFO_DEDUP_KEY_PREFIX = "sentiment:seen_info:"
 DEDUP_TTL_SEC = 24 * 3600  # don't re-score the same article within 24h
+INFO_CONSUMER_GROUP = "sentiment_agent.info.v1"
 
 
 async def _already_seen(redis: Redis[Any], url: str) -> bool:
@@ -68,6 +71,101 @@ async def _already_seen(redis: Redis[Any], url: str) -> bool:
 async def _mark_seen(redis: Redis[Any], url: str) -> None:
     key = f"{DEDUP_KEY_PREFIX}{url}"
     await redis.set(key, "1", ex=DEDUP_TTL_SEC)
+
+
+def _info_seen_key(event: InformationEvent, symbol: str) -> str:
+    base = event.dedupe_group_id or event.dedupe_key or event.event_id
+    return f"{INFO_DEDUP_KEY_PREFIX}{base}:{symbol}"
+
+
+async def _already_seen_info(redis: Redis[Any], event: InformationEvent, symbol: str) -> bool:
+    return await redis.exists(_info_seen_key(event, symbol)) > 0
+
+
+async def _mark_seen_info(redis: Redis[Any], event: InformationEvent, symbol: str) -> None:
+    await redis.set(_info_seen_key(event, symbol), "1", ex=DEDUP_TTL_SEC)
+
+
+async def _publish_sentiment(
+    *,
+    producer: Producer,
+    signal: SentimentSignal,
+    provider_used: str,
+    source: str,
+) -> None:
+    await producer.publish(
+        STREAM_SIG_SENT,
+        Event(type="sentiment", payload=signal),
+    )
+    log.info(
+        "sentiment.emitted",
+        symbol=signal.symbol,
+        score=signal.score,
+        confidence=signal.confidence,
+        event_type=signal.event_type,
+        provider=provider_used,
+        source=source,
+        url=signal.source_url,
+    )
+
+
+async def _process_information_event(
+    *,
+    info: InformationEvent,
+    llm_router: LLMRouter,
+    http: httpx.AsyncClient,
+    redis: Redis[Any],
+    producer: Producer,
+    max_symbols: int,
+) -> int:
+    emitted = 0
+    symbols = [symbol.strip().upper() for symbol in info.symbols if symbol.strip()]
+    for symbol in symbols[:max_symbols]:
+        if not llm_router.has_capacity:
+            break
+        if await _already_seen_info(redis, info, symbol):
+            continue
+        try:
+            scored = await llm_router.score(
+                http,
+                symbol=symbol,
+                title=info.headline,
+                description=info.body,
+                source=info.source,
+            )
+        except httpx.HTTPError as exc:
+            log.warning(
+                "sentiment.info_llm_transient_error",
+                symbol=symbol,
+                event_id=info.event_id,
+                error=str(exc),
+            )
+            raise
+        if scored is None:
+            await _mark_seen_info(redis, info, symbol)
+            continue
+        score, provider_used = scored
+        entities = list(dict.fromkeys([*info.entities, symbol]))
+        signal = SentimentSignal(
+            agent_id=AGENT_ID,
+            symbol=symbol,
+            ts_event=now_ns(),
+            score=score.score,
+            confidence=score.confidence,
+            event_type=score.event_type or info.event_category,
+            source_url=info.url,
+            source_excerpt=info.headline[:200] if info.headline else None,
+            entities=entities,
+        )
+        await _publish_sentiment(
+            producer=producer,
+            signal=signal,
+            provider_used=provider_used,
+            source=info.source,
+        )
+        await _mark_seen_info(redis, info, symbol)
+        emitted += 1
+    return emitted
 
 
 async def _process_symbol(
@@ -149,19 +247,11 @@ async def _process_symbol(
             source_excerpt=article.title[:200] if article.title else None,
             entities=[symbol],
         )
-        await producer.publish(
-            STREAM_SIG_SENT,
-            Event(type="sentiment", payload=signal),
-        )
-        log.info(
-            "sentiment.emitted",
-            symbol=symbol,
-            score=score.score,
-            confidence=score.confidence,
-            event_type=score.event_type,
-            provider=provider_used,
+        await _publish_sentiment(
+            producer=producer,
+            signal=signal,
+            provider_used=provider_used,
             source=article.source,
-            url=article.url,
         )
         emitted += 1
 
@@ -176,9 +266,6 @@ async def run_loop(
     stop: asyncio.Event,
 ) -> None:
     settings = get_settings()
-    if not settings.NEWSAPI_API_KEY:
-        log.warning("sentiment.skip", reason="NEWSAPI_API_KEY unset")
-        return
     providers = pick_providers(
         anthropic_key=settings.ANTHROPIC_API_KEY,
         openai_key=settings.OPENAI_API_KEY,
@@ -194,19 +281,55 @@ async def run_loop(
 
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
+    consumer = Consumer(redis)
     heartbeat_task = asyncio.create_task(beat_periodically(redis, "sentiment_agent"))
+    info_consumer_task: asyncio.Task[None] | None = None
 
     try:
         async with httpx.AsyncClient() as http:
+            async def info_handler(event: Event) -> None:
+                if event.type != "information" or not isinstance(event.payload, InformationEvent):
+                    return
+                emitted = await _process_information_event(
+                    info=event.payload,
+                    llm_router=llm_router,
+                    http=http,
+                    redis=redis,
+                    producer=producer,
+                    max_symbols=max_per_cycle,
+                )
+                log.info(
+                    "sentiment.info_done",
+                    event_id=event.payload.event_id,
+                    emitted=emitted,
+                    current_provider=(llm_router.current or (None,))[0],
+                )
+
+            info_consumer_task = asyncio.create_task(
+                consumer.consume(
+                    [STREAM_INFO_ENRICHED],
+                    INFO_CONSUMER_GROUP,
+                    "sentiment-agent-1",
+                    info_handler,
+                    block_ms=1000,
+                    batch=50,
+                )
+            )
             log.info(
                 "sentiment.start",
                 providers=llm_router.configured_providers(),
+                info_stream=STREAM_INFO_ENRICHED,
+                newsapi_enabled=bool(settings.NEWSAPI_API_KEY),
                 interval_sec=interval_sec,
                 lookback_minutes=lookback_minutes,
                 max_per_cycle=max_per_cycle,
                 universe=list(settings.UNIVERSE),
             )
             while not stop.is_set():
+                if not settings.NEWSAPI_API_KEY:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(stop.wait(), timeout=interval_sec)
+                    continue
                 cycle_emitted = 0
                 for symbol in settings.UNIVERSE:
                     if stop.is_set():
@@ -239,10 +362,13 @@ async def run_loop(
                     emitted=cycle_emitted,
                     current_provider=(llm_router.current or (None,))[0],
                 )
-                # Cancellable sleep.
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=interval_sec)
     finally:
+        if info_consumer_task is not None:
+            info_consumer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await info_consumer_task
         heartbeat_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat_task

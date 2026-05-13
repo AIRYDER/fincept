@@ -7,6 +7,8 @@ api.routes.data — read-only market-data endpoints.
                                (universe + well-known) pool against a
                                free-text query.  Used by the strategy
                                + manual-order forms in the dashboard.
+  GET /sources                 Datasource registry for capability/health
+                               control surfaces.
   GET /bars/{symbol}           Historical OHLCV bars.  ``freq`` defaults
                                to "1m"; ``start``/``end`` are required
                                and use UTC nanoseconds.
@@ -20,20 +22,173 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.auth import require_user
+from api.deps import get_position_store
 from api.symbol_search import search_symbols
+from fincept_core.config import get_settings
 from fincept_db.bars import read_bar_coverage, read_bars
-from fincept_db.universe import read_universe
+from fincept_db.universe import read_universe, upsert_universe_symbols
+from oms.alpaca.data import DATA_BASE_URL, AlpacaDataClient, AlpacaDataError
+from portfolio.store import PositionStore
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DEFAULT_COVERAGE_LOOKBACK_NS = 24 * 60 * 60 * 1_000_000_000
 DEFAULT_COVERAGE_STALE_AFTER_NS = 60 * 60 * 1_000_000_000
+DATASOURCE_REGISTRY: tuple[dict[str, Any], ...] = (
+    {
+        "id": "exa",
+        "name": "Exa",
+        "area": "Research/source-grounded search health",
+        "category": "research",
+        "safety": "read_only",
+        "status": "registered",
+        "call_surfaces": ["POST /research/exa", "research.exa_market"],
+        "data": ["web_search_results", "source_grounding", "research_briefs"],
+        "return_format": "structured_brief_with_grounding",
+        "latency": "fast_to_deep_by_search_type",
+        "health": {
+            "mode": "configuration",
+            "checks": ["EXA_API_KEY present", "last request ok"],
+        },
+        "config": ["EXA_API_KEY"],
+    },
+    {
+        "id": "openbb",
+        "name": "OpenBB",
+        "area": "Provider/capability browser",
+        "category": "market_data",
+        "safety": "read_only",
+        "status": "registered",
+        "call_surfaces": [
+            "POST /research/openbb",
+            "POST /research/openbb/quote",
+            "GET /research/openbb/health",
+        ],
+        "data": ["quotes", "fundamentals", "macro", "news", "provider_capabilities"],
+        "return_format": "normalized_rows",
+        "latency": "local_api_plus_provider",
+        "health": {
+            "mode": "active_probe",
+            "checks": ["OpenBB API /openapi.json", "provider key availability"],
+        },
+        "config": ["OPENBB_API_URL", "OpenBB provider keys"],
+    },
+    {
+        "id": "alpaca",
+        "name": "Alpaca",
+        "area": "Trading/data connectivity",
+        "category": "broker_market_data",
+        "safety": "paper_first",
+        "status": "registered",
+        "call_surfaces": [
+            "orders/positions adapters",
+            "market-data scheduler",
+            "GET /data/alpaca/demo",
+        ],
+        "data": ["equity_quotes", "equity_news", "positions", "orders", "fills"],
+        "return_format": "broker_records",
+        "latency": "network_realtime",
+        "health": {
+            "mode": "connector",
+            "checks": ["credentials present", "paper account reachable"],
+        },
+        "config": ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"],
+    },
+    {
+        "id": "binance",
+        "name": "Binance",
+        "area": "Crypto/market-data connectivity",
+        "category": "crypto_market_data",
+        "safety": "read_only",
+        "status": "registered",
+        "call_surfaces": ["ingestor", "market-data adapters"],
+        "data": ["crypto_trades", "crypto_bars", "order_book_snapshots"],
+        "return_format": "market_events",
+        "latency": "network_realtime",
+        "health": {
+            "mode": "connector",
+            "checks": ["public endpoint reachable", "symbol subscriptions healthy"],
+        },
+        "config": [],
+    },
+    {
+        "id": "timescale_bars",
+        "name": "Timescale bars",
+        "area": "Local historical data heartbeat",
+        "category": "local_timeseries",
+        "safety": "read_only",
+        "status": "registered",
+        "call_surfaces": ["GET /data/bars/{symbol}", "GET /data/coverage"],
+        "data": ["ohlcv_bars", "coverage", "freshness"],
+        "return_format": "bars_and_coverage_rows",
+        "latency": "local_db",
+        "health": {
+            "mode": "active_query",
+            "checks": ["DB reachable", "latest bar age", "bar counts by symbol"],
+        },
+        "config": ["FINCEPT_DB_URL"],
+    },
+    {
+        "id": "redis",
+        "name": "Redis",
+        "area": "Rate limits, marks, cached state",
+        "category": "state_cache",
+        "safety": "internal_state",
+        "status": "registered",
+        "call_surfaces": ["rate limiter", "md:last:*", "OpenBB health history"],
+        "data": ["rate_limit_buckets", "latest_marks", "health_streams"],
+        "return_format": "keys_streams_json",
+        "latency": "local_cache",
+        "health": {
+            "mode": "active_ping",
+            "checks": ["Redis ping", "expected key namespaces"],
+        },
+        "config": ["FINCEPT_REDIS_URL"],
+    },
+    {
+        "id": "local_predictions",
+        "name": "Local predictions",
+        "area": "Model output visibility",
+        "category": "model_outputs",
+        "safety": "read_only",
+        "status": "registered",
+        "call_surfaces": ["GET /models", "GET /models/{name}", "prediction stores"],
+        "data": ["prediction_records", "model_metadata", "feature_importance"],
+        "return_format": "model_records",
+        "latency": "local_artifact",
+        "health": {
+            "mode": "artifact_scan",
+            "checks": ["model artifacts present", "latest prediction timestamp"],
+        },
+        "config": ["data/predictions"],
+    },
+    {
+        "id": "news_impact_model",
+        "name": "News impact model",
+        "area": "Event/risk context",
+        "category": "event_risk",
+        "safety": "experimental_read_only",
+        "status": "registered",
+        "call_surfaces": ["GET /news-impact/status", "POST /news-impact/predict"],
+        "data": ["news_events", "impact_predictions", "similar_events"],
+        "return_format": "impact_prediction",
+        "latency": "local_model",
+        "health": {
+            "mode": "experiment_status",
+            "checks": ["dataset loaded", "last optimization summary"],
+        },
+        "config": ["experiments/news-impact-model"],
+    },
+)
 
 
 def _debug_errors_enabled() -> bool:
@@ -57,6 +212,43 @@ def _with_venue_alias(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _infer_universe_defaults(symbol: str) -> dict[str, str]:
+    normalized = symbol.upper()
+    if "-" in normalized or "/" in normalized:
+        return {"asset_class": "crypto_spot", "venue_default": "binance"}
+    return {"asset_class": "equity", "venue_default": "alpaca"}
+
+
+def _parse_equity_symbols(value: str) -> list[str]:
+    symbols: list[str] = []
+    for part in value.split(","):
+        symbol = part.strip().upper()
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    return symbols[:10]
+
+
+def _utc_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _data_source_summary(sources: list[dict[str, Any]]) -> dict[str, Any]:
+    by_category: dict[str, int] = {}
+    for source in sources:
+        category = str(source["category"])
+        by_category[category] = by_category.get(category, 0) + 1
+    return {"total": len(sources), "by_category": by_category}
+
+
+@router.get("/sources")
+async def data_sources(
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Return the datasource capability registry used by control surfaces."""
+    sources = [dict(source) for source in DATASOURCE_REGISTRY]
+    return {"sources": sources, "summary": _data_source_summary(sources)}
+
+
 @router.get("/universe")
 async def list_universe(
     asset_class: str | None = Query(None),
@@ -66,6 +258,139 @@ async def list_universe(
     """Return universe rows; optionally filter by asset_class."""
     rows = await read_universe(asset_class=asset_class, active_only=active_only)
     return [_with_venue_alias(row) for row in rows]
+
+
+@router.post("/universe/seed-from-positions")
+async def seed_universe_from_positions(
+    _: dict[str, Any] = Depends(require_user),
+    store: PositionStore = Depends(get_position_store),
+) -> dict[str, Any]:
+    rows_by_symbol: dict[str, dict[str, object]] = {}
+    for strategy_id in await store.known_strategies():
+        positions = await store.get_all(strategy_id)
+        for pos in positions.values():
+            if pos.quantity == Decimal(0):
+                continue
+            symbol = pos.symbol.strip().upper()
+            if not symbol:
+                continue
+            defaults = _infer_universe_defaults(symbol)
+            rows_by_symbol[symbol] = {
+                "symbol": symbol,
+                "asset_class": defaults["asset_class"],
+                "venue_default": defaults["venue_default"],
+                "active": True,
+            }
+    try:
+        rows = await upsert_universe_symbols(list(rows_by_symbol.values()))
+    except Exception as exc:
+        logger.exception("universe_seed_from_positions_failed")
+        raise HTTPException(
+            status_code=503,
+            detail=_public_error(
+                "DataStoreUnavailable",
+                "Universe seed unavailable because the data store could not be reached.",
+                exc,
+            ),
+        ) from exc
+    seeded_symbols = sorted(rows_by_symbol)
+    seeded_set = set(seeded_symbols)
+    return {
+        "seeded": len(seeded_symbols),
+        "symbols": seeded_symbols,
+        "universe": [
+            _with_venue_alias(row)
+            for row in rows
+            if str(row.get("symbol") or "").upper() in seeded_set
+        ],
+    }
+
+
+@router.get("/alpaca/demo")
+async def alpaca_data_demo(
+    symbols: str = Query("AAPL,NVDA", min_length=1, max_length=120),
+    news_limit: int = Query(5, ge=1, le=10),
+    bar_limit: int = Query(12, ge=1, le=50),
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    requested_symbols = _parse_equity_symbols(symbols)
+    if not requested_symbols:
+        raise HTTPException(status_code=400, detail="at least one symbol is required")
+
+    settings = get_settings()
+    if not settings.ALPACA_API_KEY or not settings.ALPACA_API_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail=_public_error(
+                "AlpacaCredentialsMissing",
+                "Alpaca demo requires FINCEPT_ALPACA_API_KEY and FINCEPT_ALPACA_API_SECRET.",
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    start = _utc_iso(now - timedelta(days=1))
+    end = _utc_iso(now)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            client = AlpacaDataClient(
+                http=http,
+                api_key=settings.ALPACA_API_KEY,
+                api_secret=settings.ALPACA_API_SECRET,
+            )
+            news = await client.list_news(
+                symbols=requested_symbols,
+                limit=news_limit,
+                include_content=False,
+            )
+            bars = await client.list_bars(
+                requested_symbols,
+                timeframe="1Min",
+                start=start,
+                end=end,
+                limit=bar_limit,
+                feed="iex",
+            )
+    except AlpacaDataError as exc:
+        status_code = exc.status_code if 400 <= exc.status_code < 500 else 502
+        raise HTTPException(
+            status_code=status_code,
+            detail=_public_error(
+                "AlpacaDataUnavailable",
+                "Alpaca market-data demo request failed.",
+                exc,
+            ),
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=_public_error(
+                "AlpacaDataUnavailable",
+                "Alpaca market-data demo could not reach the data API.",
+                exc,
+            ),
+        ) from exc
+
+    news_rows = news.get("news") if isinstance(news.get("news"), list) else []
+    bar_rows = bars.get("bars") if isinstance(bars.get("bars"), dict) else {}
+    return {
+        "ok": True,
+        "provider": "alpaca",
+        "base_url": DATA_BASE_URL,
+        "symbols": requested_symbols,
+        "feed": "iex",
+        "timeframe": "1Min",
+        "window": {"start": start, "end": end},
+        "summary": {
+            "news_count": len(news_rows),
+            "symbols_with_bars": len([value for value in bar_rows.values() if value]),
+            "bar_count": sum(
+                len(value) for value in bar_rows.values() if isinstance(value, list)
+            ),
+        },
+        "news": news_rows,
+        "bars": bar_rows,
+        "next_page_token": news.get("next_page_token"),
+    }
 
 
 @router.get("/symbols/search")
@@ -87,7 +412,18 @@ async def symbol_search(
     The endpoint includes inactive universe rows on purpose: an
     operator who paused a symbol can still find it to re-enable.
     """
-    universe = await read_universe(active_only=False)
+    try:
+        universe = await read_universe(active_only=False)
+    except Exception as exc:
+        logger.exception("symbol_search_universe_read_failed")
+        raise HTTPException(
+            status_code=503,
+            detail=_public_error(
+                "DataStoreUnavailable",
+                "Symbol search unavailable because the data store could not be reached.",
+                exc,
+            ),
+        ) from exc
     matches = search_symbols(q, universe_rows=universe, limit=limit)
     return [
         {

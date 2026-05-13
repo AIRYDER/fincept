@@ -400,6 +400,17 @@ def main(argv: list[str] | None = None) -> None:
 
     df = pl.read_parquet(args.input)
     X, y = build_dataset(df, horizon_bars=args.horizon_bars, feature_names=FEATURES)
+    training_request = {
+        "model_name": pathlib.Path(args.out_dir).name,
+        "input_path": args.input,
+        "horizon_bars": int(args.horizon_bars),
+        "bar_seconds": int(args.bar_seconds),
+        "cv_folds": int(args.cv_folds),
+        "purge_bars": int(args.purge_bars),
+        "embargo_bars": int(args.embargo_bars),
+        "num_boost_round": int(args.num_boost_round),
+        "early_stopping_rounds": int(args.early_stopping_rounds),
+    }
 
     if args.cv_folds > 0:
         purge_bars = args.purge_bars if args.purge_bars >= 0 else args.horizon_bars
@@ -423,6 +434,8 @@ def main(argv: list[str] | None = None) -> None:
             "final_num_boost_round": int(median_iter),
             "purge_bars": int(purge_bars),
             "embargo_bars": int(args.embargo_bars),
+            "training_input_path": args.input,
+            "training_request": training_request,
         }
         save_artifacts(
             model,
@@ -448,6 +461,8 @@ def main(argv: list[str] | None = None) -> None:
         early_stopping_rounds=args.early_stopping_rounds,
     )
     holdout_meta["eval_mode"] = "holdout_80_20"
+    holdout_meta["training_input_path"] = args.input
+    holdout_meta["training_request"] = training_request
     save_artifacts(
         model,
         out_dir=pathlib.Path(args.out_dir),

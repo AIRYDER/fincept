@@ -121,10 +121,18 @@ def test_different_symbols_dont_interfere() -> None:
 
 def test_max_age_drops_old_predictions() -> None:
     cb = ConsensusBuilder(max_age_ns=10_000_000_000)  # 10s window
-    cb.update(_pred(direction=0.5, ts_event=0))
+    cb.update(_pred(direction=0.5, ts_event=0, horizon_ns=0))
     # 100s later -> stale
     out = cb.consensus("BTC-USD", now_ns=100_000_000_000)
     assert out is None
+
+
+def test_positive_horizon_can_outlive_default_max_age() -> None:
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)  # 10s fallback
+    cb.update(_pred(direction=0.5, ts_event=0, horizon_ns=30_000_000_000))
+    out = cb.consensus("BTC-USD", now_ns=20_000_000_000)
+    assert out is not None
+    assert out.direction == 0.5
 
 
 def test_horizon_drops_predictions_past_horizon() -> None:
@@ -137,7 +145,7 @@ def test_horizon_drops_predictions_past_horizon() -> None:
 
 def test_some_agents_stale_others_fresh_returns_only_fresh() -> None:
     cb = ConsensusBuilder(max_age_ns=10_000_000_000)
-    cb.update(_pred(agent_id="old", direction=1.0, ts_event=0))
+    cb.update(_pred(agent_id="old", direction=1.0, ts_event=0, horizon_ns=0))
     cb.update(_pred(agent_id="new", direction=-1.0, ts_event=50_000_000_000))
     out = cb.consensus("BTC-USD", now_ns=55_000_000_000)
     assert out is not None

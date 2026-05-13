@@ -46,6 +46,20 @@ def _walk_forward_meta(*, trained_at: int) -> dict[str, Any]:
     }
 
 
+def _training_request(*, model_name: str = "gbm_predictor") -> dict[str, Any]:
+    return {
+        "model_name": model_name,
+        "input_path": "data/synth_bars.parquet",
+        "horizon_bars": 15,
+        "bar_seconds": 60,
+        "cv_folds": 5,
+        "purge_bars": -1,
+        "embargo_bars": 0,
+        "num_boost_round": 500,
+        "early_stopping_rounds": 30,
+    }
+
+
 def _holdout_meta(*, trained_at: int) -> dict[str, Any]:
     return {
         "features": ["ret_1m"],
@@ -65,7 +79,12 @@ def _patch_models_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
     """Redirect the models endpoint at a fresh tmp dir for each test."""
     models_dir = tmp_path / "models"
     models_dir.mkdir()
+    monkeypatch.setenv("TRAINING_RUNS_DIR", str(tmp_path / "training_runs"))
     monkeypatch.setattr("api.routes.models._MODELS_DIR", models_dir)
+    monkeypatch.setattr(
+        "api.routes.models._NEWS_ALPHA_CANDIDATE_REPORT",
+        tmp_path / "reports" / "news_alpha_candidate_report.json",
+    )
     return models_dir
 
 
@@ -120,6 +139,34 @@ class TestListModels:
         # holdout never populates cv_summary.
         assert rec["cv_summary"] is None
         assert rec["warnings"] == []
+
+    def test_training_request_attached_from_latest_completed_run(
+        self, _patch_models_dir: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        from api.routes.models import list_models
+
+        gbm = _patch_models_dir / "gbm_predictor"
+        _write_meta(gbm, _walk_forward_meta(trained_at=int(time.time())))
+        (gbm / "model.txt").write_text("fake lightgbm bytes")
+
+        runs_dir = tmp_path / "training_runs"
+        runs_dir.mkdir()
+        request = _training_request()
+        (runs_dir / "run.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "run",
+                    "status": "completed",
+                    "created_at": time.time(),
+                    "request": request,
+                }
+            )
+        )
+
+        records = list_models()
+        rec = records[0]
+        assert rec["training_input_path"] == "data/synth_bars.parquet"
+        assert rec["training_request"] == request
 
     def test_missing_model_file_warns_but_returns_record(
         self, _patch_models_dir: pathlib.Path
@@ -262,6 +309,65 @@ class TestModelsRoute:
         assert body["summary"]["with_cv"] == 2
         assert body["summary"]["with_holdout"] == 1
         assert body["summary"]["with_warnings"] == 1
+
+    @pytest.mark.asyncio
+    async def test_news_alpha_candidate_report_missing_returns_empty_state(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        response = await client.get(
+            "/models/news-alpha/candidate-report",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["exists"] is False
+        assert body["report"] is None
+        assert body["report_path"].endswith("news_alpha_candidate_report.json")
+
+    @pytest.mark.asyncio
+    async def test_news_alpha_candidate_report_returns_json(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        report_path = tmp_path / "reports" / "news_alpha_candidate_report.json"
+        monkeypatch.setattr(
+            "api.routes.models._NEWS_ALPHA_CANDIDATE_REPORT",
+            report_path,
+        )
+        report_path.parent.mkdir(parents=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "approved": True,
+                    "reasons": [],
+                    "candidate_model_name": "news_alpha_predictor_candidate",
+                    "candidate_dir": "models/news_alpha_predictor_candidate",
+                    "candidate_meta": {"best_auc": 0.61},
+                    "active_model_name": None,
+                    "active_meta": None,
+                    "policy": {"min_auc": 0.52},
+                    "generated_at": 1_700_000_000.0,
+                    "promotion_hint": {},
+                }
+            )
+        )
+
+        response = await client.get(
+            "/models/news-alpha/candidate-report",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["exists"] is True
+        assert body["report"]["approved"] is True
+        assert body["report"]["candidate_model_name"] == "news_alpha_predictor_candidate"
 
 
 # --------------------------------------------------------------------------- #

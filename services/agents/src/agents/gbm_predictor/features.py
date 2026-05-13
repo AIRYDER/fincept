@@ -30,6 +30,35 @@ FEATURES: list[str] = [
     "spread_bps",
 ]
 
+# The live feature service has evolved from the original GBM training
+# fixture names.  Keep a narrow compatibility layer so old model
+# artifacts can still run online while the trainer catches up.
+FEATURE_ALIASES: dict[str, str] = {
+    "ret_1m": "ret_simple_1",
+    "ret_5m": "mom_5",
+    "ret_15m": "mom_15",
+    "ret_60m": "mom_60",
+    "rv_5m": "vol_rs_5",
+    "rv_30m": "vol_rs_30",
+}
+
+DEFAULTABLE_FEATURES: set[str] = {
+    # Warm-up windows.  ret_1m remains strict so we don't predict before
+    # the live price feed has produced at least one actual return.
+    "ret_5m",
+    "ret_15m",
+    "ret_60m",
+    "rv_5m",
+    "rv_30m",
+    # Long-window and book-derived features may be unavailable in the
+    # first minutes of a dev session.  Neutral 0.0 lets the operator see
+    # live predictions instead of a silent empty panel.
+    "mom_z_30m",
+    "mom_z_240m",
+    "book_imbalance_1",
+    "spread_bps",
+}
+
 
 async def load_live(
     store: OnlineStore,
@@ -37,6 +66,7 @@ async def load_live(
     *,
     feature_names: list[str],
     freq: str = "1m",
+    allow_compat_defaults: bool = False,
 ) -> dict[str, float] | None:
     """Read the latest FeatureFrame and project it onto ``feature_names``.
 
@@ -47,6 +77,12 @@ async def load_live(
     Returning ``None`` instead of raising lets the inference loop quietly
     skip a symbol when its feature pipeline isn't producing fresh data
     yet (e.g., during the warm-up window after a service restart).
+
+    When ``allow_compat_defaults`` is true, legacy model feature names
+    are projected from the current online feature vocabulary and a
+    small set of non-price features may default to 0.0.  This is used
+    only by the live GBM agent so older trained artifacts don't leave
+    the dashboard permanently empty.
     """
     frame = await store.get_latest(symbol, freq=freq)
     if frame is None:
@@ -54,6 +90,12 @@ async def load_live(
     out: dict[str, float] = {}
     for name in feature_names:
         value = frame.values.get(name)
+        if value is None and allow_compat_defaults:
+            alias = FEATURE_ALIASES.get(name)
+            if alias is not None:
+                value = frame.values.get(alias)
+        if value is None and allow_compat_defaults and name in DEFAULTABLE_FEATURES:
+            value = 0.0
         if value is None:
             return None
         out[name] = float(value)

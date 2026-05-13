@@ -66,6 +66,12 @@ router = APIRouter()
 # the meta is enough to classify the model as 'trained but missing
 # binary').
 _MODELS_DIR = pathlib.Path(os.environ.get("MODELS_DIR", "models"))
+_NEWS_ALPHA_CANDIDATE_REPORT = pathlib.Path(
+    os.environ.get(
+        "NEWS_ALPHA_CANDIDATE_REPORT",
+        "reports/news_alpha_candidate_report.json",
+    )
+)
 
 
 def _safe_read_meta(meta_path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -82,6 +88,76 @@ def _safe_read_meta(meta_path: pathlib.Path) -> tuple[dict[str, Any] | None, str
         return None, f"meta.json malformed: {exc.msg}"
     except OSError as exc:
         return None, f"meta.json read failed: {exc}"
+
+
+def _normalize_training_request(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    model_name = data.get("model_name")
+    input_path = data.get("input_path")
+    if not isinstance(model_name, str) or not isinstance(input_path, str):
+        return None
+    normalized: dict[str, Any] = {
+        "model_name": model_name,
+        "input_path": input_path,
+    }
+    for key in (
+        "horizon_bars",
+        "bar_seconds",
+        "cv_folds",
+        "purge_bars",
+        "embargo_bars",
+        "num_boost_round",
+        "early_stopping_rounds",
+    ):
+        value = data.get(key)
+        if not isinstance(value, int):
+            return None
+        normalized[key] = int(value)
+    return normalized
+
+
+def _latest_training_requests_by_model() -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    runs_dir = pathlib.Path(os.environ.get("TRAINING_RUNS_DIR", "data/training_runs"))
+    if not runs_dir.is_dir():
+        return latest
+    try:
+        paths = sorted(
+            runs_dir.glob("*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return latest
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if payload.get("status") != "completed":
+            continue
+        request = _normalize_training_request(payload.get("request"))
+        if request is None:
+            continue
+        model_name = request["model_name"]
+        if model_name not in latest:
+            latest[model_name] = request
+    return latest
+
+
+def _attach_training_request(
+    record: dict[str, Any],
+    latest_requests: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if record.get("training_request") is not None:
+        return record
+    name = record.get("name")
+    request = latest_requests.get(name) if isinstance(name, str) else None
+    if request is not None:
+        record["training_request"] = request
+        record["training_input_path"] = request.get("input_path")
+    return record
 
 
 def _build_record(
@@ -117,6 +193,8 @@ def _build_record(
         "final_num_boost_round": None,
         "holdout_auc": None,
         "holdout_rows": None,
+        "training_input_path": None,
+        "training_request": None,
         "warnings": [],
     }
 
@@ -136,6 +214,14 @@ def _build_record(
     eval_mode = meta.get("eval_mode")
     if isinstance(eval_mode, str):
         record["eval_mode"] = eval_mode
+
+    training_input_path = meta.get("training_input_path")
+    if isinstance(training_input_path, str):
+        record["training_input_path"] = training_input_path
+    training_request = _normalize_training_request(meta.get("training_request"))
+    if training_request is not None:
+        record["training_request"] = training_request
+        record["training_input_path"] = training_request["input_path"]
 
     horizon_bars = meta.get("horizon_bars")
     if isinstance(horizon_bars, int):
@@ -238,13 +324,16 @@ def list_models(root: pathlib.Path | None = None) -> list[dict[str, Any]]:
         return []
     records: list[dict[str, Any]] = []
     now = time.time()
+    latest_requests = _latest_training_requests_by_model()
     for entry in sorted(base.iterdir()):
         if not entry.is_dir():
             continue
         if not (entry / "meta.json").exists():
             # Not a model directory; skip without a warning.
             continue
-        records.append(_build_record(entry, now=now))
+        records.append(
+            _attach_training_request(_build_record(entry, now=now), latest_requests)
+        )
     return records
 
 
@@ -280,6 +369,41 @@ async def get_models(
             "with_warnings": with_warnings,
             "models_dir": str(_MODELS_DIR),
         },
+    }
+
+
+@router.get("/news-alpha/candidate-report")
+async def get_news_alpha_candidate_report(
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    path = _NEWS_ALPHA_CANDIDATE_REPORT
+    if not path.is_file():
+        return {
+            "exists": False,
+            "report_path": str(path),
+            "report": None,
+        }
+    try:
+        payload = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"candidate report malformed: {exc.msg}",
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"candidate report read failed: {exc}",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="candidate report must be a JSON object",
+        )
+    return {
+        "exists": True,
+        "report_path": str(path),
+        "report": payload,
     }
 
 
@@ -494,14 +618,11 @@ async def post_rollback_promotion(
         )
     except PromotionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    shadow = store.get_shadow(body.agent_id)
     return {
         "agent_id": body.agent_id,
         "active": new_active.to_dict() if new_active else None,
-        "shadow": (
-            store.get_shadow(body.agent_id).to_dict()
-            if store.get_shadow(body.agent_id)
-            else None
-        ),
+        "shadow": shadow.to_dict() if shadow else None,
         "history": [
             h.to_dict()
             for h in store.get_history(body.agent_id, limit=10)
@@ -580,7 +701,10 @@ async def get_model_detail(
     ``meta.json``.
     """
     model_dir = _resolve_model_dir(name)
-    return _build_record(model_dir, now=time.time())
+    return _attach_training_request(
+        _build_record(model_dir, now=time.time()),
+        _latest_training_requests_by_model(),
+    )
 
 
 @router.get("/{name}/feature-importance")

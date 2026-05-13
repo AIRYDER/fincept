@@ -159,6 +159,32 @@ class BuyAndHold(Strategy):
         return
 
 
+class PositionTracker(Strategy):
+    strategy_id: ClassVar[str] = "position_tracker.v1"
+    symbols: ClassVar[list[str]] = []
+
+    def __init__(self, symbols: Iterable[str]) -> None:
+        self.symbols = list(symbols)  # type: ignore[misc]
+
+    def on_start(self, ctx: StrategyContext) -> None:
+        return
+
+    def on_bar(self, ctx: StrategyContext, bar: BarEvent) -> None:
+        return
+
+    def on_tick(self, ctx: StrategyContext, trade: TradeEvent) -> None:
+        return
+
+    def on_fill(self, ctx: StrategyContext, fill: Fill) -> None:
+        return
+
+    def on_signal(self, ctx: StrategyContext, signal: BaseModel) -> None:
+        return
+
+    def on_stop(self, ctx: StrategyContext) -> None:
+        return
+
+
 # --------------------------------------------------------------------------- #
 # MovingAverageCrossover                                                      #
 # --------------------------------------------------------------------------- #
@@ -564,6 +590,98 @@ class GBMStrategy(Strategy):
     def on_stop(self, ctx: StrategyContext) -> None:
         return
 
+    # ------ hot-reload protocol ----------------------------------------- #
+    #
+    # Called by the live strategy host (services/strategy_host) when an
+    # operator promotes a new model under the same ``model_binding``.
+    # Atomic: either the new artifacts load cleanly and replace the old
+    # ones in one step, or the call raises and the strategy keeps using
+    # its previous model.  In-flight order accounting
+    # (``_pending_buys`` / ``_pending_sells``) is intentionally
+    # preserved across the swap -- a model reload is NOT a position
+    # reset.
+
+    def reload_from_dir(self, model_dir: pathlib.Path | str) -> None:
+        """Hot-reload booster + meta from ``model_dir`` atomically.
+
+        Validates the new artifacts BEFORE touching live strategy
+        state so a corrupt promotion never silently disables an
+        active strategy.  Specifically:
+
+          1. Read & parse meta.json (raises on missing / invalid).
+          2. Validate the feature list is non-empty and that every
+             feature is OHLCV-derivable (the backtester-only contract).
+          3. Compute the new ``window_bars`` from the feature set.
+          4. Load the new Booster.
+          5. Only after all four succeed, swap into ``self``.
+
+        Window resize semantics:
+
+          * If ``window_bars`` is unchanged, existing bar windows
+            keep their data and trading can resume on the next bar
+            without a re-warm gap.
+          * If ``window_bars`` changes (a feature with a longer or
+            shorter lookback was added / removed), windows are
+            reset to fresh empty deques.  ``on_bar`` then naturally
+            no-ops until each window refills, the same as cold-start.
+
+        Pending-order state is preserved unconditionally:
+
+          * ``_pending_buys`` and ``_pending_sells`` are NOT touched.
+            An order that was working at reload time will still
+            decrement the right counter when its fill arrives, so
+            the no-pyramiding state machine remains correct.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``model.txt`` or ``meta.json`` is missing.
+        ValueError
+            If meta.json has no ``features`` list or contains a
+            feature the backtester can't derive from OHLCV alone.
+        """
+        # Lazy import keeps the rest of the backtester importable on
+        # systems that don't yet have lightgbm installed -- same as
+        # ``on_start``.
+        import lightgbm as lgb
+
+        new_dir = pathlib.Path(model_dir)
+        meta_path = new_dir / "meta.json"
+        model_path = new_dir / "model.txt"
+        if not meta_path.is_file() or not model_path.is_file():
+            raise FileNotFoundError(
+                f"GBMStrategy.reload: missing artifacts in {new_dir!s}"
+            )
+        meta = json.loads(meta_path.read_text())
+        new_features = list(meta.get("features") or [])
+        if not new_features:
+            raise ValueError(
+                f"meta.json at {meta_path} is missing the 'features' list"
+            )
+        require_supported(new_features)
+        new_window_bars = required_window_bars(
+            new_features, bar_minutes=self._bar_minutes
+        )
+        # Load the booster LAST so a parse / validation failure
+        # above doesn't leave us with an orphaned booster object.
+        new_booster = lgb.Booster(model_file=str(model_path))
+
+        # ---- atomic swap: every assignment below is to an attribute
+        # already initialised in ``__init__`` / ``on_start``, so a
+        # caller mid-on_bar that reads any one of these never sees a
+        # mismatch between (e.g.) ``_features`` and ``_booster``.
+        # The single-threaded cooperative scheduling of asyncio means
+        # the host never interleaves an on_bar call with a reload call;
+        # this swap block runs to completion without yielding.
+        self._booster = new_booster
+        self._features = new_features
+        self._model_dir = new_dir
+        if new_window_bars != self._window_bars:
+            self._window_bars = new_window_bars
+            self._windows = {
+                sym: deque(maxlen=new_window_bars) for sym in self.symbols
+            }
+
 
 # --------------------------------------------------------------------------- #
 # Registry                                                                    #
@@ -572,6 +690,7 @@ class GBMStrategy(Strategy):
 
 STRATEGY_REGISTRY: dict[str, Any] = {
     "buy_and_hold": BuyAndHold,
+    "position_tracker": PositionTracker,
     "ma_crossover": MovingAverageCrossover,
     "gbm": GBMStrategy,
 }

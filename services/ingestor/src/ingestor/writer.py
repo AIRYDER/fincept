@@ -4,7 +4,10 @@ ingestor.writer — fan-out to Redis Streams + batched Timescale writes.
 Every event the adapter yields is:
   1. Wrapped in a canonical ``Event`` (so consumers can branch on type).
   2. Published to the appropriate Redis stream (``md.trades``, ``md.books``).
-  3. Buffered in memory; the buffer is flushed to Timescale via
+  3. Trades are also rolled into 1-minute OHLCV bars and published to
+     ``md.bars.1m`` once the minute closes.  The online feature runner
+     consumes that stream.
+  4. Buffered in memory; the buffer is flushed to Timescale via
      ``fincept_db.ticks.write_trades`` / ``write_book_deltas`` once it
      reaches ``batch_size`` or when ``flush()`` is called.
 
@@ -19,21 +22,100 @@ re-broadcast or a reconnect replay are silently absorbed.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from fincept_bus.producer import Producer
-from fincept_bus.streams import STREAM_MD_BOOKS, STREAM_MD_TRADES
+from fincept_bus.streams import STREAM_MD_BARS_1M, STREAM_MD_BOOKS, STREAM_MD_TRADES
 from fincept_core.events import Event
 from fincept_core.logging import get_logger
-from fincept_core.schemas import BookDeltaEvent, BookSnapshotEvent, TradeEvent
+from fincept_core.schemas import (
+    AssetClass,
+    BarEvent,
+    BookDeltaEvent,
+    BookSnapshotEvent,
+    TradeEvent,
+    Venue,
+)
+from fincept_db.bars import write_bars
 from fincept_db.ticks import write_book_deltas, write_trades
 
 log = get_logger(__name__)
 
 DEFAULT_BATCH_SIZE = 500
+BAR_FREQ = "1m"
+NS_PER_MINUTE = 60_000_000_000
+
+
+@dataclass
+class _MinuteBar:
+    """Mutable accumulator for one (venue, symbol, minute) bucket."""
+
+    venue: Venue
+    symbol: str
+    asset_class: AssetClass
+    minute_start_ns: int
+    ts_recv: int
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+    notional: Decimal
+    trades: int
+    last_seq: int | None
+
+    @classmethod
+    def from_trade(cls, trade: TradeEvent, minute_start_ns: int) -> _MinuteBar:
+        notional = trade.price * trade.size
+        return cls(
+            venue=trade.venue,
+            symbol=trade.symbol,
+            asset_class=trade.asset_class,
+            minute_start_ns=minute_start_ns,
+            ts_recv=trade.ts_recv,
+            open=trade.price,
+            high=trade.price,
+            low=trade.price,
+            close=trade.price,
+            volume=trade.size,
+            notional=notional,
+            trades=1,
+            last_seq=trade.seq,
+        )
+
+    def add(self, trade: TradeEvent) -> None:
+        self.high = max(self.high, trade.price)
+        self.low = min(self.low, trade.price)
+        self.close = trade.price
+        self.volume += trade.size
+        self.notional += trade.price * trade.size
+        self.trades += 1
+        self.ts_recv = max(self.ts_recv, trade.ts_recv)
+        self.last_seq = trade.seq
+
+    def to_event(self) -> BarEvent:
+        vwap = self.notional / self.volume if self.volume > 0 else None
+        return BarEvent(
+            venue=self.venue,
+            symbol=self.symbol,
+            asset_class=self.asset_class,
+            ts_event=self.minute_start_ns,
+            ts_recv=self.ts_recv,
+            seq=self.last_seq,
+            freq=BAR_FREQ,
+            open=self.open,
+            high=self.high,
+            low=self.low,
+            close=self.close,
+            volume=self.volume,
+            trades=self.trades,
+            vwap=vwap,
+        )
 
 
 class Writer:
@@ -53,11 +135,13 @@ class Writer:
         self.persist_to_db = persist_to_db
         self._trades: list[TradeEvent] = []
         self._books: list[BookDeltaEvent] = []
+        self._bars: dict[tuple[str, str], _MinuteBar] = {}
 
     async def handle(self, event: BaseModel) -> None:
         """Route a single canonical event to Redis + the DB buffer."""
         if isinstance(event, TradeEvent):
             await self.producer.publish(STREAM_MD_TRADES, Event(type="trade", payload=event))
+            await self._observe_trade_for_bar(event)
             self._trades.append(event)
             if len(self._trades) >= self.batch_size:
                 await self._flush_trades()
@@ -72,6 +156,43 @@ class Writer:
             await self.producer.publish(STREAM_MD_BOOKS, Event(type="book_snapshot", payload=event))
         else:
             log.warning("writer.unknown_event_type", model=type(event).__name__)
+
+    async def _observe_trade_for_bar(self, trade: TradeEvent) -> None:
+        """Roll trades into minute bars and publish closed buckets.
+
+        The current minute remains open until the first trade from a
+        later minute arrives.  ``flush()`` publishes any still-open bars
+        during graceful shutdown, which is useful for tests and short
+        dev runs.
+        """
+        minute_start = (trade.ts_event // NS_PER_MINUTE) * NS_PER_MINUTE
+        key = (str(trade.venue.value), trade.symbol)
+        current = self._bars.get(key)
+        if current is None:
+            self._bars[key] = _MinuteBar.from_trade(trade, minute_start)
+            return
+        if minute_start == current.minute_start_ns:
+            current.add(trade)
+            return
+        if minute_start > current.minute_start_ns:
+            await self._publish_bar(current.to_event())
+            self._bars[key] = _MinuteBar.from_trade(trade, minute_start)
+            return
+        # Late trade for an already-closed minute.  We leave historical
+        # repair to the EOD/backfill path rather than mutate emitted bars.
+        log.debug(
+            "writer.late_trade_ignored_for_bar",
+            venue=str(trade.venue.value),
+            symbol=trade.symbol,
+            trade_ts=trade.ts_event,
+            open_minute=current.minute_start_ns,
+        )
+
+    async def _publish_bar(self, bar: BarEvent) -> None:
+        await self.producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=bar))
+        if self.persist_to_db:
+            inserted = await write_bars([bar])
+            log.debug("writer.bars_flushed", attempted=1, inserted=inserted)
 
     async def _flush_trades(self) -> None:
         if not self._trades:
@@ -99,6 +220,9 @@ class Writer:
 
     async def flush(self) -> None:
         """Drain both buffers.  Call before shutting the process down."""
+        for bar in list(self._bars.values()):
+            await self._publish_bar(bar.to_event())
+        self._bars.clear()
         await self._flush_trades()
         await self._flush_books()
 

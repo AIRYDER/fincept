@@ -93,6 +93,7 @@ async def list_strategies(
     """
     descriptions = {
         "buy_and_hold": "Open a long at the first bar per symbol; never trade again.",
+        "position_tracker": "Track adopted/manual positions without submitting orders.",
         "ma_crossover": "SMA(fast) vs SMA(slow) crossover; long-only, no pyramiding.",
     }
     return {

@@ -92,6 +92,22 @@ multi-horizon impact distributions. It reports expected abnormal return,
 probability of up move, simple quantiles, volatility impact, volume impact, and
 similar-event evidence.
 
+### Standalone Workbench
+
+`scripts/serve_workbench.py` runs a local browser workbench backed by
+`WorkbenchState`. It is intentionally dependency-light and isolated from the
+main Fincept runtime. The UI can:
+
+- load a normalized historical outcome JSONL/JSON/CSV file
+- profile event count, horizons, sources, event types, and symbols
+- run leave-one-out or walk-forward analog-weight optimization
+- score a manual breaking-news event
+- display per-horizon raw impact, confidence, and similar-event evidence
+- export the optimized weight JSON
+
+The workbench is a research surface, not a trading surface. It does not size
+trades, submit orders, or publish signals to the main system.
+
 ## Logic Behind The Model
 
 Generic sentiment is too weak for trading news. The same event phrase can have
@@ -178,6 +194,8 @@ allow this model to bypass risk, sizing, or paper-only controls.
 - API endpoint.
 - Dashboard view.
 - Backtest replay using only `available_at_ns`.
+- Read-only export bridge from Fincept storage into normalized workbench
+  datasets.
 
 ## Optimization Path
 
@@ -212,5 +230,5 @@ python -m pytest experiments/news-impact-model/tests -q
 Expected result:
 
 ```text
-11 passed
+14 passed
 ```

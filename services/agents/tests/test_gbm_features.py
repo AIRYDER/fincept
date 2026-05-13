@@ -97,6 +97,35 @@ async def test_returns_none_when_required_feature_is_null(store: OnlineStore) ->
     assert result is None
 
 
+async def test_compat_mode_projects_current_live_feature_names(
+    store: OnlineStore,
+) -> None:
+    await store.put(
+        _frame(
+            ret_simple_1=0.01,
+        )
+    )
+
+    result = await load_live(
+        store,
+        "BTC-USD",
+        feature_names=FEATURES,
+        allow_compat_defaults=True,
+    )
+
+    assert result is not None
+    assert result["ret_1m"] == 0.01
+    assert result["ret_5m"] == 0.0
+    assert result["ret_15m"] == 0.0
+    assert result["ret_60m"] == 0.0
+    assert result["rv_5m"] == 0.0
+    assert result["rv_30m"] == 0.0
+    assert result["mom_z_30m"] == 0.0
+    assert result["mom_z_240m"] == 0.0
+    assert result["book_imbalance_1"] == 0.0
+    assert result["spread_bps"] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # Freq dimension
 # ---------------------------------------------------------------------------

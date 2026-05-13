@@ -58,8 +58,8 @@ class ConsensusBuilder:
 
     Construction params:
       ``max_age_ns``  Predictions older than this (relative to ``now_ns``)
-                     are ignored even if their declared horizon hasn't
-                     expired.  Defaults to 5 minutes - generous enough
+                     are ignored when they do not declare a positive
+                     horizon.  Defaults to 5 minutes - generous enough
                      for 1m-cadence agents to survive a brief consumer
                      hiccup, tight enough to drop a crashed agent.
     """
@@ -114,9 +114,10 @@ class ConsensusBuilder:
         )
 
     def _is_stale(self, cached: _Cached, *, now_ns: int) -> bool:
-        # Stale if older than max_age_ns OR (if horizon set) past horizon.
-        if now_ns - cached.ts_event > self._max_age_ns:
-            return True
+        # Positive horizons are the signal's explicit validity contract.
+        # Fall back to max_age only for horizon-less predictions.
         if cached.horizon_ns > 0 and now_ns - cached.ts_event > cached.horizon_ns:
+            return True
+        if cached.horizon_ns <= 0 and now_ns - cached.ts_event > self._max_age_ns:
             return True
         return False

@@ -23,6 +23,10 @@ from jobs.main import (
     EOD_CRON_HOUR,
     EOD_CRON_MINUTE,
     EOD_CRON_TZ,
+    NEWS_ALPHA_CRON_DAY_OF_WEEK,
+    NEWS_ALPHA_CRON_HOUR,
+    NEWS_ALPHA_CRON_MINUTE,
+    NEWS_ALPHA_CRON_TZ,
     build_scheduler,
 )
 
@@ -132,8 +136,8 @@ def test_build_scheduler_registers_eod_job() -> None:
     """
     scheduler = build_scheduler()
     jobs = scheduler.get_jobs()
-    assert len(jobs) == 1
-    job = jobs[0]
+    assert len(jobs) == 2
+    job = {job.id: job for job in jobs}["daily_eod_load"]
     assert job.id == "daily_eod_load"
     assert isinstance(job.trigger, CronTrigger)
     # CronTrigger.fields is an ordered list of CronField subclasses; their
@@ -142,3 +146,18 @@ def test_build_scheduler_registers_eod_job() -> None:
     assert fields["day_of_week"] == "mon-fri"
     assert fields["hour"] == "22"
     assert fields["minute"] == "30"
+
+
+def test_build_scheduler_registers_news_alpha_candidate_job() -> None:
+    assert NEWS_ALPHA_CRON_TZ == "America/New_York"
+    assert (NEWS_ALPHA_CRON_HOUR, NEWS_ALPHA_CRON_MINUTE) == (23, 15)
+    assert NEWS_ALPHA_CRON_DAY_OF_WEEK == "mon-fri"
+
+    scheduler = build_scheduler()
+    jobs = {job.id: job for job in scheduler.get_jobs()}
+    job = jobs["news_alpha_candidate_train"]
+    assert isinstance(job.trigger, CronTrigger)
+    fields = {f.name: str(f) for f in job.trigger.fields}
+    assert fields["day_of_week"] == "mon-fri"
+    assert fields["hour"] == "23"
+    assert fields["minute"] == "15"

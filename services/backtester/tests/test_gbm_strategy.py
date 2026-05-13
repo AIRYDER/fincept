@@ -469,3 +469,188 @@ async def test_gbm_strategy_runs_through_engine_and_trades(
     # Equity stayed within sane bounds (no negative cash blowup).
     assert report.final_equity > 50_000
     assert report.final_equity < 200_000
+
+
+# --------------------------------------------------------------------------- #
+# Hot-reload (reload_from_dir)                                                #
+# --------------------------------------------------------------------------- #
+#
+# These tests cover the contract used by the live strategy host's
+# model-binding watcher.  They verify atomicity (a corrupt promotion
+# leaves the running model intact) and the preservation of in-flight
+# order accounting (a reload is NOT a position reset).
+
+
+def _build_loaded_strategy(
+    model_dir: pathlib.Path,
+    *,
+    bars: list[BarEvent] | None = None,
+) -> GBMStrategy:
+    """Train a tiny model into ``model_dir``, then construct + on_start
+    a strategy.  Returns the strategy ready for reload tests."""
+    if bars is None:
+        bars = _make_uptrend_bars(n=200)
+    _train_tiny_model(model_dir, bars)
+    strategy = GBMStrategy(
+        symbols=[SYMBOL], model_dir=model_dir, bar_minutes=1
+    )
+    strategy.on_start(_StubCtx())  # type: ignore[arg-type]
+    return strategy
+
+
+class TestReloadFromDir:
+    def test_reload_swaps_booster(self, tmp_path: pathlib.Path) -> None:
+        # Two models trained on different drift directions so their
+        # boosters predict different probabilities for the same input.
+        # We don't assert on the prediction values (that's lightgbm's
+        # contract), only that the booster object identity changed.
+        dir_a = tmp_path / "model_a"
+        dir_b = tmp_path / "model_b"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200, drift=0.001))
+        _train_tiny_model(dir_b, _make_uptrend_bars(n=200, drift=-0.001))
+
+        strategy = GBMStrategy(
+            symbols=[SYMBOL], model_dir=dir_a, bar_minutes=1
+        )
+        strategy.on_start(_StubCtx())  # type: ignore[arg-type]
+        old_booster = strategy._booster  # noqa: SLF001
+        assert old_booster is not None
+
+        strategy.reload_from_dir(dir_b)
+
+        assert strategy._booster is not None  # noqa: SLF001
+        assert strategy._booster is not old_booster  # noqa: SLF001
+        assert strategy._model_dir == dir_b  # noqa: SLF001
+
+    def test_reload_preserves_pending_order_state(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # Pre-load a strategy and seed its pending-buys counter
+        # (simulating an in-flight BUY mid-fill).  After reload, the
+        # counter must be intact -- otherwise the no-pyramiding logic
+        # would resubmit the open as soon as the next bar arrives.
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+        _train_tiny_model(dir_b, _make_uptrend_bars(n=200))
+
+        strategy = _build_loaded_strategy(dir_a)
+        strategy._pending_buys[SYMBOL] = Decimal("1.5")  # noqa: SLF001
+        strategy._pending_sells[SYMBOL] = Decimal("0.7")  # noqa: SLF001
+
+        strategy.reload_from_dir(dir_b)
+
+        assert strategy._pending_buys[SYMBOL] == Decimal("1.5")  # noqa: SLF001
+        assert strategy._pending_sells[SYMBOL] == Decimal("0.7")  # noqa: SLF001
+
+    def test_reload_keeps_windows_when_window_bars_unchanged(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # Same FEATURES list -> same window_bars -> windows preserved.
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+        _train_tiny_model(dir_b, _make_uptrend_bars(n=200))
+
+        strategy = _build_loaded_strategy(dir_a)
+        # Seed the window with N bars so we can assert post-reload it
+        # still has the same N entries.
+        seeded_bars = _make_uptrend_bars(n=10)
+        for bar in seeded_bars:
+            strategy._windows[SYMBOL].append(bar)  # noqa: SLF001
+        old_len = len(strategy._windows[SYMBOL])  # noqa: SLF001
+
+        strategy.reload_from_dir(dir_b)
+
+        assert len(strategy._windows[SYMBOL]) == old_len  # noqa: SLF001
+
+    def test_reload_resets_windows_when_window_bars_changes(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # Train model A with default FEATURES (ret_1m, ret_5m, rv_5m
+        # -> max lookback 5 bars).  For B, write a meta with a
+        # longer-lookback feature so window_bars increases.  The
+        # actual booster doesn't need to match meta features for
+        # this test (we never call on_bar after reload); we only
+        # need the reload code path to detect the size change.
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+        _train_tiny_model(dir_b, _make_uptrend_bars(n=200))
+        # Patch B's meta.json so window_bars grows.
+        meta_b = json.loads((dir_b / "meta.json").read_text())
+        meta_b["features"] = ["ret_30m", "rv_30m"]
+        (dir_b / "meta.json").write_text(json.dumps(meta_b))
+
+        strategy = _build_loaded_strategy(dir_a)
+        # Seed window with stale data; reload should drop it.
+        seeded_bars = _make_uptrend_bars(n=10)
+        for bar in seeded_bars:
+            strategy._windows[SYMBOL].append(bar)  # noqa: SLF001
+        old_window_bars = strategy._window_bars  # noqa: SLF001
+
+        strategy.reload_from_dir(dir_b)
+
+        assert strategy._window_bars > old_window_bars  # noqa: SLF001
+        # Reset deque is empty: the strategy will re-warm naturally.
+        assert len(strategy._windows[SYMBOL]) == 0  # noqa: SLF001
+
+    def test_reload_missing_artifacts_raises_and_keeps_old(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # Reload pointing at an empty dir must raise BEFORE touching
+        # any state; old booster + features still in place.
+        dir_a = tmp_path / "a"
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+
+        strategy = _build_loaded_strategy(dir_a)
+        old_booster = strategy._booster  # noqa: SLF001
+        old_features = list(strategy._features)  # noqa: SLF001
+        old_dir = strategy._model_dir  # noqa: SLF001
+
+        with pytest.raises(FileNotFoundError):
+            strategy.reload_from_dir(empty_dir)
+
+        assert strategy._booster is old_booster  # noqa: SLF001
+        assert strategy._features == old_features  # noqa: SLF001
+        assert strategy._model_dir == old_dir  # noqa: SLF001
+
+    def test_reload_invalid_features_raises_and_keeps_old(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # An order-book feature in meta.json must be rejected by
+        # ``require_supported`` BEFORE the booster swap happens.
+        dir_a = tmp_path / "a"
+        dir_bad = tmp_path / "bad"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+        _train_tiny_model(dir_bad, _make_uptrend_bars(n=200))
+        meta_bad = json.loads((dir_bad / "meta.json").read_text())
+        meta_bad["features"] = ["book_imbalance_1"]
+        (dir_bad / "meta.json").write_text(json.dumps(meta_bad))
+
+        strategy = _build_loaded_strategy(dir_a)
+        old_booster = strategy._booster  # noqa: SLF001
+
+        with pytest.raises(ValueError, match="cannot compute"):
+            strategy.reload_from_dir(dir_bad)
+
+        # Old booster still installed despite the failed reload.
+        assert strategy._booster is old_booster  # noqa: SLF001
+
+    def test_reload_empty_features_list_raises(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        dir_a = tmp_path / "a"
+        dir_empty_meta = tmp_path / "empty_meta"
+        _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
+        _train_tiny_model(dir_empty_meta, _make_uptrend_bars(n=200))
+        meta = json.loads((dir_empty_meta / "meta.json").read_text())
+        meta["features"] = []
+        (dir_empty_meta / "meta.json").write_text(json.dumps(meta))
+
+        strategy = _build_loaded_strategy(dir_a)
+
+        with pytest.raises(ValueError, match="missing the 'features' list"):
+            strategy.reload_from_dir(dir_empty_meta)

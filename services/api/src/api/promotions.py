@@ -524,14 +524,14 @@ def resolve_active_model_dir(
         try:
             data = json.loads(active.read_text())
             name = data.get("model_name")
-            if name:
+            if isinstance(name, str) and name:
                 return models / name
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.warning(
                 "active binding %s ignored on agent boot: %s",
                 active,
                 exc,
-            )
+    )
     if env_fallback and os.environ.get(env_fallback):
-        return pathlib.Path(os.environ[env_fallback])
+        return pathlib.Path(str(os.environ[env_fallback]))
     return models / default_model

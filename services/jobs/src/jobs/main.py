@@ -32,6 +32,7 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 from jobs.daily_eod_load import run_daily
+from jobs.news_alpha_candidate_train import run_daily as run_news_alpha_candidate_train
 
 log = get_logger(__name__)
 
@@ -39,6 +40,10 @@ EOD_CRON_TZ = "America/New_York"
 EOD_CRON_HOUR = 22
 EOD_CRON_MINUTE = 30
 EOD_CRON_DAY_OF_WEEK = "mon-fri"
+NEWS_ALPHA_CRON_TZ = "America/New_York"
+NEWS_ALPHA_CRON_HOUR = 23
+NEWS_ALPHA_CRON_MINUTE = 15
+NEWS_ALPHA_CRON_DAY_OF_WEEK = "mon-fri"
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -56,6 +61,19 @@ def build_scheduler() -> AsyncIOScheduler:
         name="EOD equity loader (yfinance → bars_1d)",
         replace_existing=True,
         misfire_grace_time=3600,  # 1 h grace if the host was asleep at fire time
+    )
+    scheduler.add_job(
+        run_news_alpha_candidate_train,
+        trigger=CronTrigger(
+            day_of_week=NEWS_ALPHA_CRON_DAY_OF_WEEK,
+            hour=NEWS_ALPHA_CRON_HOUR,
+            minute=NEWS_ALPHA_CRON_MINUTE,
+            timezone=NEWS_ALPHA_CRON_TZ,
+        ),
+        id="news_alpha_candidate_train",
+        name="News-alpha candidate trainer (labels → candidate model)",
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
     return scheduler
 

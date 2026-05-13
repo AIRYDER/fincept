@@ -29,9 +29,11 @@ from api.routes import (
     data,
     models as models_route,
     news,
+    news_impact,
     orders,
     positions,
     regime as regime_route,
+    research,
     services as services_route,
     strategies,
 )
@@ -104,10 +106,12 @@ app.include_router(positions.router, prefix="/positions", tags=["positions"])
 app.include_router(orders.router, prefix="/orders", tags=["orders"])
 app.include_router(strategies.router, prefix="/strategies", tags=["strategies"])
 app.include_router(news.router, prefix="/news", tags=["news"])
+app.include_router(news_impact.router, prefix="/news-impact", tags=["news-impact"])
 app.include_router(services_route.router, prefix="/services", tags=["services"])
 app.include_router(models_route.router, prefix="/models", tags=["models"])
 app.include_router(regime_route.router, prefix="/regime", tags=["regime"])
 app.include_router(backtest_route.router, prefix="/backtest", tags=["backtest"])
+app.include_router(research.router, prefix="/research", tags=["research"])
 # Control endpoints (auth-required, write).
 app.include_router(control.router, prefix="", tags=["control"])
 # WebSocket multiplexer.

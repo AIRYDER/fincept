@@ -1,0 +1,2 @@
+{"strategy_id": "alpaca.live", "class_name": "position_tracker", "symbols": ["AI", "AMD", "AMZN", "ARKQ", "BOTZ", "GOOGL", "MSFT", "MU", "NVDA", "PATH", "TSLA"], "params": {}, "model_binding": null, "enabled": false, "created_at": 1778277232.7298076, "updated_at": 1778277232.7298076}
+{"strategy_id": "alpaca.live", "class_name": "position_tracker", "symbols": ["AI", "AMD", "AMZN", "ARKQ", "BOTZ", "GOOGL", "MSFT", "MU", "NVDA", "PATH", "TSLA"], "params": {}, "model_binding": null, "enabled": true, "created_at": 1778277232.7298076, "updated_at": 1778277256.42342}
