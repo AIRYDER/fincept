@@ -1,13 +1,16 @@
 <#
 .SYNOPSIS
-  One-command launch for the Fincept stack (Redis + API + Dashboard).
+  One-command launch for the Fincept stack.
 
 .DESCRIPTION
   Verifies Memurai/Redis is reachable on :6379 (starts the Windows
-  service if installed), launches the FastAPI server on :8000 in a new
-  window, launches the Next.js dashboard on :3000 in a new window,
-  polls /health until both are ready, optionally re-syncs Alpaca
-  positions into Redis, and prints a JWT + URLs for the operator.
+  service if installed), launches the local OpenBB API if available,
+  launches the FastAPI server on :8010 in a new window, launches the
+  Next.js dashboard on :3000 in a new window, launches core trading
+  services, news enrichment, news outcome labeling, optional GBM and
+  news-alpha predictors, optional sentiment and regime agents, polls
+  service health, optionally re-syncs Alpaca positions into Redis, and
+  prints a JWT + URLs for the operator.
 
 .PARAMETER Sync
   After the API is healthy, run scripts/sync_alpaca.py to refresh
@@ -15,6 +18,20 @@
 
 .PARAMETER NoDashboard
   Skip the Next.js dashboard (API-only mode).
+
+.PARAMETER NoOpenBB
+  Skip starting the local OpenBB API backend.
+
+.PARAMETER NoServices
+  Skip trading/news/agent service windows.
+
+.PARAMETER WithGbm
+  Start the GBM predictor when a trained model exists.
+
+.PARAMETER ReloadApi
+  Start FastAPI with uvicorn --reload. Disabled by default to reduce
+  process count and Windows commit/pagefile pressure during full-stack
+  startup.
 
 .EXAMPLE
   ./scripts/start.ps1
@@ -24,8 +41,20 @@
 param(
     [switch]$Sync,
     [switch]$NoDashboard,
+    [switch]$NoOpenBB,
     [switch]$NoServices,
-    [switch]$WithGbm
+    [switch]$Full,
+    [switch]$WithMarketData,
+    [switch]$WithNewsLearning,
+    [switch]$WithJobs,
+    [switch]$WithGbm,
+    [switch]$WithNewsAlpha,
+    [switch]$WithSentiment,
+    [switch]$WithRegime,
+    [switch]$WithOpenBB,
+    [switch]$ReloadApi,
+    [int]$ApiPort = 8010,
+    [int]$SpawnDelayMs = 250
 )
 
 Set-StrictMode -Version Latest
@@ -33,6 +62,14 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
+$StartOpenBB = ($Full -or $WithOpenBB) -and -not $NoOpenBB
+$StartMarketData = $Full -or $WithMarketData
+$StartNewsLearning = $Full -or $WithNewsLearning
+$StartJobs = $Full -or $WithJobs
+$StartGbm = $Full -or $WithGbm
+$StartNewsAlpha = $Full -or $WithNewsAlpha
+$StartSentiment = $Full -or $WithSentiment
+$StartRegime = $Full -or $WithRegime
 
 # ---------------------------------------------------------------------
 # Helpers
@@ -41,6 +78,31 @@ Set-Location $RepoRoot
 function Write-Step {
     param([string]$Message, [string]$Color = "Cyan")
     Write-Host "==> $Message" -ForegroundColor $Color
+}
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Start-MemuraiWithElevation {
+    try {
+        $command = "Start-Service -Name Memurai"
+        Start-Process pwsh -Verb RunAs -Wait -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            $command
+        ) | Out-Null
+        Start-Sleep -Seconds 1
+        return $true
+    } catch {
+        Write-Host "    WARN: elevated Memurai start failed or was canceled: $($_.Exception.Message)" `
+            -ForegroundColor Yellow
+        return $false
+    }
 }
 
 function Test-TcpPort {
@@ -81,6 +143,99 @@ function Wait-ForHttp {
     return $false
 }
 
+function Test-FinceptApi {
+    param([string]$Url)
+    try {
+        $resp = Invoke-WebRequest -Uri $Url -NoProxy -UseBasicParsing `
+            -TimeoutSec 2 -ErrorAction Stop
+        if ($resp.StatusCode -ne 200) { return $false }
+        $json = $resp.Content | ConvertFrom-Json -ErrorAction Stop
+        return [bool]($json.ok -eq $true -and $json.version)
+    } catch {
+        return $false
+    }
+}
+
+function Get-DotEnvValue {
+    param([string]$Name)
+    $live = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if (-not [string]::IsNullOrWhiteSpace($live)) {
+        return $live.Trim()
+    }
+    $envFile = Join-Path $RepoRoot ".env"
+    if (-not (Test-Path $envFile)) { return $null }
+    foreach ($line in Get-Content $envFile) {
+        if ($line -match "^\s*$([regex]::Escape($Name))\s*=\s*(.+?)\s*$") {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $null
+}
+
+function Get-FinceptSettingValue {
+    param([string]$Name)
+    $prefixed = Get-DotEnvValue -Name "FINCEPT_$Name"
+    if (-not [string]::IsNullOrWhiteSpace($prefixed)) {
+        return $prefixed
+    }
+    return Get-DotEnvValue -Name $Name
+}
+
+function Get-OpenBBApiUrl {
+    $configured = Get-DotEnvValue -Name "OPENBB_API_URL"
+    if ([string]::IsNullOrWhiteSpace($configured)) {
+        return "http://127.0.0.1:6900"
+    }
+    return $configured.TrimEnd("/")
+}
+
+function Get-OpenBBApiCommand {
+    $cmd = Get-Command openbb-api -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    $candidates = @(
+        "C:\Python310\Scripts\openbb-api.exe",
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python310\Scripts\openbb-api.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\Scripts\openbb-api.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\Scripts\openbb-api.exe")
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    return $null
+}
+
+function Test-OpenBBApi {
+    param([string]$BaseUrl)
+    try {
+        $resp = Invoke-WebRequest -Uri "$BaseUrl/openapi.json" -NoProxy -UseBasicParsing `
+            -TimeoutSec 2 -ErrorAction Stop
+        return ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300)
+    } catch {
+        return $false
+    }
+}
+
+function Find-OpenBBApiUrl {
+    param(
+        [string]$BaseUrl,
+        [int]$MaxPortOffset = 10
+    )
+    try {
+        $uri = [Uri]$BaseUrl
+    } catch {
+        return $null
+    }
+    $hostName = if ($uri.Host) { $uri.Host } else { "127.0.0.1" }
+    $startPort = if ($uri.Port -gt 0) { $uri.Port } else { 6900 }
+    for ($port = $startPort; $port -le ($startPort + $MaxPortOffset); $port++) {
+        $candidate = "{0}://{1}:{2}" -f $uri.Scheme, $hostName, $port
+        if (Test-OpenBBApi -BaseUrl $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
 function Start-InNewWindow {
     param(
         [string]$Title,
@@ -100,6 +255,9 @@ $escaped
         '-Command',
         $launch
     ) | Out-Null
+    if ($SpawnDelayMs -gt 0) {
+        Start-Sleep -Milliseconds $SpawnDelayMs
+    }
 }
 
 function Wait-ForHeartbeat {
@@ -112,7 +270,7 @@ function Wait-ForHeartbeat {
     # (fincept-terminal) doesn't list fincept-core as a dependency, so a
     # bare `uv run` may not have it installed.  Same fix pattern as the
     # service launches above.
-    $out = uv run --package fincept-core python scripts/wait_heartbeat.py $Name --timeout $TimeoutSec 2>&1
+    uv run --package fincept-core python scripts/wait_heartbeat.py $Name --timeout $TimeoutSec 2>&1 | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -222,8 +380,20 @@ if (Test-TcpPort -Port 6379) {
     $svc = Get-Service -Name Memurai -ErrorAction SilentlyContinue
     if ($null -ne $svc) {
         Write-Host "    starting Memurai service..."
-        Start-Service -Name Memurai
-        Start-Sleep -Seconds 1
+        try {
+            Start-Service -Name Memurai -ErrorAction Stop
+            Start-Sleep -Seconds 1
+        } catch {
+            Write-Host "    WARN: could not start Memurai service: $($_.Exception.Message)" `
+                -ForegroundColor Yellow
+            if (-not (Test-IsAdministrator)) {
+                Write-Host "    This shell is not elevated. Re-run start.ps1 as Administrator, or start Memurai from Services."
+                Write-Host "    Requesting elevation to start Memurai..."
+                [void](Start-MemuraiWithElevation)
+            } else {
+                Write-Host "    Check service status with: Get-Service Memurai"
+            }
+        }
     }
     if (-not (Test-TcpPort -Port 6379)) {
         Write-Host "    ERROR: Redis not reachable on :6379." -ForegroundColor Red
@@ -234,27 +404,116 @@ if (Test-TcpPort -Port 6379) {
 }
 
 # ---------------------------------------------------------------------
-# 2. API (FastAPI / uvicorn on :8000)
+# 2. OpenBB API (optional local research backend on :6900 by default)
 # ---------------------------------------------------------------------
 
-Write-Step "API on :8000"
-if (Test-TcpPort -Port 8000) {
-    Write-Host "    already running (leaving it alone)" -ForegroundColor DarkGray
+$OpenBBBaseUrl = Get-OpenBBApiUrl
+if ($StartOpenBB) {
+    Write-Step "OpenBB API at $OpenBBBaseUrl"
+    $openbbUri = $null
+    try {
+        $openbbUri = [Uri]$OpenBBBaseUrl
+    } catch {
+        Write-Host "    WARN: OPENBB_API_URL is not a valid URL: $OpenBBBaseUrl" `
+            -ForegroundColor Yellow
+    }
+    $openbbHost = if ($openbbUri -and $openbbUri.Host) { $openbbUri.Host } else { "127.0.0.1" }
+    $openbbPort = if ($openbbUri -and $openbbUri.Port -gt 0) { $openbbUri.Port } else { 6900 }
+    if (Test-OpenBBApi -BaseUrl $OpenBBBaseUrl) {
+        Write-Host "    already running" -ForegroundColor DarkGray
+        [Environment]::SetEnvironmentVariable("OPENBB_API_URL", $OpenBBBaseUrl, "Process")
+    } elseif (Test-TcpPort -ComputerName $openbbHost -Port $openbbPort) {
+        $actualOpenBBUrl = Find-OpenBBApiUrl -BaseUrl $OpenBBBaseUrl
+        if ($actualOpenBBUrl) {
+            $OpenBBBaseUrl = $actualOpenBBUrl
+            [Environment]::SetEnvironmentVariable("OPENBB_API_URL", $OpenBBBaseUrl, "Process")
+            Write-Host "    OK  OpenBB detected at $OpenBBBaseUrl" -ForegroundColor Green
+        } else {
+            Write-Host "    WARN: :$openbbPort is listening, but OpenBB /openapi.json did not respond" `
+                -ForegroundColor Yellow
+            Write-Host "          Open Data Platform may still be starting, or another process owns the port." `
+                -ForegroundColor Yellow
+        }
+    } else {
+        $openbbCommand = Get-OpenBBApiCommand
+        if ($openbbCommand) {
+            Write-Host "    spawn: OpenBB API ($openbbCommand)" -ForegroundColor DarkGray
+            Start-InNewWindow `
+                -Title "fincept-openbb" `
+                -Command "& `"$openbbCommand`" --host $openbbHost --port $openbbPort"
+            if (Wait-ForHttp -Url "$OpenBBBaseUrl/openapi.json" -TimeoutSec 45 -Label "OpenBB API") {
+                [Environment]::SetEnvironmentVariable("OPENBB_API_URL", $OpenBBBaseUrl, "Process")
+                Write-Host "    OK  $OpenBBBaseUrl" -ForegroundColor Green
+            } else {
+                $actualOpenBBUrl = Find-OpenBBApiUrl -BaseUrl $OpenBBBaseUrl
+                if ($actualOpenBBUrl) {
+                    $OpenBBBaseUrl = $actualOpenBBUrl
+                    [Environment]::SetEnvironmentVariable("OPENBB_API_URL", $OpenBBBaseUrl, "Process")
+                    Write-Host "    OK  OpenBB moved to $OpenBBBaseUrl" -ForegroundColor Green
+                } else {
+                    Write-Host "    WARN: OpenBB API did not start. Check the 'fincept-openbb' window." `
+                        -ForegroundColor Yellow
+                    Write-Host "          Prior setup also supports Open Data Platform Desktop -> Backends -> OpenBB API -> Start." `
+                        -ForegroundColor Yellow
+                }
+            }
+        } else {
+            Write-Host "    SKIP: openbb-api command not found" -ForegroundColor Yellow
+            Write-Host "          Start Open Data Platform Desktop -> Backends -> OpenBB API -> Start." `
+                -ForegroundColor Yellow
+        }
+    }
 } else {
+    Write-Step "OpenBB API skipped (use -WithOpenBB or -Full)"
+}
+
+# ---------------------------------------------------------------------
+# 3. API (FastAPI / uvicorn on configured API port)
+# ---------------------------------------------------------------------
+
+Write-Step "API on :$ApiPort"
+$ApiBaseUrl = "http://127.0.0.1:$ApiPort"
+if (Test-TcpPort -Port $ApiPort) {
+    if (Test-FinceptApi -Url "$ApiBaseUrl/health") {
+        Write-Host "    already running (leaving it alone)" -ForegroundColor DarkGray
+    } else {
+        $owner = Get-NetTCPConnection -LocalPort $ApiPort -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty OwningProcess
+        $cmd = $null
+        if ($owner) {
+            $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner" `
+                -ErrorAction SilentlyContinue).CommandLine
+        }
+        Write-Host "    ERROR: :$ApiPort is occupied, but it is not Fincept API." -ForegroundColor Red
+        if ($cmd) {
+            Write-Host "    Owner: $cmd" -ForegroundColor Yellow
+        }
+        Write-Host "    Stop that process or choose another -ApiPort, then rerun ./start.bat." `
+            -ForegroundColor Yellow
+        exit 1
+    }
+} else {
+    $apiCommand = "uv run --package api uvicorn api.main:app --host 127.0.0.1 --port $ApiPort"
+    if ($ReloadApi) {
+        $apiCommand = "$apiCommand --reload"
+    }
     Start-InNewWindow `
         -Title "fincept-api" `
-        -Command "uv run --package api uvicorn api.main:app --reload --port 8000"
-    $ok = Wait-ForHttp -Url "http://127.0.0.1:8000/health" -TimeoutSec 30 -Label "API"
+        -Command $apiCommand
+    $ok = Wait-ForHttp -Url "$ApiBaseUrl/health" -TimeoutSec 120 -Label "API"
     if (-not $ok) {
         Write-Host "    API window opened but /health never responded." -ForegroundColor Yellow
         Write-Host "    Check the 'fincept-api' window for a traceback."
+        Write-Host "    Dashboard startup is aborted so the UI does not load against an offline API." `
+            -ForegroundColor Yellow
+        exit 1
     } else {
-        Write-Host "    OK  http://127.0.0.1:8000" -ForegroundColor Green
+        Write-Host "    OK  $ApiBaseUrl" -ForegroundColor Green
     }
 }
 
 # ---------------------------------------------------------------------
-# 3. Trading services (ingestor + features + orchestrator + OMS + portfolio + jobs)
+# 4. Trading services (ingestor + features + orchestrator + OMS + portfolio + jobs)
 #
 # Each runs in its own window so a crash is visible.  Heartbeats are
 # written to Redis (`service:heartbeat:{name}`) and surfaced in the
@@ -275,23 +534,45 @@ if (-not $NoServices) {
     # Default is coinbase because binance returns HTTP 451 from US IPs
     # (geo-block).  Override with: $env:FINCEPT_INGESTOR_VENUE = "binance"
     # before running this script.  Supported: binance, coinbase, kraken.
-    $ingestorVenue = if ($env:FINCEPT_INGESTOR_VENUE) { $env:FINCEPT_INGESTOR_VENUE } else { "coinbase" }
-    Write-Host "    spawn: ingestor (venue=$ingestorVenue)" -ForegroundColor DarkGray
-    Start-InNewWindow `
-        -Title "fincept-ingestor" `
-        -Command "uv run --package ingestor python -m ingestor.main --venue $ingestorVenue"
-    $expectedServices.Add("ingestor")
+    if ($StartMarketData) {
+        $ingestorVenue = if ($env:FINCEPT_INGESTOR_VENUE) { $env:FINCEPT_INGESTOR_VENUE } else { "coinbase" }
+        Write-Host "    spawn: ingestor (venue=$ingestorVenue)" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-ingestor" `
+            -Command "uv run --package ingestor python -m ingestor.main --venue $ingestorVenue"
+        $expectedServices.Add("ingestor")
 
-    # Features: consumes bars, publishes online feature snapshots.
-    Write-Host "    spawn: features" -ForegroundColor DarkGray
-    Start-InNewWindow `
-        -Title "fincept-features" `
-        -Command "uv run --package features python -m features.main"
-    $expectedServices.Add("features")
+        # Features: consumes bars, publishes online feature snapshots.
+        Write-Host "    spawn: features" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-features" `
+            -Command "uv run --package features python -m features.main"
+        $expectedServices.Add("features")
+    } else {
+        Write-Host "    SKIP: market_data (use -WithMarketData or dashboard Start feature)" `
+            -ForegroundColor DarkGray
+    }
+
+    if ($StartNewsLearning) {
+        Write-Host "    spawn: information_enricher" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-information-enricher" `
+            -Command "uv run --package agents python -m agents.information_enricher.main"
+        $expectedServices.Add("information_enricher")
+
+        Write-Host "    spawn: news_outcome_labeler" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-news-outcome-labeler" `
+            -Command "uv run --package agents python -m agents.news_outcome_labeler.main"
+        $expectedServices.Add("news_outcome_labeler")
+    } else {
+        Write-Host "    SKIP: news_learning (use -WithNewsLearning or dashboard Start feature)" `
+            -ForegroundColor DarkGray
+    }
 
     # GBM predictor: consumes features, publishes Predictions.  Needs a
     # trained model; opt-in flag because most dev sessions don't have one.
-    if ($WithGbm) {
+    if ($StartGbm) {
         $modelDir = Join-Path $RepoRoot "models\gbm_predictor"
         if (Test-Path (Join-Path $modelDir "model.txt")) {
             Write-Host "    spawn: gbm_predictor" -ForegroundColor DarkGray
@@ -307,47 +588,74 @@ if (-not $NoServices) {
         }
     }
 
-    # Sentiment agent: polls NewsAPI + (Anthropic OR OpenAI), publishes
-    # SentimentSignal.  NewsAPI is required; the agent picks a usable
-    # LLM provider via fincept_core.config.LLM_PROVIDER (default "auto"
-    # tries Anthropic, falls back to OpenAI).  We probe .env here to
-    # avoid spawning a window that closes immediately.
-    $envFile = Join-Path $RepoRoot ".env"
-    $hasNewsAPI = $false
-    $hasAnthropic = $false
-    $hasOpenAI = $false
-    $envText = ""
-    if (Test-Path $envFile) {
-        $envText = Get-Content $envFile -Raw
-        if ($envText -match '(?m)^FINCEPT_NEWSAPI_API_KEY=\S') { $hasNewsAPI = $true }
-        if ($envText -match '(?m)^FINCEPT_ANTHROPIC_API_KEY=\S') { $hasAnthropic = $true }
-        if ($envText -match '(?m)^FINCEPT_OPENAI_API_KEY=\S') { $hasOpenAI = $true }
+    $newsAlphaActivePointer = Join-Path $RepoRoot "models\active\news_alpha_predictor.v1.json"
+    $newsAlphaModelDir = if ($env:NEWS_ALPHA_MODEL_DIR) { $env:NEWS_ALPHA_MODEL_DIR } else { Join-Path $RepoRoot "models\news_alpha_predictor" }
+    if ((Test-Path $newsAlphaActivePointer) -and -not $env:NEWS_ALPHA_MODEL_DIR) {
+        try {
+            $newsAlphaPointer = Get-Content $newsAlphaActivePointer -Raw | ConvertFrom-Json
+            if ($newsAlphaPointer.model_name) {
+                $newsAlphaModelDir = Join-Path (Join-Path $RepoRoot "models") $newsAlphaPointer.model_name
+            }
+        } catch {}
     }
-    if ($hasNewsAPI -and ($hasAnthropic -or $hasOpenAI)) {
+    if ($StartNewsAlpha -and (Test-Path (Join-Path $newsAlphaModelDir "model.txt"))) {
+        Write-Host "    spawn: news_alpha_predictor" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-news-alpha" `
+            -Command "uv run --package agents python -m agents.news_alpha_predictor.main"
+        $expectedServices.Add("news_alpha_predictor")
+    } elseif ($StartNewsAlpha) {
+        Write-Host "    SKIP: news_alpha_predictor (no model.txt at $newsAlphaModelDir)" `
+            -ForegroundColor Yellow
+    } else {
+        Write-Host "    SKIP: news_alpha_predictor (use -WithNewsAlpha or dashboard Start feature)" `
+            -ForegroundColor DarkGray
+    }
+
+    $hasAnthropic = -not [string]::IsNullOrWhiteSpace((Get-FinceptSettingValue -Name "ANTHROPIC_API_KEY"))
+    $hasOpenAI = -not [string]::IsNullOrWhiteSpace((Get-FinceptSettingValue -Name "OPENAI_API_KEY"))
+    if ($StartSentiment -and ($hasAnthropic -or $hasOpenAI)) {
         Write-Host "    spawn: sentiment_agent" -ForegroundColor DarkGray
         Start-InNewWindow `
             -Title "fincept-sentiment" `
             -Command "uv run --package agents python -m agents.sentiment_agent.main"
         $expectedServices.Add("sentiment_agent")
-    } else {
-        Write-Host "    SKIP: sentiment_agent (need NEWSAPI_API_KEY plus ANTHROPIC_API_KEY or OPENAI_API_KEY in .env)" `
+
+        Write-Host "    spawn: sentiment_features" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-sentiment-features" `
+            -Command "uv run --package agents python -m agents.sentiment_features.main"
+        $expectedServices.Add("sentiment_features")
+    } elseif ($StartSentiment) {
+        Write-Host "    SKIP: sentiment_agent (need ANTHROPIC_API_KEY or OPENAI_API_KEY in .env)" `
             -ForegroundColor Yellow
+        Write-Host "    SKIP: sentiment_features (depends on sentiment_agent LLM configuration)" `
+            -ForegroundColor Yellow
+    } else {
+        Write-Host "    SKIP: sentiment (use -WithSentiment or dashboard Start feature)" `
+            -ForegroundColor DarkGray
     }
 
-    # Regime agent: polls FRED, classifies macro regime, publishes RegimeSignal
-    # whenever the label changes.  Gated on FRED_API_KEY.
-    $hasFred = $false
-    if ($envText -match '(?m)^FINCEPT_FRED_API_KEY=\S') { $hasFred = $true }
-    if ($hasFred) {
+    $hasFred = -not [string]::IsNullOrWhiteSpace((Get-FinceptSettingValue -Name "FRED_API_KEY"))
+    if ($StartRegime -and $hasFred) {
         Write-Host "    spawn: regime_agent" -ForegroundColor DarkGray
         Start-InNewWindow `
             -Title "fincept-regime" `
             -Command "uv run --package agents python -m agents.regime_agent.main"
         $expectedServices.Add("regime_agent")
-    } else {
+    } elseif ($StartRegime) {
         Write-Host "    SKIP: regime_agent (missing FRED_API_KEY in .env)" `
             -ForegroundColor Yellow
+    } else {
+        Write-Host "    SKIP: regime_agent (use -WithRegime or dashboard Start feature)" `
+            -ForegroundColor DarkGray
     }
+
+    Write-Host "    spawn: strategy_host" -ForegroundColor DarkGray
+    Start-InNewWindow `
+        -Title "fincept-strategy-host" `
+        -Command "uv run --package strategy_host python -m strategy_host.main"
+    $expectedServices.Add("strategy_host")
 
     # Orchestrator: consumes Predictions + sentiment + regime + price feed, publishes OrderIntents.
     Write-Host "    spawn: orchestrator" -ForegroundColor DarkGray
@@ -370,12 +678,17 @@ if (-not $NoServices) {
         -Command "uv run --package portfolio python -m portfolio.main"
     $expectedServices.Add("portfolio")
 
-    # Jobs: APScheduler for cron tasks (EOD load).
-    Write-Host "    spawn: jobs" -ForegroundColor DarkGray
-    Start-InNewWindow `
-        -Title "fincept-jobs" `
-        -Command "uv run --package jobs python -m jobs.main"
-    $expectedServices.Add("jobs")
+    if ($StartJobs) {
+        # Jobs: APScheduler for cron tasks (EOD load).
+        Write-Host "    spawn: jobs" -ForegroundColor DarkGray
+        Start-InNewWindow `
+            -Title "fincept-jobs" `
+            -Command "uv run --package jobs python -m jobs.main"
+        $expectedServices.Add("jobs")
+    } else {
+        Write-Host "    SKIP: jobs (use -WithJobs or dashboard Start feature)" `
+            -ForegroundColor DarkGray
+    }
 
     # ------ wait for all heartbeats in parallel ------
     if ($expectedServices.Count -gt 0) {
@@ -394,7 +707,7 @@ if (-not $NoServices) {
 }
 
 # ---------------------------------------------------------------------
-# 4. Optional Alpaca sync
+# 5. Optional Alpaca sync
 # ---------------------------------------------------------------------
 
 if ($Sync) {
@@ -426,7 +739,7 @@ if ($Sync) {
 }
 
 # ---------------------------------------------------------------------
-# 4. Dashboard (Next.js on :3000)
+# 6. Dashboard (Next.js on :3000)
 # ---------------------------------------------------------------------
 
 if (-not $NoDashboard) {
@@ -446,7 +759,7 @@ if (-not $NoDashboard) {
 }
 
 # ---------------------------------------------------------------------
-# 6. Mint a dev JWT for the login screen
+# 7. Mint a dev JWT for the login screen
 # ---------------------------------------------------------------------
 
 Write-Step "Dev JWT"
@@ -470,7 +783,8 @@ Write-Host "---------------------------------------------------------------" -Fo
 Write-Host "  Fincept Terminal is up" -ForegroundColor Green
 Write-Host "---------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host "  Dashboard : http://localhost:3000"
-Write-Host "  API       : http://127.0.0.1:8000  (docs: /docs)"
+Write-Host "  API       : $ApiBaseUrl  (docs: /docs)"
+Write-Host "  OpenBB    : $OpenBBBaseUrl"
 Write-Host "  Redis     : 127.0.0.1:6379"
 if ($token) {
     Write-Host ""

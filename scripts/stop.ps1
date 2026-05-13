@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-  Stop the Fincept stack (API + Dashboard + trading services).
+  Stop the Fincept stack (OpenBB + API + Dashboard + trading services).
 
 .DESCRIPTION
-  Kills the listeners on :8000 and :3000 (with their child processes)
-  and any pwsh windows opened by start.ps1 with titles matching
-  "fincept-*" (the trading services: ingestor, features, gbm,
-  orchestrator, oms, portfolio, jobs).
+  Kills the listeners on the Fincept API port (:8010 by default) and
+  :3000 (with their child processes) and any pwsh windows opened by
+  start.ps1 with titles matching "fincept-*" (OpenBB plus the trading
+  services: ingestor, features, gbm, orchestrator, oms, portfolio, jobs).
 
   Redis / Memurai is left running because other tools may depend on
   it; pass -IncludeRedis to stop that too.
@@ -25,7 +25,8 @@
 [CmdletBinding()]
 param(
     [switch]$IncludeRedis,
-    [switch]$NoServices
+    [switch]$NoServices,
+    [int]$ApiPort = 8010
 )
 
 Set-StrictMode -Version Latest
@@ -86,10 +87,16 @@ function Stop-FinceptServiceWindows {
     # we find them by MainWindowTitle and kill the process tree.
     $titles = @(
         "fincept-ingestor",
+        "fincept-openbb",
         "fincept-features",
         "fincept-gbm",
+        "fincept-information-enricher",
+        "fincept-news-outcome-labeler",
+        "fincept-news-alpha",
         "fincept-sentiment",
+        "fincept-sentiment-features",
         "fincept-regime",
+        "fincept-strategy-host",
         "fincept-orchestrator",
         "fincept-oms",
         "fincept-portfolio",
@@ -125,8 +132,8 @@ if (-not $NoServices) {
 Write-Step "Dashboard (:3000)"
 Stop-Port -Port 3000 -Label "dashboard"
 
-Write-Step "API (:8000)"
-Stop-Port -Port 8000 -Label "api"
+Write-Step "API (:$ApiPort)"
+Stop-Port -Port $ApiPort -Label "api"
 
 if ($IncludeRedis) {
     Write-Step "Redis / Memurai (:6379)"

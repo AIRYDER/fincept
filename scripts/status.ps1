@@ -3,13 +3,16 @@
   Show the current state of the Fincept stack.
 
 .DESCRIPTION
-  Probes Redis (:6379), API (:8000 + /health), and Dashboard (:3000),
-  and reports the process id, owning executable, and health status of
-  each in a single terminal-friendly table.  Also reports the number
-  of positions stored per strategy in Redis.
+  Probes Redis (:6379), OpenBB (:6900), API (:8010 + /health), and
+  Dashboard (:3000), and reports the process id, owning executable, and
+  health status of each in a single terminal-friendly table.  Also
+  reports the number of positions stored per strategy in Redis.
 #>
 [CmdletBinding()]
-param()
+param(
+    [int]$ApiPort = 8010,
+    [int]$OpenBBPort = 6900
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
@@ -65,7 +68,8 @@ Write-Host "Fincept stack status" -ForegroundColor Cyan
 Write-Host "--------------------" -ForegroundColor DarkGray
 
 Show-Service -Name "Redis"     -Port 6379
-Show-Service -Name "API"       -Port 8000 -HealthUrl "http://127.0.0.1:8000/health"
+Show-Service -Name "OpenBB"    -Port $OpenBBPort -HealthUrl "http://127.0.0.1:$OpenBBPort/openapi.json"
+Show-Service -Name "API"       -Port $ApiPort -HealthUrl "http://127.0.0.1:$ApiPort/health"
 Show-Service -Name "Dashboard" -Port 3000 -HealthUrl "http://127.0.0.1:3000"
 
 # Positions snapshot from Redis (requires python + redis client).
