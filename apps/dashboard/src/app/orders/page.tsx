@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ScrollText } from "lucide-react";
+import { Send, ScrollText } from "lucide-react";
 import { useState } from "react";
 
+import { PlaceOrderDialog } from "@/components/orders/place-order-dialog";
 import { AppShell } from "@/components/shell/app-shell";
 import { EmptyState } from "@/components/widgets/empty-state";
 import { PageHeader } from "@/components/widgets/page-header";
@@ -39,7 +40,7 @@ export default function OrdersPage() {
         limit: 200,
       }),
     enabled: !!token,
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
   });
 
   const rows = (data ?? []).filter((o) => {
@@ -58,9 +59,22 @@ export default function OrdersPage() {
         title="Orders"
         description="Latest snapshot per order_id, materialised from the audit_log table.  Newest first."
         action={
-          <Badge variant={isFetching ? "warn" : "muted"}>
-            {isFetching ? "Updating…" : "Auto-refresh · 5s"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={isFetching ? "warn" : "muted"}>
+              {isFetching ? "Updating…" : "Auto-refresh · 15s"}
+            </Badge>
+            <PlaceOrderDialog
+              trigger={
+                <button
+                  type="button"
+                  className="inline-flex h-7 items-center justify-center gap-2 border border-primary/60 bg-primary px-3 text-xs font-semibold uppercase tracking-wider text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Place order
+                </button>
+              }
+            />
+          </div>
         }
       />
 

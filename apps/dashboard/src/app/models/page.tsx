@@ -24,8 +24,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { NewsAlphaCandidatePanel } from "@/components/models/news-alpha-candidate-panel";
 import { PromotionHistoryPanel } from "@/components/models/promotion-history-panel";
+import { PromoteButton } from "@/components/models/promote-button";
 import { RunsPanel } from "@/components/models/runs-panel";
+import { ShadowButton } from "@/components/models/shadow-button";
 import { TrainModelDialog } from "@/components/models/train-model-dialog";
 import { AppShell } from "@/components/shell/app-shell";
 import { EmptyState } from "@/components/widgets/empty-state";
@@ -40,7 +43,7 @@ import {
 } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { ModelRecord } from "@/lib/types";
+import type { ModelRecord, TrainModelBody } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function ModelsPage() {
@@ -174,9 +177,13 @@ export default function ModelsPage() {
         </CardContent>
       </Card>
 
-      <PromotionHistoryPanel />
-
       <RunsPanel />
+      <PromotionHistoryPanel />
+      <NewsAlphaCandidatePanel />
+      <PromotionHistoryPanel
+        agentId="news_alpha_predictor.v1"
+        title="News-alpha promotion history"
+      />
     </AppShell>
   );
 }
@@ -256,6 +263,7 @@ function ModelCard({
     }
     return { primary: "—", secondary: "no AUC recorded" };
   })();
+  const retrainBody = retrainBodyForModel(m);
 
   return (
     <motion.div
@@ -263,86 +271,129 @@ function ModelCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.03, 0.2) }}
     >
-      <Link
-        href={`/models/${encodeURIComponent(m.name)}`}
-        className="group block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-md"
+      <div
+        className={cn(
+          "flex h-full flex-col gap-3 rounded-md border bg-background/30 p-4 transition-colors hover:bg-accent/30",
+          isActive
+            ? "border-long/50 hover:border-long/70 ring-1 ring-long/20"
+            : isShadow
+              ? "border-warn/50 hover:border-warn/70 ring-1 ring-warn/20"
+              : "border-border/40 hover:border-primary/40",
+        )}
       >
-        <div
-          className={cn(
-            "flex h-full flex-col gap-2 rounded-md border bg-background/30 p-4 transition-colors hover:bg-accent/40",
-            isActive
-              ? "border-long/50 hover:border-long/70 ring-1 ring-long/20"
-              : isShadow
-                ? "border-warn/50 hover:border-warn/70 ring-1 ring-warn/20"
-                : "border-border/40 hover:border-primary/40",
-          )}
+        <Link
+          href={`/models/${encodeURIComponent(m.name)}`}
+          className="group block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-mono text-sm font-semibold group-hover:text-primary">
-                {m.name}
-              </span>
-              {isActive ? (
-                <span
-                  className="shrink-0 rounded border border-long/40 bg-long/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-long"
-                  title="Active model"
-                >
-                  Active
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-mono text-sm font-semibold group-hover:text-primary">
+                  {m.name}
                 </span>
-              ) : null}
-              {isShadow ? (
-                <span
-                  className="shrink-0 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warn"
-                  title="Shadow candidate - predictions recorded but not published"
-                >
-                  Shadow
+                {isActive ? (
+                  <span
+                    className="shrink-0 rounded border border-long/40 bg-long/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-long"
+                    title="Active model"
+                  >
+                    Active
+                  </span>
+                ) : null}
+                {isShadow ? (
+                  <span
+                    className="shrink-0 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warn"
+                    title="Shadow candidate - predictions recorded but not published"
+                  >
+                    Shadow
+                  </span>
+                ) : null}
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 rounded border px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest",
+                  evalBadge.classes,
+                )}
+              >
+                {evalBadge.label}
+              </span>
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-2xl font-bold">
+                  {aucDisplay.primary}
                 </span>
+                <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  AUC
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {aucDisplay.secondary}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
+              <span>{m.feature_count} features</span>
+              {m.horizon_bars != null ? (
+                <span>{m.horizon_bars}-bar horizon</span>
               ) : null}
+              <span>trained {ageLabel}</span>
             </div>
-            <span
-              className={cn(
-                "shrink-0 rounded border px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest",
-                evalBadge.classes,
-              )}
-            >
-              {evalBadge.label}
-            </span>
-          </div>
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-2xl font-bold">
-                {aucDisplay.primary}
-              </span>
-              <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                AUC
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {aucDisplay.secondary}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
-            <span>{m.feature_count} features</span>
-            {m.horizon_bars != null ? (
-              <span>{m.horizon_bars}-bar horizon</span>
+            {m.training_input_path ? (
+              <div className="truncate font-mono text-[11px] text-muted-foreground">
+                data · {m.training_input_path}
+              </div>
             ) : null}
-            <span>trained {ageLabel}</span>
+            {m.warnings.length > 0 ? (
+              <div className="rounded border border-warn/40 bg-warn/5 px-2 py-1 text-[11px] text-warn">
+                {m.warnings.join("; ")}
+              </div>
+            ) : null}
+            {!m.model_file_exists ? (
+              <div className="flex items-center gap-1 text-[11px] text-destructive">
+                <HardDrive className="h-3 w-3" />
+                model.txt missing — inference disabled
+              </div>
+            ) : null}
           </div>
-          {m.warnings.length > 0 ? (
-            <div className="rounded border border-warn/40 bg-warn/5 px-2 py-1 text-[11px] text-warn">
-              {m.warnings.join("; ")}
-            </div>
-          ) : null}
-          {!m.model_file_exists ? (
-            <div className="flex items-center gap-1 text-[11px] text-destructive">
-              <HardDrive className="h-3 w-3" />
-              model.txt missing — inference disabled
-            </div>
-          ) : null}
-        </div>
-      </Link>
+        </Link>
+        {m.model_file_exists ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
+            {retrainBody ? (
+              <TrainModelDialog
+                initialBody={retrainBody}
+                triggerLabel="Retrain"
+              />
+            ) : null}
+            <ShadowButton modelName={m.name} compact />
+            <PromoteButton modelName={m.name} compact />
+          </div>
+        ) : null}
+      </div>
     </motion.div>
   );
+}
+
+function retrainBodyForModel(m: ModelRecord): Partial<TrainModelBody> | null {
+  const suffix = Date.now().toString(36);
+  if (m.training_request) {
+    return {
+      ...m.training_request,
+      model_name: `${m.name}_retrain_${suffix}`,
+    };
+  }
+  if (!m.training_input_path) {
+    return null;
+  }
+  return {
+    model_name: `${m.name}_retrain_${suffix}`,
+    input_path: m.training_input_path,
+    horizon_bars: m.horizon_bars ?? 15,
+    bar_seconds: m.bar_seconds ?? 60,
+    cv_folds: m.eval_mode === "walk_forward" ? 5 : 0,
+    purge_bars: m.purge_bars ?? -1,
+    embargo_bars: m.embargo_bars ?? 0,
+    num_boost_round: m.final_num_boost_round ?? 500,
+    early_stopping_rounds: 30,
+  };
 }
 
 function formatAge(seconds: number | null): string {

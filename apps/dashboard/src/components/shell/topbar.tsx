@@ -26,7 +26,7 @@ function HealthDot() {
   const { data, isError } = useQuery({
     queryKey: ["health"],
     queryFn: () => api.health(token),
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
     retry: 0,
   });
   const ok = !!data?.ok && !isError;

@@ -43,7 +43,8 @@ const DEFAULT_AGENT = "gbm_predictor.v1";
 
 export function PromotionHistoryPanel({
   agentId = DEFAULT_AGENT,
-}: { agentId?: string } = {}) {
+  title = "Promotion history",
+}: { agentId?: string; title?: string } = {}) {
   const token = useAuth((s) => s.token);
   const queryClient = useQueryClient();
   const [showReload, setShowReload] = useState(false);
@@ -98,7 +99,7 @@ export function PromotionHistoryPanel({
         <div>
           <CardTitle className="flex items-center gap-2 normal-case tracking-normal">
             <History className="h-4 w-4 text-primary" />
-            Promotion history
+            {title}
           </CardTitle>
           <CardDescription>
             Which model was active for{" "}

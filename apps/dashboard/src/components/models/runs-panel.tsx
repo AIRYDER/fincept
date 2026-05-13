@@ -22,13 +22,18 @@ import {
   ChevronRight,
   Clock,
   Loader2,
+  ArrowUpRight,
   ScrollText,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
+import { PromoteButton } from "@/components/models/promote-button";
+import { ShadowButton } from "@/components/models/shadow-button";
 import { EmptyState } from "@/components/widgets/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -65,21 +70,39 @@ export function RunsPanel() {
   // Auto-select the most recent run on first load so the panel isn't
   // empty for the operator.
   const runs = list.data?.runs ?? [];
-  if (selected === null && runs.length > 0) {
-    setSelected(runs[0].run_id);
-  }
+  const firstRunId = runs[0]?.run_id ?? null;
+  useEffect(() => {
+    if (selected === null && firstRunId) {
+      setSelected(firstRunId);
+    }
+  }, [firstRunId, selected]);
 
   return (
     <Card className="mt-6">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 normal-case tracking-normal">
-          <ScrollText className="h-4 w-4 text-primary" />
-          Training runs
-        </CardTitle>
-        <CardDescription>
-          Last 50 runs.  Click any row to see its tail of stdout +
-          stderr from the trainer subprocess.
-        </CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 normal-case tracking-normal">
+            <ScrollText className="h-4 w-4 text-primary" />
+            Training runs
+          </CardTitle>
+          <CardDescription>
+            Last 50 runs.  Click any row to see its tail of stdout +
+            stderr from the trainer subprocess.
+          </CardDescription>
+        </div>
+        {list.data?.summary ? (
+          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+            <Badge variant="long">{list.data.summary.completed} completed</Badge>
+            {list.data.summary.running > 0 ? (
+              <Badge>{list.data.summary.running} running</Badge>
+            ) : null}
+            {list.data.summary.failed > 0 ? (
+              <Badge variant="destructive">
+                {list.data.summary.failed} failed
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {list.error ? (
@@ -254,6 +277,41 @@ function RunDetail({ runId }: { runId: string }) {
           {r.request.input_path}
         </code>
       </div>
+
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Output
+        </div>
+        <code className="block break-all rounded bg-background/40 p-1.5 font-mono text-[11px]">
+          {r.out_dir}
+        </code>
+      </div>
+
+      {r.status === "completed" ? (
+        <div className="rounded-md border border-long/30 bg-long/5 p-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-long">
+                Model artifacts ready
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                Review the model card, run it as shadow, or promote it to
+                active GBM inference.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/models/${encodeURIComponent(r.request.model_name)}`}>
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  Detail
+                </Link>
+              </Button>
+              <ShadowButton modelName={r.request.model_name} compact />
+              <PromoteButton modelName={r.request.model_name} compact />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {r.error ? (
         <div className="rounded border border-destructive/40 bg-destructive/5 px-2 py-1 text-[11px] text-destructive">

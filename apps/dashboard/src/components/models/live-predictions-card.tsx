@@ -48,7 +48,7 @@ interface Props {
 
 const DEFAULT_AGENT = "gbm_predictor.v1";
 const TAIL_LIMIT = 20;
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 30_000;
 
 export function LivePredictionsCard({ modelName, agentId }: Props) {
   const token = useAuth((s) => s.token);
@@ -60,7 +60,7 @@ export function LivePredictionsCard({ modelName, agentId }: Props) {
       api.modelPredictionStats(token, modelName, { agent_id: aid }),
     enabled: !!token && !!modelName,
     refetchInterval: POLL_INTERVAL_MS,
-    staleTime: 5_000,
+    staleTime: 15_000,
   });
 
   const tail = useQuery({
@@ -72,7 +72,7 @@ export function LivePredictionsCard({ modelName, agentId }: Props) {
       }),
     enabled: !!token && !!modelName,
     refetchInterval: POLL_INTERVAL_MS,
-    staleTime: 5_000,
+    staleTime: 15_000,
   });
 
   const s = stats.data?.stats;

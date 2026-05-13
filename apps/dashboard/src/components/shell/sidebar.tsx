@@ -10,8 +10,10 @@ import {
   CircuitBoard,
   Coins,
   FlaskConical,
+  FileJson,
   LayoutDashboard,
   Newspaper,
+  PieChart,
   ScrollText,
   ShieldAlert,
 } from "lucide-react";
@@ -33,11 +35,14 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/positions", label: "Positions", icon: Briefcase, mnemonic: "PS" },
   { href: "/orders", label: "Orders", icon: ScrollText, mnemonic: "OR" },
   { href: "/strategies", label: "Strategies", icon: Bot, mnemonic: "ST" },
+  { href: "/portfolio-builder", label: "Optimizer", icon: PieChart, mnemonic: "PO" },
   { href: "/news", label: "News", icon: Newspaper, mnemonic: "NW" },
+  { href: "/news-impact-lab", label: "News Lab", icon: FlaskConical, mnemonic: "NL" },
   { href: "/predictions", label: "Predictions", icon: Activity, mnemonic: "PR" },
   { href: "/markets", label: "Markets", icon: BarChart3, mnemonic: "MK" },
   { href: "/backtest", label: "Backtest", icon: FlaskConical, mnemonic: "BT" },
   { href: "/models", label: "Models", icon: Brain, mnemonic: "ML" },
+  { href: "/receipts", label: "Receipts", icon: FileJson, mnemonic: "PF" },
   { href: "/risk", label: "Risk", icon: ShieldAlert, mnemonic: "RK" },
 ];
 

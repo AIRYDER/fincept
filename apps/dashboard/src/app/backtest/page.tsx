@@ -22,6 +22,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { BacktestLabPanel } from "@/components/backtest/backtest-lab-panel";
 import { AppShell } from "@/components/shell/app-shell";
 import { EmptyState } from "@/components/widgets/empty-state";
 import { PageHeader } from "@/components/widgets/page-header";
@@ -265,6 +266,9 @@ export default function BacktestPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Backtest Lab — attribution, fees, receipts */}
+        <BacktestLabPanel report={report ?? null} manifest={manifest ?? null} />
 
         {/* Active run KPIs + chart */}
         {report && manifest ? (

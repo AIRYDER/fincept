@@ -26,10 +26,16 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "OVERVIEW", mnemonic: "OV" },
   { href: "/positions", label: "POSITIONS", mnemonic: "PS" },
   { href: "/orders", label: "ORDERS", mnemonic: "OR" },
+  { href: "/reconciliation", label: "RECON", mnemonic: "RC" },
   { href: "/strategies", label: "STRATEGIES", mnemonic: "ST" },
+  { href: "/portfolio-builder", label: "OPTIMIZER", mnemonic: "PO" },
   { href: "/news", label: "NEWS", mnemonic: "NW" },
+  { href: "/research", label: "RESEARCH", mnemonic: "RX" },
+  { href: "/news-impact-lab", label: "NEWS LAB", mnemonic: "NL" },
   { href: "/predictions", label: "PREDICTIONS", mnemonic: "PR" },
   { href: "/markets", label: "MARKETS", mnemonic: "MK" },
+  { href: "/models", label: "MODELS", mnemonic: "ML" },
+  { href: "/receipts", label: "RECEIPTS", mnemonic: "PF" },
   { href: "/risk", label: "RISK", mnemonic: "RK" },
 ];
 

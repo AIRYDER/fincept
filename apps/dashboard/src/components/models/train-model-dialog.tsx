@@ -38,31 +38,81 @@ import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { TrainModelBody } from "@/lib/types";
 
+interface TrainModelDialogProps {
+  initialBody?: Partial<TrainModelBody>;
+  triggerLabel?: string;
+}
+
 interface FormState {
   model_name: string;
   input_path: string;
   horizon_bars: string;
   bar_seconds: string;
   cv_folds: string;
+  purge_bars: string;
+  embargo_bars: string;
   num_boost_round: string;
   early_stopping_rounds: string;
 }
 
 const DEFAULTS: FormState = {
   model_name: "",
-  input_path: "",
+  input_path: "data/synth_bars.parquet",
   horizon_bars: "15",
   bar_seconds: "60",
   cv_folds: "5",
+  purge_bars: "-1",
+  embargo_bars: "0",
   num_boost_round: "500",
   early_stopping_rounds: "30",
 };
 
-export function TrainModelDialog() {
+const TRAINING_PRESETS: Array<{
+  label: string;
+  description: string;
+  prefix: string;
+  body: Omit<TrainModelBody, "model_name">;
+}> = [
+  {
+    label: "GBM synthetic CV",
+    description: "Known-good feature parquet with 5-fold walk-forward CV.",
+    prefix: "gbm_synth",
+    body: {
+      input_path: "data/synth_bars.parquet",
+      horizon_bars: 15,
+      bar_seconds: 60,
+      cv_folds: 5,
+      purge_bars: -1,
+      embargo_bars: 0,
+      num_boost_round: 500,
+      early_stopping_rounds: 30,
+    },
+  },
+  {
+    label: "Fast smoke train",
+    description: "Quick holdout run for validating the pipeline path.",
+    prefix: "gbm_smoke",
+    body: {
+      input_path: "data/synth_bars.parquet",
+      horizon_bars: 15,
+      bar_seconds: 60,
+      cv_folds: 0,
+      purge_bars: -1,
+      embargo_bars: 0,
+      num_boost_round: 100,
+      early_stopping_rounds: 15,
+    },
+  },
+];
+
+export function TrainModelDialog({
+  initialBody,
+  triggerLabel = "Train new model",
+}: TrainModelDialogProps) {
   const token = useAuth((s) => s.token);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(DEFAULTS);
+  const [form, setForm] = useState<FormState>(() => bodyToForm(initialBody));
 
   const mutation = useMutation({
     mutationFn: (body: TrainModelBody) => api.trainModel(token, body),
@@ -72,7 +122,7 @@ export function TrainModelDialog() {
       queryClient.invalidateQueries({ queryKey: ["models", "runs"] });
       queryClient.invalidateQueries({ queryKey: ["models"] });
       // Reset and close.
-      setForm(DEFAULTS);
+      setForm(bodyToForm(initialBody));
       setOpen(false);
     },
   });
@@ -102,18 +152,39 @@ export function TrainModelDialog() {
       horizon_bars: Number.parseInt(form.horizon_bars, 10),
       bar_seconds: Number.parseInt(form.bar_seconds, 10),
       cv_folds: Number.parseInt(form.cv_folds, 10),
+      purge_bars: Number.parseInt(form.purge_bars, 10),
+      embargo_bars: Number.parseInt(form.embargo_bars, 10),
       num_boost_round: Number.parseInt(form.num_boost_round, 10),
       early_stopping_rounds: Number.parseInt(form.early_stopping_rounds, 10),
     };
     mutation.mutate(body);
   };
 
+  const applyPreset = (preset: (typeof TRAINING_PRESETS)[number]) => {
+    setForm((s) => ({
+      ...bodyToForm({
+        model_name: s.model_name.trim() || suggestedModelName(preset.prefix),
+        ...preset.body,
+      }),
+    }));
+    mutation.reset();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setForm(bodyToForm(initialBody));
+          mutation.reset();
+        }
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm" className="gap-2">
           <Play className="h-3.5 w-3.5" />
-          Train new model
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
@@ -126,6 +197,36 @@ export function TrainModelDialog() {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {TRAINING_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className="rounded-md border border-border/50 bg-background/30 p-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/5"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-widest text-primary">
+                  {preset.label}
+                </div>
+                <div className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                  {preset.description}
+                </div>
+                <code className="mt-2 block truncate font-mono text-[10px] text-muted-foreground">
+                  {preset.body.input_path}
+                </code>
+              </button>
+            ))}
+          </div>
+
+          {initialBody?.input_path ? (
+            <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
+              Prefilled from existing model path:{" "}
+              <code className="font-mono text-primary">
+                {initialBody.input_path}
+              </code>
+            </div>
+          ) : null}
+
           <Field
             label="Model name"
             hint="Letters, digits, dot, underscore, dash.  Becomes the directory under MODELS_DIR."
@@ -150,7 +251,7 @@ export function TrainModelDialog() {
               onChange={(e) =>
                 setForm((s) => ({ ...s, input_path: e.target.value }))
               }
-              placeholder="data/bars_with_features.parquet"
+              placeholder="data/synth_bars.parquet"
               required
             />
           </Field>
@@ -254,6 +355,32 @@ export function TrainModelDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+function bodyToForm(body?: Partial<TrainModelBody>): FormState {
+  return {
+    model_name: body?.model_name ?? DEFAULTS.model_name,
+    input_path: body?.input_path ?? DEFAULTS.input_path,
+    horizon_bars: String(body?.horizon_bars ?? DEFAULTS.horizon_bars),
+    bar_seconds: String(body?.bar_seconds ?? DEFAULTS.bar_seconds),
+    cv_folds: String(body?.cv_folds ?? DEFAULTS.cv_folds),
+    purge_bars: String(body?.purge_bars ?? DEFAULTS.purge_bars),
+    embargo_bars: String(body?.embargo_bars ?? DEFAULTS.embargo_bars),
+    num_boost_round: String(
+      body?.num_boost_round ?? DEFAULTS.num_boost_round,
+    ),
+    early_stopping_rounds: String(
+      body?.early_stopping_rounds ?? DEFAULTS.early_stopping_rounds,
+    ),
+  };
+}
+
+function suggestedModelName(prefix: string): string {
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 16)
+    .replace(/[-:T]/g, "");
+  return `${prefix}_${stamp}`;
 }
 
 function Field({

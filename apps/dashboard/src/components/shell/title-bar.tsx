@@ -64,7 +64,7 @@ function HealthPill() {
   const { data, isError } = useQuery({
     queryKey: ["health"],
     queryFn: () => api.health(token),
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
     retry: 0,
   });
   const ok = !!data?.ok && !isError;
@@ -82,6 +82,36 @@ function HealthPill() {
         )}
       />
       API {data?.version ?? "OFFLINE"}
+    </span>
+  );
+}
+
+function OpenBBPill() {
+  const token = useAuth((s) => s.token);
+  const { data, isError } = useQuery({
+    queryKey: ["openbb", "health"],
+    queryFn: () => api.openbbHealth(token),
+    enabled: !!token,
+    refetchInterval: 30000,
+    retry: 0,
+  });
+  const ok = !!data?.ok && !isError;
+  const warning = ok && !!data?.warning;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-[1px] text-[10px]",
+        ok ? (warning ? "text-warn" : "text-long") : "text-short",
+      )}
+      title={data?.url ?? "OpenBB health"}
+    >
+      <span
+        className={cn(
+          "h-[6px] w-[6px] rounded-full",
+          ok ? (warning ? "bg-warn" : "bg-long animate-pulse-slow") : "bg-short",
+        )}
+      />
+      OBB {ok ? `${data?.latency_ms ?? 0}MS` : "OFFLINE"}
     </span>
   );
 }
@@ -263,7 +293,7 @@ export function TitleBar() {
           PROFESSIONAL RESEARCH DESK
         </span>
         <span className="text-border">│</span>
-        <span className="text-long tracking-wider">● LIVE</span>
+        <span className="text-warn tracking-wider">● PAPER</span>
       </div>
 
       {/* Center — clock */}
@@ -276,6 +306,7 @@ export function TitleBar() {
         </span>
         <span className="text-border">│</span>
         <HealthPill />
+        <OpenBBPill />
         <WsPill />
         <span className="text-border">│</span>
         <KillSwitchButton />

@@ -37,7 +37,7 @@ export default function PositionsPage() {
     queryKey: ["positions", "all", includeFlat],
     queryFn: () => api.positions(token, includeFlat),
     enabled: !!token,
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
   });
 
   // Keep a live map keyed by (strategy_id, symbol).  WS pushes upsert.

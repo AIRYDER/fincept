@@ -5,7 +5,10 @@ import { useEffect } from "react";
 
 import { CommandPalette } from "@/components/shell/command-palette";
 import { NavTabs } from "@/components/shell/nav-tabs";
+import { SafetyStateBar } from "@/components/shell/safety-state-bar";
 import { StatusBar } from "@/components/shell/status-bar";
+
+import { StreamInvalidator } from "@/components/shell/stream-invalidator";
 import { TitleBar } from "@/components/shell/title-bar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
@@ -40,15 +43,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen flex-col overflow-hidden bg-background">
-        <TitleBar />
-        <NavTabs />
-        <main className="scrollbar-thin flex-1 overflow-y-auto p-2">
+      <div className="flex h-screen flex-col overflow-hidden bg-background print:h-auto print:overflow-visible print:bg-white">
+        <StreamInvalidator />
+        <div className="print:hidden">
+          <TitleBar />
+          <SafetyStateBar />
+          <NavTabs />
+        </div>
+        <main className="scrollbar-thin flex-1 overflow-y-auto p-2 print:block print:overflow-visible print:bg-white print:p-0">
           {children}
         </main>
-        <StatusBar />
+        <div className="print:hidden">
+          <StatusBar />
+        </div>
       </div>
-      <CommandPalette />
+      <div className="print:hidden">
+        <CommandPalette />
+      </div>
     </TooltipProvider>
   );
 }

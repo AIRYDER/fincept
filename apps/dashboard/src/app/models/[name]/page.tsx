@@ -49,6 +49,7 @@ import {
 } from "recharts";
 
 import { LivePredictionsCard } from "@/components/models/live-predictions-card";
+import { ModelDossierPanel } from "@/components/models/model-dossier-panel";
 import { PromoteButton } from "@/components/models/promote-button";
 import { ShadowButton } from "@/components/models/shadow-button";
 import { AppShell } from "@/components/shell/app-shell";
@@ -95,6 +96,18 @@ export default function ModelDetailPage() {
     staleTime: 30_000,
     retry: (count, err) =>
       err instanceof ApiError && err.status === 404 ? false : count < 2,
+  });
+
+  const promotion = useQuery({
+    queryKey: ["models", "promote", "gbm_predictor.v1"],
+    queryFn: () =>
+      api.modelPromotionState(token, {
+        agent_id: "gbm_predictor.v1",
+        history_limit: 20,
+      }),
+    enabled: !!token && !!name,
+    refetchInterval: 30_000,
+    staleTime: 5_000,
   });
 
   // Notably, importance can fail (e.g., model.txt missing) while detail
@@ -185,6 +198,10 @@ export default function ModelDetailPage() {
         <HeadlineCard m={detail.data} />
         <ConfigPanel m={detail.data} />
       </div>
+
+      {detail.data ? (
+        <ModelDossierPanel model={detail.data} promotion={promotion.data ?? null} />
+      ) : null}
 
       {/* CV folds chart (walk-forward only) */}
       {detail.data?.eval_mode === "walk_forward" ? (
@@ -354,7 +371,7 @@ function HeadlineCard({ m }: { m: ModelRecord | undefined }) {
             <HardDrive className="h-3.5 w-3.5" />
             <span>
               <code className="font-mono">model.txt</code> missing — the
-              binary booster file is gone, so this model can't be loaded
+              binary booster file is gone, so this model cannot be loaded
               for inference.  Re-train to regenerate.
             </span>
           </div>

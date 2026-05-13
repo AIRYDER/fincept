@@ -157,6 +157,12 @@ export interface UniverseRow {
   lot_size?: string;
 }
 
+export interface UniverseSeedFromPositionsResponse {
+  seeded: number;
+  symbols: string[];
+  universe: UniverseRow[];
+}
+
 export interface Bar {
   symbol: string;
   freq: string;
@@ -200,6 +206,61 @@ export interface DataCoverageResponse {
     coverage_pct: number;
   };
   rows: DataCoverageRow[];
+}
+
+export type DataSourceSafety =
+  | "read_only"
+  | "paper_first"
+  | "internal_state"
+  | "experimental_read_only";
+
+export interface DataSourceHealth {
+  mode: string;
+  checks: string[];
+}
+
+export interface DataSourceDefinition {
+  id: string;
+  name: string;
+  area: string;
+  category: string;
+  safety: DataSourceSafety;
+  status: string;
+  call_surfaces: string[];
+  data: string[];
+  return_format: string;
+  latency: string;
+  health: DataSourceHealth;
+  config: string[];
+}
+
+export interface DataSourcesResponse {
+  sources: DataSourceDefinition[];
+  summary: {
+    total: number;
+    by_category: Record<string, number>;
+  };
+}
+
+export interface AlpacaDataDemoResponse {
+  ok: boolean;
+  provider: "alpaca";
+  base_url: string;
+  symbols: string[];
+  feed: string;
+  timeframe: string;
+  window: {
+    start: string;
+    end: string;
+  };
+  summary: {
+    news_count: number;
+    symbols_with_bars: number;
+    bar_count: number;
+  };
+  news: Array<Record<string, unknown>>;
+  bars: Record<string, Array<Record<string, unknown>>>;
+  next_page_token?: string | null;
 }
 
 export interface StrategyRow {
@@ -545,12 +606,95 @@ export interface OpenBBHealthHistoryResponse {
   summary: OpenBBHealthSummary;
 }
 
+
+export interface ProviderDataSummary {
+  total_records: number;
+  ok_records: number;
+  error_records: number;
+  latest_ts_event: number | null;
+  providers: Record<string, number>;
+  datasets: Record<string, number>;
+}
+
+export interface ProviderDataRecord {
+  record_id: string;
+  schema_version: string;
+  provider: string;
+  source: string;
+  dataset: string;
+  endpoint: string;
+  symbol: string | null;
+  ts_event: number;
+  ts_observed: number | null;
+  request_hash: string;
+  row_count: number;
+  ok: boolean;
+  error_type: string | null;
+  normalized: Record<string, unknown>;
+}
+
+export interface ProviderDataResponse {
+  ok: boolean;
+  capture_enabled: boolean;
+  error?: string | null;
+  error_type?: string | null;
+  summary: ProviderDataSummary;
+  records: ProviderDataRecord[];
+}
+
 export interface ServiceStatus {
   name: string;
   status: "up" | "stale" | "down";
   last_beat_unix: number | null;
   age_sec: number | null;
   expected: boolean;
+}
+
+export type FeatureId =
+  | "market_data"
+  | "news_learning"
+  | "jobs"
+  | "gbm_predictor"
+  | "news_alpha_predictor"
+  | "sentiment"
+  | "regime"
+  | "openbb";
+
+export interface FeatureControlLastAction {
+  feature_id: FeatureId;
+  action?: "start" | "stop" | "restart";
+  status?: string;
+  output?: string;
+  ts_unix?: number;
+}
+
+export interface FeatureStartResponse {
+  ok: boolean;
+  feature_id: FeatureId;
+  action?: "start";
+  started: boolean;
+  status: "already_running" | "launch_requested";
+  services: string[];
+  fresh_services: string[];
+  output?: string;
+}
+
+export interface FeatureControlResponse {
+  ok: boolean;
+  feature_id: FeatureId;
+  action?: "stop" | "restart";
+  status: "stop_requested" | "restart_requested";
+  services: string[];
+  fresh_services: string[];
+  output?: string;
+}
+
+export interface FeatureLogsResponse {
+  ok: boolean;
+  feature_id: FeatureId;
+  services: string[];
+  fresh_services: string[];
+  last_control: FeatureControlLastAction | null;
 }
 
 export interface ServicesResponse {
@@ -561,6 +705,14 @@ export interface ServicesResponse {
     stale_after_sec: number;
     ttl_sec: number;
   };
+}
+
+export interface KillSwitchState {
+  engaged: boolean;
+  actor: string | null;
+  reason: string | null;
+  alert_id: string | null;
+  ts_unix: number | null;
 }
 
 // --- /models -------------------------------------------------------------
@@ -618,6 +770,8 @@ export interface ModelRecord {
   /** Legacy 80/20 holdout AUC; null when eval_mode=walk_forward. */
   holdout_auc: number | null;
   holdout_rows: number | null;
+  training_input_path: string | null;
+  training_request: TrainingRunRequest | null;
   warnings: string[];
 }
 
@@ -773,6 +927,25 @@ export interface ClearShadowResponse {
   cleared: boolean;
   active: ActiveBinding | null;
   shadow: null;
+}
+
+export interface NewsAlphaCandidateReport {
+  approved: boolean;
+  reasons: string[];
+  candidate_model_name: string;
+  candidate_dir: string;
+  candidate_meta: Record<string, unknown>;
+  active_model_name: string | null;
+  active_meta: Record<string, unknown> | null;
+  policy: Record<string, unknown>;
+  generated_at: number;
+  promotion_hint: Record<string, unknown>;
+}
+
+export interface NewsAlphaCandidateReportResponse {
+  exists: boolean;
+  report_path: string;
+  report: NewsAlphaCandidateReport | null;
 }
 
 // --- /models/{name}/predictions, /prediction-stats -----------------------

@@ -44,6 +44,7 @@
   * {
     @apply border-border;
   }
+
   html,
   body {
     @apply bg-background text-foreground antialiased;
@@ -162,5 +163,123 @@
     background: hsl(var(--long));
     box-shadow: 0 0 6px hsl(var(--long) / 0.8);
     animation: pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0.5in;
+    size: letter;
+  }
+
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 25%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 0%;
+    --border: 0 0% 78%;
+    --input: 0 0% 78%;
+    --ring: 0 0% 0%;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: economy;
+    print-color-adjust: economy;
+  }
+
+  main {
+    overflow: visible !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  a,
+  button,
+  input,
+  textarea,
+  select {
+    color: #000 !important;
+  }
+
+  .print-ink-save,
+  .print-ink-save * {
+    background: #fff !important;
+    color: #000 !important;
+    border-color: #bbb !important;
+  }
+
+  .print-report-page {
+    width: 100% !important;
+    max-width: none !important;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  .print-report-page section,
+  .print-report-page article,
+  .print-report-page .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-report-page .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .print-report-page table {
+    min-width: 0 !important;
+    width: 100% !important;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+  }
+
+  .print-report-page th,
+  .print-report-page td {
+    padding: 4px 5px !important;
+    white-space: normal !important;
+    word-break: normal;
+  }
+
+  .print-report-page svg {
+    max-width: 100%;
+  }
+
+  .print-report-page h1,
+  .print-report-page h2,
+  .print-report-page h3 {
+    color: #000 !important;
+  }
+
+  .print-ink-save .text-cyan,
+  .print-ink-save .text-warn,
+  .print-ink-save .text-long,
+  .print-ink-save .text-short,
+  .print-ink-save .text-info {
+    color: #000 !important;
+  }
+
+  .print-ink-save .print\:hidden,
+  .print-ink-save .no-print {
+    display: none !important;
   }
 }

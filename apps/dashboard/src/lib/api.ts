@@ -15,15 +15,23 @@ import type {
   BacktestRunResponse,
   BacktestRunsListResponse,
   BacktestStrategiesResponse,
+  AlpacaDataDemoResponse,
   Bar,
   ClearShadowResponse,
   CreateStrategyConfigBody,
   DataCoverageResponse,
+  DataSourcesResponse,
   ExaResearchRequest,
   ExaResearchResponse,
+  FeatureControlResponse,
+  FeatureId,
+  FeatureLogsResponse,
+  FeatureStartResponse,
   FeatureImportanceResponse,
+  KillSwitchState,
   ModelRecord,
   ModelsResponse,
+  NewsAlphaCandidateReportResponse,
   NewsImpactOptimizeResponse,
   NewsImpactPredictBody,
   NewsImpactPredictResponse,
@@ -39,6 +47,7 @@ import type {
   PlaceOrderBody,
   PlaceOrderResponse,
   Position,
+  ProviderDataResponse,
   PredictionsResponse,
   PredictionStatsResponse,
   PromoteResponse,
@@ -53,6 +62,7 @@ import type {
   TrainModelBody,
   TrainingRun,
   TrainingRunsResponse,
+  UniverseSeedFromPositionsResponse,
   UniverseRow,
   UpdateStrategyConfigBody,
 } from "@/lib/types";
@@ -64,10 +74,35 @@ export class ApiError extends Error {
   status: number;
   body: unknown;
   constructor(status: number, body: unknown, message?: string) {
-    super(message ?? `API error ${status}`);
+    super(message ?? messageFromBody(status, body));
     this.status = status;
     this.body = body;
   }
+}
+
+function messageFromBody(status: number, body: unknown): string {
+  if (typeof body === "string" && body.trim()) return body;
+  if (body && typeof body === "object") {
+    const record = body as Record<string, unknown>;
+    const detail = record.detail;
+    if (typeof record.error === "string" && record.error.trim()) return record.error;
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (detail && typeof detail === "object") {
+      const detailRecord = detail as Record<string, unknown>;
+      if (typeof detailRecord.message === "string" && detailRecord.message.trim()) {
+        return detailRecord.message;
+      }
+      if (typeof detailRecord.error === "string" && detailRecord.error.trim()) {
+        return detailRecord.error;
+      }
+      if (typeof detailRecord.error_type === "string" && detailRecord.error_type.trim()) {
+        return detailRecord.error_type;
+      }
+    }
+    if (typeof record.error_type === "string" && record.error_type.trim()) return record.error_type;
+  }
+  return `API error ${status}`;
 }
 
 async function request<T>(
@@ -113,6 +148,12 @@ export const api = {
       token,
     );
   },
+  seedUniverseFromPositions: (token: string | null) =>
+    request<UniverseSeedFromPositionsResponse>(
+      "/data/universe/seed-from-positions",
+      token,
+      { method: "POST" },
+    ),
   /**
    * Typeahead matcher backed by the universe + curated well-known list.
    * Use this for ticker autocomplete on the strategy + manual-order
@@ -166,6 +207,21 @@ export const api = {
       token,
     );
   },
+  dataSources: (token: string | null) =>
+    request<DataSourcesResponse>("/data/sources", token),
+  alpacaDataDemo: (
+    token: string | null,
+    args?: { symbols?: string; news_limit?: number; bar_limit?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.symbols) q.set("symbols", args.symbols);
+    if (args?.news_limit) q.set("news_limit", String(args.news_limit));
+    if (args?.bar_limit) q.set("bar_limit", String(args.bar_limit));
+    return request<AlpacaDataDemoResponse>(
+      `/data/alpaca/demo${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
 
   // --- positions ----------------------------------------------------------
   positions: (token: string | null, includeFlat = false) =>
@@ -216,6 +272,20 @@ export const api = {
       `/research/openbb/health/history?limit=${encodeURIComponent(String(limit))}`,
       token,
     ),
+  providerData: (
+    token: string | null,
+    args?: { provider?: string; dataset?: string; symbol?: string; limit?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.provider) q.set("provider", args.provider);
+    if (args?.dataset) q.set("dataset", args.dataset);
+    if (args?.symbol) q.set("symbol", args.symbol);
+    if (args?.limit) q.set("limit", String(args.limit));
+    return request<ProviderDataResponse>(
+      `/research/provider-data${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
 
   // --- strategies ---------------------------------------------------------
   strategies: (token: string | null) =>
@@ -237,6 +307,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  adoptStrategyConfig: (token: string | null, id: string) =>
+    request<StrategyConfigRow>(
+      `/strategies/configs/${encodeURIComponent(id)}/adopt`,
+      token,
+      { method: "POST" },
+    ),
   updateStrategyConfig: (
     token: string | null,
     id: string,
@@ -318,6 +394,29 @@ export const api = {
   // --- services -----------------------------------------------------------
   services: (token: string | null) =>
     request<ServicesResponse>("/services", token),
+  startFeature: (token: string | null, featureId: FeatureId) =>
+    request<FeatureStartResponse>(
+      `/features/${encodeURIComponent(featureId)}/start`,
+      token,
+      { method: "POST" },
+    ),
+  stopFeature: (token: string | null, featureId: FeatureId) =>
+    request<FeatureControlResponse>(
+      `/features/${encodeURIComponent(featureId)}/stop`,
+      token,
+      { method: "POST" },
+    ),
+  restartFeature: (token: string | null, featureId: FeatureId) =>
+    request<FeatureControlResponse>(
+      `/features/${encodeURIComponent(featureId)}/restart`,
+      token,
+      { method: "POST" },
+    ),
+  featureLogs: (token: string | null, featureId: FeatureId) =>
+    request<FeatureLogsResponse>(
+      `/features/${encodeURIComponent(featureId)}/logs`,
+      token,
+    ),
 
   // --- models -------------------------------------------------------------
   models: (token: string | null) => request<ModelsResponse>("/models", token),
@@ -326,6 +425,11 @@ export const api = {
   modelFeatureImportance: (token: string | null, name: string) =>
     request<FeatureImportanceResponse>(
       `/models/${encodeURIComponent(name)}/feature-importance`,
+      token,
+    ),
+  newsAlphaCandidateReport: (token: string | null) =>
+    request<NewsAlphaCandidateReportResponse>(
+      "/models/news-alpha/candidate-report",
       token,
     ),
   trainModel: (token: string | null, body: TrainModelBody) =>
@@ -450,6 +554,8 @@ export const api = {
     }),
 
   // --- control ------------------------------------------------------------
+  killSwitchState: (token: string | null) =>
+    request<KillSwitchState>("/kill-switch", token),
   tripKillSwitch: (token: string | null, reason: string) =>
     request<{ ok: boolean; alert_id: string }>("/kill-switch", token, {
       method: "POST",
