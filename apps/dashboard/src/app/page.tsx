@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { OperatorBriefingCard } from "@/components/overview/operator-briefing-card";
 import { AppShell } from "@/components/shell/app-shell";
 import { ConfidenceBar } from "@/components/widgets/confidence-bar";
 import { EmptyState } from "@/components/widgets/empty-state";
@@ -296,6 +297,11 @@ export default function HomePage() {
           </div>
         }
       />
+
+      {/* Operator briefing — aggregates safety, services, recon, strategies, receipts */}
+      <div className="mb-4">
+        <OperatorBriefingCard />
+      </div>
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
