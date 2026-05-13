@@ -2,7 +2,8 @@
 
 > **Source:** Derived from `BLUEPRINT.md` with realistic scoping applied.
 > **Audience:** Engineering leadership, product, founding team.
-> **Last updated:** 2026-04-28
+> **Last updated:** 2026-05-09
+> **Current-state note:** this roadmap began as a pragmatic plan derived from `BLUEPRINT.md`. The local codebase now contains working slices from later phases, including paper trading services, API/dashboard surfaces, strategy configuration, agents, research/data-source tooling, and model workflows. Treat earlier phase tables as planning context, not a strict remaining-work checklist.
 
 ---
 
@@ -60,7 +61,7 @@ Goal: reliable market data pipeline feeding a queryable store.
 
 **Exit criteria:** 7-day continuous uptime ingesting 10 crypto pairs; <100ms end-to-end ingestion latency (WS recv → DB commit); queryable via SQL.
 
-**Explicitly out of scope:** FIX, SIP, Level 2 equity, on-chain metrics, news sentiment. All deferred to Phase 4+.
+**Original scope note:** FIX, SIP, Level 2 equity, and on-chain metrics remain out of scope. News sentiment is no longer fully deferred: a NewsAPI + LLM sentiment agent exists, but it remains optional/key-gated and requires calibration before it should affect sizing materially.
 
 ### Phase 2 — Research Environment (Weeks 13–20)
 
@@ -311,3 +312,219 @@ Move these implementation details into `TASK-005`:
 2. Add one paper-only order proposal tool that returns a typed decision/order payload and an audit receipt.
 3. Run `powershell -ExecutionPolicy Bypass -File .\scripts\preflight.ps1`; if Docker or service-backed checks fail, record the exact missing gate in this roadmap.
 4. Add the Redis-to-Timescale replay drill only after the tool audit wrapper has a stable run ID format.
+
+## 12. Automation Review Update — 2026-04-30 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Foundation tools | `libs/fincept-tools` now contains protocol, registry, data, analytics, and paper execution tool modules plus tests. | Treat `TASK-005-fincept-tools` as package-complete; next work should harden audit receipts and service integration rather than re-scaffold tools. |
+| Build sequence | `spec/BUILD_ORDER.md` marks Tasks 005 and 006 complete, and many later data/backtest/agent/risk/OMS/API/UI tasks are checked. | Do not read checked boxes as production proof; require service-backed receipts for each checkpoint before advancing live-capital assumptions. |
+| Task verification wrapper | `scripts/task-check.ps1` previously allowed a pytest import failure to be followed by "Task check passed"; it now runs pytest with the selected uv workspace package and fails on nonzero exits. | Keep the task-level wrapper as the narrow daily loop, and use `scripts/preflight.ps1` only for broader CI parity. |
+| News impact experiment | `experiments/news-impact-model` has modified docs/source plus new workbench files and sample data. | Treat this as a separate experimental surface; route it through shadow-mode evaluation before connecting to orchestrator decisions. |
+
+### Verification recorded this run
+
+| Command | Result | Boundary |
+|---|---|---|
+| `powershell -ExecutionPolicy Bypass -File .\scripts\task-check.ps1 -PackagePath libs/fincept-tools -PytestPath libs/fincept-tools/tests` | Passed: 81 pytest tests, Ruff clean, Mypy clean. | Package-local only; no Redis/Timescale service proof. |
+
+### Roadmap refinement
+
+Move these items to the front of the local queue:
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Phase checkpoint receipt | A short `VERIFICATION_REPORT.md` or docs section records `scripts/preflight.ps1` output with pass/fail/skip status for Redis, Timescale, Python, JS, Alembic, and secret scan. |
+| P0 | End-to-end paper spine replay | One fixture goes through data event, feature row, prediction, decision, risk, paper order, fill, and portfolio update with a reconstructable audit trail. |
+| P1 | Tool audit receipt table | Every `fincept-tools` call emits caller ID, run ID, input hash, output hash, side-effect class, duration, and error type when applicable. |
+| P1 | News-impact shadow gate | The news impact workbench produces a replayable shadow signal report with no order path until calibration and drawdown impact are measured. |
+
+### Recommended next local sequence
+
+1. Run `scripts/preflight.ps1` and record the exact pass/fail/skip matrix.
+2. Add the end-to-end paper spine replay before expanding Phase X agents.
+3. Add tool audit receipt persistence so `fincept-tools` can be used by LLM agents without opaque behavior.
+4. Keep the news-impact model in `experiments/` until it has a deterministic shadow-mode report and a clear feature contract.
+
+## 13. Automation Review Update — 2026-05-02 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Operator app surface | Dashboard and API changes now cover strategy config CRUD/lifecycle, manual orders, research pages, news-impact lab, symbol search, OpenBB quote/dispatcher/health, and richer strategy/order tests. | Treat this as an operator-workflow integration phase; the next proof should be route/API/dashboard contract evidence, not another isolated package test. |
+| Strategy runtime | `libs/fincept-core/src/fincept_core/strategy_config.py` and `services/strategy_host/` add persistent strategy instance configs plus a live runner/supervisor. | Promote strategy-host to a first-class Phase F/G workstream and test disabled/enabled strategy behavior inside the paper-spine replay. |
+| Research tooling | `fincept_tools.research` adds Exa and OpenBB tools, and `/research/*` routes add allowlists, local OpenBB URL handling, health history, and Redis-backed rate limiting. | Keep these tools read-only and add cost/usage receipts before connecting them to autonomous agents. |
+| News-impact experiment | `/news-impact/*` exposes the experiment workbench through the API while keeping it in experimental demo mode. | Keep it behind shadow gates: no order emission until replayable calibration, drawdown-impact, and feature-contract reports exist. |
+| Local run scripts | `start/status/stop` default the API to `8010` and detect non-Fincept processes occupying the API port. | Document port `8010` as the current local default and include it in preflight/status receipts. |
+
+### Verification recorded this run
+
+| Command | Result | Boundary |
+|---|---|---|
+| Local inspection and docs refresh | Completed. | No broad `scripts/preflight.ps1`, Docker service, API server, dashboard build, or route smoke test was run in this pass. |
+
+### Roadmap refinement
+
+Move these items to the front of the local queue:
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | API/dashboard contract receipt | A checked report records `GET /health`, `/data/symbols/search`, `/research/openbb/health`, `/strategies/configs`, `/orders`, and the dashboard API client against port `8010`. |
+| P0 | Strategy-host paper replay | One replay starts an enabled strategy config, confirms a disabled config stays silent, emits an order intent, and traces it through OMS/fill/portfolio state. |
+| P1 | Research tool governance | Exa/OpenBB calls emit caller, route/tool name, cost or provider latency, rate-limit state, input hash, output hash, and error type. |
+| P1 | News-impact shadow report | The experiment produces a deterministic report with calibration buckets, top analogs, horizon error, drawdown impact, and an explicit "no order route" assertion. |
+| P1 | Docs routing cleanup | Link `docs/datasources.md`, `docs/openbb-research-handoff.md`, `docs/portfoliooptimizer.md`, and `docs/uirecommendations.md` from the main README or a docs index. |
+
+### Recommended next local sequence
+
+1. Run `powershell -ExecutionPolicy Bypass -File .\scripts\preflight.ps1` and record pass/fail/skip status.
+2. Add a route smoke script for the port-`8010` API plus dashboard client assumptions.
+3. Build the strategy-host replay before expanding autonomous research/agent features.
+4. Keep Exa/OpenBB and news-impact features read-only until usage receipts and shadow reports exist.
+
+## 14. Automation Review Update — 2026-05-02 Evening America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Datasource hardening | Commit `2d506fd` adds datasource contract work across `/data`, symbol search, dashboard market types, Exa/OpenBB tools, and related tests. | Promote datasource registry and coverage freshness to the next operator-control primitive instead of treating provider calls as isolated utilities. |
+| Review evidence | `docs/codebase-review-2026-05-02.md` records 31 targeted API tests passed, selected Ruff checks passed, and dashboard typecheck passed. | Treat this as targeted subsystem evidence only; broad preflight, live Timescale/OpenBB, route smoke, and browser checks remain open. |
+| Contract drift | The review flags `venue_default` returned by universe reads while the dashboard type names `venue`. | Resolve the API/frontend contract before adding new market panels that consume venue fields. |
+| Coverage performance and safety | Coverage reads were hardened, but the review still calls out batching, venue semantics, and raw exception exposure as risk areas. | Make `/data/coverage` the canonical data heartbeat only after batch reads, safe public errors, and freshness history are in place. |
+| Placeholder docs | Several planned docs exist as zero-byte files, including datasource, portfolio, UI, and next-level feature notes. | Fill docs only when they route real implementation surfaces; do not count empty docs as roadmap evidence. |
+
+### Verification recorded this run
+
+| Command or source | Result | Boundary |
+|---|---|---|
+| `docs/codebase-review-2026-05-02.md` targeted checks | API tests, selected Ruff checks, and dashboard typecheck passed in that review. | Not rerun in this automation pass; no live Timescale/OpenBB, browser, full preflight, or Docker proof. |
+| Local inspection and docs refresh | Completed. | Read-only code review plus markdown updates; no service startup. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Datasource contract cleanup | `/data/universe` and dashboard types agree on `venue_default` or deliberately expose both `venue` and `venue_default`, with tests proving the chosen shape. |
+| P0 | Data heartbeat receipt | `/data/coverage` uses batch reads, safe public errors, explicit venue semantics, and stores periodic snapshots for freshness trend display. |
+| P0 | Port-8010 contract smoke | One local command probes `/health`, `/data/sources`, `/data/coverage`, symbol search, OpenBB health, strategy configs, and orders against `http://127.0.0.1:8010`. |
+| P1 | Provider health center | Dashboard renders datasource registry rows with safety tier, health mode, last success, stale/error state, and required config names without secret values. |
+| P1 | OpenBB preset registry | Move hardcoded OpenBB page presets into a typed registry with provider requirements, expected columns, latency expectation, and renderer hints. |
+
+### Recommended next local sequence
+
+1. Fix the `venue` / `venue_default` contract before adding new markets UI.
+2. Add safe coverage errors and shorter OpenBB health timeout.
+3. Add the port-`8010` smoke receipt around `/data/sources` and coverage.
+4. Only then expand the datasource dashboard into a provider health center.
+
+## 15. Automation Review Update — 2026-05-07 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Agent layer expansion | Seven agents now have `main.py` entrypoints: `gbm_predictor`, `regime_agent`, `sentiment_agent`, `sentiment_features`, `information_enricher`, `news_alpha_predictor`, `news_outcome_labeler`. Only `pairs` (TASK-033) remains a stub. | Promote `regime_agent` to implemented in BUILD_ORDER; add the four new agents as Phase X/D extensions. Keep `pairs` gated until cointegration infrastructure is production-ready. |
+| Dashboard surface growth | New pages: `/predictions`, `/signal-cockpit-demo`, `/reconciliation`, `/portfolio-builder`, `/news-lab`, `/news-impact-lab`, `/optimizer`. | These are operator workflow surfaces; the next proof should be route-smoke receipts covering each, not more scaffold. |
+| ADR resolution | ADR-0006 (feature store) resolved as custom Redis+Parquet; ADR-0009 (datasource routing) resolved as registry in `data.py`. | Promote both from "open" to "accepted" in `docs/DECISIONS.md`. |
+| ML lifecycle completeness | Train → walk-forward → promote → hot-reload → shadow → predict → log is now end-to-end. 190 API tests, 93 agent tests, dashboard typecheck clean. | Treat the ML vertical as shipped; next work is proving it against live services via paper-spine replay. |
+| Open questions | `venue`/`venue_default` contract drift, coverage error safety, OpenBB health timeout, and no e2e replay receipt remain unresolved. | These are the P0 blockers before any Phase X+ or live-capital work. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Paper-spine replay receipt | One deterministic fixture flows data → feature → prediction → decision → risk → order → fill → portfolio with a reconstructable audit trail. |
+| P0 | Port-8010 route smoke receipt | One command probes `/health`, `/data/sources`, `/data/coverage`, symbol search, OpenBB health, strategy configs, orders, models, predictions, and regime against `http://127.0.0.1:8010`. |
+| P0 | `venue`/`venue_default` contract fix | `/data/universe` and dashboard types agree on field naming with tests proving the chosen shape. |
+| P1 | New-agent BUILD_ORDER entries | Add `regime_agent` (032) as `[x]`, add `sentiment_agent`, `sentiment_features`, `information_enricher`, `news_alpha_predictor`, `news_outcome_labeler` as Phase X/D tasks with dependencies. |
+| P1 | Safe coverage error envelope | `/data/coverage` returns stable error codes with correlation IDs; raw exception text is server-side only. |
+| P1 | Research tool governance receipts | Every Exa/OpenBB call emits caller, route/tool, latency, rate-limit state, input hash, output hash. |
+
+### Recommended next local sequence
+
+1. Fix the `venue` / `venue_default` contract before adding new markets UI.
+2. Build the paper-spine replay fixture (the single highest-value proof artifact).
+3. Add the port-8010 smoke receipt.
+4. Promote ADR-0006 and ADR-0009 to accepted.
+5. Update BUILD_ORDER.md with new agent entries.
+6. Only then expand autonomous research/agent behavior or live-brokerage assumptions.
+
+## 16. Automation Review Update — 2026-05-08 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Route-smoke receipts | `scripts/route_smoke.py` exists and `reports/route-smoke/route-smoke-20260506-211742.json` records 8/9 probes passing against `http://127.0.0.1:8010`; `/data/coverage` timed out after about 5s. | Treat route smoke as landed, but not green. The next fix is coverage latency/error shaping, not another broad API surface. |
+| Earlier green route receipt | `reports/route-smoke/route-smoke-20260505-151250.json` records 9/9 probes passing, with `/data/coverage` returning an expected 503 instead of timing out. | Preserve the receipt history because it shows regression shape: coverage moved from bounded degraded response to timeout. |
+| OpenBB live proof | `reports/openbb-live/openbb-live-20260505-151250.json` records OpenBB health passing but quote and generic dispatcher probes returning 503. | Separate OpenBB API reachability from provider-readiness; quote/fundamental provider failures should be visible and bounded. |
+| Venue contract drift | Current code adds a backward-compatible `venue` alias from `venue_default`, and dashboard types now document `venue_default` as preferred. | Treat the original drift as partially resolved; keep tests around both fields until old dashboard callers are removed. |
+| Agent and UI expansion | The tree now contains new agent packages, model data, dashboard route folders, and operator docs beyond the May 2 baseline. | Shift roadmap emphasis from scaffolding to proof receipts: route inventory, paper-spine replay, and agent promotion evidence. |
+
+### Verification reviewed this run
+
+| Command or artifact | Result | Boundary |
+|---|---|---|
+| Latest route-smoke receipt | 8/9 passed; `/data/coverage` failed with `ReadTimeout`. | Existing receipt only; the API server was not restarted or reprobed in this automation pass. |
+| Latest OpenBB live proof | 1/3 passed; health passed, quote and dispatcher returned 503. | Live dependency readiness remains degraded or unavailable; no new live proof was run. |
+| Local inspection and docs refresh | Completed. | No broad `scripts/preflight.ps1`, Docker, dashboard build, browser check, or paper-spine replay was run. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Coverage timeout fix | `/data/coverage` returns 200 or expected 503 within the smoke timeout with stable public error codes and server-side correlation logs. |
+| P0 | Latest route-smoke green receipt | A new `reports/route-smoke/*.json` records all probes passing or intentionally degraded without timeouts. |
+| P0 | Paper-spine replay receipt | One deterministic fixture links data, feature, prediction, decision, risk, order, fill, and portfolio state with reconstructable IDs. |
+| P1 | OpenBB readiness split | OpenBB health, provider availability, quote readiness, and dispatcher allowlist failures are reported as separate operator states. |
+| P1 | Dashboard route inventory | Every dashboard route added since May 2 has a smoke entry for load/redirect/API-contract status. |
+| P1 | Agent promotion ledger | Each implemented agent has tests, calibration/data-window notes, side-effect policy, and promotion status in docs or a receipt file. |
+
+### Recommended next local sequence
+
+1. Fix or bound `/data/coverage` so the latest route smoke can pass without timeouts.
+2. Rerun `uv run python scripts/route_smoke.py --base-url http://127.0.0.1:8010` and record the new receipt.
+3. Split OpenBB health into platform-up versus provider-call-ready states.
+4. Build the paper-spine replay receipt before adding more autonomous agents or live-brokerage assumptions.
+5. Add a dashboard route inventory smoke for the newly added operator pages.
+
+## 17. Automation Review Update — 2026-05-09 America/Chicago
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Paper spine replay | `reports/paper-spine/latest.json` records a passed deterministic replay generated at `2026-05-08T19:20:11Z`. It proves data, feature, model signal, decision, approved risk, rejected low-limit risk, order, fill, portfolio update, and audit-trail stages. | Treat the paper-spine proof as the strongest current integration receipt, but keep it labeled deterministic/fakeredis-only until Redis, Timescale, API, and dashboard routes are included. |
+| Route smoke | The latest reviewed port-8010 smoke receipt still passes 8/9 probes and times out on `/data/coverage` after about 5 seconds. | Keep `/data/coverage` latency as the top API blocker before claiming route-smoke health. |
+| OpenBB live proof | OpenBB health returns a structured unavailable response, while quote and dispatcher probes still return 503 when the OpenBB backend/package is missing. | Preserve the readiness split: API reachability, provider availability, and route policy should stay separate in docs and UI. |
+| Dashboard/API scope | The local tree now includes many untracked dashboard route folders, model/news/portfolio pages, and API route expansions. | Add route inventory smoke before adding more pages; otherwise the UI surface will outgrow the proof harness. |
+| Worktree size | `git diff --stat` shows about 9.9k inserted lines across 94 tracked files plus many untracked app, report, model, and service paths. | Plan the next commit/review in slices: receipts and docs, API contracts, dashboard pages, agents/models, and generated data artifacts should not be bundled blindly. |
+
+### Verification reviewed this run
+
+| Artifact | Result | Boundary |
+|---|---|---|
+| `reports/paper-spine/latest.json` | Passed with 11 assertions true and no live broker credentials required. | Uses fakeredis and a deterministic AAPL fixture; not a live-service or dashboard proof. |
+| `reports/route-smoke/route-smoke-20260506-211742.json` | 8/9 probes passed; `/data/coverage` failed with `ReadTimeout`. | Existing API run only; not rerun during this automation pass. |
+| `reports/openbb-live/openbb-live-20260505-151250.json` | Health probe passed as structured unavailable; quote and generic dispatcher returned 503. | OpenBB backend/package not available for provider-call proof. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Bound `/data/coverage` latency | `/data/coverage` returns 200 or expected 503 inside the smoke timeout, with timing spans for universe read, coverage read, provider health, and serialization. |
+| P0 | Promote paper-spine receipt to service-backed replay | A replay receipt links real Redis stream IDs, Timescale rows, API correlation IDs, risk results, order/fill records, and portfolio persistence. |
+| P1 | Route inventory receipt | A single command probes dashboard routes including `/predictions`, `/reconciliation`, `/portfolio-builder`, `/news-lab`, `/news-impact-lab`, `/optimizer`, and `/signal-cockpit-demo`. |
+| P1 | OpenBB readiness matrix | The research page and proof receipt show API process status, package availability, provider availability, allowed route, status code, and operator action. |
+| P1 | Agent promotion dossier | Each new agent has tests, data window, calibration status, side-effect class, and explicit no-live-order boundary before strategy-host use. |
+
+### Recommended next local sequence
+
+1. Fix or cap `/data/coverage`, then rerun `uv run python scripts/route_smoke.py --base-url http://127.0.0.1:8010`.
+2. Extend `scripts/paper_spine_replay.py` from fakeredis-only proof to a service-backed receipt when Redis/Timescale are available.
+3. Add the dashboard route inventory smoke before expanding the new UI pages.
+4. Split the large worktree into reviewable slices before any commit or PR preparation.

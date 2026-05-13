@@ -5,6 +5,8 @@
 > **Estimates:** Fibonacci story points. 1pt ≈ half a day, 2pt ≈ 1 day, 3pt ≈ 1.5 days, 5pt ≈ 3 days, 8pt ≈ 1 week, 13pt ≈ 2 weeks. Assumes one mid-senior engineer.
 >
 > **Priority:** P0 = blocker, P1 = must-have, P2 = should-have, P3 = nice-to-have.
+>
+> **Current-state note:** this file is now a historical ticket backlog, not the live source of truth. The codebase has advanced beyond several unchecked boxes below. Use `spec/BUILD_ORDER.md`, the focused `spec/tasks/TASK-*.md` files, `README.md` local progression snapshots, and `SYSTEM_OVERVIEW.md` for implementation status.
 
 ---
 
@@ -14,7 +16,7 @@
 
 Create repo layout:
 
-```
+```text
 fincept-terminal/
   services/            # Python services (each its own pyproject.toml)
     ingestor/
@@ -32,10 +34,10 @@ fincept-terminal/
   Makefile
 ```
 
-- [ ] uv workspace for Python
-- [ ] pnpm workspace for JS
-- [ ] Root `Makefile` with `dev`, `test`, `lint`, `build`
-- [ ] pre-commit hooks: ruff, mypy, prettier, eslint
+- [x] uv workspace for Python
+- [x] pnpm workspace for JS
+- [x] Root `Makefile` with development/test/lint targets
+- [x] pre-commit hooks: ruff, mypy, prettier/eslint equivalents where configured
 
 **Acceptance:** fresh clone → `make dev` → Postgres+Timescale+Redis running in Docker, all libs importable.
 
@@ -59,9 +61,9 @@ fincept-terminal/
 
 ### P0-03 · Secrets abstraction · 2pt · P0
 
-- [ ] `fincept-core.config.Settings` reads from env + optional Vault backend
-- [ ] `.env.example` checked in, `.env` gitignored
-- [ ] Docstring covers rotation procedure
+- [x] `fincept-core.config.Settings` reads from env + optional Vault backend
+- [x] `.env.example` checked in, `.env` gitignored
+- [x] Docstring covers rotation procedure
 
 **Acceptance:** no secret appears in `git log --all -p`.
 
@@ -333,7 +335,7 @@ Same. **Depends on:** P1-01.
 
 ### P3-05 · Dashboard shell · 8pt · P1
 
-- [ ] Next.js 16 + Tailwind + shadcn/ui
+- [x] Next.js 14 App Router + React 18 + Tailwind + Radix UI primitives
 - [ ] Auth: NextAuth with Google/GitHub
 - [ ] Layout: sidebar + tabbed panels
 
@@ -487,9 +489,4 @@ These come from the blueprint but are **explicitly out of scope** for the first 
 - Hierarchical meta-agent orchestration
 - Reinforcement learning strategy optimization
 - On-chain / DeFi execution
-- News sentiment pipeline
-- Social media signal extraction
-- Real-time VaR engine
-- MiFID II / CFTC regulatory reporting
-- Third-party plugin marketplace
-- Excel add-in
+- News sentiment is no longer fully deferred: the NewsAPI + LLM sentiment agent exists but remains optional/key-gated and needs calibration before it should affect sizing materially.

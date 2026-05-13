@@ -7,6 +7,10 @@ End-to-end guide for getting `gbm_predictor` from "no model" to "trained on real
 - Bootstrap model is trained on synthetic data (`models/gbm_predictor/model.txt`, AUC ≈ 0.51).
 - Synthetic AUC ≈ 0.50 is **expected and correct** — random walks have no edge. The model is deliberately non-predictive; it exists so the agent goes UP and Predictions flow through the orchestrator → OMS → portfolio chain.
 - To get real edge, retrain on actual market data captured by the live stack.
+- The trainer now supports two evaluation modes:
+  - `--cv-folds 0` keeps the legacy 80/20 holdout path.
+  - `--cv-folds N` runs anchored expanding-window walk-forward cross-validation with purging.
+- `meta.json` records `eval_mode`, fold details, CV summary, purge/embargo settings, final training rows, and final boosting rounds.
 
 ## The three-step path
 
@@ -51,15 +55,15 @@ After enough capture (recommend **at least 1 week**, ideally a month spanning a 
 .\stop.bat
 
 # train on all captured batches
-uv run python -m agents.gbm_predictor.train --input "data/captures/*.parquet" --horizon-bars 15
+uv run python -m agents.gbm_predictor.train --input "data/captures/*.parquet" --horizon-bars 15 --cv-folds 5
 
 # restart with the new model
 .\start.bat -WithGbm
 ```
 
-The trainer overwrites `models/gbm_predictor/{model.txt,meta.json}`. The agent picks up the new model on next start.
+The trainer overwrites `models/gbm_predictor/{model.txt,meta.json}` unless you pass a different output directory. The agent picks up the new model on next start.
 
-A real-data AUC of ~0.55-0.60 on holdout is a healthy crypto microstructure baseline. Above 0.65 deserves suspicion of look-ahead leakage; below 0.52 means the features aren't separating direction.
+A real-data mean walk-forward AUC of ~0.55-0.60 is a healthy crypto microstructure baseline. Above 0.65 deserves suspicion of look-ahead leakage; below 0.52 means the features aren't separating direction.
 
 ## Roadmap to "best performing"
 
@@ -69,18 +73,18 @@ The current setup is an honest baseline, not a production-grade research stack. 
 
 | # | Task | Why it matters |
 |---|------|----------------|
-| 1 | **Walk-forward / purged CV** in train.py (TASK-023) | The current 80/20 holdout overstates real-time performance because adjacent rows leak signal. Walk-forward + purging is table stakes for serious time-series ML. |
-| 2 | **Capture longer**, retrain on 1+ month of real data | Random-walk bootstrap has no edge by construction. Real data beats the bootstrap easily once you have it. |
-| 3 | **Tune `confidence_threshold` and `position_scale`** in the orchestrator | A great model with bad sizing loses money. After retraining, rebalance these against measured AUC. |
+| 1 | **Capture longer**, retrain on 1+ month of real data | Random-walk bootstrap has no edge by construction. Real data is required before model quality is meaningful. |
+| 2 | **Use walk-forward CV by default** | `--cv-folds 5` gives variance and leakage-resistant validation; keep `--cv-folds 0` only for quick compatibility checks. |
+| 3 | **Tune `confidence_threshold` and `position_scale`** in the orchestrator | A great model with bad sizing loses money. After retraining, rebalance these against measured CV performance. |
 
 ### Medium-term (deeper edge, weeks)
 
 | # | Task | Why |
 |---|------|-----|
-| 4 | **News + sentiment agent** using NewsAPI + Anthropic | Microstructure features have a half-life of seconds; news shocks have a half-life of hours. Different alpha decay = orthogonal signal. Your `FINCEPT_ANTHROPIC_API_KEY`/`FINCEPT_OPENAI_API_KEY`/`FINCEPT_NEWSAPI_API_KEY` slots are ready in `.env`. |
-| 5 | **Macro regime agent** using FRED data | Risk-on vs risk-off conditioning. FRED key is parked. |
+| 4 | **Enable and calibrate sentiment** | The NewsAPI + LLM sentiment agent exists and can route across Anthropic/OpenAI when keys are configured. Tune article limits and costs before relying on it. |
+| 5 | **Use regime as a sizing/context signal** | The FRED regime agent exists and emits market-wide state that the orchestrator fans out across the universe. Validate that it improves drawdown before increasing weight. |
 | 6 | **Cross-asset features** (BTC dominance, ETH/BTC ratio, crypto-equity correlation) | Many crypto returns are explained by BTC; conditioning on BTC features helps disambiguate alt-coin moves. |
-| 7 | **Add more agents to consensus** in the orchestrator router | Currently single-agent (`gbm_predictor.v1`). Multi-agent consensus with different time horizons is the real reason the orchestrator exists. |
+| 7 | **Expand consensus carefully** | The orchestrator can combine GBM, sentiment, and regime-derived predictions. Add new agents only with calibration tags, horizon discipline, and shadow evidence. |
 
 ### Long-term (research-grade)
 
@@ -109,3 +113,6 @@ The current setup is an honest baseline, not a production-grade research stack. 
 - Adding a new feature to `FEATURES` invalidates every existing model. The trainer writes the feature list into `meta.json`; the agent reads it back at inference. Bumping the list = full retrain.
 - `models/gbm_predictor/` is the *only* on-disk artifact the agent reads. To keep multiple model versions around, copy to `models/gbm_predictor.v2/` and switch `GBM_MODEL_DIR` env var.
 - The `/services` endpoint marks `gbm_predictor` as expected only when `models/gbm_predictor/model.txt` exists. So the dashboard panel reads 7/7 in dev (no model) and 8/8 once trained.
+- Optional agents are feature-gated by keys:
+  - `sentiment_agent` is expected when `NEWSAPI_API_KEY` and either `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` are set.
+  - `regime_agent` is expected when `FRED_API_KEY` is set.

@@ -1,23 +1,23 @@
 # Fincept Terminal — System Overview & Forward Plan
 
-> **Purpose:** ground-truth snapshot of every component currently in the repo, what it does, and how the next two phases of work (F: strategy host, G: paper-spine replay) thread into the existing pipeline.
+> **Purpose:** ground-truth snapshot of every component currently in the repo, what it does, and how the next proof phase (paper-spine replay + operator contract smoke) threads into the existing pipeline.
 > **Audience:** a new engineer landing on the project who needs to understand the whole stack in one read.
-> **Last updated:** 2026-04-30, after Phase E (shadow deployment) shipped.
+> **Last updated:** 2026-05-08, after agent layer expansion (7 agents), dashboard surface growth, ADR-0006/0009 resolution, ML lifecycle completion, and deterministic paper-spine replay receipt creation.
 
 ---
 
 ## 0. TL;DR
 
 - **What this is.** A Python-first, Bet-A "research + execution terminal" (per `docs/ROADMAP.md`): live crypto + EOD-equity ingest → feature store → ML predictions → portfolio decisions → paper OMS → web dashboard.  No live capital, no Qt6, no FPGAs.
-- **Where we are.** Foundation libs, data spine, agents, orchestrator, paper OMS, portfolio service, REST API, and Next.js dashboard are all implemented at package level.  Phases A–E of the ML lifecycle are done end-to-end: train → register → CV/holdout report → promote → hot-reload → predict → log → shadow.
-- **What's next.** **Phase F** (Strategy host service + strategy ↔ model binding UI): give operators a stable abstraction for "this strategy uses model X with regime weighting Y," so multiple strategies can drive the orchestrator independently.  **Phase G** (Paper-spine replay): a single deterministic fixture that flows one synthetic bar all the way from data → feature → prediction → decision → risk → order → fill → portfolio with a reconstructable audit trail, used as a pre-merge regression gate.
+- **Where we are.** Foundation libs, data spine, agents, orchestrator, risk, paper OMS, portfolio service, REST API, strategy-host service, and Next.js dashboard are all implemented at package level.  The ML lifecycle covers train → walk-forward/holdout report → promote → hot-reload → predict → log → shadow.  Operator surfaces now include strategy config CRUD/lifecycle, manual orders, research/data provider tooling, model promotion/shadow controls, and datasource coverage.
+- **What's next.** The paper-spine replay now has a deterministic local receipt via `uv run python scripts/paper_spine_replay.py`. The remaining highest-value proof is **route smoke + service-container replay**: a port-`8010` route smoke should prove dashboard/API contracts, then the replay should be repeated against live Redis/Timescale service wiring.
 - **What's deliberately not built.** FIX, SIP, multi-monitor Qt UI, FPGA, kernel bypass, hierarchical meta-agents, online RL.  These are explicitly out-of-scope for the MVP track (`ROADMAP.md §1`).
 
 ---
 
 ## 1. Repo shape
 
-```
+```text
 fincept-terminal/
 ├── apps/
 │   └── dashboard/                Next.js 14 web UI (operator console)
@@ -37,7 +37,8 @@ fincept-terminal/
 │   ├── portfolio/                Position/P&L tracker driven off STREAM_FILLS
 │   ├── api/                      FastAPI REST + WebSocket gateway for the dashboard
 │   ├── backtester/               Event-driven historical replay + walk-forward CV
-│   └── jobs/                     Cron-style runners (daily EOD load, etc.)
+│   ├── jobs/                     Cron-style runners (daily EOD load, etc.)
+│   └── strategy_host/            Filesystem-backed strategy instance supervisor
 ├── docs/                         Planning, blueprint, roadmap, ADRs, this file
 ├── spec/                         Contract-first task specs (BUILD_ORDER, CONTRACTS, etc.)
 ├── experiments/                  Out-of-tree research; news-impact-model lives here
@@ -52,11 +53,11 @@ Every Python service is a separate uv workspace package.  The dashboard is a sin
 
 ## 2. Infra primitives (`docker-compose.yml`)
 
-| Service | Image | Role |
-|---|---|---|
-| `postgres` | `timescale/timescaledb:latest-pg16` | Bars, ticks, audit, training-run metadata.  Hypertables for time-series. |
-| `redis` | `redis:7-alpine` (AOF + RDB) | Event bus (Streams) + heartbeats + leadership locks. |
-| `minio` | `minio/minio:latest` | S3-compatible object store for model artifacts, parquet feature dumps, backtest reports. |
+| Service    | Image                               | Role                                                                                     |
+| ---------- | ----------------------------------- | ---------------------------------------------------------------------------------------- |
+| `postgres` | `timescale/timescaledb:latest-pg16` | Bars, ticks, audit, training-run metadata.  Hypertables for time-series.                 |
+| `redis`    | `redis:7-alpine` (AOF + RDB)        | Event bus (Streams) + heartbeats + leadership locks.                                     |
+| `minio`    | `minio/minio:latest`                | S3-compatible object store for model artifacts, parquet feature dumps, backtest reports. |
 
 Single dev command: `make dev` (or `scripts/dev-setup.ps1`) brings the whole stack up.
 
@@ -73,6 +74,7 @@ The schema and runtime-primitive package.  Public modules:
 - **`schemas.py`** — Pydantic v2 models for every event in the system: `Trade`, `OrderBook`, `Bar`, `FeatureRow`, `Prediction`, `RegimeSignal`, `SentimentSignal`, `Decision`, `OrderIntent`, `Fill`, `PositionSnapshot`, `RiskCheck`, `Alert`.
 - **`events.py`** — `Event[T]` envelope (typed, includes `ts_event`, `ts_publish`, latency timestamps for the latency budget ledger).
 - **`config.py`** — `Settings` (env-driven Pydantic settings; universe, redis URL, etc.).
+- **`strategy_config.py`** — filesystem-backed strategy instance configs and append-only history under `strategies/`.
 - **`clock.py`** / **`ids.py`** — monotonic ns clock + UUIDv7 generators.
 - **`heartbeat.py`** / **`leadership.py`** — Redis-backed `beat_periodically` and "exactly-one-leader" locks so HA scale-out doesn't double-publish.
 - **`logging.py`** / **`tracing.py`** — `configure_logging(structlog json)` + `configure_tracing(otel)`.
@@ -146,7 +148,23 @@ Polls FRED (VIX, yield curve, fed funds), classifies macro regime via simple rul
 
 #### `sentiment_agent` *(optional)*
 
-NewsAPI + Anthropic Messages API.  Scores articles per symbol, emits `SentimentSignal`.  Skips startup if `NEWSAPI_API_KEY` or `ANTHROPIC_API_KEY` is missing.  *Note: the heavier `experiments/news-impact-model` workbench is a research-only branch of this; not wired into the orchestrator.*
+NewsAPI + LLM scoring per symbol.  Scores articles via Anthropic/OpenAI, emits `SentimentSignal` to `sig.sentiment`.  Skips startup unless `NEWSAPI_API_KEY` and an LLM key are configured.
+
+#### `sentiment_features` *(optional)*
+
+Bridges `SentimentSignal` events into the online feature store.  Consumes `sig.sentiment`, computes rolling sentiment features, publishes to `features.online`.
+
+#### `information_enricher` *(optional)*
+
+Consumes raw `InformationEvent` from `STREAM_INFO_RAW`, enriches with entity resolution and context, publishes to `STREAM_INFO_ENRICHED`.
+
+#### `news_alpha_predictor` *(optional)*
+
+ML predictor trained on news-alpha features.  Consumes `features.online`, runs inference, emits `Prediction` events.  Model artifacts stored at `models/news_alpha_predictor/`.
+
+#### `news_outcome_labeler` *(optional)*
+
+Consumes `STREAM_FEATURES_ONLINE` and `STREAM_MD_TRADES`, produces outcome labels for news events based on subsequent price movement.  Stores labels for training data generation.
 
 ### `orchestrator` — predictions to orders
 
@@ -205,18 +223,28 @@ The most-developed non-live service.  Eleven modules:
 - **`daily_eod_load.py`** — kicks the EOD equity loader nightly.
 - **`main.py`** — APScheduler-style runner.
 
+### `strategy_host` — live strategy config runner
+
+- **`main.py`** — service entrypoint, heartbeat name `strategy_host`.
+- **`supervisor.py`** — watches persistent `StrategyConfig` records and starts/stops runners to match `enabled`.
+- **`runner.py`** — instantiates registered strategy classes and emits paper order intents.
+
+Strategy configs live under `strategies/<strategy_id>.json`; every write appends `strategies/<strategy_id>.history.jsonl`.  This survives Redis loss and gives operators a cat-able audit trail for strategy intent.
+
 ### `api` — REST + WebSocket gateway
 
 FastAPI app (`api.main`) under `services/api/src/api/`.  Routes (`routes/`):
 
 - **`models.py`** *(largest, ~28KB)* — model lifecycle: `GET /models`, `GET /models/{name}`, `POST /models/train`, `GET /models/runs`, `GET /models/runs/{run_id}`, `GET /models/promote/active` (with shadow), `POST /models/{name}/promote`, `POST /models/promote/rollback`, `POST /models/{name}/shadow`, `POST /models/promote/shadow/clear`, `GET /models/{name}/feature-importance`, `GET /models/{name}/predictions`, `GET /models/{name}/prediction-stats`.
 - **`backtest.py`** — `POST /backtest/runs`, `GET /backtest/runs`, `GET /backtest/runs/{id}`.
-- **`positions.py`** / **`orders.py`** — read-only views into portfolio + OMS state.
-- **`strategies.py`** — currently a placeholder enum (Phase F replaces this).
-- **`regime.py`** / **`news.py`** — read regime + news-impact data.
-- **`data.py`** — bar query for the chart widget.
-- **`control.py`** — start/stop a strategy (placeholder; will become Phase F's surface).
+- **`positions.py`** / **`orders.py`** — portfolio, OMS, and manual-order views.
+- **`strategies.py`** — runtime strategy summary plus persistent strategy config CRUD/lifecycle/history: `/strategies/configs`, `/start`, `/stop`, `/history`.
+- **`regime.py`** / **`news.py`** — read regime and news data.
+- **`research.py`** — Exa and OpenBB read-only research endpoints, OpenBB health, allowlist, and Redis-backed rate limiting.
+- **`news_impact.py`** — experimental news-impact lab endpoints; read-only/shadow posture.
+- **`data.py`** — universe, symbol search, datasource registry, bars, and coverage.
 - **`services.py`** — heartbeat aggregator + dependency-health view.
+- **`control.py`** — kill switch and explicit operator control endpoints.
 
 Cross-cutting:
 
@@ -229,7 +257,7 @@ Cross-cutting:
 
 ### Dashboard (`apps/dashboard`)
 
-Next.js 14 (App Router) + TanStack Query + Tailwind + shadcn/ui.  Pages under `src/app/`:
+Next.js 14 (App Router) + TanStack Query + Tailwind + Radix UI primitives.  Pages under `src/app/`:
 
 - **`/`** (`page.tsx`) — operator home: KPIs, recent alerts, active model, P&L sparkline.
 - **`/markets`** — bar chart + symbol selector (TradingView Lightweight Charts).
@@ -239,8 +267,14 @@ Next.js 14 (App Router) + TanStack Query + Tailwind + shadcn/ui.  Pages under `s
 - **`/positions`** — position book + per-symbol P&L.
 - **`/orders`** — order/fill blotter.
 - **`/risk`** — current limits + breaches.
-- **`/strategies`** — placeholder (Phase F target).
-- **`/news`** — news-impact research surface.
+- **`/strategies`** and **`/strategies/[id]`** — config CRUD, params, lifecycle toggles, model binding, and history.
+- **`/portfolio-builder`** — portfolio optimizer / allocation scenario surface.
+- **`/research`** — Exa/OpenBB research and provider proofs.
+- **`/news`** and **`/news-lab`** — news surface and lab.
+- **`/news-impact-lab`** — experimental news-impact workbench.
+- **`/optimizer`** — portfolio optimization surface.
+- **`/signal-cockpit-demo`** — signal visualization demo.
+- **`/reconciliation`** — position reconciliation view.
 - **`/login`** — bearer-token paste box.
 
 Reusable components live under `components/widgets/` (KpiTile, EmptyState, PageHeader, …) and `components/models/` (PromoteButton, ShadowButton, PromotionHistoryPanel, RunsPanel, TrainModelDialog, LivePredictionsCard).  All API access goes through `lib/api.ts` with a typed `request<T>()` helper that surfaces `ApiError` (status + parsed body) for inline error toasts.
@@ -249,7 +283,7 @@ Reusable components live under `components/widgets/` (KpiTile, EmptyState, PageH
 
 ## 5. End-to-end data flow (steady state)
 
-```
+```text
             +-----------+      bars       +-----------+
             | Binance   |---------------->|           |
             | Coinbase  |                 | ingestor  |
@@ -306,121 +340,36 @@ Every arrow is a Redis Stream except the dotted file-system writes (model artifa
 
 Recap of what runs end-to-end today:
 
-| Phase | What landed | Key surface |
-|---|---|---|
-| **A — Train+register** | `python -m agents.gbm_predictor.train --input data/X.parquet --cv-folds 5 --out-dir models/<name>` writes booster + meta + metrics + feature importance.  `POST /models/train` runs the same binary as a background task. | `models/<name>/` artifacts; `models/runs/<run_id>.json` audit |
-| **B — Listing + detail** | `/models` lists every artifact; `/models/[name]` shows CV/holdout AUC, per-fold table, feature importance chart, training config provenance. | `GET /models`, `GET /models/{name}`, `GET /models/{name}/feature-importance` |
-| **C — Promote + rollback** | `PromotionStore` writes `models/active/<agent_id>.json` (current) + `<agent_id>.history.jsonl` (timeline).  Rollback walks the history.  Validation: model.txt + meta.json must exist. | `POST /models/{name}/promote`, `POST /models/promote/rollback`, `GET /models/promote/active` |
-| **D1 — Hot-reload** | gbm_predictor polls the active pointer every 30s; rebuilds the agent when the pointer changes; failed reload keeps the old agent serving.  No process restart needed. | Operator sees "hot-reload pending" countdown; existing tests cover pointer-change + reload-failure cases |
-| **D2 — Prediction outcome log** | Every prediction lands at `data/predictions/<agent_id>.jsonl` with the model name; api endpoints expose recent rows and aggregated stats per model. | `GET /models/{name}/predictions`, `GET /models/{name}/prediction-stats`; LivePredictionsCard on detail page |
-| **E1 — Shadow store + API** | `PromotionStore` extended with `set_shadow / get_shadow / clear_shadow`; refuses `shadow == active`.  `GET /promote/active` includes shadow alongside active. | `POST /models/{name}/shadow`, `POST /models/promote/shadow/clear` |
-| **E2 — Agent shadow loop** | `gbm_predictor.main.run()` manages active + shadow slots independently.  Shadow `_shadow_loop()` records to JSONL but has **no producer** — defence-in-depth ensures shadow predictions cannot leak to `sig.predict`.  Failed shadow load is a warning, never fatal. | Hot-reload watcher handles the four transitions: None↔None, None→Path, Path→None, Path→Path' |
-| **E3 — Dashboard** | ShadowButton (set/clear with reload countdown), shadow badge on listing card (warn-tinted), shadow row in PromotionHistoryPanel ("recording predictions, not publishing"). | `apps/dashboard/src/components/models/shadow-button.tsx`, listing `page.tsx`, promotion-history-panel updates |
+| Phase                           | What landed                                                                                                                                                                                                                                                          | Key surface                                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **A — Train+register**          | `python -m agents.gbm_predictor.train --input data/X.parquet --cv-folds 5 --out-dir models/<name>` writes booster + meta + metrics + feature importance.  `POST /models/train` runs the same binary as a background task.                                            | `models/<name>/` artifacts; `models/runs/<run_id>.json` audit                                                 |
+| **B — Listing + detail**        | `/models` lists every artifact; `/models/[name]` shows CV/holdout AUC, per-fold table, feature importance chart, training config provenance.                                                                                                                         | `GET /models`, `GET /models/{name}`, `GET /models/{name}/feature-importance`                                  |
+| **C — Promote + rollback**      | `PromotionStore` writes `models/active/<agent_id>.json` (current) + `<agent_id>.history.jsonl` (timeline).  Rollback walks the history.  Validation: model.txt + meta.json must exist.                                                                               | `POST /models/{name}/promote`, `POST /models/promote/rollback`, `GET /models/promote/active`                  |
+| **D1 — Hot-reload**             | gbm_predictor polls the active pointer every 30s; rebuilds the agent when the pointer changes; failed reload keeps the old agent serving.  No process restart needed.                                                                                                | Operator sees "hot-reload pending" countdown; existing tests cover pointer-change + reload-failure cases      |
+| **D2 — Prediction outcome log** | Every prediction lands at `data/predictions/<agent_id>.jsonl` with the model name; api endpoints expose recent rows and aggregated stats per model.                                                                                                                  | `GET /models/{name}/predictions`, `GET /models/{name}/prediction-stats`; LivePredictionsCard on detail page   |
+| **E1 — Shadow store + API**     | `PromotionStore` extended with `set_shadow / get_shadow / clear_shadow`; refuses `shadow == active`.  `GET /promote/active` includes shadow alongside active.                                                                                                        | `POST /models/{name}/shadow`, `POST /models/promote/shadow/clear`                                             |
+| **E2 — Agent shadow loop**      | `gbm_predictor.main.run()` manages active + shadow slots independently.  Shadow `_shadow_loop()` records to JSONL but has **no producer** — defence-in-depth ensures shadow predictions cannot leak to `sig.predict`.  Failed shadow load is a warning, never fatal. | Hot-reload watcher handles the four transitions: None↔None, None→Path, Path→None, Path→Path'                  |
+| **E3 — Dashboard**              | ShadowButton (set/clear with reload countdown), shadow badge on listing card (warn-tinted), shadow row in PromotionHistoryPanel ("recording predictions, not publishing").                                                                                           | `apps/dashboard/src/components/models/shadow-button.tsx`, listing `page.tsx`, promotion-history-panel updates |
 
 **Test coverage today:** 190 api tests, 93 agent tests, dashboard typecheck clean.
 
 ---
 
-## 7. What's next — Phase F (Strategy host) & Phase G (Paper-spine replay)
+## 7. Current next proof phase
 
-These are the two pending items in the ML lifecycle backlog.  Together they close the loop from "we have models" to "we have governable strategies that are continuously regression-tested."
+The strategy host and strategy config UI/API surfaces now exist.  The next phase is not another scaffold; it is evidence that the current product works as one connected paper-trading system.
 
-### Phase F — Strategy host service + binding UI
-
-#### Why now
-
-Today the orchestrator hard-wires a single agent (`gbm_predictor.v1`) to a single output stream, with consensus and allocator parameters baked into env vars.  This is fine for one model but blocks three operator workflows:
-
-1. **Multiple strategies on one orchestrator.**  An operator wants `momentum-fast` (5-minute horizon, low gross cap) and `mean-revert-slow` (1-hour horizon, higher cap) to run side-by-side without redeploying.
-2. **Per-strategy governance.**  Risk wants kill-switch per strategy, not per agent.  The dashboard wants P&L attribution per strategy.
-3. **Promotion at strategy level, not agent level.**  Today promotion is "swap the agent's active model."  Tomorrow it should be "swap which model strategy `momentum-fast` consumes."
-
-#### What gets built
-
-**F1 — `services/strategies/`** *(new service)*
-
-```
-services/strategies/
-├── pyproject.toml
-├── src/strategies/
-│   ├── __init__.py
-│   ├── store.py          Filesystem store for Strategy definitions (mirrors PromotionStore)
-│   ├── runner.py         Per-strategy async loop: subscribe -> consensus -> allocate -> publish
-│   ├── manifest.py       StrategyDefinition dataclass (name, agent_ids, allocator_cfg, risk_cfg)
-│   └── main.py           Multiplexer: load N strategy manifests, run each in its own task
-└── tests/
-```
-
-A `StrategyDefinition` is a small JSON document at `strategies/<name>.json`:
-
-```jsonc
-{
-  "name": "momentum-fast",
-  "version": 1,
-  "consumes_signals": ["sig.predict"],
-  "agent_filter": ["gbm_predictor.v1"],
-  "regime_weights": {"risk_on": 1.0, "risk_off": 0.3, "neutral": 0.7},
-  "allocator": {"gross_cap_usd": 50000, "min_delta_usd": 250, "horizon_ns": 300_000_000_000},
-  "risk_overrides": {"max_concentration_pct": 10},
-  "execution_mode": "paper",
-  "enabled": true
-}
-```
-
-The strategy runner is the orchestrator's logic factored out: each strategy gets its own `ConsensusBuilder` + `TargetState` + allocator, all reading the **same** `sig.predict` stream but filtering on `agent_id`.  Decisions/orders carry a new `strategy=<name>` tag so the OMS, portfolio, and risk services can attribute correctly.
-
-**F2 — Orchestrator becomes a strategy host**
-
-The current `OrchestratorRouter` is renamed `LegacySingleStrategyRouter` and kept for backward compatibility.  The new `main.py` reads `strategies/*.json` and spawns one runner per enabled strategy.  Hot-reload: same 30s polling pattern as the gbm_predictor active/shadow watcher.
-
-**F3 — API + dashboard surface**
-
-- New routes (extend `routes/strategies.py`, currently a placeholder):
-  - `GET /strategies` — list with per-strategy state (enabled, current target notional, last decision time, P&L delta).
-  - `GET /strategies/{name}` — full manifest + binding history.
-  - `POST /strategies/{name}` — upsert manifest (with the same anti-traversal + schema-validation pattern as PromotionStore).
-  - `POST /strategies/{name}/enable` / `/disable` — kill-switch per strategy.
-  - `POST /strategies/{name}/bind-model` — declarative wrapper around `POST /models/{name}/promote` that also updates the strategy's `agent_filter` if the agent_id changed.
-
-- New dashboard pages:
-  - `/strategies` — list with KPIs (enabled, P&L 24h, last-decision-age).
-  - `/strategies/[name]` — manifest editor (JSON or form), binding history, per-strategy P&L chart, enable/disable toggle.
-
-**F4 — Risk + portfolio attribution**
-
-Risk and portfolio services already consume `ord.orders` / `ord.fills`.  Both are extended to key their internal state by `(symbol, strategy)` in addition to `symbol`.  The dashboard's existing `/positions` page stays symbol-centric; a new `/strategies/[name]` view is per-strategy.
-
-#### How this connects to the existing system *optimally*
-
-- **No change to agents.**  `gbm_predictor` keeps emitting `Prediction` events to `sig.predict`.  Strategies *filter* on `agent_id` rather than the agent service publishing to a strategy-specific stream — this keeps agents single-responsibility (predict, don't route).
-- **No change to OMS or risk core logic.**  They just see a new optional `strategy` field on every order/fill/risk-check event.  Backward compat: old events without the field are treated as `strategy="legacy"`.
-- **Promotion semantics generalize cleanly.**  The shadow slot already proved the "two parallel pipelines, only one publishes" pattern.  Strategy enable/disable is the same idea at a coarser granularity: `enabled=false` means "run the consensus but don't publish decisions."  Same defence-in-depth: the disabled-strategy code path doesn't construct a producer.
-- **Dashboard reuses existing widgets.**  PromoteButton, ShadowButton, PromotionHistoryPanel are model-level today; they get a thin adapter `<StrategyManifestEditor />` and a per-strategy variant of `<PromotionHistoryPanel />`.
-- **Single new stream optional.**  The simplest implementation publishes decisions to the existing `ord.decisions` / `ord.orders` streams with the new `strategy` field.  A future refinement could fan out to per-strategy streams (`ord.decisions.momentum-fast`) for finer-grained backpressure, but that's a Phase H concern.
-
-#### Definition of done for Phase F
-
-- A single new file `strategies/momentum-fast.json` plus a one-time `make strategies` reload makes the orchestrator drive the OMS for that strategy alone.
-- Dashboard `/strategies` shows the strategy as enabled with non-zero P&L delta after a paper-trading window.
-- Test coverage: store CRUD + validation, runner consensus/allocator math, end-to-end "set up two strategies, expect two distinct decisions per prediction window."
-
-#### Estimated scope
-
-3 working days for backend (store + runner + routes + tests); 2 days for dashboard; 1 day for risk/portfolio attribution wiring.  Comparable to the Phase E shadow work in size.
-
----
-
-### Phase G — End-to-end paper-spine replay fixture
+### Paper-spine replay fixture
 
 #### Why now
 
 Today every service has unit tests (190 api, 93 agents, ~40 backtester, dozens more).  But there is **no single regression that exercises the full data → fill → portfolio path** with a deterministic payload.  Every refactor of `Decision`, `OrderIntent`, or `Fill` schemas relies on careful local testing across every service.  A drift between, say, `Decision.target_notional` (Decimal) and OMS's interpretation (float) currently passes CI.
 
-Phase G is the missing pre-merge gate.
+This replay is the missing pre-merge gate.
 
 #### What gets built
 
-**G1 — A single `tests/e2e/test_paper_spine_replay.py` (in `services/api/tests/` or a new top-level `tests/e2e/`)**
+#### Replay fixture
 
 The fixture:
 
@@ -436,11 +385,11 @@ The fixture:
 5. Waits up to N seconds for `ord.positions` to settle.
 6. Asserts every published event matches the expected JSONL file *byte-for-byte after key normalization* (`event.id` random, `ts_publish` monotonic — but `ts_event`, `symbol`, `side`, `qty`, `target_notional`, `latency_ledger` are all deterministic).
 
-**G2 — Audit trail reconstruction utility**
+#### Audit trail reconstruction utility
 
 `scripts/replay-audit.py <run_dir>` reads the captured events from a fakebus dump and renders a single chronological table:
 
-```
+```text
 ts_event_ns         service       event_type     payload (key fields)
 1714502400000000000 ingestor      Trade          BTC-USD 60123.45 0.5
 1714502460000000000 features      FeatureRow     BTC-USD ret_5m=+0.012 ...
@@ -454,13 +403,13 @@ ts_event_ns         service       event_type     payload (key fields)
 
 This is the deliverable for the **P0 "End-to-end paper spine replay"** item from `ROADMAP.md §12`.
 
-**G3 — CI integration**
+#### CI integration
 
 - New job in `.github/workflows/ci.yml`: `make test-e2e` runs after `make test`.
 - The job uses `services/api/tests/conftest.py`'s existing FakeRedis fixture (extended) so it runs in <30s.
 - Failure output includes the diff between expected and actual JSONL — operator-readable.
 
-**G4 — Local replay utility**
+#### Local replay utility
 
 `make replay` (or `scripts/replay.ps1`) reproduces what CI runs but prints the audit table at the end so an engineer doing local development can see the spine flow live.
 
@@ -469,32 +418,25 @@ This is the deliverable for the **P0 "End-to-end paper spine replay"** item from
 - **No new runtime code paths.**  Phase G is purely test infrastructure.  It exercises *real* `main.run()` loops from each service against an in-process bus.
 - **Catches drift early.**  Today a schema rename in `fincept-core/schemas.py` requires a coordinated release across 6 services.  After G, the replay test fails the moment any service serializes the new field but a downstream consumer reads the old one.
 - **Self-documenting.**  The fixture JSONL files become the canonical example of "what does the spine look like for one bar?" — far more informative than prose docs.
-- **Compatible with Phase F.**  Once F lands, the fixture is extended with two strategy manifests (one enabled, one disabled), and the expected `ord.decisions.jsonl` includes the `strategy` field.  This validates F's defence-in-depth ("disabled strategy doesn't publish") at the spine level.
+- **Covers strategy-host behavior.**  The fixture should include at least one enabled strategy config and one disabled config, proving disabled strategies stay silent.
 - **Foundation for future agents.**  A second predictive agent (regime, sentiment) gets added by appending to `expected_predictions.jsonl` — the rest of the spine doesn't change.  This is exactly the pattern needed when news-impact-model graduates from `experiments/` to `services/agents/`.
 
-#### Definition of done for Phase G
+### Definition of done
 
 - `make test-e2e` passes locally and in CI.
 - A deliberate one-line break in `services/oms/processor.py` (e.g., flip qty sign) fails the e2e test with a readable diff, but does **not** fail any unit test.
 - `scripts/replay-audit.py` renders a 8-row table identical to the example above.
-- `docs/SYSTEM_OVERVIEW.md` (this file) gets a "see `make replay` for live demo" link added.
-
-#### Estimated scope
-
-2 days for fixture authoring + main.run() reuse work; 1 day for audit utility; 0.5 days for CI wiring.  Smaller than F.
+- A route-smoke receipt records pass/fail/skip for port `8010` API surfaces.
 
 ---
 
-## 8. Combined sequence
+## 8. Recommended sequence
 
-The two phases compose naturally if executed in this order:
-
-1. **Phase F first** so strategies become the unit of governance.
-2. **Phase G second** so the resulting two-strategy spine is the regression target.
-
-Doing G first would mean re-authoring the fixture once F lands.  Doing F first means G's fixture covers the future state from day one.
-
-Risk: F is the larger and riskier of the two.  Mitigation: ship F1 + F2 (backend) before F3 (UI) so the spine is governable from the CLI even if the dashboard work slips.
+1. Resolve API/dashboard contract drift (`venue` vs `venue_default`, coverage public errors, OpenBB health timeout).
+2. Add the port-`8010` route smoke receipt.
+3. Build paper-spine replay with strategy-host enabled/disabled configs.
+4. Add CI/local command wrappers for the replay and smoke checks.
+5. Only then expand autonomous research/agent behavior or live-brokerage assumptions.
 
 ---
 
@@ -509,24 +451,32 @@ To avoid scope creep on the next two phases, these items stay frozen:
 
 ---
 
-## 10. Open questions for the operator before F kicks off
+## 10. Current open questions for the operator
 
-1. Should two strategies share a `ConsensusBuilder` (cheaper, but coupled) or each have their own (clean, more memory)?  Recommendation: **separate** — the memory cost is trivial and isolation is easier to reason about.
-2. Should the strategy manifest live on disk (`strategies/<name>.json`, like promotions) or in Postgres?  Recommendation: **disk** — same reasoning as `promotions.py`'s docstring; operator-readable, `cat`-able, no schema migration.
-3. Should disabled strategies still record their would-be decisions to a JSONL log (parallel to the shadow-prediction pattern)?  Recommendation: **yes, opt-in** — gives an operator the "what would this strategy have done?" view without spinning up a full backtest.
-4. Position-aware vs target-aware orchestrator: still defer?  Recommendation: **yes, defer**.  Bring it up only after Phase G's e2e replay shows orders broadly filling against targets within an acceptable error band.
+1. Should disabled strategies record would-be decisions to a JSONL log, parallel to the shadow-prediction pattern?  Recommendation: **yes, opt-in** — it gives an operator the "what would this strategy have done?" view without spinning up a full backtest.
+2. Position-aware vs target-aware orchestrator: still defer?  Recommendation: **yes, defer**.  Bring it up only after the e2e replay shows orders broadly filling against targets within an acceptable error band.
+3. Should datasource/provider health become a first-class dashboard page or remain embedded in Markets/Research/Risk?  Recommendation: start embedded, then promote to a provider health center once smoke receipts exist.
+4. Should route-smoke receipts live in `reports/`, `docs/`, or CI artifacts?  Recommendation: local dated receipts in `reports/route-smoke/`, with CI artifacts for automated runs.
 
 ---
 
 ## 11. Quick reference
 
-```
+```text
 Build:           make dev      # docker stack + uv sync + pnpm install
 Run all tests:   make test     # ruff + mypy + pytest
 Per-package:     scripts/task-check.ps1 -PackagePath services/api -PytestPath services/api/tests
 Bring services:  uv run --package agents python -m agents.gbm_predictor.main
 Dashboard:       pnpm --filter dashboard dev
-API:             uv run --package api uvicorn api.main:app --reload
+API:             uv run --package api uvicorn api.main:app --reload --port 8010
 ```
 
-Repo URL: `https://github.com/AIRYDER/fincept`.  Latest commit on `main` is `641478d` (Phase E shadow deployment).
+Repo URL: `https://github.com/AIRYDER/fincept`.  Local repo state has advanced beyond the older Phase E snapshot; verify current commit with `git log --oneline -1` before citing a commit hash in release notes.
+
+## 12. Local Integration Notes — 2026-05-02
+
+- The local API default is now `http://127.0.0.1:8010`; `scripts/start.ps1`, `status.ps1`, `stop.ps1`, and the dashboard API client should be treated as the canonical local port surface.
+- Research endpoints are read-only by design: `/research/exa`, `/research/openbb/quote`, `/research/openbb`, `/research/openbb/health`, and `/research/openbb/health/history`.
+- The OpenBB dispatcher is bounded by top-level namespace allowlists plus Redis-backed per-user rate limiting. Extend the allowlist deliberately instead of bypassing the route.
+- The news-impact routes remain an experimental bridge to `experiments/news-impact-model`; they should produce shadow evidence before feeding orchestrator or OMS paths.
+- Strategy configs now live as durable operator state through `StrategyConfigStore`; the next system proof should show config -> strategy-host -> order intent -> OMS -> portfolio, not only unit tests.

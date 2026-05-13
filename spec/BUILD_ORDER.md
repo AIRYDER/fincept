@@ -56,7 +56,7 @@ Backtesting comes before live agents on purpose: we need the scoreboard before w
 |---|---|---|---|
 | 030 | Agent base class + process template | 002–003 | `services/agents/base.py` | [x] |
 | 031 | `gbm_predictor`: LightGBM trainer + online inference agent | 017, 030 | `services/agents/gbm_predictor/*` | [x] |
-| 032 | `regime`: HMM-based regime detector | 017, 030 | `services/agents/regime/*` |
+| 032 | `regime_agent`: FRED-based rule-heuristic regime detector | 017, 030 | `services/agents/regime_agent/*` | [x] |
 | 033 | `pairs`: cointegration pairs strategy agent | 017, 030 | `services/agents/pairs/*` |
 
 **Checkpoint A1:** `gbm_predictor` ≥52% directional accuracy on held-out 3-month test set with p<0.05; regime labels align with manual inspection on ≥3 historical regime transitions.
