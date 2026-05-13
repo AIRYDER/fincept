@@ -74,6 +74,21 @@ uv.lock
 # --- Claude Code / IDE session metadata -------------------------------------
 .claude/
 .windsurf/
+.bridgecode/
+.codex/
+
+# --- Local generated artifacts ----------------------------------------------
+/tmp/
+/reviewdocs/
+/FINCEPTNEWUIFUSIUON.pdf
+/data/predictions/
+/data/training_runs/
+/data/news_alpha_candidate.parquet
+/models/news_alpha_predictor/
+/models/t3/
+/reports/openbb-live/
+/reports/paper-spine/
+/reports/route-smoke/
 
 # --- start.ps1 captured stdout / stderr (local-only) ------------------------
 /tmp_*.err

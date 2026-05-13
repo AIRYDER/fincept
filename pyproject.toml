@@ -21,6 +21,7 @@ members = [
     "services/api",
     "services/backtester",
     "services/jobs",
+    "services/strategy_host",
 ]
 
 [tool.uv.sources]
@@ -37,6 +38,7 @@ agents = { workspace = true }
 oms = { workspace = true }
 orchestrator = { workspace = true }
 backtester = { workspace = true }
+strategy_host = { workspace = true }
 
 [dependency-groups]
 dev = [
