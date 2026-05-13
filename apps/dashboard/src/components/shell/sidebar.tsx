@@ -15,6 +15,7 @@ import {
   Newspaper,
   PieChart,
   ScrollText,
+  Server,
   ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,6 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/models", label: "Models", icon: Brain, mnemonic: "ML" },
   { href: "/receipts", label: "Receipts", icon: FileJson, mnemonic: "PF" },
   { href: "/risk", label: "Risk", icon: ShieldAlert, mnemonic: "RK" },
+  { href: "/system", label: "System", icon: Server, mnemonic: "SY" },
 ];
 
 export function Sidebar() {

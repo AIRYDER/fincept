@@ -58,6 +58,7 @@ export const COMMANDS: PaletteCommand[] = [
   { id: "nav:models", label: "Models", category: "navigate", safety: "safe", mnemonic: "ML", icon: "Brain", href: "/models", keywords: ["models", "ai", "ml"], group: "Navigate" },
   { id: "nav:receipts", label: "Receipts", category: "navigate", safety: "safe", mnemonic: "PF", icon: "FileJson", href: "/receipts", keywords: ["receipts", "proof", "audit"], group: "Navigate" },
   { id: "nav:risk", label: "Risk", category: "navigate", safety: "safe", mnemonic: "RK", icon: "ShieldAlert", href: "/risk", keywords: ["risk", "kill", "switch"], group: "Navigate" },
+  { id: "nav:system", label: "System", category: "navigate", safety: "safe", mnemonic: "SY", icon: "Server", href: "/system", keywords: ["system", "readiness", "launch", "env", "services", "ops"], group: "Navigate" },
 
   // Search — entity lookups
   { id: "search:symbol", label: "Search symbol…", category: "search", safety: "readonly", icon: "Search", href: "/markets?search=", keywords: ["symbol", "ticker", "find", "lookup"], group: "Search" },

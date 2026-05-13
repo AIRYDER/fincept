@@ -37,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/models", label: "MODELS", mnemonic: "ML" },
   { href: "/receipts", label: "RECEIPTS", mnemonic: "PF" },
   { href: "/risk", label: "RISK", mnemonic: "RK" },
+  { href: "/system", label: "SYSTEM", mnemonic: "SY" },
 ];
 
 export function NavTabs() {

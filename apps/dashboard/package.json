@@ -11,6 +11,7 @@
     "test:model-dossier": "node scripts/run-model-dossier-tests.cjs",
     "test:portfolio-builder": "node scripts/run-portfolio-builder-tests.cjs",
     "test:backtest-lab": "node scripts/run-backtest-lab-tests.cjs",
+    "test:system-readiness": "node scripts/run-system-readiness-tests.cjs",
     "test:page-state": "node scripts/run-page-state-tests.cjs",
     "test:design-tokens": "node scripts/run-design-tokens-tests.cjs",
     "test:command-registry": "node scripts/run-command-registry-tests.cjs",
