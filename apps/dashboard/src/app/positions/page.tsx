@@ -5,8 +5,12 @@ import { Briefcase } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { buildPositionPosture } from "@/components/positions/position-posture";
 import { EmptyState } from "@/components/widgets/empty-state";
+import { FreshnessBadge } from "@/components/widgets/freshness-badge";
+import { MetricDelta } from "@/components/widgets/metric-delta";
 import { PageHeader } from "@/components/widgets/page-header";
+import { StatusPill } from "@/components/widgets/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -179,12 +183,13 @@ export default function PositionsPage() {
                 <th className="px-4 py-2 text-right">Unrealized</th>
                 <th className="px-4 py-2 text-right">Realized</th>
                 <th className="px-4 py-2 text-right">Total P&L</th>
+                <th className="px-4 py-2 text-right">Freshness</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <EmptyState
                       icon={Briefcase}
                       title="No positions match"
@@ -211,10 +216,10 @@ export default function PositionsPage() {
                     : qty !== 0
                       ? (costBasis + unrealized) / qty
                       : cost;
-                  const market = mark * qty;
                   const total = unrealized + asNum(p.realized_pnl);
                   const k = posKey(p);
                   const pulse = pulseSet.has(k);
+                  const posture = buildPositionPosture(p);
                   return (
                     <tr
                       key={k}
@@ -226,13 +231,12 @@ export default function PositionsPage() {
                       <td className="px-4 py-2 font-mono">
                         <span className="flex items-center gap-2">
                           {p.symbol}
-                          {qty > 0 ? (
-                            <Badge variant="long">LONG</Badge>
-                          ) : qty < 0 ? (
-                            <Badge variant="short">SHORT</Badge>
-                          ) : (
-                            <Badge variant="muted">FLAT</Badge>
-                          )}
+                          <StatusPill
+                            intent={posture.sideIntent}
+                            label={posture.sideLabel}
+                            compact
+                            dot={posture.side !== "flat"}
+                          />
                         </span>
                       </td>
                       <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
@@ -245,7 +249,15 @@ export default function PositionsPage() {
                         {formatUsd(cost)}
                       </td>
                       <td className="num px-4 py-2 text-right">
-                        {formatUsd(mark)}
+                        <span className="inline-flex flex-col items-end gap-0.5">
+                          {formatUsd(mark)}
+                          <StatusPill
+                            intent={posture.markSource === "live" ? "verified" : "inactive"}
+                            label={posture.markSource}
+                            compact
+                            dot={posture.markSource === "live"}
+                          />
+                        </span>
                       </td>
                       <td className="num px-4 py-2 text-right text-muted-foreground">
                         {formatUsd(costBasis, { compact: true })}
@@ -256,7 +268,12 @@ export default function PositionsPage() {
                           pnlClass(unrealized),
                         )}
                       >
-                        {formatUsd(unrealized, { signed: true })}
+                        <MetricDelta
+                          value={unrealized}
+                          arrow
+                          compact
+                          className="justify-end"
+                        />
                       </td>
                       <td
                         className={cn(
@@ -264,7 +281,12 @@ export default function PositionsPage() {
                           pnlClass(p.realized_pnl),
                         )}
                       >
-                        {formatUsd(p.realized_pnl, { signed: true })}
+                        <MetricDelta
+                          value={asNum(p.realized_pnl)}
+                          arrow
+                          compact
+                          className="justify-end"
+                        />
                       </td>
                       <td
                         className={cn(
@@ -272,7 +294,23 @@ export default function PositionsPage() {
                           pnlClass(total),
                         )}
                       >
-                        {formatUsd(total, { signed: true })}
+                        <MetricDelta
+                          value={total}
+                          arrow
+                          compact={false}
+                          intent={posture.pnlIntent}
+                          className="justify-end text-sm"
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <FreshnessBadge
+                          ageSec={posture.freshnessAgeSec}
+                          staleAfterSec={300}
+                          deadAfterSec={3600}
+                          prefix="Updated"
+                          compact
+                          className="justify-end"
+                        />
                       </td>
                     </tr>
                   );

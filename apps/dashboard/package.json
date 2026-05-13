@@ -12,6 +12,7 @@
     "test:portfolio-builder": "node scripts/run-portfolio-builder-tests.cjs",
     "test:backtest-lab": "node scripts/run-backtest-lab-tests.cjs",
     "test:operator-briefing": "node scripts/run-operator-briefing-tests.cjs",
+    "test:position-posture": "node scripts/run-position-posture-tests.cjs",
     "test:system-readiness": "node scripts/run-system-readiness-tests.cjs",
     "test:page-state": "node scripts/run-page-state-tests.cjs",
     "test:design-tokens": "node scripts/run-design-tokens-tests.cjs",
