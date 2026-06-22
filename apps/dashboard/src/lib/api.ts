@@ -4,9 +4,16 @@
  * Every method matches a route in:
  *   services/api/src/api/routes/{data,positions,orders,strategies,control}.py
  *
- * Errors throw an ``ApiError`` carrying status + body so panels can
- * distinguish "not authenticated" (401 -> redirect to /login) from
- * "endpoint unavailable" (5xx -> show inline error toast).
+ * Errors throw a typed ``ApiError`` (or subclass) carrying status + body so
+ * panels can distinguish "not authenticated" (401 -> redirect to /login) from
+ * "endpoint unavailable" (5xx -> show inline error toast) from "timeout"
+ * (AbortController fires -> show "slow backend" message, not "no data").
+ *
+ * TASK-0204: every ``fetch`` call is wrapped with an ``AbortController`` that
+ * fires after ``DEFAULT_TIMEOUT_MS``.  Callers can override per-call via the
+ * ``timeoutMs`` option on ``request``.  A timeout throws ``TimeoutError``
+ * (subclass of ``ApiError``) so UI panels can render a precise message instead
+ * of confusing a slow backend with "no data."
  */
 
 import type {
@@ -56,6 +63,13 @@ import type {
   RegimeResponse,
   RollbackResponse,
   ServicesResponse,
+  ModulesListResponse,
+  ModuleDetailResponse,
+  ModuleStartResponse,
+  ModuleControlResponse,
+  ModuleStopAllResponse,
+  ModuleSweepIdleResponse,
+  ModuleReceiptsResponse,
   ShadowResponse,
   StrategyConfigRow,
   StrategyRow,
@@ -71,6 +85,15 @@ import type {
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
+/**
+ * Default fetch timeout (8 s).  Chosen to be longer than a healthy backend
+ * round-trip (~50-200 ms) but short enough that an operator sees a clear
+ * "slow backend" message before assuming "no data."  Override per-call via
+ * ``request(..., { timeoutMs })`` for known-slow endpoints (e.g. backtest
+ * run, model train).
+ */
+export const DEFAULT_TIMEOUT_MS = 8_000;
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -79,6 +102,56 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+/**
+ * Typed error subclasses so UI panels can render precise operator messages
+ * instead of a generic "something went wrong."  Each maps to a distinct
+ * operator-visible state (TASK-0204 acceptance criterion: "Backend
+ * unavailable is not confused with 'no data'").
+ */
+export class UnauthorizedError extends ApiError {
+  constructor(body: unknown) {
+    super(401, body, "Session expired — please sign in again.");
+  }
+}
+
+export class UnavailableError extends ApiError {
+  constructor(status: number, body: unknown) {
+    super(status, body, "Backend unavailable — check service status.");
+  }
+}
+
+export class TimeoutError extends ApiError {
+  timeoutMs: number;
+  constructor(timeoutMs: number) {
+    super(0, null, `Request timed out after ${timeoutMs} ms — backend may be slow or down.`);
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export class ValidationError extends ApiError {
+  constructor(body: unknown) {
+    super(422, body, "Validation failed — check the form inputs.");
+  }
+}
+
+export class StaleError extends ApiError {
+  constructor(body: unknown) {
+    super(409, body, "Data is stale — refresh to try again.");
+  }
+}
+
+/**
+ * Classify an HTTP status into the most specific typed error subclass.
+ * Falls back to ``ApiError`` for unhandled status codes.
+ */
+function classifyError(status: number, body: unknown): ApiError {
+  if (status === 401) return new UnauthorizedError(body);
+  if (status === 422) return new ValidationError(body);
+  if (status === 409) return new StaleError(body);
+  if (status >= 500) return new UnavailableError(status, body);
+  return new ApiError(status, body);
 }
 
 function messageFromBody(status: number, body: unknown): string {
@@ -106,22 +179,53 @@ function messageFromBody(status: number, body: unknown): string {
   return `API error ${status}`;
 }
 
+/**
+ * Options for ``request``.  Extends ``RequestInit`` with a per-call timeout
+ * override (defaults to ``DEFAULT_TIMEOUT_MS``).
+ */
+export interface RequestOptions extends RequestInit {
+  /** Override the default 8 s timeout for known-slow endpoints. */
+  timeoutMs?: number;
+}
+
 async function request<T>(
   path: string,
   token: string | null,
-  init: RequestInit = {},
+  init: RequestOptions = {},
 ): Promise<T> {
-  const headers = new Headers(init.headers);
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
   headers.set("Accept", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body && !headers.has("Content-Type")) {
+  if (fetchInit.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+
+  // TASK-0204: AbortController timeout — prevents a slow backend from
+  // hanging the UI indefinitely.  The operator sees a TimeoutError message
+  // ("backend may be slow or down") instead of a frozen page.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...fetchInit,
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new TimeoutError(timeoutMs);
+    }
+    // Network error (backend unreachable) — classify as unavailable so the
+    // UI doesn't confuse it with "no data."
+    throw new UnavailableError(0, null);
+  }
+  clearTimeout(timer);
+
   let body: unknown = null;
   const text = await res.text();
   if (text) {
@@ -131,7 +235,7 @@ async function request<T>(
       body = text;
     }
   }
-  if (!res.ok) throw new ApiError(res.status, body);
+  if (!res.ok) throw classifyError(res.status, body);
   return body as T;
 }
 
@@ -444,6 +548,43 @@ export const api = {
       token,
     ),
 
+  // --- modules (TASK-0203: on-demand module control) ---------------------
+  modules: (token: string | null) =>
+    request<ModulesListResponse>("/modules", token),
+  moduleDetail: (token: string | null, moduleId: string) =>
+    request<ModuleDetailResponse>(
+      `/modules/${encodeURIComponent(moduleId)}`,
+      token,
+    ),
+  startModule: (token: string | null, moduleId: string) =>
+    request<ModuleStartResponse>(
+      `/modules/${encodeURIComponent(moduleId)}/start`,
+      token,
+      { method: "POST" },
+    ),
+  stopModule: (token: string | null, moduleId: string) =>
+    request<ModuleControlResponse>(
+      `/modules/${encodeURIComponent(moduleId)}/stop`,
+      token,
+      { method: "POST" },
+    ),
+  restartModule: (token: string | null, moduleId: string) =>
+    request<ModuleControlResponse>(
+      `/modules/${encodeURIComponent(moduleId)}/restart`,
+      token,
+      { method: "POST" },
+    ),
+  stopAllModules: (token: string | null) =>
+    request<ModuleStopAllResponse>("/modules/stop-all", token, {
+      method: "POST",
+    }),
+  sweepIdleModules: (token: string | null) =>
+    request<ModuleSweepIdleResponse>("/modules/sweep-idle", token, {
+      method: "POST",
+    }),
+  moduleReceipts: (token: string | null) =>
+    request<ModuleReceiptsResponse>("/modules/receipts", token),
+
   // --- models -------------------------------------------------------------
   models: (token: string | null) => request<ModelsResponse>("/models", token),
   modelDetail: (token: string | null, name: string) =>
@@ -462,6 +603,7 @@ export const api = {
     request<TrainingRun>("/models/train", token, {
       method: "POST",
       body: JSON.stringify(body),
+      timeoutMs: 30_000, // model training can take a while
     }),
   modelRuns: (
     token: string | null,
@@ -577,6 +719,7 @@ export const api = {
     request<BacktestRunResponse>("/backtest/run", token, {
       method: "POST",
       body: JSON.stringify(body),
+      timeoutMs: 60_000, // backtest can take up to a minute
     }),
 
   // --- control ------------------------------------------------------------

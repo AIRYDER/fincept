@@ -22,6 +22,10 @@ const ANTHROPIC_THINKING_EFFORT = process.env.ANTHROPIC_PORTFOLIO_THINKING_EFFOR
 const PORTFOLIO_REPORT_MAX_OUTPUT_TOKENS = Number(
   process.env.PORTFOLIO_REPORT_MAX_OUTPUT_TOKENS ?? "6000",
 );
+// TASK-0204: LLM calls can take 20-60 s for a long reasoning report. Cap at
+// 90 s so a stuck provider falls through to the deterministic fallback
+// instead of hanging the operator's browser indefinitely.
+const LLM_TIMEOUT_MS = Number(process.env.PORTFOLIO_REPORT_TIMEOUT_MS ?? "90_000");
 
 export async function POST(request: Request) {
   let body: RequestBody;
@@ -173,7 +177,7 @@ function promptFor(allocation: PortfolioAllocationResult): string {
 }
 
 async function callOpenAI(allocation: PortfolioAllocationResult, apiKey: string): Promise<unknown> {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -204,7 +208,7 @@ async function callOpenAI(allocation: PortfolioAllocationResult, apiKey: string)
 }
 
 async function callAnthropic(allocation: PortfolioAllocationResult, apiKey: string): Promise<unknown> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
@@ -228,6 +232,31 @@ async function callAnthropic(allocation: PortfolioAllocationResult, apiKey: stri
   const text = json?.content?.find?.((item: { type?: string }) => item.type === "text")?.text;
   if (typeof text !== "string") throw new Error("Anthropic report missing content");
   return JSON.parse(text);
+}
+
+/**
+ * TASK-0204: fetch wrapper with AbortController timeout. A stuck LLM provider
+ * throws "LLM call timed out" instead of hanging the route indefinitely; the
+ * caller's catch block then falls through to the next provider or the
+ * deterministic fallback.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = LLM_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`LLM call timed out after ${timeoutMs} ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function extractOpenAIResponseText(json: unknown): string | null {
