@@ -16,6 +16,7 @@ dependencies = [
   "redis>=5.0",
   "pydantic>=2.7",
   "pyjwt>=2.9",
+  "quant-foundry",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ dev = [
 portfolio = { workspace = true }
 backtester = { workspace = true }
 oms = { workspace = true }
+quant-foundry = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

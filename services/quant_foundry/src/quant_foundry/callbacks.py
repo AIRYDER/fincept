@@ -137,9 +137,22 @@ class CallbackProcessor:
                 "result": "no_callback",
             }
 
+        # Idempotent guard: if the outbox job is already terminal, the
+        # domain effect has already been applied (or the job failed). Skip
+        # regardless of inbox status — this also covers the case where a
+        # duplicate external callback overwrote the inbox record with
+        # DUPLICATE status after the job was already COMPLETED.
+        ob_rec = self.outbox.get(job_id)
+        if ob_rec is not None and ob_rec.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+            return {
+                "job_id": job_id,
+                "outbox_status": ob_rec.status.value,
+                "inbox_status": in_rec.status.value,
+                "result": "already_terminal",
+            }
+
         # Idempotent: already processed -> skip (no duplicate effects).
         if in_rec.status == CallbackStatus.PROCESSED:
-            ob_rec = self.outbox.get(job_id)
             return {
                 "job_id": job_id,
                 "outbox_status": ob_rec.status.value if ob_rec is not None else None,

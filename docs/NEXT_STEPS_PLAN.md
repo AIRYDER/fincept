@@ -782,6 +782,12 @@ uv run pytest services/quant_foundry/tests/test_mock_flow.py -q
 ### TASK-0306: Add Quant Foundry API Route in Local Mock Mode
 
 **Order:** 21
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
+  Files owned: `services/quant_foundry/src/quant_foundry/gateway.py`,
+  `services/api/src/api/routes/quant_foundry.py`,
+  `services/api/tests/test_quant_foundry.py`. Additive-only edit to
+  `services/api/src/api/main.py`. Config read from env (no edit to shared
+  `fincept_core/config.py`). See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER2.md`.
 
 **Objective:** Expose gateway endpoints through the API without RunPod
 dependency.
@@ -920,10 +926,12 @@ uv run pytest services/quant_foundry/tests/test_settlement.py -q
 
 ### TASK-0402: Add Shadow Prediction Ledger Storage
 
-> **Owner:** Builder 1 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, local storage first).
+> **Owner:** Builder 4 (GLM) — ADOPTED 2026-06-22 (BUILDING, TDD, local storage first).
+> Previously Builder 1 yielded → Builder 3 released → UNOWNED → Builder 4 adopted.
 > Files owned: `services/quant_foundry/shadow_ledger.py` + `tests/test_shadow_ledger.py`.
 > File-disjoint from TASK-0401 (Builder 1: settlement), TASK-0304 (Builder 2: outbox/inbox),
-> TASK-0405 (Builder 4: feature lake), TASK-0203 (Builder 5: module control), TASK-0403 (Builder 3).
+> TASK-0405 (Builder 4: feature lake — DONE), TASK-0203 (Builder 5: module control), TASK-0403 (Builder 3: dossier — DONE),
+> TASK-0306 (Builder 3: gateway), TASK-0404 (Builder 1: tournament).
 > `schemas.py` is NOT modified (ShadowPrediction already defined by TASK-0302; consumed read-only).
 > `libs/fincept-bus/streams.py` is NOT modified for MVP (local storage first; `qf.shadow.predictions`
 > stream deferred to a later task per spec "later, if adding").

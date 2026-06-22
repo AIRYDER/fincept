@@ -248,3 +248,95 @@
 
 **Next:** TASK-0305 unblocks TASK-0306 (Quant Foundry API route in local mock
 mode). Available for adoption if no other builder has claimed it.
+
+---
+
+### TASK-0306: Add Quant Foundry API Route in Local Mock Mode — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22
+**Order:** 21
+**Depends on:** TASK-0305 (✅ DONE by me — mock dispatcher + callback processor)
+
+**Why this task:**
+- Direct downstream consumer of my TASK-0305 mock loop. I have the deepest
+  context on the gateway/dispatcher/processor API.
+- Unblocked by TASK-0305. No other builder had claimed it.
+- File-disjoint from all active builders:
+  - Builder 3 (TASK-0402 DONE, TASK-0403 DONE, TASK-0404 in flight) owns
+    `shadow_ledger.py`, `dossier_registry.py`, `tournament.py`.
+  - Builder 4 (TASK-0405 DONE) owns `feature_lake.py` etc.
+  - Builder 5 (TASK-0203 in flight) owns `services/api/src/api/routes/modules.py`,
+    dashboard system page. Shared file: `main.py` — I add a separate
+    import + include_router block, no overlap with their modules router.
+  - Builder 1 (TASK-0401 DONE, TASK-0104 DONE) owns settlement + CI.
+
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/gateway.py` (created)
+- `services/api/src/api/routes/quant_foundry.py` (created)
+- `services/api/tests/test_quant_foundry.py` (created)
+- `services/api/src/api/main.py` (additive: 1 import + 1 include_router + comment)
+- `services/api/pyproject.toml` (additive: quant-foundry workspace dep)
+
+**What shipped:**
+- `gateway.py` — `QuantFoundryGateway` facade wiring outbox + inbox +
+  MockDispatcher + CallbackProcessor + ShadowLedgerStub + DossierStub.
+  Config from env (`QUANT_FOUNDRY_ENABLED`, `QUANT_FOUNDRY_MODE`,
+  `QUANT_FOUNDRY_SHADOW_ONLY`, `QUANT_FOUNDRY_CALLBACK_SECRET`,
+  `QUANT_FOUNDRY_BASE_DIR`) — no edit to shared `fincept_core/config.py`.
+  `create_job` runs the full local_mock loop synchronously (enqueue ->
+  dispatch -> process). `receive_callback` verifies HMAC signature FIRST
+  (fail-closed, no inbox record on bad sig), then records in inbox (catches
+  diff-hash security rejection gracefully), then processes. `health` /
+  `heartbeats` / `list_jobs` / `get_job` for operator read endpoints.
+- `routes/quant_foundry.py` — 6 endpoints: POST/GET /jobs, GET /jobs/{id},
+  POST /callbacks/runpod, GET /health, GET /heartbeats. Operator endpoints
+  require bearer JWT (`require_user`). Callback endpoint uses HMAC headers
+  (X-QF-Job-Id, X-QF-Timestamp, X-QF-Signature) — NOT bearer. Missing
+  headers -> 401; bad sig -> 401; unknown job -> 404; payload hash mismatch
+  -> 400. No bus / sig.predict writes.
+- `test_quant_foundry.py` — 13 tests: disabled safe state, disabled job
+  creation, auth required, create+complete in local_mock, get job detail,
+  unknown job 404, list jobs, bad signature rejected, missing HMAC headers
+  rejected, unknown job callback rejected, duplicate callback idempotent,
+  health enabled, heartbeats enabled.
+
+**Verification:**
+- `uv run pytest services/api/tests/test_quant_foundry.py -q` → 13 passed.
+- `uv run pytest services/api/tests/test_quant_foundry.py services/quant_foundry/tests/test_outbox.py services/quant_foundry/tests/test_inbox.py services/quant_foundry/tests/test_mock_flow.py services/quant_foundry/tests/test_schemas.py services/quant_foundry/tests/test_signatures.py services/quant_foundry/tests/test_ids.py -q` → 64 passed.
+- `uv run pytest services/api/tests/test_health.py services/api/tests/test_auth.py -q` → 9 passed (no regressions from main.py edit).
+- `uv run ruff check` → All checks passed.
+- `uv run mypy gateway.py routes/quant_foundry.py` → Success: no issues found in 2 source files.
+
+**Design notes:**
+- The gateway is stashed on `app.state.quant_foundry_gateway` by the app
+  lifespan or a test fixture. When absent, operator endpoints return 503
+  (disabled) and health returns a safe disabled state. The route is always
+  registered (so 404 doesn't hide the surface).
+- `receive_callback` verifies the HMAC signature BEFORE touching the inbox.
+  This ensures a bad signature never creates a durable record (fail-closed,
+  no side effect). The inbox's diff-hash guard is a second layer of defense
+  — if a validly-signed callback arrives with a different payload than a
+  previous one, the gateway catches the ValueError and returns a clean 400
+  (no crash).
+- In `local_mock` mode, `create_job` runs the full loop synchronously
+  (enqueue -> dispatch -> process). This proves the contract end-to-end in
+  a single HTTP call. The future RunPod path would enqueue only and rely on
+  a dispatcher tick + the callback endpoint.
+- The `ShadowLedgerStub` is still a stub (not Builder 3's real
+  `ShadowLedger`). When the promotion gate wiring lands, the gateway can
+  swap to the real ledger by injecting it in place of the stub.
+
+**File-disjoint confirmation:**
+- Builder 3's in-flight `test_tournament.py` (TASK-0404) imports
+  `quant_foundry.tournament` which doesn't exist yet — I excluded it from
+  my test runs (it's their TDD red state, not my regression).
+- `main.py` shared with Builder 5 — my edit is a separate import + router
+  block, no overlap with their modules router.
+- `schemas.py`, `ids.py`, `signatures.py`, `outbox.py`, `inbox.py`,
+  `mock_dispatcher.py`, `callbacks.py` consumed read-only (not modified).
+- `fincept_core/config.py` NOT modified (config read from env directly).
+
+**Next:** TASK-0306 unblocks the Phase 3 gateway surface. The Quant Foundry
+loop is now provable end-to-end over HTTP in local_mock mode. Next
+candidates: TASK-0307 (RunPod dispatcher — when RunPod is available) or
+Phase 4 evidence-loop tasks.

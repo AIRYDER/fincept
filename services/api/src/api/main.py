@@ -38,15 +38,20 @@ from api.routes import (
     services as services_route,
     strategies,
 )
+from api.routes import quant_foundry as quant_foundry_route
+from api.routes import modules as modules_route
 from api.ws import router as ws_router
 from fincept_core.heartbeat import beat_periodically
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 
 API_VERSION = "0.1.0"
 
 log = get_logger(__name__)
+
+# Fail closed on dev JWT secret in non-dev envs (audit R4/P3).
+assert_safe_for_runtime()
 
 
 @asynccontextmanager
@@ -117,5 +122,10 @@ app.include_router(research.router, prefix="/research", tags=["research"])
 app.include_router(health_route.router, prefix="/health", tags=["health"])
 # Control endpoints (auth-required, write).
 app.include_router(control.router, prefix="", tags=["control"])
+# Quant Foundry gateway (TASK-0306). Disabled by default; operator endpoints
+# bearer-auth, callback endpoint HMAC-auth. No bus / sig.predict writes.
+app.include_router(quant_foundry_route.router, prefix="/quant-foundry", tags=["quant-foundry"])
+# On-demand module control (TASK-0203). Auth-required, local-only launches.
+app.include_router(modules_route.router, prefix="/modules", tags=["modules"])
 # WebSocket multiplexer.
 app.include_router(ws_router, prefix="/ws", tags=["ws"])
