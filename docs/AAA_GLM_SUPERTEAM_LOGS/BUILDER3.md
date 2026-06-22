@@ -374,3 +374,52 @@ for adoption if no other builder has claimed them.
 **Next:** TASK-0404 unblocks TASK-0406 (Leakage and Overfit Sentinel, Order
 26b, depends on TASK-0403 + TASK-0404 + TASK-0405 — all DONE now). Available
 for adoption if no other builder has claimed it.
+
+---
+
+### TASK-0406: Build the Leakage and Overfit Sentinel — ADOPTED 2026-06-22
+
+**Status:** IN PROGRESS (TDD, fixture-backed)
+**Order:** 26b
+**Depends on:** TASK-0403 (✅ DONE — Builder 3, commit de56c38), TASK-0404 (✅ DONE — Builder 3, commit fd3f115), TASK-0405 (✅ DONE — Builder 4, commit 7f704bd). All DONE — task unblocked.
+**Files owned:** `services/quant_foundry/src/quant_foundry/{sentinel,pbo}.py` + `services/quant_foundry/tests/test_sentinel.py`
+
+**Task selection rationale:**
+- TASK-0404 (my previous task) is COMPLETED and committed (`fd3f115`). It was
+  the last dependency for TASK-0406 (Order 26b, depends on TASK-0403 + 0404 +
+  0405 — all DONE now).
+- No other builder has claimed TASK-0406 (verified via `findstr /i "0406 sentinel
+  leakage"` across all BUILDER*.md logs — only forward references from Builder 1
+  and Builder 4, not claims).
+- File-disjoint from all active tracks: `sentinel.py` and `pbo.py` are new
+  files. I import from my own `dossier.py`/`registry.py` (TASK-0403 — my files)
+  to write `blocking_issue` entries on dossiers. I do NOT import
+  `outcomes.py`/`settlement.py` (Builder 1), `feature_lake.py`/
+  `dataset_manifest.py` (Builder 4), `outbox.py`/`inbox.py` (Builder 2) —
+  the sentinel uses local schemas for feature/settlement data so Builder 1's
+  and Builder 4's evidence storage internals can change without breaking the
+  sentinel and vice versa.
+- Builder 4 noted that TASK-0406 "can reuse `LeakyFeatureError` and the
+  purged-fold verifier pattern from `dataset_manifest.py`." I will define
+  my own `LeakyFeatureError` in `sentinel.py` (not import from Builder 4's
+  `dataset_manifest.py`) to keep file-disjoint, but I will follow the same
+  pattern (point-in-time assertion + purged-fold verification).
+
+**Plan (TDD):**
+1. Write failing tests in `test_sentinel.py` covering every acceptance criterion:
+   - Shuffled-label fixture flagged as leaking.
+   - Future-leak fixture flagged as leaking.
+   - Time-reversed features fixture flagged as leaking.
+   - Fold set without purge/embargo rejected.
+   - PBO computed and attached to the dossier.
+   - Failing sentinel blocks promotion (writes `blocking_issue` on dossier).
+   - Train/live gap check flags large persistent gap.
+   - Feature stability check flags wildly unstable features.
+   - Sentinel receipt emitted per candidate family.
+2. Implement `pbo.py`: Probability of Backtest Overfitting (CSCV — Combinatorially
+   Symmetric Cross-Validation, Bailey et al. 2017) over a candidate family.
+3. Implement `sentinel.py`: negative-control battery (shuffle labels, time-reverse
+   features, inject future-leaking feature), purged-fold verifier, train/live gap
+   check, feature stability check, sentinel receipt emission, `blocking_issue`
+   writing on dossiers via `DossierRegistry.add_blocking_issue`.
+4. Run pytest + ruff + mypy clean; atomic commit.

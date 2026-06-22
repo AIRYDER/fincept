@@ -19,6 +19,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { ModuleControlPanel } from "@/components/modules/module-control-panel";
 import { StatusPill } from "@/components/widgets/status-pill";
 import {
   buildSystemReadinessPacket,
@@ -161,7 +162,7 @@ export default function SystemPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-        {/* Left column: Readiness checks + Services */}
+        {/* Left column: Readiness checks + Services + Modules */}
         <div className="space-y-4">
           <ReadinessChecksCard checks={serverChecks} />
           <ServiceHeartbeatCard
@@ -169,6 +170,7 @@ export default function SystemPage() {
             summary={packet.serviceSummary}
             isLoading={servicesQ.isLoading}
           />
+          <ModuleControlPanel />
         </div>
 
         {/* Right column: Env vars + Receipts */}

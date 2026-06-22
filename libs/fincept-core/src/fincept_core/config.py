@@ -6,6 +6,8 @@ from typing import Annotated, Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from fincept_core.errors import ConfigError
+
 
 class Settings(BaseSettings):
     # ``env_file`` is searched relative to the process CWD by
@@ -21,6 +23,10 @@ class Settings(BaseSettings):
     )
 
     TRADING_MODE: str = Field(default="paper")
+    # Deployment environment: "dev" (local/test), "staging", or "production".
+    # The runtime safety guard uses this to fail closed on the dev JWT secret
+    # in non-dev envs (audit R4/P3).
+    ENV: str = Field(default="dev")
     DB_URL: str = Field(default="")
     # Default uses 127.0.0.1 (not localhost) on purpose: on Windows,
     # 'localhost' resolves to ::1 (IPv6) first, but Memurai/Redis are
@@ -111,3 +117,34 @@ _SETTINGS_INSTANCE: Settings | None = None
 
 def get_settings() -> Settings:
     return Settings()
+
+
+# The dev-default JWT secret that must never reach a non-dev deployment.
+_DEV_JWT_SECRET = "dev-only-change-me"
+# Environments where the dev JWT secret is acceptable.
+_DEV_ENVS = {"dev", "local", "test"}
+
+
+def assert_safe_for_runtime(settings: Settings | None = None) -> None:
+    """Fail closed if a non-dev environment is using the dev JWT secret.
+
+    Every service entrypoint that touches Redis, streams, schedulers, or
+    broker-adjacent clients must call this after ``get_settings()`` and
+    before any side effect (audit R4 / P3).  In dev/local/test the dev
+    default secret is allowed; in staging or production it raises
+    ``ConfigError`` so the process refuses to start.
+
+    Can be called with no arguments (uses the cached singleton) or with
+    an explicit ``Settings`` instance (useful in tests that clear the
+    cache and construct a fresh instance).
+    """
+    s = settings if settings is not None else get_settings()
+    env = s.ENV.strip().lower()
+    if env in _DEV_ENVS:
+        return
+    if s.JWT_SECRET == _DEV_JWT_SECRET or not s.JWT_SECRET.strip():
+        raise ConfigError(
+            f"FINCEPT_JWT_SECRET is the dev default (or empty) in "
+            f"environment '{env}'. Set a strong secret before starting "
+            f"any non-dev service. See audit R4/P3."
+        )
