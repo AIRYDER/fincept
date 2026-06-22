@@ -9,11 +9,12 @@
 
 ## Summary
 
-- **Total UI routes (page.tsx):** 23 (including dynamic segments)
+- **Total UI routes (page.tsx):** 24 (including dynamic segments)
 - **Pure mock:** 2 (`/watchlist`, `/signal-cockpit-demo`)
-- **Hybrid (live + explicit mock sections):** 4 (`/`, `/markets`, `/positions`, `/symbol/[symbol]`, `/portfolio-builder`, `/news-impact-lab`)
-- **Live / real API backed:** 14+
-- **Redirects / special:** 3 (`/optimizer` → `/portfolio-builder`, `/news-lab` → `/news-impact-lab`)
+- **Hybrid (live + explicit mock sections):** 6 (`/`, `/markets`, `/positions`, `/symbol/[symbol]`, `/portfolio-builder`, `/news-impact-lab`)
+- **Live / real API backed:** 13
+- **Redirects / special:** 2 (`/optimizer` → `/portfolio-builder`, `/news-lab` → `/news-impact-lab`)
+- **Static / Catalog:** 1 (`/receipts`)
 - **Next conversion target (first mock-heavy):** `/watchlist` (and its preview component). Clear inline fixture, fully replaceable with watchlist API endpoint once available. Low risk to other surfaces.
 
 ## Full Route Inventory
@@ -21,6 +22,7 @@
 | Route                  | Primary Source Files                                      | Data Status | Backend Dependency                          | Risk if Mistaken for Live | Replacement Priority | Suggested Test |
 |------------------------|-----------------------------------------------------------|-------------|---------------------------------------------|---------------------------|----------------------|---------------|
 | `/` (home)            | `app/page.tsx`, `components/overview/*`, `components/shell/*` | Hybrid     | `api.services`, `api.*` (predictions, etc.); `WatchlistPreview` uses `mockPriceWalk` | High for watchlist preview prices / activity | High (preview) | `test:strategy-readiness`; snapshot of operator briefing with mock flag |
+| `/backtest`           | `app/backtest/page.tsx`, `components/backtest/backtest-lab-panel.tsx` | Live       | `api.backtestStrategies`, `api.backtestRuns`, `api.backtestRun`, `api.runBacktest` (real API + mutations) | Low (explicit lab UI, form-driven) | Low                 | Backtest run E2E + report validation (uses existing test_backtest) |
 | `/login`              | `app/login/page.tsx`                                      | Live       | `api.strategies` (token validation)        | Low                      | Low                 | Integration test for 401 vs success token flow |
 | `/markets`            | `app/markets/page.tsx`                                    | Hybrid     | `api.universe`, `api.bars`, `api.dataCoverage`, `api.dataSources`, `api.services`, `api.openbbHealth`, `api.providerData`; separate `api.alpacaDataDemo` | Medium (demo panel can be confused with main view) | Medium | Verify demo button produces isolated data; coverage freshness tests |
 | `/models`             | `app/models/page.tsx`, components/models/*               | Live       | `api.models`, promotion, runs              | Low                      | Low                 | Model list + promotion state contract test |
