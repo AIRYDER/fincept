@@ -9,6 +9,12 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
+# Least-privilege: nightly only reads the repo and audits deps. No write
+# access to contents. (security-events: write would be needed to upload SARIF
+# to GitHub Security tab; add explicitly if/when that's enabled.)
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.12"
 
@@ -40,8 +46,10 @@ jobs:
       FINCEPT_TRADING_MODE: paper
       FINCEPT_LOG_LEVEL: WARNING
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # pin: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
         with:
           enable-cache: true
           version: "latest"
@@ -63,8 +71,10 @@ jobs:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # pin: aquasecurity/trivy-action@master (pinned to 0.71.2 release SHA)
+      - uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6
         with:
           scan-type: fs
           severity: CRITICAL,HIGH
@@ -75,8 +85,10 @@ jobs:
     name: Python dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # pin: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
         with:
           enable-cache: true
           version: "latest"

@@ -9,6 +9,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege: read-only by default. No job in this workflow needs write
+# access to the repo contents. (build-images.yml grants packages: write where
+# needed; release workflows would grant contents: write explicitly.)
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "22"
@@ -19,10 +25,12 @@ jobs:
     name: Python lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
         with:
           enable-cache: true
           version: "latest"
@@ -68,10 +76,12 @@ jobs:
       FINCEPT_TRADING_MODE: paper
       FINCEPT_LOG_LEVEL: WARNING
     steps:
-      - uses: actions/checkout@v4
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
         with:
           enable-cache: true
           version: "latest"
@@ -98,7 +108,8 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        # pin: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coverage-xml
           path: coverage.xml
@@ -108,11 +119,14 @@ jobs:
     name: JS lint + typecheck + test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # pin: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      # pin: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -123,11 +137,119 @@ jobs:
       - run: pnpm -r --if-present build
 
   security:
-    name: Secret scan
+    name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # pin: actions/checkout@v4 — full history for gitleaks scan
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@v2
+      # pin: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --------------------------------------------------------------------------- #
+  # TASK-0104: receipt runner — fails if any REQUIRED check in the receipt      #
+  # harness fails. Guards against a PR silently dropping a runtime safety check. #
+  # --------------------------------------------------------------------------- #
+  receipt-runner:
+    name: Verification receipt
+    runs-on: ubuntu-latest
+    steps:
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install uv
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages --all-groups
+
+      - name: Run verification receipt (pwsh)
+        shell: pwsh
+        run: ./scripts/verification-receipt.ps1
+
+      - name: Upload receipt
+        if: always()
+        # pin: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verification-receipt
+          path: reports/verification/
+          if-no-files-found: warn
+
+  # --------------------------------------------------------------------------- #
+  # TASK-0104: startup safety matrix — the guard that prevents silent startup   #
+  # regressions. Runs the matrix tests as a required CI check.                  #
+  # --------------------------------------------------------------------------- #
+  startup-safety-matrix:
+    name: Startup safety matrix
+    runs-on: ubuntu-latest
+    steps:
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install uv
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages --all-groups
+
+      - name: Startup safety matrix tests
+        run: uv run pytest libs/fincept-core/tests/test_startup_safety_matrix.py -q
+
+  # --------------------------------------------------------------------------- #
+  # TASK-0104: lockfile discipline — fail if lockfiles are out of sync with     #
+  # manifest files. Prevents "works on my machine" drift from landing on main.  #
+  # --------------------------------------------------------------------------- #
+  lockfile-sync:
+    name: Lockfile sync check
+    runs-on: ubuntu-latest
+    steps:
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: uv.lock in sync
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Check uv.lock is up to date
+        run: |
+          uv lock --check
+          echo "::notice::uv.lock is in sync with pyproject.toml manifests"
+
+      # pin: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      # pin: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Check pnpm-lock.yaml is up to date
+        run: |
+          pnpm install --frozen-lockfile
+          echo "::notice::pnpm-lock.yaml is in sync with package.json manifests"
