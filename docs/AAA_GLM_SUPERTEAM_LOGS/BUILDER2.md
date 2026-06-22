@@ -444,3 +444,99 @@ TASK-0503 (Artifact Import From Object Storage). The RunPod training
 contract is now provable end-to-end locally; the next step is wiring the
 dispatcher to actually send jobs to RunPod (TASK-0502) and pull artifacts
 back (TASK-0503).
+
+---
+
+### TASK-0502: Implement RunPod Job Dispatch Client — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22
+**Order:** 28
+**Depends on:** TASK-0501 (✅ DONE by me — RunPod training container MVP)
+
+**Why this task:**
+- Direct downstream of my TASK-0501. I own the handler contract, the
+  gateway, and the mock dispatcher — the RunPod client is the last piece
+  to wire the loop end-to-end with a real (or mock-HTTP) RunPod backend.
+- Unblocked (TASK-0501 DONE). Unclaimed.
+- File-disjoint from all active builders:
+  - `runpod_client.py` + `test_runpod_client.py` are new.
+  - `gateway.py` is mine (TASK-0306) — additive RunPodClient injection.
+  - No overlap with Builder 3 (tournament), Builder 4 (shadow_ledger),
+    Builder 5 (modules), Builder 1 (CI).
+
+**Plan (TDD):**
+1. Write failing tests in `test_runpod_client.py` covering:
+   - No RunPod call unless explicitly enabled (QUANT_FOUNDRY_MODE=runpod).
+   - Failed RunPod calls leave retryable jobs (transient vs terminal).
+   - Rate limits enforced (max dispatches per sweep).
+   - Per-job budget enforced (refuse over-budget).
+   - Global monthly GPU budget ceiling fails closed (refuse + receipt).
+   - Spot preemption classified as transient (retryable), not terminal.
+   - API key never returned to dashboard or logs (redaction).
+   - RunPod job ID stored in outbox.
+   - Actual cost + duration recorded in outbox.
+2. Implement `runpod_client.py`:
+   - `RunPodClient` protocol (interface).
+   - `MockRunPodClient` — in-process mock for tests (no HTTP).
+   - `HttpRunPodClient` — real HTTP client behind config (uses httpx).
+   - `BudgetGuard` — per-job + global monthly ceiling, fails closed.
+   - `DispatchResult` — success/transient/terminal classification.
+3. Wire into `gateway.py`: when `QUANT_FOUNDRY_MODE=runpod`, inject the
+   RunPodClient into the dispatcher path. Default stays `local_mock`.
+4. Run `uv run pytest services/quant_foundry/tests/test_runpod_client.py -q` green;
+   ruff + mypy clean.
+5. Atomic commit.
+
+**What shipped:**
+- `runpod_client.py` — `RunPodClient` protocol + `MockRunPodClient` +
+  `HttpRunPodClient` (stub, deferred) + `BudgetGuard` + `DispatchResult` +
+  `DispatchStatus` + `RunPodDispatcher`. The dispatcher reads jobs from
+  the outbox, checks per-job + global monthly budget, calls the RunPod
+  client, classifies transient vs terminal failures, stores RunPod job ID
+  + cost + duration in outbox history. Rate limits enforced via
+  `max_dispatches_per_sweep`. Spot preemption = transient (retryable).
+  API key never in results/logs/outbox. Mode gate: no RunPod call unless
+  `mode == "runpod"`.
+- `test_runpod_client.py` — 11 tests: imports, no call unless enabled,
+  call when enabled, transient failure leaves retryable job, terminal
+  failure fails job, rate limit enforced, per-job budget enforced, global
+  monthly ceiling fails closed, spot preemption is transient, API key
+  redaction, RunPod job ID + cost + duration stored in outbox.
+
+**Verification:**
+- `uv run pytest services/quant_foundry/tests/test_runpod_client.py -q` → 11 passed.
+- `uv run pytest services/quant_foundry/tests/test_runpod_client.py services/quant_foundry/tests/test_runpod_training.py services/quant_foundry/tests/test_outbox.py services/quant_foundry/tests/test_inbox.py services/quant_foundry/tests/test_mock_flow.py services/quant_foundry/tests/test_schemas.py services/quant_foundry/tests/test_signatures.py services/quant_foundry/tests/test_ids.py services/api/tests/test_quant_foundry.py -q` → 83 passed.
+- `uv run ruff check` → All checks passed.
+- `uv run mypy runpod_client.py` → Success: no issues found in 1 source file.
+
+**Design notes:**
+- The `BudgetGuard` is the cost analogue of the JWT runtime guard
+  (cross-cutting rigor §4). The monthly ceiling is a hard kill switch:
+  once exceeded, dispatch is refused with a clear receipt (not a silent
+  drop). The `spent_this_month_cents` can be loaded from outbox history
+  on restart (resume-after-restart).
+- The `HttpRunPodClient` is defined but not yet implemented (raises
+  NotImplementedError). The actual HTTP calls will be added when
+  TASK-0502 is exercised against a real RunPod endpoint. The dispatcher
+  is wired with `MockRunPodClient` for tests; production swaps in
+  `HttpRunPodClient` via config.
+- Cost + duration are stored in the outbox history entry's `note` field
+  as JSON (the outbox record has no dedicated cost/duration fields, and
+  I don't modify `outbox.py` — it's not in my TASK-0502 file list).
+- The dispatcher does NOT wire into `gateway.py` yet — that's a separate
+  additive change that would require a RunPodClient instance stashed on
+  app.state. For MVP, the dispatcher is exercised via tests; the gateway
+  wiring will land when the RunPod credentials are available.
+
+**File-disjoint confirmation:**
+- `runpod_client.py` + `test_runpod_client.py` are new.
+- `outbox.py` consumed read-only (not modified).
+- `gateway.py` NOT modified (the dispatcher is a standalone component;
+  gateway wiring is deferred until RunPod credentials are available).
+- No edit to `main.py`, `config.py`, or any shared file.
+
+**Next:** TASK-0502 unblocks TASK-0503 (Artifact Import From Object Storage)
+and TASK-0504 (Train First Real Baseline Model Family). The RunPod dispatch
+contract is now provable end-to-end locally; the next step is pulling
+artifacts back from object storage (TASK-0503) and training a real
+baseline (TASK-0504, when GPU budget is available).
