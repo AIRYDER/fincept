@@ -123,3 +123,154 @@ is being built and tested against fixtures without waiting for real settlement l
 - When TASK-0401 (settlement) lands, the feature lake can be extended to
   pull real labels via the settlement ledger; the manifest contract is
   already stable.
+
+---
+
+### TASK-0404: Build Tournament Scoring Skeleton — YIELDED to Builder 1 (collision avoided)
+
+**Status:** YIELDED 2026-06-22
+**Reason:** After adopting 0404 in my log, I discovered Builder 1 (GLM-6th)
+already has a complete TDD red test file on disk (`test_tournament.py`,
+untracked, 638 lines) and the SWARM_BOARD marks 0404 as BUILDING by Builder 1.
+Builder 1's `BUILDER1_GLM.md` log hadn't been updated yet, but the test file +
+board claim are clear evidence they're actively implementing. To avoid a
+destructive collision on `tournament.py`/`leaderboard.py`/`significance.py`,
+I yield 0404 to Builder 1. No files created or modified by me for 0404.
+
+### TASK-0402: Add Shadow Prediction Ledger Storage — ADOPTED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22
+**Order:** 23
+**Depends on:** TASK-0401 (✅ DONE — Builder 1, commit 855f01b, 27/27 green).
+Verified green before adoption.
+
+**Task selection rationale:**
+- TASK-0405 (mine) DONE. TASK-0404 yielded to Builder 1 (test file on disk).
+  TASK-0306 claimed by Builder 3 (`gateway.py` on disk). TASK-0406 blocked on
+  0404. TASK-0402 is explicitly UNOWNED on the SWARM_BOARD (line 43: "Builder 3
+  released, Builder 1 yielded; both files deleted; available for adoption").
+  Builder 3 moved to 0403 (done) then 0306 — no longer pursuing 0402.
+- Unblocked (0401 done) and file-disjoint from all active builders.
+- I have context from Builder 2's `callbacks.py` `ShadowLedgerStub` which
+  defines the interface the real ledger must match (`store(predictions)`,
+  `list()`), so the mock dispatcher can swap to the real ledger cleanly.
+
+**Files owned (file-disjoint from active tasks):**
+- `services/quant_foundry/src/quant_foundry/shadow_ledger.py` (created)
+- `services/quant_foundry/tests/test_shadow_ledger.py` (created)
+
+**Files deliberately NOT touched:**
+- `schemas.py` — `ShadowPrediction` + `Authority` already defined by TASK-0302;
+  consumed read-only. No new schema fields needed.
+- `libs/fincept-bus/src/fincept_bus/streams.py` — spec says "later, if adding
+  `qf.shadow.predictions`"; MVP uses local storage first.
+- `callbacks.py` (Builder 2) — the `ShadowLedgerStub` is consumed read-only as
+  an interface reference; the real ledger matches its `store`/`list` surface so
+  the mock dispatcher can swap stub → real ledger by injection.
+
+**Plan (TDD):**
+1. Write failing tests in `test_shadow_ledger.py` covering:
+   - Shadow predictions store safely (local JSONL, restart-durable).
+   - Duplicate batches are idempotent (same prediction_id + batch_hash → no
+     duplicate; same batch_hash + same content → idempotent skip).
+   - Order-like fields are REJECTED (quantity, side, broker, order_type —
+     shadow predictions must never carry trading authority).
+   - No write path to `sig.predict` exists (structural source guard: the
+     module contains no `sig.predict` / `fincept_bus` producer reference).
+   - Read API by `model_id` / `symbol` / time window.
+   - Batch hashing reuses `ids.hash_payload` (deterministic; diff-hash
+     rejection as a security event mirroring TASK-0304's inbox invariant).
+   - `authority` is always `shadow-only` (enforced at store time).
+   - Frozen + extra="forbid" on all record models.
+2. Implement `shadow_ledger.py`:
+   - `ShadowLedgerRecord` (frozen, extra="forbid"): prediction_id, model_id,
+     symbol, ts_event, horizon_ns, direction, confidence, expected_return,
+     p_up, feature_availability, latency_ms, regime, model_version, authority,
+     batch_hash, stored_at_ns, metadata.
+   - `BatchHasher` / `compute_batch_hash` reusing `ids.hash_payload`.
+   - `ShadowLedger` (JSONL, restart-durable, idempotent by prediction_id +
+     batch_hash; rejects diff-hash as security event; rejects order-like
+     fields; enforces shadow-only authority).
+   - `store_batch(predictions, batch_hash)`, `list()`, `read_by_model`,
+     `read_by_symbol`, `read_by_window`.
+   - Structural no-`sig.predict` / no-`fincept_bus` guard (defense-in-depth).
+3. Run `uv run pytest services/quant_foundry/tests/test_shadow_ledger.py -q`
+   green; ruff/mypy clean.
+4. Atomic commit.
+
+---
+
+## Completion Log (continued)
+
+### TASK-0402 — COMPLETED 2026-06-22
+
+**What shipped:**
+- `services/quant_foundry/src/quant_foundry/shadow_ledger.py` —
+  `ShadowLedgerRecord` (frozen Pydantic, extra='forbid', authority defaults to
+  shadow-only), `compute_batch_hash` (deterministic SHA-256 reusing
+  `ids.hash_payload`), `ORDER_LIKE_FIELDS` frozenset (quantity/side/broker/
+  order_type/etc.), `StoreReceipt` dataclass, `ShadowLedger` class:
+  - JSONL durability at `<base_dir>/shadow_predictions.jsonl` with fsync.
+  - Restart-safe: replays JSONL on construction (last record per prediction_id
+    wins).
+  - `store_batch(predictions, batch_hash)`: validates each prediction against
+    `ShadowPrediction` (extra='forbid'), rejects order-like fields with a clear
+    security message, enforces shadow-only authority, tamper-checks the
+    caller-supplied batch_hash vs computed hash, idempotent by
+    (prediction_id, batch_hash) — duplicate = skip, diff-hash = security event
+    (rejected).
+  - Read API: `list()`, `read_by_model(model_id)`, `read_by_symbol(symbol)`,
+    `read_by_window(start_ns, end_ns)`.
+  - Structural no-trading-stream / no-bus guard: no bus producer, no stream
+    writer, no reference to the orchestrator's trading stream or the bus
+    library (defense-in-depth + negative test).
+- `services/quant_foundry/tests/test_shadow_ledger.py` — 25 TDD tests covering:
+  compute_batch_hash determinism/order-sensitivity, ShadowLedgerRecord
+  frozen+strict+default authority, store_batch safety/idempotency/diff-hash
+  rejection, order-like field rejection (quantity/side/broker/order_type),
+  shadow-only authority enforcement, read API (model/symbol/window), restart
+  durability + idempotency after restart, structural no-trading-stream guard
+  (source scan + no forbidden attributes + no sig.predict file), batch hash
+  mismatch rejection.
+
+**Verification:**
+- `uv run pytest services/quant_foundry/tests/test_shadow_ledger.py -q` →
+  25 passed.
+- `uv run pytest services/quant_foundry/tests -q
+  --ignore=services/quant_foundry/tests/test_tournament.py` → 146 passed
+  (no regressions; TASK-0301/0302/0303/0304/0305/0401/0403/0405 all green).
+  (test_tournament.py is Builder 1's TDD red WIP for TASK-0404 — expected to
+  fail until tournament.py/leaderboard.py/significance.py are implemented.)
+- `uv run ruff check shadow_ledger.py test_shadow_ledger.py` → All checks
+  passed.
+- `uv run mypy shadow_ledger.py` → Success: no issues found in 1 source file.
+
+**Design notes for downstream tasks:**
+- The real `ShadowLedger` matches the `ShadowLedgerStub` interface in
+  `callbacks.py` (Builder 2, TASK-0305): `store(predictions)` / `list()`. The
+  mock dispatcher can swap stub → real ledger by injection. The real ledger's
+  `store_batch` is richer (batch_hash, idempotency, security guards) but the
+  `list()` surface is compatible.
+- The ledger stores `ShadowLedgerRecord` (enriched with batch_hash +
+  stored_at_ns), not raw `ShadowPrediction`. Callers that need the original
+  prediction can reconstruct it from the record's fields (all ShadowPrediction
+  fields are present on the record).
+- The `qf.shadow.predictions` Redis stream is deferred per spec ("later, if
+  adding"). When it lands, the ledger can be extended to dual-write (JSONL +
+  stream) without changing the store_batch/read API.
+- The diff-hash security event mirrors TASK-0304's inbox invariant: same key
+  (prediction_id) + different content hash = tamper/replay attempt, rejected.
+
+**File-disjoint confirmation (post-commit):**
+- `schemas.py` NOT modified (ShadowPrediction + Authority consumed read-only).
+- `callbacks.py` (Builder 2) NOT modified (ShadowLedgerStub consumed
+  read-only as interface reference; no import).
+- `libs/fincept-bus/streams.py` NOT modified (local storage MVP).
+- `settlement.py` / `outcomes.py` / `metrics.py` (Builder 1) — no overlap.
+- `dossier.py` / `artifacts.py` / `registry.py` (Builder 3) — no overlap.
+- `gateway.py` (Builder 3, TASK-0306) — no overlap.
+- `tournament.py` / `leaderboard.py` / `significance.py` (Builder 1,
+  TASK-0404) — no overlap.
+
+**Next:** TASK-0402 unblocks TASK-0406 (Leakage Sentinel) and the promotion
+gate wiring. Available for the next task.
