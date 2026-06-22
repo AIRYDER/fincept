@@ -1074,3 +1074,71 @@ Builder 1's files.
 - TASK-0703 (Add Retirement and Edge-Decay Flags — depends on TASK-0701).
 - TASK-0704 (Build Paper-Only Model Pointer Bridge — depends on TASK-0702 +
   TASK-0703).
+
+---
+
+### TASK-0701: Expand Tournament Leaderboards — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `0831e2c`)
+**Order:** 35
+**Depends on:** TASK-0603 (✅ DONE — Builder 3, commit 0aa4aef). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/leaderboard_expanded.py` (new)
+- `services/quant_foundry/tests/test_leaderboard_expanded.py` (new)
+
+**Task selection rationale:** TASK-0701 was unblocked by my TASK-0603
+completion. The spec doesn't list specific files. I created a file-disjoint
+`leaderboard_expanded.py` that extends the basic leaderboard (TASK-0404)
+without modifying `leaderboard.py` or `tournament.py` (avoids breaking
+existing TASK-0404 tests).
+
+**Tests:** 28/28 green — `uv run pytest services/quant_foundry/tests/test_leaderboard_expanded.py -q`
+**Full suite:** 404/404 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 376 after TASK-0603)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `0831e2c` — 3 files, +877 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/leaderboard_expanded.py`:
+  - `HorizonSlice` / `RegimeSlice` / `SymbolClusterSlice` (frozen; slice
+    name + score).
+  - `BaselineDelta` (frozen; baseline_model_id + delta + baseline_score).
+  - `CalibrationSummary` (frozen; brier_score + reliability + n_bins).
+  - `DecayIndicator` (frozen; decay_score + is_stale + is_decayed +
+    days_since_last_settlement).
+  - `ExpandedLeaderboardEntry` (frozen; model_id + total_score + horizon/
+    regime/cluster slices + baseline_delta + calibration_summary +
+    decay_indicator; `to_dict` JSON-serializable).
+  - `LeaderboardExplanation` (frozen; model_id + rank + total_score +
+    baseline_delta + decay_indicator + horizon/regime/cluster scores +
+    is_stale + is_decayed; `to_dict` JSON-serializable).
+  - `ExpandedLeaderboard`:
+    - `ranked()`: overall ranking (non-flagged first, stale/decayed pushed
+      to bottom, sorted by score descending).
+    - `ranked_by_horizon()` / `ranked_by_regime()` /
+      `ranked_by_symbol_cluster()`: per-slice rankings.
+    - `stale_models()` / `decayed_models()`: list flagged models.
+    - `explain()`: return `LeaderboardExplanation` for a model.
+    - `to_dict()`: JSON-serializable.
+- `services/quant_foundry/tests/test_leaderboard_expanded.py` — 28 TDD
+  tests covering all acceptance criteria.
+
+**Acceptance criteria verification (self):**
+- ✅ A model can rank high in one horizon and low in another
+  (`test_rank_by_horizon` + `test_rank_by_regime` +
+  `test_rank_by_symbol_cluster`).
+- ✅ Stale or decayed models are flagged
+  (`test_stale_model_is_flagged_in_ranking` +
+  `test_decayed_model_is_flagged_in_ranking` + `test_stale_models_list` +
+  `test_decayed_models_list`).
+- ✅ Leaderboard explains why a model ranks where it does
+  (`test_explain_returns_explanation` + `test_explanation_includes_rank` +
+  `test_explanation_includes_score_components` +
+  `test_explanation_includes_baseline_delta` +
+  `test_explanation_includes_decay_indicator` +
+  `test_explanation_includes_horizon_scores` +
+  `test_explanation_to_dict_is_json_serializable`).
+
+**Next:** TASK-0701 unblocks TASK-0702 (Build Promotion Review Queue —
+depends on TASK-0701) and TASK-0703 (Add Retirement and Edge-Decay Flags —
+depends on TASK-0701).
