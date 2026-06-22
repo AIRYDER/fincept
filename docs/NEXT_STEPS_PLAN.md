@@ -1847,6 +1847,13 @@ only up to `shadow-approved`.
 
 ### TASK-0703: Add Retirement and Edge-Decay Flags
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/retirement.py` (new),
+> `services/quant_foundry/tests/test_retirement.py` (new).
+> Creates a file-disjoint retirement + edge-decay flagger. Imports from my
+> `leaderboard_expanded.py` (TASK-0701) + `tournament.py` (TASK-0404).
+> Does NOT modify them.
+
 **Order:** 37
 
 **Objective:** Automatically flag models that stop working.
