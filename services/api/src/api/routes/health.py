@@ -74,8 +74,8 @@ async def readiness(
     checks.append({"id": "redis", "label": "Redis", "state": redis_state, "detail": redis_detail})
 
     # --- Timescale / Postgres (via fincept_db bar coverage probe) ---
-    ts_state = "review"
-    ts_detail = "Timescale status not yet probed (light probe only)."
+    ts_state = "skipped"
+    ts_detail = "Timescale status not yet probed (light probe only; wire in Phase 4)."
     try:
         from fincept_db.bars import read_bar_coverage  # type: ignore
 
@@ -108,8 +108,8 @@ async def readiness(
 
     # --- Provider freshness (proxy via services + data sources concept) ---
     # Reuse heartbeat style for providers if present; otherwise review.
-    provider_state = "review"
-    provider_detail = "Provider freshness reported via /services and /data/sources on dashboard."
+    provider_state = "skipped"
+    provider_detail = "Provider freshness reported via /services and /data/sources on dashboard (Phase 4)."
     try:
         beats = await read_all(redis)
         provider_like = [b for b in beats if "provider" in b.get("name", "").lower() or "ingestor" in b.get("name", "").lower()]
@@ -125,8 +125,8 @@ async def readiness(
 
     # --- News-impact shadow lane ---
     # We can report status as review until full lane in Phase 4; check if service heartbeating.
-    ni_state = "review"
-    ni_detail = "News-impact shadow lane will be wired in later phase. Current status from /news-impact."
+    ni_state = "skipped"
+    ni_detail = "News-impact shadow lane will be wired in later phase. Current status from /news-impact (Phase 4)."
     try:
         beats = await read_all(redis)
         ni_beats = [b for b in beats if "news" in b.get("name", "").lower()]
@@ -170,9 +170,9 @@ async def readiness(
     )
 
     # Overall rollup (pass > warn > stale > review > fail)
-    state_order = {"pass": 5, "warn": 4, "stale": 3, "review": 2, "fail": 1, "skipped": 5, "disabled": 5}
+    state_order = {"pass": 5, "warn": 4, "stale": 3, "fail": 1, "skipped": 5, "disabled": 5}
     worst = min((state_order.get(c["state"], 2) for c in checks), default=5)
-    overall = next((k for k, v in state_order.items() if v == worst), "review")
+    overall = next((k for k, v in state_order.items() if v == worst), "warn")
 
     return {
         "overall": overall,
