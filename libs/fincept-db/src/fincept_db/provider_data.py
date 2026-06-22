@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -228,6 +229,7 @@ def _make_record(
     error_type: str | None,
 ) -> ProviderDataRecord:
     event_ns = ts_event if ts_event is not None else time.time_ns()
+    # Hash on pre-redaction content for stable request identity/dedup
     request_hash = _hash_json({"provider": provider, "source": source, "dataset": dataset, "request": request})
     payload_hash = _hash_json({"normalized": normalized, "raw": raw})
     record_id = _hash_json(
@@ -242,6 +244,10 @@ def _make_record(
             "payload_hash": payload_hash,
         }
     )
+    # Redact sensitive before storing in evidence record (never written/returned with secrets)
+    redacted_request = _redact_sensitive(request)
+    redacted_normalized = _redact_sensitive(normalized)
+    redacted_raw = _redact_sensitive(raw)
     return ProviderDataRecord(
         record_id=record_id,
         schema_version=SCHEMA_VERSION,
@@ -251,11 +257,11 @@ def _make_record(
         endpoint=endpoint,
         symbol=symbol,
         ts_event=event_ns,
-        ts_observed=_extract_ts_observed(normalized),
+        ts_observed=_extract_ts_observed(redacted_normalized),
         request_hash=request_hash,
-        request=request,
-        normalized=normalized,
-        raw=raw,
+        request=redacted_request,
+        normalized=redacted_normalized,
+        raw=redacted_raw,
         row_count=row_count,
         ok=ok,
         error_type=error_type,
@@ -357,6 +363,58 @@ def _json_safe(value: Any) -> Any:
     if value is None or isinstance(value, str | int | float | bool):
         return value
     return str(value)
+
+
+def _redact_sensitive(value: Any) -> Any:
+    """Conservative redaction for provider evidence receipts.
+
+    Strips token-like strings, account ids, raw private URLs/creds, and
+    sensitive fragments before write or return. Never leaks secrets.
+    Applied to request/raw/normalized copies.
+    """
+    if isinstance(value, dict):
+        return {str(k): _redact_sensitive(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_sensitive(item) for item in value]
+    if not isinstance(value, str):
+        return value
+    s = value
+    # Standalone secret-like values (prefixes or long opaque tokens) - case insen
+    if re.match(r'^(sk[-_]|pk[-_]|xoxb-|eyJ[A-Za-z0-9_-]{10,}|Bearer\s|ACCT-|acct-)', s, re.IGNORECASE):
+        return "[REDACTED]"
+    if len(s) >= 16 and re.search(r'[A-Za-z0-9_\-]{12,}', s) and any(p in s.lower() for p in ("secret", "key", "token", "pass", "auth")):
+        return "[REDACTED]"
+    # Common secret key/token patterns embedded (use IGNORECASE flag)
+    s = re.sub(
+        r'(api[_-]?key|token|secret|password|bearer|authorization|private_key|access_key)["\'\s:=]+[\w\-.]{6,}',
+        r'\1=[REDACTED]',
+        s,
+        flags=re.IGNORECASE,
+    )
+    # URL embedded credentials user:pass@
+    s = re.sub(
+        r'(https?://|postgres://|mysql://|redis://)[^:@/ \s]+:[^@ \s]+@',
+        r'\1[REDACTED]@',
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Account identifiers
+    s = re.sub(
+        r'(account[_-]?id|acct|account)["\'\s:=]+[\w\-]{6,}',
+        r'\1=[REDACTED]',
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Conn string private host
+    s = re.sub(
+        r'([a-z]+://)[^@ \s]+@',
+        r'\1[REDACTED]@',
+        s,
+        flags=re.IGNORECASE,
+    )
+    if s != value:
+        return s
+    return s
 
 
 def _hash_json(payload: JSONDict) -> str:
