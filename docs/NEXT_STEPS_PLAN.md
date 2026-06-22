@@ -1050,12 +1050,13 @@ uv run pytest services/api/tests -q -k quant_foundry
 
 ### TASK-0404: Build Tournament Scoring Skeleton
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `fd3f115`). REVIEW.
 > Files owned: `services/quant_foundry/{tournament,leaderboard,significance}.py` + `tests/test_tournament.py`.
 > File-disjoint from TASK-0401/0402 (Builder 1), TASK-0304/0305 (Builder 2),
 > TASK-0405 (Builder 4), TASK-0203 (Builder 5). Consumes `SettlementRecord` and
 > `DossierRecord` shapes via a local `ScoringInput` schema (no import of
 > `outcomes.py`/`settlement.py`/`dossier.py` — keeps file-disjoint).
+> Tests: 38/38 green; full suite 184/184 green; ruff + mypy clean.
 
 **Order:** 25
 
@@ -1292,6 +1293,13 @@ creates ungoverned model sprawl. Now that the scoreboard exists
 ### TASK-0501: Build RunPod Training Container MVP
 
 **Order:** 27
+**Owner:** Builder 2 (GLM-5.2) — ADOPTED 2026-06-22 (IN PROGRESS)
+  Files owned: `services/quant_foundry/src/quant_foundry/runpod_training.py`,
+  `services/quant_foundry/tests/test_runpod_training.py`,
+  `runpod/quant-foundry-training/handler.py`,
+  `runpod/quant-foundry-training/Dockerfile`,
+  `runpod/quant-foundry-training/README.md`. File-disjoint from all
+  active builders. See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER2.md`.
 
 **Objective:** Create a minimal RunPod-compatible training worker.
 

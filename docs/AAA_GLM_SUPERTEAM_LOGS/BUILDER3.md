@@ -10,7 +10,7 @@
 
 ### TASK-0404: Build Tournament Scoring Skeleton — ADOPTED 2026-06-22
 
-**Status:** IN PROGRESS (TDD, fixture-backed)
+**Status:** COMPLETED 2026-06-22 (commit `fd3f115`)
 **Order:** 25
 **Depends on:** TASK-0401 (✅ DONE — Builder 1, commit 855f01b) and TASK-0403 (✅ DONE — Builder 3, commit de56c38). Both DONE — task unblocked.
 **Files owned:** `services/quant_foundry/src/quant_foundry/{tournament,leaderboard,significance}.py` + `services/quant_foundry/tests/test_tournament.py`
@@ -246,3 +246,131 @@ I released TASK-0402 back to Builder 1, reverted my ownership markers in
 depends on TASK-0401 + TASK-0403 — both DONE) and TASK-0406 (Leakage and Overfit
 Sentinel, Order 26b, depends on TASK-0403 + TASK-0404 + TASK-0405). Available
 for adoption if no other builder has claimed them.
+
+---
+
+### TASK-0404 — COMPLETED 2026-06-22 (commit `fd3f115`)
+
+**Status:** REVIEW (awaiting Reviewer)
+**Tests:** 38/38 green — `uv run pytest services/quant_foundry/tests/test_tournament.py -q`
+**Full suite:** 184/184 green — `uv run pytest services/quant_foundry/tests -q` (no regressions; up from 121 after TASK-0403)
+**Lint:** `uv run ruff check` — All checks passed (4 files)
+**Type:** `uv run mypy` — Success: no issues found in 3 source files
+**Commit:** `fd3f115` — 4 files, +1541 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/significance.py` — two statistical
+  primitives the tournament ranks on (cross-cutting rigor §2):
+  - `DeflatedSharpeResult` + `deflated_sharpe_ratio(oos_returns, trial_count)` —
+    discounts the raw per-period Sharpe for (a) trial_count multiple-comparisons
+    (extreme-value approximation `sqrt(2*ln(T))/sqrt(n)`) and (b) return
+    non-normality (Bailey & Lopez de Prado skew/kurtosis adjustment, applied
+    multiplicatively so DSR <= raw Sharpe always). Records `raw_sharpe`,
+    `deflated_sharpe`, `trial_count`, `skew`, `kurtosis`,
+    `multiple_trials_penalty`, `non_normality_penalty` for auditability.
+  - `BootstrapPValueResult` + `stationary_bootstrap_pvalue(model_returns,
+    baseline_returns, trial_count, n_bootstrap, seed)` — Politis & Romano
+    (1994) stationary block bootstrap; resamples the EDGE series (model -
+    baseline) with geometrically-distributed block lengths (expected length
+    `1/p`, default `max(2, n/10)`) so horizon-overlap autocorrelation is
+    preserved (NOT an IID t-test). p-value = fraction of resamples where
+    resampled edge mean <= 0. Deterministic given fixed seed. Stdlib-only
+    (seeded `random.Random` — no numpy/scipy coupling, skeleton stays portable).
+- `services/quant_foundry/src/quant_foundry/tournament.py` — the scorer:
+  - `ScoringInput` (frozen, extra='forbid') carries the full OOS return series
+    (net + gross + baseline) + trial_count + calibration signals (brier,
+    calibration_buckets, confidence_buckets) + risk/cost signals
+    (max_drawdown, turnover, feature_availability_ratio, latency_ms,
+    capacity_decay_penalty) + gating inputs (settled_count,
+    last_settled_at_ns, now_ns, stale_threshold_ns, min_settled_samples) +
+    audit (cost_model_version, training_accuracy). Series lengths validated
+    to match (bootstrap needs aligned series).
+  - `BaselineKind` (zero_skill / persistence / buy_and_hold) — deterministic
+    baselines every model must beat net-of-cost.
+  - `ScoreComponent` (frozen, extra='forbid') — name + value + weight +
+    contribution, so every rank is auditable.
+  - `TournamentStatus` (insufficient_evidence / stale / blocked / eligible).
+  - `PromotionRecommendation` (promote / hold / reject).
+  - `Tournament` scorer — explainable weighted score over net_edge (weight
+    0.40) + deflated_sharpe (0.35) + calibration (0.25) minus drawdown (0.10)
+    + turnover (0.05) + feature_availability (0.05) + latency (0.05) +
+    capacity_decay (0.05) penalties. Gates: insufficient-evidence
+    (settled_count < min), stale (age > threshold), net_edge_nonpositive,
+    dsr_nonpositive (DSR <= 0 after deflation), not_significant_vs_baseline
+    (p-value > 0.05), calibration_non_monotonic. Deterministic given fixed
+    seed + n_bootstrap. Stateless across models (parallel-safe).
+  - `TournamentResult.to_dict()` — JSON-serializable for promotion packet.
+- `services/quant_foundry/src/quant_foundry/leaderboard.py` — `Leaderboard`
+  (in-memory, transient view; ranks by status priority then total_score
+  descending; insufficient-evidence never ranks above sufficient; `to_dict`
+  JSON-serializable). Re-exports `PromotionRecommendation`.
+- `services/quant_foundry/tests/test_tournament.py` — 38 TDD tests covering
+  every acceptance criterion: DSR (result shape, more-trials-lowers-DSR,
+  zero-mean, negative-mean, non-normality); bootstrap p-value (result shape,
+  significant-for-clear-winner, not-significant-for-noise, deterministic
+  with seed); ScoringInput (carries series + trial_count, rejects mismatched
+  lengths, rejects empty model_id); baselines (zero-skill, persistence lag-1,
+  buy-and-hold mean); scoring (components recorded, deterministic with seed,
+  high-ML-poor-cost loses to simple profitable, beats-gross-not-net blocked,
+  noise fails gate, DSR + p-value recorded); gating (insufficient samples,
+  stale, fresh-sufficient-can-promote); result shape (all promotion-packet
+  fields, auditable components, JSON-serializable); leaderboard (two models
+  rank deterministically, rank order matches score order, insufficient never
+  on top, to_dict for promotion packet); no secrets in output.
+
+**Acceptance criteria verification (self):**
+- ✅ Two fixture models rank deterministically (`test_two_models_rank_deterministically`).
+- ✅ High-ML-score / poor-cost-return loses to simpler profitable
+  (`test_high_ml_poor_cost_loses_to_simple_profitable`).
+- ✅ Noise/shuffled-label model fails gate (`test_noise_model_fails_gate`).
+- ✅ Beats-baseline-gross-but-not-net blocked
+  (`test_beats_baseline_gross_but_not_net_is_blocked`).
+- ✅ Deflated Sharpe + bootstrap p-value recorded and shown
+  (`test_dsr_and_pvalue_recorded_and_shown` + result fields).
+- ✅ Stale or insufficient evidence blocks promotion
+  (`test_insufficient_settled_samples_blocks` + `test_stale_evidence_blocks_promotion`).
+- ✅ Tournament output can feed a promotion packet
+  (`test_result_has_all_promotion_packet_fields` + `test_result_to_dict_is_json_serializable`
+  + `test_leaderboard_to_dict_for_promotion_packet`).
+
+**Notes for Reviewer:**
+- The DSR multiple-trials penalty uses the extreme-value approximation
+  `sqrt(2*ln(T))/sqrt(n)` (per-period scale). This is a conservative
+  approximation of the Bailey & Lopez de Prado (2014) form; a fuller
+  implementation can swap in the exact formula later without changing the
+  public surface (`DeflatedSharpeResult` carries all inputs needed).
+- The stationary bootstrap is stdlib-only (seeded `random.Random`). For
+  large n or n_bootstrap this is slower than a numpy vectorized version,
+  but the skeleton stays portable and the tests are deterministic. A numpy
+  fast-path can be added later behind the same public surface.
+- `ScoringInput` does NOT import `SettlementRecord` or `DossierRecord` —
+  it is a local schema that mirrors the relevant fields (net edge, brier,
+  calibration_bucket, trial_count, cost_model_version). The caller (a
+  future adapter in TASK-0306's API route or a tournament runner) is
+  responsible for mapping settled predictions + dossiers into
+  `ScoringInput`. This keeps the tournament file-disjoint from Builder 1's
+  evidence storage and my own dossier registry.
+- The leaderboard is in-memory (transient view). Durability is the dossier
+  registry's job (TASK-0403). A future task can add a durable tournament
+  history store if needed.
+- Weights are constants (`DEFAULT_WEIGHTS`) overridable via the `Tournament`
+  constructor. The weights and the deflation inputs are recorded on every
+  result (via `score_components` + `deflated_sharpe` + `p_value` +
+  `trial_count`) so a rank is fully auditable.
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305): `outbox.py`, `inbox.py`, `mock_dispatcher.py`,
+  `callbacks.py` — zero overlap.
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system
+  page, `scripts/modules/` — zero overlap.
+- My own TASK-0403: `artifacts.py`, `dossier.py`, `registry.py` — zero
+  overlap (tournament consumes dossier shape via ScoringInput, not import).
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0404 unblocks TASK-0406 (Leakage and Overfit Sentinel, Order
+26b, depends on TASK-0403 + TASK-0404 + TASK-0405 — all DONE now). Available
+for adoption if no other builder has claimed it.

@@ -1666,11 +1666,11 @@ uv run pytest services/api/tests -q -k quant_foundry
 
 ---
 
-### TASK-0404: Build Tournament Scoring Skeleton  <!-- OWNER: Builder 3 (GLM) — ADOPTED 2026-06-22 -->
+### TASK-0404: Build Tournament Scoring Skeleton  <!-- OWNER: Builder 3 (GLM) — COMPLETED 2026-06-22 (commit fd3f115) -->
 
 **Order:** 25
 
-**Owner:** Builder 3 (GLM) — IN PROGRESS 2026-06-22. See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER3.md`.
+**Owner:** Builder 3 (GLM) — COMPLETED 2026-06-22 (commit `fd3f115`). See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER3.md`.
 Files owned: `services/quant_foundry/{tournament,leaderboard,significance}.py` + `tests/test_tournament.py`.
 File-disjoint from TASK-0401/0402 (Builder 1: settlement/shadow ledger),
 TASK-0304/0305 (Builder 2: outbox/inbox), TASK-0405 (Builder 4: feature lake),
@@ -1678,6 +1678,7 @@ TASK-0203 (Builder 5: module control). Consumes `SettlementRecord` and
 `DossierRecord` shapes via a local `ScoringInput` schema (no import of
 `outcomes.py`/`settlement.py`/`dossier.py` — keeps file-disjoint and avoids
 coupling the tournament to evidence storage internals).
+Tests: 38/38 green; full suite 184/184 green; ruff + mypy clean.
 
 **Objective:** Rank models based on settled evidence and baseline comparisons.
 
