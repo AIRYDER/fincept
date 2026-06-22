@@ -37,13 +37,13 @@ function severityColor(severity: NewsIntelSummary["checks"][number]["severity"])
   return severity === "fail"
     ? "text-short"
     : severity === "watch"
-      ? "text-yellow-500"
+      ? "text-warn"
       : "text-long";
 }
 
 function severityIcon(severity: NewsIntelSummary["checks"][number]["severity"]) {
   if (severity === "fail") return <AlertTriangle className="h-3.5 w-3.5 text-short" />;
-  if (severity === "watch") return <Info className="h-3.5 w-3.5 text-yellow-500" />;
+  if (severity === "watch") return <Info className="h-3.5 w-3.5 text-warn" />;
   return <CheckCircle2 className="h-3.5 w-3.5 text-long" />;
 }
 
@@ -194,6 +194,42 @@ export function NewsIntelligencePanel({
           Read-only intelligence layer. Impact model predictions are experimental.
           News-alpha cannot be presented as executable without promotion evidence.
         </p>
+
+        {/* Provider freshness (TASK-0205) — redacted evidence backed */}
+        {services && services.services && services.services.length > 0 && (
+          <div className="border-t border-border/40 pt-2">
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Provider freshness (evidence receipts)
+            </div>
+            <div className="flex flex-wrap gap-2 text-[10px]">
+              {services.services
+                .filter((s) => /provider|alpaca|news|data|openbb|polygon/i.test(s.name))
+                .slice(0, 6)
+                .map((s) => {
+                  const age = s.age_sec != null ? Math.round(s.age_sec) : null;
+                  const isStale = age != null && age > 30;
+                  return (
+                    <span
+                      key={s.name}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5",
+                        isStale ? "border-warn/40 text-warn" : "border-border/30 text-muted-foreground"
+                      )}
+                      aria-label={`${s.name} ${age ?? "?"}s ago`}
+                    >
+                      {s.name}: {age != null ? `${age}s` : "—"} {isStale ? "stale" : ""}
+                    </span>
+                  );
+                })}
+              {services.services.filter((s) => /provider|alpaca|news|data|openbb|polygon/i.test(s.name)).length === 0 && (
+                <span className="text-muted-foreground">No provider heartbeats in services</span>
+              )}
+            </div>
+            <div className="mt-1 text-[9px] text-muted-foreground">
+              Freshness from redacted provider evidence receipts. See /research/provider-data for details.
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -217,7 +253,7 @@ function MiniStat({
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className={cn("mt-0.5 font-mono text-sm", warn && "text-yellow-500")}>
+      <div className={cn("mt-0.5 font-mono text-sm", warn && "text-warn")}>
         {value}
       </div>
     </div>

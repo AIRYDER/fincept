@@ -18,6 +18,9 @@ Likelihood (L) and Impact (I) on a 1–5 scale. Score = L × I. Review monthly.
 | R-10 | Python/GIL becomes real bottleneck for strategy runner | 3 | 3 | 9 | Backend lead | One-strategy-per-process design avoids GIL at the runner level; Rust rewrite path documented |
 | R-11 | Single-engineer knowledge silos (ingestor, OMS) | 4 | 3 | 12 | Tech lead | Mandatory pair reviews on critical paths; rotation in Phase 3 onward |
 | R-12 | Founder attention splits across Fincept + other projects | 3 | 4 | 12 | CEO | Explicit time commitment in charter; delegate tech-lead role formally |
+| R-13 | OpenBB launcher / status helpers drift on the default port | 4 | 3 | 12 | Platform lead | Centralize the OpenBB base URL or port and consume it from all launch/status/proof helpers; add a regression test for default-port agreement |
+| R-14 | Backtest and training routes accept overly broad local file paths | 3 | 4 | 12 | Backend lead | Add resolve + prefix checks against approved data roots; reject traversal and out-of-root inputs; test the boundary explicitly — **MITIGATED (backtest)**: `services/api/src/api/routes/backtest.py` now validates `bars_path` against `FINCEPT_BACKTEST_DATA_ROOTS` (default `data`), rejects `..` traversal, out-of-root absolute paths, and unsupported suffixes; see `TestBarsPathBoundary` in `services/api/tests/test_backtest.py`. Training routes still TBD. |
+| R-15 | Provider evidence receipts leak API keys / tokens / private URLs | 3 | 5 | 15 | Platform lead | Redact at storage boundary in fincept_db.provider_data._redact_sensitive before any write/return; TDD tests with fake secrets; summarized /research/provider-data only; never log raw; applied to news/quote/mark paths. |
 
 ## Retired / not-a-risk
 
