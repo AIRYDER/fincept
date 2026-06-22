@@ -20,7 +20,6 @@ import time
 
 from quant_foundry.ids import hash_payload
 
-
 # 5 minute skew window. Callers should use wall-clock seconds since epoch for ts.
 # Adjust only with coordinated config change; too large weakens replay protection.
 MAX_TS_SKEW_SECONDS: int = 300
@@ -40,7 +39,7 @@ def sign_callback(payload: bytes, *, secret: str, ts: int, job_id: str) -> str:
     if not isinstance(secret, str) or not secret:
         raise ValueError("secret must be non-empty str")
     p_hash = hash_payload(payload)
-    msg = f"{ts}.{job_id}.{p_hash}".encode("utf-8")
+    msg = f"{ts}.{job_id}.{p_hash}".encode()
     sig = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
     return sig
 

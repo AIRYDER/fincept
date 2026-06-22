@@ -11,7 +11,7 @@ All tests are strict on format and determinism. No side effects.
 
 from __future__ import annotations
 
-from quant_foundry.ids import make_idempotency_key, hash_payload
+from quant_foundry.ids import hash_payload, make_idempotency_key
 
 
 def test_make_idempotency_key_produces_exact_qf_format() -> None:
