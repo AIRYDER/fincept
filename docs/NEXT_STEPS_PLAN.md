@@ -1667,6 +1667,14 @@ low, the worker abstains rather than predicting on incomplete data.
 
 ### TASK-0603: Store and Settle Shadow Predictions
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/shadow_settlement.py` (new),
+> `services/quant_foundry/tests/test_shadow_settlement.py` (new).
+> Creates a file-disjoint shadow settlement orchestrator that imports from
+> Builder 1's `shadow_ledger.py` + `settlement.py` (read-only) and my
+> `shadow_inference.py` (TASK-0601). Does NOT modify `shadow_ledger.py`,
+> `settlement.py`, or `schemas.py`.
+
 **Order:** 33
 
 **Objective:** Connect RunPod shadow predictions to the settlement
