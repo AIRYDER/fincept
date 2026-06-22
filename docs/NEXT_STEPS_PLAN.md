@@ -1492,6 +1492,16 @@ uv run pytest services/quant_foundry/tests/test_artifacts.py -q
 
 ### TASK-0504: Train First Real Baseline Model Family
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, LightGBM, file-disjoint orchestration).
+> Files owned: `services/quant_foundry/src/quant_foundry/baseline_family.py` (new),
+> `services/quant_foundry/tests/test_baseline_family.py` (new).
+> Creates a file-disjoint baseline training orchestrator that uses my sentinel
+> (TASK-0406), artifact import (TASK-0503), and dossier registry (TASK-0403).
+> Does NOT touch Builder 2's `runpod_training.py` / `test_runpod_training.py` /
+> `runpod/quant-foundry-training/handler.py` — those are Builder 2's files for
+> the RunPod container; this task creates the workflow orchestration layer that
+> connects training → validation → sentinel → artifact → dossier.
+
 **Order:** 30
 
 **Objective:** Produce the first RunPod-trained candidate, starting
