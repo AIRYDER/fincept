@@ -1338,3 +1338,60 @@ Phase 8 (Dashboard and Operator Control):
   TASK-0703, now unblocked). Touches `apps/dashboard/` (Builder 1's files).
 - TASK-0802 (Operator Audit and Override Log — depends on TASK-0702).
 - TASK-0803 (Tournament and Leaderboard View — depends on TASK-0701).
+
+---
+
+### TASK-1001: Mixture-of-Experts Model Router — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `a88e8c2`)
+**Order:** 44
+**Depends on:** Phase 5 + Phase 6 + Phase 7 (all DONE by Builder 3). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/moe_router.py` (new)
+- `services/quant_foundry/tests/test_moe_router.py` (new)
+- `services/quant_foundry/src/quant_foundry/leaderboard_expanded.py` (modified — added `settled_count` field, backward-compatible)
+
+**Task selection rationale:** Phase 8 tasks are all dashboard tasks
+(Builder 1's `apps/dashboard/` domain). Phase 10 tasks are backend Python
+tasks that depend on Phase 5+6+7 (all done by me). I adopted TASK-1001
+as the first Phase 10 task.
+
+**Tests:** 25/25 green — `uv run pytest services/quant_foundry/tests/test_moe_router.py -q`
+**Full suite:** 501/501 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 476 after TASK-0704)
+**Lint:** `uv run ruff check` — All checks passed (3 files)
+**Type:** `uv run mypy` — Success: no issues found in 2 source files
+**Commit:** `a88e8c2` — 4 files, +808 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/moe_router.py`:
+  - `MoERouterConfig` (frozen; min_settled_count=50, min_feature_availability=0.8,
+    max_brier_score=0.25).
+  - `RoutingContext` (frozen; regime + symbol + symbol_cluster + horizon +
+    feature_availability + liquidity + volatility + news_type).
+  - `ExpertWeight` (frozen; model_id + weight + reason).
+  - `AbstainReason` (StrEnum: INSUFFICIENT_EVIDENCE, LOW_FEATURE_AVAILABILITY,
+    POOR_CALIBRATION, STALE_MODEL, NO_EXPERTS).
+  - `RoutingDecision` (frozen; weights + is_abstain + abstain_reason;
+    `to_dict` JSON-serializable).
+  - `RoutingRule` (frozen; name + condition + weight_modifier).
+  - `MoERouter`:
+    - `route()`: checks (1) no experts -> NO_EXPERTS, (2) low feature
+      availability -> LOW_FEATURE_AVAILABILITY, (3) filter eligible (not
+      stale/decayed), (4) all stale -> STALE_MODEL, (5) filter well-
+      calibrated, (6) all poor calibration -> POOR_CALIBRATION, (7) filter
+      sufficient evidence (settled_count >= min), (8) all insufficient ->
+      INSUFFICIENT_EVIDENCE, (9) compute context-specific scores (regime
+      35% + horizon 25% + cluster 20% + total 20%), (10) normalize weights
+      to sum to 1.0, sort by weight descending.
+  - `route_prediction()`: convenience entry point.
+- `services/quant_foundry/src/quant_foundry/leaderboard_expanded.py` (modified):
+  - Added `settled_count: int = 0` to `ExpandedLeaderboardEntry`.
+  - Updated `to_dict` to include `settled_count`.
+  - Backward-compatible addition (default=0, existing tests unaffected).
+- `services/quant_foundry/tests/test_moe_router.py` — 25 TDD tests
+  covering all acceptance criteria.
+
+**Next:** TASK-1001 completes the first Phase 10 task. Remaining Phase 10
+tasks: TASK-1002 (Causal Market Memory Graph), TASK-1003 (Conformal
+Prediction Risk Gate), TASK-1004 (Adversarial Drift Sentinel), TASK-1005
+(Alpha Genome Lab). All are backend Python tasks I can do file-disjoint.
