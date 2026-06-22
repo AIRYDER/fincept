@@ -1435,6 +1435,13 @@ uv run pytest services/quant_foundry/tests/test_runpod_client.py -q
 
 ### TASK-0503: Add Artifact Import From Object Storage
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> Files owned: `services/quant_foundry/src/quant_foundry/artifacts.py` (extended),
+> `services/quant_foundry/tests/test_artifacts.py` (new), `docs/ENVIRONMENT.md` (new).
+> Extends my own `artifacts.py` (TASK-0403) with S3/object storage URI support,
+> size limits, content type validation, quarantine/staging path, and security
+> receipts. File-disjoint from all other active builders.
+
 **Order:** 29
 
 **Objective:** Import model artifacts by pulling from controlled
