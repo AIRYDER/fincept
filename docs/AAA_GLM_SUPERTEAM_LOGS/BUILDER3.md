@@ -918,3 +918,79 @@ Imports `ShadowPrediction` / `RunPodInferenceRequest` /
 **Next:** TASK-0601 unblocks TASK-0602 (Add Live Feature Snapshot Export —
 depends on TASK-0601, now unblocked) and TASK-0603 (Store and Settle Shadow
 Predictions — depends on TASK-0602).
+
+---
+
+### TASK-0602: Add Live Feature Snapshot Export — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `1a91a82`)
+**Order:** 32
+**Depends on:** TASK-0601 (✅ DONE — Builder 3, commit df326d4), TASK-0405 (✅ DONE — Builder 4, commit 7f704bd). All DONE — unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/feature_snapshot_export.py` (new)
+- `services/quant_foundry/tests/test_feature_snapshots.py` (new)
+
+**Task selection rationale:** TASK-0602 was unblocked by my TASK-0601
+completion. The spec lists `feature_lake.py` + `feature_availability.py`
+(Builder 4's files) as "likely touched," but I created a file-disjoint
+`feature_snapshot_export.py` that imports from them read-only. Does NOT
+modify Builder 4's files.
+
+**Tests:** 29/29 green — `uv run pytest services/quant_foundry/tests/test_feature_snapshots.py -q`
+**Full suite:** 359/359 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 330 after TASK-0601)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `1a91a82` — 3 files, +686 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/feature_snapshot_export.py`:
+  - `SnapshotExportConfig` (frozen, extra='forbid'; min_availability_pct=80.0,
+    max_freshness_ns=60s).
+  - `SnapshotExportReceipt` (frozen; snapshot + availability_report +
+    decision_time + degraded_symbols; `to_dict` JSON-serializable).
+  - `FeatureSnapshotExport`:
+    - `export()`: converts `FeatureRow` objects (Builder 4's
+      `feature_lake.py`) into compact `FeatureSnapshot` objects (TASK-0601's
+      `shadow_inference.py`). Filters rows at decision_time, builds compact
+      float vectors in expected_features order, computes per-symbol
+      availability, computes freshness_ns. Marks symbols below
+      min_availability_pct as degraded (availability=False).
+    - `export_with_receipt()`: returns `SnapshotExportReceipt` with snapshot
+      + `FeatureAvailabilityReport` + degraded_symbols list.
+  - `export_feature_snapshot()`: convenience entry point.
+- `services/quant_foundry/tests/test_feature_snapshots.py` — 29 TDD tests
+  covering all acceptance criteria:
+  - Config (required fields, reasonable defaults, frozen).
+  - Compact snapshots (produces FeatureSnapshot, compact float vectors,
+    includes timestamp, includes freshness).
+  - Feature availability (includes availability report, counts present
+    features, detects missing features, availability flags set per symbol).
+  - Missing features abstain (low availability produces degraded snapshot,
+    high availability produces healthy snapshot, receipt includes degraded
+    symbols, empty rows produce empty snapshot).
+  - Export receipt (has snapshot, availability report, decision time,
+    degraded symbols, to_dict JSON-serializable).
+  - Convenience function (export_feature_snapshot works end-to-end, accepts
+    config).
+  - No secrets in output (config + receipt dict).
+
+**Acceptance criteria verification (self):**
+- ✅ Feature snapshots are compact (`test_snapshot_features_are_compact_vectors`).
+- ✅ Feature availability is measurable (`test_export_includes_availability_report` +
+  `test_availability_report_counts_present_features` +
+  `test_availability_report_detects_missing_features`).
+- ✅ Missing required features produce abstain or degraded state
+  (`test_low_availability_produces_degraded_snapshot` +
+  `test_receipt_includes_degraded_symbols` +
+  `test_empty_rows_produce_empty_snapshot`).
+
+**File-disjoint confirmation (post-commit):**
+- Builder 4 (TASK-0405): `feature_lake.py`, `feature_availability.py` —
+  zero overlap (read-only imports, not modified).
+- All other builders: zero overlap.
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0602 unblocks TASK-0603 (Store and Settle Shadow Predictions —
+depends on TASK-0602). TASK-0603 touches Builder 1's `shadow_ledger.py` +
+`settlement.py` — I would need a file-disjoint approach (new
+`shadow_settlement.py` that imports read-only).
