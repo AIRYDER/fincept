@@ -1880,7 +1880,7 @@ only up to `shadow-approved`.
 
 ### TASK-0704: Build Paper-Only Model Pointer Bridge
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `e95c51f`). REVIEW.
 > Files owned: `services/quant_foundry/src/quant_foundry/paper_bridge.py` (new),
 > `services/quant_foundry/tests/test_paper_bridge.py` (new).
 > Creates a file-disjoint paper-only model pointer bridge. Does NOT touch
@@ -1888,6 +1888,7 @@ only up to `shadow-approved`.
 > `services/risk/`, or `services/oms/` (other builders' files). Imports
 > from my `promotion.py` (TASK-0702), `dossier.py` (TASK-0403),
 > `schemas.py` (read-only).
+> Tests: 24/24 green; full suite 476/476 green (excl. Builder 2's in-progress file); ruff + mypy clean.
 
 **Order:** 38
 

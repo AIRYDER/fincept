@@ -1265,3 +1265,76 @@ completion. The spec doesn't list specific files. I created a file-disjoint
 **Next:** TASK-0703 + TASK-0702 unblock TASK-0704 (Build Paper-Only Model
 Pointer Bridge — depends on both, now unblocked). TASK-0704 is the first
 dangerous connection point (shadow -> paper).
+
+---
+
+### TASK-0704: Build Paper-Only Model Pointer Bridge — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `e95c51f`)
+**Order:** 38
+**Depends on:** TASK-0702 (✅ DONE — Builder 3, commit 60f9e61) + TASK-0703 (✅ DONE — Builder 3, commit ffe9ce7). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/paper_bridge.py` (new)
+- `services/quant_foundry/tests/test_paper_bridge.py` (new)
+
+**Task selection rationale:** TASK-0704 was unblocked by my TASK-0702 +
+TASK-0703 completion. The spec lists `libs/fincept-core/`,
+`libs/fincept-bus/`, `services/orchestrator/`, `services/risk/`,
+`services/oms/` (other builders' files), but those are separate tasks — I
+created a file-disjoint `paper_bridge.py` that imports from my
+`promotion.py`, `dossier.py`, and `schemas.py` (read-only).
+
+**Tests:** 24/24 green — `uv run pytest services/quant_foundry/tests/test_paper_bridge.py -q`
+**Full suite:** 476/476 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 452 after TASK-0703)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `e95c51f` — 3 files, +819 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/paper_bridge.py`:
+  - `BridgeConfig` (frozen; allow_paper_bridge=False by default,
+    runtime_mode="paper").
+  - `BridgeStatus` (StrEnum: ENABLED, DISABLED, PUBLISHED, REFUSED).
+  - `PaperPrediction` (frozen; prediction fields only — no order/OMS/risk
+    fields; authority="paper-only").
+  - `RollbackPointer` (frozen; model_id + pointer_id + created_at_ns +
+    reason).
+  - `BridgeReceipt` (frozen; status + reason + prediction +
+    rollback_pointer + published_at_ns; `to_dict` JSON-serializable).
+  - `BridgeCircuitBreaker`:
+    - `record_failure()` / `record_success()` / `is_tripped()` / `reset()`.
+    - Trips after `failure_threshold` (default 5) failures.
+  - `PaperBridge`:
+    - `publish()`: checks (1) bridge enabled, (2) circuit breaker not
+      tripped, (3) runtime is paper, (4) evidence present, (5) dossier
+      present, (6) model is paper-approved. Creates rollback pointer,
+      converts shadow prediction to `PaperPrediction`, returns
+      `BridgeReceipt` with PUBLISHED. Records failure on any refusal.
+    - `status` property: DISABLED if allow_paper_bridge=False.
+    - Reads `QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE` env var if no config.
+  - `convert_shadow_to_paper()`: convenience function.
+- `services/quant_foundry/tests/test_paper_bridge.py` — 24 TDD tests
+  covering all acceptance criteria.
+
+**Acceptance criteria verification (self):**
+- ✅ Bridge is disabled by default (`test_bridge_disabled_by_default`).
+- ✅ Bridge refuses non-paper runtime (`test_bridge_refuses_live_runtime` +
+  `test_bridge_accepts_paper_runtime`).
+- ✅ Bridge refuses models without evidence packet
+  (`test_bridge_refuses_without_evidence` +
+  `test_bridge_refuses_without_dossier` +
+  `test_bridge_refuses_non_paper_approved_model`).
+- ✅ Rollback pointer exists (`test_rollback_pointer_has_required_fields` +
+  `test_rollback_pointer_is_frozen` +
+  `test_bridge_creates_rollback_pointer_before_publishing`).
+- ✅ Risk/OMS boundaries remain unchanged
+  (`test_paper_prediction_has_no_order_fields` +
+  `test_paper_prediction_has_prediction_fields` +
+  `test_paper_prediction_is_frozen`).
+
+**Next:** TASK-0704 completes Phase 7 (Tournament + Promotion). Unblocks
+Phase 8 (Dashboard and Operator Control):
+- TASK-0801 (Promotion and Retirement Dashboard — depends on TASK-0702 +
+  TASK-0703, now unblocked). Touches `apps/dashboard/` (Builder 1's files).
+- TASK-0802 (Operator Audit and Override Log — depends on TASK-0702).
+- TASK-0803 (Tournament and Leaderboard View — depends on TASK-0701).
