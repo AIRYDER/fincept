@@ -1629,6 +1629,14 @@ shadow-only prediction batches.
 
 ### TASK-0602: Add Live Feature Snapshot Export
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/feature_snapshot_export.py` (new),
+> `services/quant_foundry/tests/test_feature_snapshots.py` (new).
+> Creates a file-disjoint feature snapshot exporter that imports from
+> Builder 4's `feature_lake.py` + `feature_availability.py` (read-only) and
+> my `shadow_inference.py` (TASK-0601, `FeatureSnapshot`). Does NOT modify
+> `feature_lake.py`, `feature_availability.py`, or `services/features/`.
+
 **Order:** 32
 
 **Objective:** Provide compact, point-in-time feature snapshots for
