@@ -31,7 +31,17 @@ import type { ProofReceiptCenterSummary } from "@/components/receipts/proof-rece
 // Types
 // ---------------------------------------------------------------------------
 
-export type ReadinessState = "ready" | "review" | "blocked";
+export type ReadinessState =
+  | "ready"
+  | "review"
+  | "blocked"
+  // New states from server readiness endpoint (TASK-0202)
+  | "pass"
+  | "warn"
+  | "fail"
+  | "skipped"
+  | "disabled"
+  | "stale";
 
 export interface ReadinessCheck {
   id: string;

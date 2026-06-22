@@ -35,6 +35,7 @@ import type {
   NewsImpactOptimizeResponse,
   NewsImpactPredictBody,
   NewsImpactPredictResponse,
+  NewsImpactSignalsResponse,
   NewsImpactStatus,
   NewsResponse,
   OpenBBCallRequest,
@@ -138,6 +139,20 @@ export const api = {
   // --- public --------------------------------------------------------------
   health: (token: string | null = null) =>
     request<{ ok: boolean; version: string }>("/health", token),
+
+  /**
+   * Server-side unified readiness (TASK-0202).
+   * Returns categorized states (pass/warn/fail/skipped/disabled/stale).
+   * No secrets or stacks are ever returned.
+   */
+  readiness: (token: string | null = null) =>
+    request<{
+      overall: string;
+      checks: Array<{ id: string; label: string; state: string; detail: string }>;
+      receipt_url?: string;
+      generated_at_unix?: number;
+      note?: string;
+    }>("/health/readiness", token),
 
   // --- data ---------------------------------------------------------------
   universe: (token: string | null, params?: { asset_class?: string }) => {
@@ -378,6 +393,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  newsImpactSignals: (
+    token: string | null,
+    args?: { limit?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (args?.limit) q.set("limit", String(args.limit));
+    return request<NewsImpactSignalsResponse>(
+      `/news-impact/signals${q.size ? `?${q}` : ""}`,
+      token,
+    );
+  },
 
   // --- research ----------------------------------------------------------
   exaResearch: (token: string | null, body: ExaResearchRequest) =>

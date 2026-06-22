@@ -71,9 +71,10 @@ function readEnvPresence(): Record<string, boolean> {
 // ---------------------------------------------------------------------------
 
 function readinessToIntent(state: ReadinessState): SemanticIntent {
-  if (state === "ready") return "verified";
-  if (state === "review") return "degraded";
-  return "critical";
+  if (state === "ready" || state === "pass") return "verified";
+  if (state === "review" || state === "warn" || state === "stale") return "degraded";
+  if (state === "disabled" || state === "skipped") return "inactive";
+  return "critical"; // blocked / fail
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,15 @@ export default function SystemPage() {
     refetchInterval: 60_000,
   });
 
+  // Server unified readiness (TASK-0202). Preferred source for categorized states.
+  const readinessQ = useQuery({
+    queryKey: ["readiness", "system"],
+    queryFn: () => api.readiness(token),
+    enabled: !!token,
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+
   const packet = useMemo(
     () =>
       buildSystemReadinessPacket({
@@ -120,6 +130,14 @@ export default function SystemPage() {
       }),
     [servicesQ.data, servicesQ.isError, killQ.data, openbbQ.data],
   );
+
+  // Prefer server readiness checks (unified, includes Redis/Timescale probes etc).
+  const serverChecks = readinessQ.data?.checks?.map((c) => ({
+    id: c.id,
+    label: c.label,
+    state: c.state as ReadinessState,
+    detail: c.detail,
+  })) ?? packet.checks;
 
   const overallIntent = readinessToIntent(packet.state);
 
@@ -145,7 +163,7 @@ export default function SystemPage() {
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
         {/* Left column: Readiness checks + Services */}
         <div className="space-y-4">
-          <ReadinessChecksCard checks={packet.checks} />
+          <ReadinessChecksCard checks={serverChecks} />
           <ServiceHeartbeatCard
             services={packet.services}
             summary={packet.serviceSummary}
@@ -216,8 +234,9 @@ function ReadinessChecksCard({ checks }: { checks: ReadinessCheck[] }) {
 }
 
 function StateIcon({ state }: { state: ReadinessState }) {
-  if (state === "ready") return <CheckCircle2 className="h-4 w-4 shrink-0 text-long" />;
-  if (state === "review") return <CircleAlert className="h-4 w-4 shrink-0 text-amber" />;
+  if (state === "ready" || state === "pass") return <CheckCircle2 className="h-4 w-4 shrink-0 text-long" />;
+  if (state === "review" || state === "warn" || state === "stale") return <CircleAlert className="h-4 w-4 shrink-0 text-warn" />;
+  if (state === "disabled" || state === "skipped") return <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />;
   return <XCircle className="h-4 w-4 shrink-0 text-short" />;
 }
 
@@ -277,11 +296,11 @@ function ServiceRow({
   const intent: SemanticIntent =
     svc.status === "up" ? "verified" : svc.status === "stale" ? "degraded" : svc.status === "down" ? "critical" : "inactive";
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-border/30 bg-card/40 px-3 py-2">
-      <div className="min-w-0">
+    <div className="flex items-start justify-between gap-2 rounded-md border border-border/30 bg-card/40 px-3 py-2">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <StatusPill intent={intent} label={svc.status.toUpperCase()} compact />
-          <span className="truncate font-mono text-xs">{svc.name}</span>
+          <span className="break-words font-mono text-xs leading-4">{svc.name}</span>
           {!svc.expected && (
             <Badge variant="outline" className="text-[9px]">rogue</Badge>
           )}
@@ -357,7 +376,7 @@ function EnvVarRow({
             <Badge variant="destructive" className="text-[9px]">missing</Badge>
           )}
         </div>
-        <p className="text-[10px] text-muted-foreground">{env.description}</p>
+        <p className="text-xs leading-5 text-muted-foreground">{env.description}</p>
       </div>
     </div>
   );
@@ -454,7 +473,7 @@ function CommandsCard({ commands }: { commands: CopyableCommand[] }) {
           Operator commands
         </CardTitle>
         <CardDescription>
-          Copy-pasteable Windows PowerShell commands. Commands marked <span className="text-amber">unsafe</span> mutate system state (start/stop services, migrations).
+          Copy-pasteable Windows PowerShell commands. Commands marked <span className="text-warn">unsafe</span> mutate system state (start/stop services, migrations).
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -486,7 +505,7 @@ function CommandRow({ cmd }: { cmd: CopyableCommand }) {
           <span className="text-xs font-medium">{cmd.label}</span>
           {!cmd.safe && <Badge variant="warn" className="text-[9px]">unsafe</Badge>}
         </div>
-        <p className="mt-0.5 text-[10px] text-muted-foreground">{cmd.description}</p>
+        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{cmd.description}</p>
         <code className="mt-1 block break-all rounded bg-muted/40 px-2 py-1 text-[10px]">{cmd.command}</code>
       </div>
       <Button
