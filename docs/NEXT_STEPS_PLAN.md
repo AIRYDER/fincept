@@ -727,7 +727,7 @@ for production durability.
 ### TASK-0305: Add Mock Dispatcher and Mock Callback Processor
 
 **Order:** 20
-**Owner:** Builder 2 (GLM-5.2) — ADOPTED 2026-06-22 (IN PROGRESS)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
   Files owned: `services/quant_foundry/src/quant_foundry/mock_dispatcher.py`,
   `services/quant_foundry/src/quant_foundry/callbacks.py`,
   `services/quant_foundry/tests/test_mock_flow.py`. File-disjoint from
@@ -920,10 +920,10 @@ uv run pytest services/quant_foundry/tests/test_settlement.py -q
 
 ### TASK-0402: Add Shadow Prediction Ledger Storage
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, local storage first).
+> **Owner:** Builder 1 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, local storage first).
 > Files owned: `services/quant_foundry/shadow_ledger.py` + `tests/test_shadow_ledger.py`.
 > File-disjoint from TASK-0401 (Builder 1: settlement), TASK-0304 (Builder 2: outbox/inbox),
-> TASK-0405 (Builder 4: feature lake), TASK-0203 (Builder 5: module control).
+> TASK-0405 (Builder 4: feature lake), TASK-0203 (Builder 5: module control), TASK-0403 (Builder 3).
 > `schemas.py` is NOT modified (ShadowPrediction already defined by TASK-0302; consumed read-only).
 > `libs/fincept-bus/streams.py` is NOT modified for MVP (local storage first; `qf.shadow.predictions`
 > stream deferred to a later task per spec "later, if adding").
@@ -976,6 +976,14 @@ uv run pytest services/quant_foundry/tests/test_shadow_ledger.py -q
 ---
 
 ### TASK-0403: Build the Dossier Registry
+
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> Files owned: `services/quant_foundry/{dossier,artifacts,registry}.py` + `tests/test_dossier.py`.
+> File-disjoint from TASK-0401/0402 (Builder 1), TASK-0304/0305 (Builder 2),
+> TASK-0405 (Builder 4), TASK-0203 (Builder 5).
+> `schemas.py` is NOT modified (ModelDossier + ArtifactManifest already defined by TASK-0302;
+> consumed read-only). `services/api/routes/quant_foundry.py` is NOT created here (TASK-0306 owns
+> the API route); the registry exposes a Python read API only for MVP.
 
 **Order:** 24
 
