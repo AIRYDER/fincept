@@ -1395,3 +1395,56 @@ as the first Phase 10 task.
 tasks: TASK-1002 (Causal Market Memory Graph), TASK-1003 (Conformal
 Prediction Risk Gate), TASK-1004 (Adversarial Drift Sentinel), TASK-1005
 (Alpha Genome Lab). All are backend Python tasks I can do file-disjoint.
+
+---
+
+### TASK-1003: Conformal Prediction Risk Gate — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `e272b6e`)
+**Order:** 46
+**Depends on:** Phase 5 + Phase 6 + Phase 7 (all DONE by Builder 3). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/conformal_gate.py` (new)
+- `services/quant_foundry/tests/test_conformal_gate.py` (new)
+
+**Task selection rationale:** Phase 10 tasks are all backend Python tasks
+that depend on Phase 5+6+7 (all done by me). I adopted TASK-1003 next
+because it feeds uncertainty into the tournament and paper bridge (both
+of which I built).
+
+**Tests:** 26/26 green — `uv run pytest services/quant_foundry/tests/test_conformal_gate.py -q`
+**Full suite:** 527/527 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 501 after TASK-1001)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `e272b6e` — 3 files, +661 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/conformal_gate.py`:
+  - `ConformalGateConfig` (frozen; max_interval_width=0.5,
+    min_calibration_samples=10, min_confidence=0.5).
+  - `AbstainReason` (StrEnum: INTERVAL_TOO_WIDE,
+    INSUFFICIENT_CALIBRATION_DATA, LOW_CONFIDENCE).
+  - `ConformalInterval` (frozen; q10 + q50 + q90; width = q90 - q10).
+  - `ConformalPrediction` (frozen; interval + is_abstain + abstain_reason;
+    `to_dict` JSON-serializable for tournament/paper bridge consumption).
+  - `ConformalCalibrator`:
+    - `fit(residuals)`: fits on residuals (predictions - outcomes).
+    - `predict_interval(point_estimate)`: produces
+      [point + q10(residuals), point + q90(residuals)] with
+      q50 = point + median(residuals).
+    - Uses linear interpolation for quantile estimation.
+    - Raises if not fitted or insufficient data (< 2 samples).
+  - `ConformalGate`:
+    - `predict(point_estimate, confidence)`: checks (1) insufficient
+      calibration data -> INSUFFICIENT_CALIBRATION_DATA, (2) low
+      confidence -> LOW_CONFIDENCE, (3) interval too wide ->
+      INTERVAL_TOO_WIDE. Returns `ConformalPrediction` with interval if
+      all checks pass.
+  - `calibrate_and_predict()`: convenience entry point.
+- `services/quant_foundry/tests/test_conformal_gate.py` — 26 TDD tests
+  covering all acceptance criteria.
+
+**Next:** TASK-1003 completes the second Phase 10 task. Remaining Phase 10
+tasks: TASK-1002 (Causal Market Memory Graph), TASK-1004 (Adversarial
+Drift Sentinel), TASK-1005 (Alpha Genome Lab). All are backend Python
+tasks I can do file-disjoint.
