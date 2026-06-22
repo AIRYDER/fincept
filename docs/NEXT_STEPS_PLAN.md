@@ -1211,13 +1211,14 @@ Start with fixtures.
 
 ### TASK-0406: Build the Leakage and Overfit Sentinel
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `d864b94`). REVIEW.
 > Files owned: `services/quant_foundry/{sentinel,pbo}.py` + `tests/test_sentinel.py`.
 > File-disjoint from TASK-0401/0402 (Builder 1), TASK-0304/0305/0501 (Builder 2),
 > TASK-0405 (Builder 4), TASK-0203 (Builder 5). Imports from my own
 > `dossier.py`/`registry.py` (TASK-0403 — my files). Does NOT import
 > `outcomes.py`/`settlement.py` (Builder 1), `feature_lake.py`/
 > `dataset_manifest.py` (Builder 4) — uses local schemas for feature/settlement data.
+> Tests: 30/30 green; full suite 242/242 green (excl. Builder 2's in-progress file); ruff + mypy clean.
 
 **Order:** 26b
 

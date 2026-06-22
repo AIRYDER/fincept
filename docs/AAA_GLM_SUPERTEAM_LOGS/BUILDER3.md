@@ -379,7 +379,7 @@ for adoption if no other builder has claimed it.
 
 ### TASK-0406: Build the Leakage and Overfit Sentinel — ADOPTED 2026-06-22
 
-**Status:** IN PROGRESS (TDD, fixture-backed)
+**Status:** COMPLETED 2026-06-22 (commit `d864b94`)
 **Order:** 26b
 **Depends on:** TASK-0403 (✅ DONE — Builder 3, commit de56c38), TASK-0404 (✅ DONE — Builder 3, commit fd3f115), TASK-0405 (✅ DONE — Builder 4, commit 7f704bd). All DONE — task unblocked.
 **Files owned:** `services/quant_foundry/src/quant_foundry/{sentinel,pbo}.py` + `services/quant_foundry/tests/test_sentinel.py`
@@ -423,3 +423,126 @@ for adoption if no other builder has claimed it.
    check, feature stability check, sentinel receipt emission, `blocking_issue`
    writing on dossiers via `DossierRegistry.add_blocking_issue`.
 4. Run pytest + ruff + mypy clean; atomic commit.
+
+---
+
+### TASK-0406 — COMPLETED 2026-06-22 (commit `d864b94`)
+
+**Status:** REVIEW (awaiting Reviewer)
+**Tests:** 30/30 green — `uv run pytest services/quant_foundry/tests/test_sentinel.py -q`
+**Full suite:** 242/242 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 184 after TASK-0404)
+**Lint:** `uv run ruff check` — All checks passed (3 files)
+**Type:** `uv run mypy` — Success: no issues found in 2 source files
+**Commit:** `d864b94` — 3 files, +1637 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/pbo.py` — Probability of Backtest
+  Overfitting (Bailey, Borwein, López de Prado & Zhu 2017, CSCV method).
+  `PBOResult` (frozen dataclass: pbo, logit, n_candidates, n_combinations,
+  threshold, flagged). `probability_of_backtest_overfitting(is_returns,
+  oos_returns, n_partitions, seed, threshold)` — concatenates IS+OOS per
+  candidate, splits into partitions, samples combinatorially symmetric
+  combinations (at most 1000), ranks candidates by IS/OOS Sharpe, counts
+  how often the IS-optimal candidate underperforms the median OOS. PBO =
+  fraction of overfit combinations. Logit transform for interpretability.
+  Deterministic with fixed seed. Stdlib-only.
+- `services/quant_foundry/src/quant_foundry/sentinel.py` — the sentinel:
+  - `LeakyFeatureError` — point-in-time violation (observed_at > decision_time).
+  - `SentinelCheck` (shuffled_label / time_reverse / future_leak / full_battery).
+  - `SentinelSeverity` (blocking / warning).
+  - `FoldSpec` (frozen, extra='forbid'; train/val windows for purged-fold verifier).
+  - `TrainLiveGapInput` (frozen, extra='forbid'; IS vs live edge + Brier).
+  - `FeatureStabilityInput` (frozen, extra='forbid'; per-feature importance across folds).
+  - `SentinelInput` (frozen, extra='forbid'; carries all check inputs).
+  - `SentinelIssue` (frozen, extra='forbid'; code + severity + message + detail).
+  - `SentinelReceipt` (frozen, extra='forbid'; issues + passed + checks_run +
+    ts_ns + optional PBO; `to_dict` JSON-serializable for audit).
+  - `LeakageSentinel`:
+    - `assert_point_in_time` (static; raises LeakyFeatureError on future leak).
+    - `run_negative_control` (shuffled label / time reverse / future leak).
+    - `verify_purged_folds` (purge gap + embargo gap + train/val overlap).
+    - `check_train_live_gap` (edge ratio < 50% => flag; Brier gap > 0.15 => flag).
+    - `check_feature_stability` (CV of importance > 50% => flag).
+    - `run` (full battery: all checks whose inputs are provided + PBO).
+    - `write_blocking_issues` (writes blocking_issue entries on dossier via
+      `DossierRegistry.add_blocking_issue` — hard gate on promotion that
+      TASK-0702 refuses to override without an explicit, recorded human waiver).
+- `services/quant_foundry/tests/test_sentinel.py` — 30 TDD tests covering
+  every acceptance criterion: PBO (result shape, low for genuine edge, high
+  for overfit family, deterministic with seed, threshold flagging); negative
+  controls (shuffled labels flagged, future leak flagged, time-reversed
+  flagged, clean passes); purged-fold verifier (no purge rejected, purge+
+  embargo pass, train/val overlap rejected); train/live gap (large edge gap
+  flagged, small passes, calibration gap flagged); feature stability (stable
+  passes, unstable flagged); full run (receipt emitted, failing writes
+  blocking_issue to dossier, passing does not write, receipt JSON-
+  serializable); LeakyFeatureError (raised on future leak, clean does not
+  raise); no secrets in output.
+
+**Acceptance criteria verification (self):**
+- ✅ Shuffled-label fixture flagged as leaking (`test_shuffled_labels_flagged_as_leaking`).
+- ✅ Future-leak fixture flagged as leaking (`test_future_leak_fixture_flagged_as_leaking`).
+- ✅ Fold set without purge/embargo rejected (`test_folds_without_purge_rejected`).
+- ✅ PBO computed and attached to the dossier (`test_pbo_returns_result_with_pbo_and_logit`
+  + `test_pbo_above_threshold_is_flagged` + `run` integrates PBO into receipt).
+- ✅ Failing sentinel blocks promotion server-side
+  (`test_failing_sentinel_writes_blocking_issue_to_dossier` — writes
+  `blocking_issue` via `DossierRegistry.add_blocking_issue`; the promotion
+  gate TASK-0702 refuses to override without a human waiver).
+- ✅ Time-reversed features flagged (`test_time_reversed_features_flagged_as_leaking`).
+- ✅ Train/live gap check flags large persistent gap
+  (`test_large_persistent_gap_flagged` + `test_calibration_gap_flagged`).
+- ✅ Feature stability check flags wildly unstable features
+  (`test_unstable_feature_flagged`).
+- ✅ Sentinel receipt emitted per candidate family
+  (`test_run_all_checks_emits_receipt` + `test_receipt_to_dict_is_json_serializable`).
+
+**Notes for Reviewer:**
+- The PBO implementation uses the CSCV method with sampled combinations (at
+  most 1000) rather than full enumeration (which is exponential in
+  n_partitions). This is a tractable approximation; the full enumeration can
+  be enabled for small families by setting `n_partitions` low enough that
+  C(n, n/2) <= 1000.
+- The sentinel imports from my own `dossier.py`/`registry.py` (TASK-0403 —
+  my files) to write `blocking_issue` entries. It does NOT import
+  `outcomes.py`/`settlement.py` (Builder 1), `feature_lake.py`/
+  `dataset_manifest.py` (Builder 4) — it uses local schemas
+  (`SentinelInput`, `TrainLiveGapInput`, `FeatureStabilityInput`) so
+  Builder 1's and Builder 4's evidence storage internals can change without
+  breaking the sentinel.
+- `LeakyFeatureError` is defined in `sentinel.py` (not imported from Builder
+  4's `dataset_manifest.py`) to keep file-disjoint, following the same
+  pattern (point-in-time assertion). If the Reviewer/Coordinator prefer to
+  unify these later, that's a follow-up.
+- The negative-control battery checks claimed edge against a threshold
+  (default 10 bps). A real implementation would retrain on shuffled labels
+  and compare; for the MVP skeleton, the caller provides the claimed edge
+  on shuffled labels and the sentinel flags it if non-trivial.
+- The feature stability check uses the coefficient of variation (CV =
+  std/mean) of importance across folds. A CV > 50% (default) flags the
+  feature as unstable. This is a simple, explainable metric; a richer
+  implementation could use distribution-distance tests (KS, Wasserstein).
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305/0501): `outbox.py`, `inbox.py`,
+  `mock_dispatcher.py`, `callbacks.py`, `runpod_client.py` (in progress) —
+  zero overlap.
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system
+  page, `scripts/modules/` — zero overlap.
+- My own TASK-0403/0404: `artifacts.py`, `dossier.py`, `registry.py`,
+  `tournament.py`, `leaderboard.py`, `significance.py` — zero overlap
+  (sentinel imports from `dossier.py`/`registry.py` which are my own files;
+  does not modify them).
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0406 completes Phase 4 (Evidence Foundations). The evidence
+loop is now complete: settlement (TASK-0401) → shadow ledger (TASK-0402) →
+dossier registry (TASK-0403) → tournament scoring (TASK-0404) → feature
+lake (TASK-0405) → leakage/overfit sentinel (TASK-0406). The next phase
+(Phase 5: RunPod Research Foundry MVP) begins with TASK-0501 (Builder 2,
+in progress). Available for adoption: any unclaimed task in Phase 5+ that
+is file-disjoint from my completed work.
