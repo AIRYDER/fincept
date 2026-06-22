@@ -1791,6 +1791,15 @@ type, and live shadow evidence.
 
 ### TASK-0702: Build Promotion Review Queue
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/promotion.py` (new),
+> `services/quant_foundry/tests/test_promotion.py` (new).
+> Creates a file-disjoint promotion review queue. Does NOT touch
+> `services/api/src/api/routes/quant_foundry.py` (Builder 2's file) or
+> `apps/dashboard/` (Builder 1's files) — those are separate tasks.
+> Imports from my `dossier.py` (TASK-0403), `sentinel.py` (TASK-0406),
+> `tournament.py` (TASK-0404), and `leaderboard_expanded.py` (TASK-0701).
+
 **Order:** 36
 
 **Objective:** Require human approval and evidence packets for model
