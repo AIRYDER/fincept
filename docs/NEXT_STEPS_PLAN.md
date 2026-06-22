@@ -660,7 +660,7 @@ well-tested.
 ### TASK-0304: Implement Durable Local Job Outbox and Callback Inbox
 
 **Order:** 19
-**Owner:** Builder 2 (GLM-5.2) — ADOPTED 2026-06-22 (IN PROGRESS)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit `48c0c27`)
   Files owned: `services/quant_foundry/src/quant_foundry/outbox.py`,
   `services/quant_foundry/src/quant_foundry/inbox.py`,
   `reports/quant-foundry/.gitkeep`. File-disjoint from TASK-0401
@@ -912,6 +912,14 @@ uv run pytest services/quant_foundry/tests/test_settlement.py -q
 ---
 
 ### TASK-0402: Add Shadow Prediction Ledger Storage
+
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, local storage first).
+> Files owned: `services/quant_foundry/shadow_ledger.py` + `tests/test_shadow_ledger.py`.
+> File-disjoint from TASK-0401 (Builder 1: settlement), TASK-0304 (Builder 2: outbox/inbox),
+> TASK-0405 (Builder 4: feature lake), TASK-0203 (Builder 5: module control).
+> `schemas.py` is NOT modified (ShadowPrediction already defined by TASK-0302; consumed read-only).
+> `libs/fincept-bus/streams.py` is NOT modified for MVP (local storage first; `qf.shadow.predictions`
+> stream deferred to a later task per spec "later, if adding").
 
 **Order:** 23
 
