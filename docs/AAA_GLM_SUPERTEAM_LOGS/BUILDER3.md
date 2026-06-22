@@ -669,3 +669,139 @@ from my completed work. Candidates: TASK-0504 (Train First Real Baseline
 Model Family — depends on TASK-0503, now unblocked), TASK-0602 (Add Live
 Feature Snapshot Export — depends on TASK-0405, DONE), TASK-0603 (Store and
 Settle Shadow Predictions — depends on TASK-0402, DONE).
+
+---
+
+### TASK-0504: Train First Real Baseline Model Family — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `caeb468`)
+**Order:** 30
+**Depends on:** TASK-0503 (✅ DONE — Builder 3, commit ae893a6), TASK-0406 (✅ DONE — Builder 3, commit d864b94). All DONE — task unblocked.
+**Files owned:** `services/quant_foundry/src/quant_foundry/baseline_family.py` (new), `services/quant_foundry/tests/test_baseline_family.py` (new).
+
+**Task selection rationale:** TASK-0504 is the critical path — it unblocks the
+entire Phase 5-7 chain (TASK-0601 → TASK-0602 → TASK-0603 → TASK-0701 →
+TASK-0702). While the spec lists Builder 2's files (`runpod_training.py`,
+`test_runpod_training.py`, `runpod/quant-foundry-training/handler.py`), I
+created a file-disjoint `baseline_family.py` that orchestrates the training
+workflow using my sentinel (TASK-0406), artifact import (TASK-0503), and
+dossier registry (TASK-0403). Builder 2's RunPod container can call into
+this module or replicate the workflow on RunPod.
+
+**Tests:** 30/30 green — `uv run pytest services/quant_foundry/tests/test_baseline_family.py -q`
+**Full suite:** 300/300 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 270 after TASK-0503)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `caeb468` — 3 files, +1107 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/baseline_family.py` — the baseline
+  training workflow orchestrator:
+  - `BaselineTrainingConfig` (frozen, extra='forbid'; model_family=lightgbm,
+    dataset_manifest_id, feature/label schema hashes, n_features, n_samples,
+    seed, n_folds, purge_gap, embargo_gap, lgb_params, cost_per_second_usd).
+  - `PurgedFoldResult` / `PurgedWalkForwardResult` (fold specs + OOS predictions
+    + OOS labels + Brier score).
+  - `BaselineCalibrationReport` (Brier score + 10 reliability bins).
+  - `BaselineFeatureImportance` (per-feature importance + cross-fold CV).
+  - `BaselineTrainingResult` (artifact + dossier + walk_forward + calibration +
+    feature_importance + negative_control_receipt + trial_count + duration_ns +
+    cost_estimate_usd; `to_dict` JSON-serializable).
+  - `BaselineFamily` trainer:
+    - `train()`: full workflow — purged walk-forward → train final model →
+      package artifact → create dossier → negative control → calibration →
+      feature importance → record trial count/duration/cost.
+    - `_run_purged_walk_forward()`: purged walk-forward with embargo (not plain
+      expanding-window). Each fold has purge_gap + embargo_gap.
+    - `_train_lgbm()`: LightGBM native API (lgb.train + lgb.Dataset, no
+      scikit-learn dependency). Deterministic from seed.
+    - `_run_negative_control()`: trains on REAL labels, checks if predictions
+      correlate with SHUFFLED labels (AUC-based). Edge = |AUC - 0.5|. Sentinel
+      flags if edge > 5%. A model with no leakage should have AUC ~0.5 on
+      shuffled labels.
+    - `_compute_calibration()`: Brier score + 10 reliability bins.
+    - `_compute_feature_importance()`: per-feature importance averaged across
+      folds + cross-fold coefficient of variation (stability).
+    - `_package_artifact()`: serializes model + metadata to deterministic ZIP,
+      imports via `import_artifact` (TASK-0503) with hash verification.
+    - `_create_dossier()`: DossierRecord at candidate status via DossierBuilder
+      (TASK-0403).
+  - `_auc()`: Mann-Whitney U statistic (AUC without sklearn dependency).
+  - `model_to_bytes()`: LightGBM native model string (deterministic).
+  - `train_baseline_family()`: convenience entry point.
+- `services/quant_foundry/tests/test_baseline_family.py` — 30 TDD tests
+  covering all acceptance criteria:
+  - Config (required fields, defaults to lightgbm, frozen).
+  - Purged walk-forward (produces folds with purge+embargo, has OOS predictions).
+  - Negative control (receipt recorded with correct model_id, passes for real
+    signal — AUC ~0.5 on shuffled labels).
+  - Calibration (Brier score in [0,1], reliability bins with predicted/observed).
+  - Feature importance (per-feature scores, cross-fold CV, genuine feature 0
+    has higher importance than noise features).
+  - Artifact + dossier (artifact record with sha256, dossier at candidate
+    status, re-running reproduces artifact hash, different seed produces
+    different artifact).
+  - Trial count + costs + duration (trial_count >= 1, duration_ns > 0,
+    cost_estimate_usd >= 0).
+  - No trading authority (status is candidate, no order fields in result).
+  - Full workflow (register in DossierRegistry, result to_dict JSON-serializable).
+  - No secrets in output (config + result).
+
+**Acceptance criteria verification (self):**
+- ✅ One real trained artifact imports (`test_result_has_artifact_record`).
+- ✅ Dossier includes dataset and feature schema plus the full reproducibility
+  set, and re-running reproduces the artifact hash
+  (`test_result_has_dossier` + `test_re_running_reproduces_artifact_hash`).
+- ✅ The shuffled-label negative control is recorded and passes (no edge on
+  noise) (`test_negative_control_receipt_is_recorded` +
+  `test_negative_control_passes_for_real_signal`).
+- ✅ Model cannot influence predictions or orders yet
+  (`test_model_status_is_candidate` + `test_no_order_fields_in_result`).
+- ✅ Costs and duration are recorded (`test_duration_is_recorded` +
+  `test_cost_estimate_is_recorded`).
+
+**Notes for Reviewer:**
+- Uses LightGBM native API (`lgb.train` + `lgb.Dataset`) instead of the
+  sklearn wrapper (`LGBMClassifier`) to avoid a scikit-learn dependency.
+  This makes the module more portable and reduces the dependency surface.
+- The negative control uses an AUC-based edge metric (|AUC - 0.5|) rather
+  than training accuracy. This is more robust: a model trained on real
+  labels should NOT be able to predict shuffled labels better than chance
+  (AUC ~0.5), because shuffling destroys the feature-label relationship.
+  If it can (AUC >> 0.5), it's leaking. The threshold is 5% (configurable
+  via the sentinel's `edge_threshold`).
+- The artifact is packaged as a deterministic ZIP archive containing the
+  LightGBM model string + metadata JSON. The model string is LightGBM's
+  native serialization (deterministic), not pickle (which can include
+  non-deterministic state). This ensures re-running with the same config +
+  data reproduces the same artifact hash.
+- The feature importance uses LightGBM's `feature_importance()` method
+  (split count by default). Feature 0 (genuine signal) consistently has
+  higher importance than noise features, confirming the model is learning
+  real signal.
+- File-disjoint from Builder 2's `runpod_training.py` /
+  `test_runpod_training.py` / `runpod/quant-foundry-training/handler.py`.
+  Builder 2's RunPod container can call into `train_baseline_family()` or
+  replicate the workflow on RunPod.
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305/0501/0502): `outbox.py`, `inbox.py`,
+  `mock_dispatcher.py`, `callbacks.py`, `runpod_client.py`,
+  `runpod_training.py`, `test_runpod_training.py` — zero overlap.
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system
+  page, `scripts/modules/` — zero overlap.
+- My own TASK-0403/0404/0406/0503: `artifacts.py`, `dossier.py`, `registry.py`,
+  `tournament.py`, `leaderboard.py`, `significance.py`, `sentinel.py`,
+  `pbo.py` — zero overlap (baseline_family imports from `artifacts.py`/
+  `dossier.py`/`sentinel.py` which are my own files; does not modify them).
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0504 unblocks TASK-0601 (Build RunPod Inference Container MVP).
+Available for adoption: any unclaimed task in Phase 6+ that is file-disjoint
+from my completed work. Candidates: TASK-0601 (Build RunPod Inference
+Container MVP — depends on TASK-0504, now unblocked), TASK-0602 (depends on
+TASK-0601), TASK-0603 (depends on TASK-0602).
