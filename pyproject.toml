@@ -22,6 +22,7 @@ members = [
     "services/backtester",
     "services/jobs",
     "services/strategy_host",
+    "services/quant_foundry",
 ]
 
 [tool.uv.sources]

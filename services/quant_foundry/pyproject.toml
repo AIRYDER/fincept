@@ -1,0 +1,31 @@
+[project]
+name = "quant_foundry"
+version = "0.1.0"
+description = "Quant Foundry: contracts, ids, signatures, outbox/inbox for external ML workers (RunPod path). No GPU dependencies. Shadow-only predictions until promotion."
+requires-python = ">=3.12"
+dependencies = [
+  "fincept-core",
+  "pydantic>=2.7",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quant_foundry"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+
+[tool.uv.sources]
+fincept-core = { workspace = true }
