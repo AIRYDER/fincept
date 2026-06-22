@@ -727,7 +727,7 @@ for production durability.
 ### TASK-0305: Add Mock Dispatcher and Mock Callback Processor
 
 **Order:** 20
-**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit `26183c8`)
   Files owned: `services/quant_foundry/src/quant_foundry/mock_dispatcher.py`,
   `services/quant_foundry/src/quant_foundry/callbacks.py`,
   `services/quant_foundry/tests/test_mock_flow.py`. File-disjoint from
@@ -782,7 +782,7 @@ uv run pytest services/quant_foundry/tests/test_mock_flow.py -q
 ### TASK-0306: Add Quant Foundry API Route in Local Mock Mode
 
 **Order:** 21
-**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit `3ec6c06`)
   Files owned: `services/quant_foundry/src/quant_foundry/gateway.py`,
   `services/api/src/api/routes/quant_foundry.py`,
   `services/api/tests/test_quant_foundry.py`. Additive-only edit to
