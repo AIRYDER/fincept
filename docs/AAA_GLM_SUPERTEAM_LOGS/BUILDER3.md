@@ -20,7 +20,7 @@ I released TASK-0402 back to Builder 1, reverted my ownership markers in
 
 ### TASK-0403: Build the Dossier Registry — ADOPTED 2026-06-22
 
-**Status:** IN PROGRESS
+**Status:** COMPLETED 2026-06-22 (commit `de56c38`)
 **Order:** 24
 **Depends on:** TASK-0401 (✅ DONE — Builder 1, commit 855f01b) and TASK-0402 (Builder 1, IN PROGRESS)
 
@@ -101,4 +101,100 @@ I released TASK-0402 back to Builder 1, reverted my ownership markers in
 
 ## Completion Log
 
-(pending)
+### TASK-0403 — COMPLETED 2026-06-22 (commit `de56c38`)
+
+**Status:** REVIEW (awaiting Reviewer)
+**Tests:** 25/25 green — `uv run pytest services/quant_foundry/tests/test_dossier.py -q`
+**Full suite:** 121/121 green — `uv run pytest services/quant_foundry/tests -q` (no regressions)
+**Lint:** `uv run ruff check` — All checks passed (4 files)
+**Type:** `uv run mypy` — Success: no issues found in 3 source files
+**Commit:** `de56c38` — 7 files, +4259 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/artifacts.py` — pull-based, hash-verified
+  artifact import. `ArtifactRecord` (frozen, extra='forbid'). `verify_artifact_hash`
+  (fail closed on mismatch — security event). `import_artifact` (URI scheme allowlist:
+  file:// only for MVP; path traversal rejected via `..` segment check; Windows
+  drive-letter path handling). `UnsupportedUriError` / `ArtifactHashMismatchError`
+  distinct error types. `artifact_content_hash` helper for dossier immutability.
+- `services/quant_foundry/src/quant_foundry/dossier.py` — `DossierStatus` StrEnum
+  (candidate / research_approved / shadow_approved / paper_approved / rejected).
+  `DossierRecord` (frozen, extra='forbid') carrying the full reproducibility set
+  (dataset/feature/label hashes, code SHA, lockfile hash, image digest, seeds,
+  hardware class) + `trial_count` (for Deflated Sharpe — cross-cutting rigor §2) +
+  `blocking_issues` list (sentinel/tournament write into) + evidence refs (by id,
+  no code coupling) + `content_hash` immutability key (always recomputed in
+  `model_post_init` AND overridden `model_copy` so a copy that changes content
+  fields produces a new hash — Pydantic v2's default `model_copy` does NOT re-run
+  `model_post_init`). `DossierBuilder` assembles a dossier from an artifact +
+  dataset manifest ref + training metadata, pulling reproducibility fields from
+  the `ArtifactRecord` so dossier and artifact cannot drift.
+- `services/quant_foundry/src/quant_foundry/registry.py` — `DossierRegistry`
+  (filesystem JSONL at `<base_dir>/dossier_registry.jsonl`, append-only, fsync,
+  restart-safe via JSONL replay, last record per model_id wins). `register`
+  idempotent by `(model_id, content_hash)`; rejects same model_id + different
+  content as a security event (mirrors outbox/inbox diff-hash invariant from
+  TASK-0304). `get(model_id)`, `get_by_hash(content_hash)`, `list(status=)`.
+  `add_blocking_issue` append-only (sentinel/tournament write into; hard gate on
+  promotion). `registered_at_ns` stamped on first registration.
+- `services/quant_foundry/tests/test_dossier.py` — 25 TDD tests covering every
+  acceptance criterion: hash verification (match + bad hash + malformed hash),
+  artifact import (file scheme success + bad hash rejection + unsupported URI
+  scheme rejection + path traversal rejection), ArtifactRecord contract (frozen +
+  extra='forbid'), DossierRecord reproducibility set + trial_count + blocking_issues,
+  DossierStatus lifecycle enum, DossierBuilder assembly + empty model_id rejection,
+  registry register/get/list/get_by_hash, idempotent register, same model_id +
+  different content rejection (security event), restart durability, list filter by
+  status, add_blocking_issue (append-only + unknown model_id), no secrets in
+  records, end-to-end local model gets a dossier.
+
+**Acceptance criteria verification (self):**
+- ✅ Existing local model can get a dossier (`test_end_to_end_local_model_gets_dossier`).
+- ✅ Mock artifact imports with hash verification (`test_import_artifact_file_scheme_succeeds`).
+- ✅ Bad hash is rejected (`test_verify_artifact_hash_rejects_bad_hash` +
+  `test_import_artifact_rejects_bad_hash`).
+- ✅ Dossier status is visible through read API (`test_registry_list_filters_by_status` +
+  `test_registry_get_by_hash` + `test_registry_register_and_get`).
+- ✅ Full reproducibility set on every dossier (cross-cutting rigor §3).
+- ✅ trial_count for Deflated Sharpe (cross-cutting rigor §2).
+- ✅ blocking_issues append-only (sentinel/tournament write into).
+- ✅ Immutable by version/hash (content_hash always recomputed).
+- ✅ URI scheme allowlist (file:// only; http/https/arbitrary rejected).
+- ✅ Path traversal rejected (defense-in-depth).
+- ✅ Restart-durable (JSONL replay).
+- ✅ No secrets in records (negative tests for token/api_key/secret/password/broker_account/credential).
+
+**Notes for Reviewer:**
+- `schemas.ModelDossier` + `schemas.ArtifactManifest` (TASK-0302) intentionally NOT
+  modified — shared contract track. The richer `DossierRecord` lives in `dossier.py`
+  as a local model, mirroring how Builder 1 kept `SettlementRecord` local in
+  `outcomes.py` instead of modifying `schemas.PredictionOutcome`. If the
+  Reviewer/Coordinator prefer to unify these later, that's a follow-up that can be
+  done without re-registering dossiers (the JSONL records carry all fields needed
+  to reconstruct either shape).
+- `services/api/src/api/routes/quant_foundry.py` intentionally NOT created —
+  TASK-0306 owns the API route. The registry exposes a Python read API only for MVP.
+- Dossiers reference settlement evidence and shadow predictions by id/ref, NOT by
+  importing `settlement.py` / `shadow_ledger.py` — keeps file-disjoint from
+  Builder 1's tracks and avoids coupling the dossier to evidence storage internals.
+- `content_hash` is always recomputed (in `model_post_init` and in the overridden
+  `model_copy`) so the immutability invariant holds even after Pydantic v2's
+  `model_copy` (which does NOT re-run `model_post_init` by default). This is
+  pinned by `test_registry_rejects_same_model_id_different_content`.
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305): `outbox.py`, `inbox.py`, `mock_dispatcher.py`,
+  `callbacks.py` — zero overlap.
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system page,
+  `scripts/modules/` — zero overlap.
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me (consumed
+  `hash_payload` only from `ids.py`).
+
+**Next:** TASK-0403 unblocks TASK-0404 (Tournament Scoring Skeleton, Order 25,
+depends on TASK-0401 + TASK-0403 — both DONE) and TASK-0406 (Leakage and Overfit
+Sentinel, Order 26b, depends on TASK-0403 + TASK-0404 + TASK-0405). Available
+for adoption if no other builder has claimed them.

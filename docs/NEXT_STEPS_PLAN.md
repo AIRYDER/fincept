@@ -977,13 +977,14 @@ uv run pytest services/quant_foundry/tests/test_shadow_ledger.py -q
 
 ### TASK-0403: Build the Dossier Registry
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `de56c38`). REVIEW.
 > Files owned: `services/quant_foundry/{dossier,artifacts,registry}.py` + `tests/test_dossier.py`.
 > File-disjoint from TASK-0401/0402 (Builder 1), TASK-0304/0305 (Builder 2),
 > TASK-0405 (Builder 4), TASK-0203 (Builder 5).
 > `schemas.py` is NOT modified (ModelDossier + ArtifactManifest already defined by TASK-0302;
 > consumed read-only). `services/api/routes/quant_foundry.py` is NOT created here (TASK-0306 owns
 > the API route); the registry exposes a Python read API only for MVP.
+> Tests: 25/25 green; full suite 121/121 green; ruff + mypy clean.
 
 **Order:** 24
 

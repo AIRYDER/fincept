@@ -1615,11 +1615,11 @@ uv run pytest services/quant_foundry/tests/test_shadow_ledger.py -q
 
 ---
 
-### TASK-0403: Build the Dossier Registry  <!-- OWNER: Builder 3 (GLM) — ADOPTED 2026-06-22 -->
+### TASK-0403: Build the Dossier Registry  <!-- OWNER: Builder 3 (GLM) — COMPLETED 2026-06-22 (commit de56c38) -->
 
 **Order:** 24
 
-**Owner:** Builder 3 (GLM) — IN PROGRESS 2026-06-22. See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER3.md`.
+**Owner:** Builder 3 (GLM) — COMPLETED 2026-06-22 (commit `de56c38`). See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER3.md`.
 File-disjoint from TASK-0401 (Builder 1: settlement), TASK-0402 (Builder 1: shadow ledger),
 TASK-0304/0305 (Builder 2: outbox/inbox/mock dispatcher), TASK-0405 (Builder 4: feature lake),
 TASK-0203 (Builder 5: module control).
