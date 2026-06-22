@@ -2119,6 +2119,12 @@ features in research only. Add analog explanations.
 
 ### TASK-1003: Conformal Prediction Risk Gate (Order 46)
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/conformal_gate.py` (new),
+> `services/quant_foundry/tests/test_conformal_gate.py` (new).
+> Creates a file-disjoint conformal prediction risk gate. Imports from my
+> `shadow_inference.py` (TASK-0601). Does NOT modify it.
+
 Produce uncertainty intervals (q10/q50/q90) and abstain when the model
 cannot make a reliable prediction. Feed uncertainty into tournament
 and paper bridge.
