@@ -546,3 +546,126 @@ lake (TASK-0405) → leakage/overfit sentinel (TASK-0406). The next phase
 (Phase 5: RunPod Research Foundry MVP) begins with TASK-0501 (Builder 2,
 in progress). Available for adoption: any unclaimed task in Phase 5+ that
 is file-disjoint from my completed work.
+
+---
+
+### TASK-0503: Add Artifact Import From Object Storage — ADOPTED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `ae893a6`)
+**Order:** 29
+**Depends on:** TASK-0403 (✅ DONE — Builder 3, commit de56c38), TASK-0502 (✅ DONE — Builder 2, commit b3fc4e1). All DONE — task unblocked.
+**Files owned:** `services/quant_foundry/src/quant_foundry/artifacts.py` (extended), `services/quant_foundry/tests/test_artifacts.py` (new), `docs/ENVIRONMENT.md` (new).
+
+**Task selection rationale:** TASK-0503 extends my own `artifacts.py` (TASK-0403)
+with S3/object storage URI support, size limits, content type validation,
+quarantine/staging path, and security receipts. It is the natural next step
+after TASK-0406 — the evidence loop is complete, and the next phase (Phase 5)
+needs artifact import from object storage to pull RunPod-trained models back
+into Fincept. The task touches my own files (`artifacts.py`), so I'm the
+natural owner. File-disjoint from all other active builders.
+
+---
+
+### TASK-0503 — COMPLETED 2026-06-22 (commit `ae893a6`)
+
+**Status:** REVIEW (awaiting Reviewer)
+**Tests:** 28/28 green — `uv run pytest services/quant_foundry/tests/test_artifacts.py -q`
+**Full suite:** 270/270 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 242 after TASK-0406)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `ae893a6` — 4 files, +818 lines, -25 lines (artifacts.py extended, not rewritten).
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/artifacts.py` (extended):
+  - `SecurityReceipt` (frozen, extra='forbid'; uri + reason + ts_ns + detail;
+    auto-stamps ts_ns via model_validator; `to_dict` JSON-serializable for audit).
+  - `ArtifactSizeError`, `ArtifactContentTypeError` (carry security_receipt).
+  - `UnsupportedUriError`, `ArtifactHashMismatchError` now carry security_receipt.
+  - `_ALLOWED_URI_SCHEMES` now includes `s3` (file + s3).
+  - `_validate_uri` returns `(scheme, path, bucket)` — handles s3:// URIs
+    (parses bucket from netloc, key from path, rejects `..` traversal in keys).
+  - `_read_s3_uri` delegates to an injected `s3_reader` callable (no AWS/boto3
+    coupling — credentials stay isolated in the caller).
+  - `_get_content_type` extracts file extension from URI for validation.
+  - `import_artifact` extended with:
+    - `s3_reader`: callable for S3 reads (required for s3:// URIs).
+    - `max_size_bytes`: reject oversized artifacts before hash verification.
+    - `allowed_content_types`: frozenset of allowed extensions (e.g., .pkl, .onnx).
+    - `quarantine_dir`: stage artifact to a staging path before hash verification.
+    - Every rejection (bad hash, oversized, unsupported URI, bad content type)
+      carries a `SecurityReceipt` on the exception for audit/persistence.
+- `services/quant_foundry/tests/test_artifacts.py` (new): 28 TDD tests covering
+  all acceptance criteria:
+  - file:// regression (import succeeds, bad hash rejected, unsupported scheme
+    rejected).
+  - S3 URI support (allowlisted, bad hash rejected, traversal key rejected,
+    missing s3_reader raises).
+  - Size limits (oversized rejected, within limit passes, S3 oversized rejected).
+  - Content type validation (valid passes, invalid rejected, S3 invalid rejected).
+  - Quarantine/staging (file + S3 artifacts staged to quarantine dir).
+  - Security receipts (bad hash, oversized, unsupported URI, bad content type
+    all carry receipts; receipt to_dict JSON-serializable).
+  - Valid S3 artifact can feed a dossier candidate record.
+  - No secrets in artifact output (ArtifactRecord + SecurityReceipt).
+- `docs/ENVIRONMENT.md` (new): documents URI schemes (file, s3), security
+  controls (allowlist, traversal rejection, size limit, content type, hash
+  verification, quarantine, security receipts), and environment variables
+  (QUANT_FOUNDRY_MODE, RUNPOD_API_KEY, AWS_*). Notes that AWS credentials
+  are NEVER stored in the artifact module — they stay in the s3_reader
+  callable provided by the caller.
+
+**Acceptance criteria verification (self):**
+- ✅ Bad hash rejects import (`test_file_import_rejects_bad_hash` +
+  `test_s3_uri_rejects_bad_hash`).
+- ✅ Oversized artifact rejects import (`test_oversized_artifact_rejected` +
+  `test_s3_oversized_rejected`).
+- ✅ Unsupported URI rejects import (`test_file_import_rejects_unsupported_scheme`).
+- ✅ Valid artifact gets a dossier candidate record
+  (`test_valid_s3_artifact_record_can_build_dossier`).
+
+**Notes for Reviewer:**
+- S3 reads are delegated to an injected `s3_reader` callable. This keeps the
+  artifact module free of AWS/boto3 coupling — credentials stay isolated in
+  the caller. The caller is responsible for providing an `s3_reader` that
+  handles authentication (e.g., via IAM roles, STS tokens, or environment
+  credentials). The artifact module never sees AWS credentials.
+- The `SecurityReceipt` is attached to every rejection exception as
+  `exc.security_receipt`. This is an audit trail for every failed import
+  attempt — the promotion gate (TASK-0702) and the sentinel (TASK-0406) can
+  consume these receipts to block promotion on repeated import failures.
+- The `quarantine_dir` parameter stages the artifact to a staging path
+  before hash verification. This means the registry never reads directly
+  from the source URI — the artifact is copied to a controlled location
+  first, so a compromised source cannot exploit a read-time vulnerability.
+- The `allowed_content_types` parameter validates the file extension, not
+  the MIME type. This is a simple, deterministic check; a richer
+  implementation could use `python-magic` or `filetype` to sniff the actual
+  content type from the bytes. For the MVP, extension validation is
+  sufficient and avoids adding a dependency.
+- The `max_size_bytes` parameter defaults to `None` (no limit) for backward
+  compatibility with TASK-0403 callers. Production deployments should set
+  this to a reasonable limit (e.g., 500 MB) to prevent DoS via oversized
+  blobs.
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305/0501/0502): `outbox.py`, `inbox.py`,
+  `mock_dispatcher.py`, `callbacks.py`, `runpod_client.py`, `runpod_training.py` —
+  zero overlap.
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system
+  page, `scripts/modules/` — zero overlap.
+- My own TASK-0403/0404/0406: `dossier.py`, `registry.py`, `tournament.py`,
+  `leaderboard.py`, `significance.py`, `sentinel.py`, `pbo.py` — zero overlap
+  (TASK-0503 extends `artifacts.py` which is my own file from TASK-0403;
+  does not modify the others).
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0503 completes the artifact import pipeline for Phase 5.
+Available for adoption: any unclaimed task in Phase 5+ that is file-disjoint
+from my completed work. Candidates: TASK-0504 (Train First Real Baseline
+Model Family — depends on TASK-0503, now unblocked), TASK-0602 (Add Live
+Feature Snapshot Export — depends on TASK-0405, DONE), TASK-0603 (Store and
+Settle Shadow Predictions — depends on TASK-0402, DONE).
