@@ -86,7 +86,7 @@ async def create_job(
     _: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     gw = _require_gateway(request)
-    return gw.create_job(
+    result = gw.create_job(
         job_id=body.job_id,
         job_type=body.job_type,
         idempotency_key=body.idempotency_key,
@@ -94,6 +94,18 @@ async def create_job(
         priority=body.priority,
         budget_cents=body.budget_cents,
     )
+    # Budget guard rejections (fail-closed): the job was NOT enqueued.
+    if result.get("error_code") == "budget_exceeded":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=result.get("detail", "monthly budget exceeded"),
+        )
+    if result.get("error_code") == "budget_kill_switch":
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=result.get("detail", "budget kill switch is active"),
+        )
+    return result
 
 
 @router.get("/jobs")

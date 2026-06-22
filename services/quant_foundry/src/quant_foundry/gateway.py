@@ -33,6 +33,8 @@ import os
 import pathlib
 from typing import Any
 
+from quant_foundry.budget import BudgetGuard
+from quant_foundry.budget import from_env as budget_from_env
 from quant_foundry.callbacks import CallbackProcessor, DossierStub, ShadowLedgerStub
 from quant_foundry.inbox import CallbackInbox
 from quant_foundry.mock_dispatcher import MockDispatcher
@@ -55,6 +57,7 @@ class QuantFoundryGateway:
         shadow_only: bool,
         callback_secret: str,
         base_dir: pathlib.Path | str,
+        budget_guard: BudgetGuard | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -62,6 +65,7 @@ class QuantFoundryGateway:
         self.callback_secret = callback_secret
         self.base_dir = pathlib.Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.budget_guard = budget_guard
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -90,12 +94,14 @@ class QuantFoundryGateway:
         callback_secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
         if base_dir is None:
             base_dir = os.environ.get("QUANT_FOUNDRY_BASE_DIR", "reports/quant-foundry")
+        budget_guard = budget_from_env(pathlib.Path(base_dir) / "budget")
         return cls(
             enabled=enabled,
             mode=mode,
             shadow_only=shadow_only,
             callback_secret=callback_secret,
             base_dir=base_dir,
+            budget_guard=budget_guard,
         )
 
     # --- health / state ---
@@ -130,9 +136,38 @@ class QuantFoundryGateway:
         priority: int = 0,
         budget_cents: int | None = None,
     ) -> dict[str, Any]:
-        """Create a job. In local_mock mode, runs the full loop synchronously."""
+        """Create a job. In local_mock mode, runs the full loop synchronously.
+
+        Budget enforcement (fail-closed): if a ``budget_guard`` is configured,
+        the estimated cost (``budget_cents``) is reserved BEFORE the job is
+        enqueued. A rejected reservation returns an ``ok=False`` envelope with
+        an ``error_code`` and the job is never enqueued or dispatched. Zero-cost
+        jobs (``budget_cents`` None/0, e.g. local mock) are always allowed.
+        """
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
+        if self.budget_guard is not None:
+            decision = self.budget_guard.check_and_reserve(
+                amount_cents=budget_cents or 0,
+                job_type=job_type,
+            )
+            if not decision.allowed:
+                error_code = (
+                    "budget_kill_switch"
+                    if "kill switch" in decision.reason
+                    else "budget_exceeded"
+                )
+                return {
+                    "enabled": True,
+                    "ok": False,
+                    "job_id": job_id,
+                    "error_code": error_code,
+                    "detail": decision.reason,
+                    "budget_cents": budget_cents,
+                    "remaining_cents": decision.remaining_cents,
+                    "monthly_budget_cents": decision.monthly_budget_cents,
+                    "mode": self.mode,
+                }
         self.outbox.enqueue(
             job_id=job_id,
             job_type=job_type,
