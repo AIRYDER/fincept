@@ -1791,7 +1791,7 @@ type, and live shadow evidence.
 
 ### TASK-0702: Build Promotion Review Queue
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `60f9e61`). REVIEW.
 > Files owned: `services/quant_foundry/src/quant_foundry/promotion.py` (new),
 > `services/quant_foundry/tests/test_promotion.py` (new).
 > Creates a file-disjoint promotion review queue. Does NOT touch
@@ -1799,6 +1799,7 @@ type, and live shadow evidence.
 > `apps/dashboard/` (Builder 1's files) — those are separate tasks.
 > Imports from my `dossier.py` (TASK-0403), `sentinel.py` (TASK-0406),
 > `tournament.py` (TASK-0404), and `leaderboard_expanded.py` (TASK-0701).
+> Tests: 24/24 green; full suite 428/428 green (excl. Builder 2's in-progress file); ruff + mypy clean.
 
 **Order:** 36
 

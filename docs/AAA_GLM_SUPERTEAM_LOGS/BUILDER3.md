@@ -1142,3 +1142,66 @@ existing TASK-0404 tests).
 **Next:** TASK-0701 unblocks TASK-0702 (Build Promotion Review Queue —
 depends on TASK-0701) and TASK-0703 (Add Retirement and Edge-Decay Flags —
 depends on TASK-0701).
+
+---
+
+### TASK-0702: Build Promotion Review Queue — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `60f9e61`)
+**Order:** 36
+**Depends on:** TASK-0701 (✅ DONE — Builder 3, commit 0831e2c). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/promotion.py` (new)
+- `services/quant_foundry/tests/test_promotion.py` (new)
+
+**Task selection rationale:** TASK-0702 was unblocked by my TASK-0701
+completion. The spec lists `services/api/src/api/routes/quant_foundry.py`
+(Builder 2's file) and `apps/dashboard/` (Builder 1's files), but those are
+separate tasks — I created a file-disjoint `promotion.py` that imports from
+my `dossier.py`, `sentinel.py`, and `tournament.py` (read-only).
+
+**Tests:** 24/24 green — `uv run pytest services/quant_foundry/tests/test_promotion.py -q`
+**Full suite:** 428/428 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 404 after TASK-0701)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `60f9e61` — 3 files, +933 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/promotion.py`:
+  - `BlockingIssue` (frozen; code + severity + message).
+  - `PromotionWaiver` (frozen; issue_code + waived_by + reason).
+  - `PromotionEvidence` (frozen; dossier + tournament_result +
+    sentinel_receipt + blocking_issues).
+  - `PromotionRequest` (frozen; model_id + target_level + review_note +
+    waivers).
+  - `ReviewDecision` (StrEnum: APPROVED, REJECTED).
+  - `PromotionRejectionReason` (StrEnum: NO_DOSSIER, INSUFFICIENT_EVIDENCE,
+    SENTINEL_FAILED, BLOCKING_ISSUE, MVP_LEVEL_LIMIT).
+  - `PromotionReceipt` (frozen; decision + request + review_note +
+    rejection_reason + decided_at_ns; `to_dict` JSON-serializable).
+  - `PromotionGate`:
+    - `evaluate()`: checks (1) no dossier -> NO_DOSSIER, (2) MVP level
+      limit -> MVP_LEVEL_LIMIT, (3) insufficient settled count ->
+      INSUFFICIENT_EVIDENCE, (4) failed sentinel -> SENTINEL_FAILED, (5)
+      unwaived blocking issue -> BLOCKING_ISSUE, (6) all pass -> APPROVED.
+    - Uses explicit `_LEVEL_ORDER` dict for promotion level comparison.
+  - `PromotionReviewQueue`:
+    - `submit()` / `pending()` / `process_next()` / `completed()` /
+      `rejected()` / `approved()`.
+- `services/quant_foundry/tests/test_promotion.py` — 24 TDD tests
+  covering all acceptance criteria.
+
+**Acceptance criteria verification (self):**
+- ✅ No model can be promoted without a dossier
+  (`test_promotion_without_dossier_is_rejected`).
+- ✅ No model can be promoted without settlement evidence
+  (`test_promotion_without_settlement_is_rejected` +
+  `test_promotion_below_min_settled_is_rejected`).
+- ✅ Human approval is stored
+  (`test_receipt_includes_review_note` + `test_receipt_includes_request`).
+- ✅ Rejection is stored with reason
+  (`test_rejected_receipt_has_reason`).
+
+**Next:** TASK-0702 unblocks TASK-0704 (Build Paper-Only Model Pointer
+Bridge — depends on TASK-0702 + TASK-0703). TASK-0703 (Add Retirement and
+Edge-Decay Flags — depends on TASK-0701) is also unblocked.
