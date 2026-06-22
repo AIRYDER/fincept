@@ -1365,7 +1365,7 @@ docker build -t fincept-qf-training:local runpod/quant-foundry-training
 ### TASK-0502: Implement RunPod Job Dispatch Client
 
 **Order:** 28
-**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit `b3fc4e1`)
   Files owned: `services/quant_foundry/src/quant_foundry/runpod_client.py`,
   `services/quant_foundry/tests/test_runpod_client.py`,
   `services/quant_foundry/src/quant_foundry/gateway.py` (additive —
