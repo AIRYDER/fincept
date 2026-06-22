@@ -2132,6 +2132,13 @@ and paper bridge.
 
 ### TASK-1004: Adversarial Drift Sentinel (Order 47)
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/drift_sentinel.py` (new),
+> `services/quant_foundry/tests/test_drift_sentinel.py` (new).
+> Creates a file-disjoint adversarial drift sentinel. Imports from my
+> `retirement.py` (TASK-0703), `leaderboard_expanded.py` (TASK-0701).
+> Does NOT modify them.
+
 Detect when the current market is hostile to the active or shadow
 model set. Track feature distribution drift, calibration drift,
 provider freshness drift, prediction disagreement spikes, live edge
