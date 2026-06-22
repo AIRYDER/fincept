@@ -1448,3 +1448,56 @@ of which I built).
 tasks: TASK-1002 (Causal Market Memory Graph), TASK-1004 (Adversarial
 Drift Sentinel), TASK-1005 (Alpha Genome Lab). All are backend Python
 tasks I can do file-disjoint.
+
+---
+
+### TASK-1004: Adversarial Drift Sentinel — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `22700a7`)
+**Order:** 47
+**Depends on:** Phase 5 + Phase 6 + Phase 7 (all DONE by Builder 3). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/drift_sentinel.py` (new)
+- `services/quant_foundry/tests/test_drift_sentinel.py` (new)
+
+**Task selection rationale:** Phase 10 tasks are all backend Python tasks
+that depend on Phase 5+6+7 (all done by me). I adopted TASK-1004 next
+because it emits recommendations (LOWER_TRUST, SHADOW_ONLY, RETRAIN,
+RETIRE) that feed into my retirement.py (TASK-0703).
+
+**Tests:** 26/26 green — `uv run pytest services/quant_foundry/tests/test_drift_sentinel.py -q`
+**Full suite:** 553/553 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 527 after TASK-1003)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `22700a7` — 3 files, +737 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/drift_sentinel.py`:
+  - `DriftIndicator` (StrEnum: FEATURE_DISTRIBUTION_DRIFT, CALIBRATION_DRIFT,
+    PROVIDER_FRESHNESS_DRIFT, PREDICTION_DISAGREEMENT_SPIKE,
+    LIVE_EDGE_DECAY).
+  - `DriftSeverity` (StrEnum: LOW, MEDIUM, HIGH, CRITICAL).
+  - `TrustRecommendation` (StrEnum: NO_ACTION, LOWER_TRUST, SHADOW_ONLY,
+    RETRAIN, RETIRE).
+  - `DriftMetric` (frozen; name + value + threshold + is_drifting).
+  - `DriftReport` (frozen; metrics + severity + recommendation +
+    is_hostile; `to_dict` JSON-serializable).
+  - `DriftSentinelConfig` (frozen; feature_drift_threshold=0.3,
+    calibration_drift_threshold=0.2, provider_freshness_drift_threshold=0.4,
+    prediction_disagreement_threshold=0.5, live_edge_decay_threshold=0.3).
+  - `DriftSentinel`:
+    - `evaluate()`: builds 5 `DriftMetric`s, counts drifting indicators,
+      computes average drift, determines severity + recommendation:
+      - 0 drifting -> LOW / NO_ACTION.
+      - 1 drifting, avg < 0.5 -> MEDIUM / LOWER_TRUST.
+      - <= 2 drifting, avg < 0.7 -> HIGH / SHADOW_ONLY.
+      - <= 3 drifting, avg < 0.85 -> CRITICAL / RETRAIN.
+      - else -> CRITICAL / RETIRE.
+      - `is_hostile` = True when 2+ drifts active.
+  - `check_drift()`: convenience entry point.
+- `services/quant_foundry/tests/test_drift_sentinel.py` — 26 TDD tests
+  covering all acceptance criteria.
+
+**Next:** TASK-1004 completes the third Phase 10 task. Remaining Phase 10
+tasks: TASK-1002 (Causal Market Memory Graph), TASK-1005 (Alpha Genome
+Lab). All are backend Python tasks I can do file-disjoint.
