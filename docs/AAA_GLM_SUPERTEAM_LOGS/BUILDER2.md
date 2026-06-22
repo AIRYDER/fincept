@@ -340,3 +340,107 @@ mode). Available for adoption if no other builder has claimed it.
 loop is now provable end-to-end over HTTP in local_mock mode. Next
 candidates: TASK-0307 (RunPod dispatcher — when RunPod is available) or
 Phase 4 evidence-loop tasks.
+
+---
+
+### TASK-0501: Build RunPod Training Container MVP — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22
+**Order:** 27
+**Depends on:** TASK-0403 (✅ DONE — dossier registry), TASK-0405 (✅ DONE — feature lake)
+
+**Why this task:**
+- Unblocked (both deps DONE). Unclaimed by any other builder.
+- In my quant_foundry domain — I own the contract pieces (schemas, signatures,
+  outbox, inbox, mock dispatcher) that the RunPod handler must use.
+- File-disjoint from ALL active builders:
+  - Builder 3 (TASK-0404 IN PROGRESS) owns `tournament.py` / `test_tournament.py`.
+  - Builder 4 (TASK-0402 IN PROGRESS) owns `shadow_ledger.py` (second adoption).
+  - Builder 5 (TASK-0203 IN PROGRESS) owns `modules.py` / dashboard.
+  - Builder 1 (TASK-0104 IN PROGRESS) owns `.github/workflows/`.
+- All files are new: `runpod_training.py`, `test_runpod_training.py`,
+  `runpod/quant-foundry-training/*`.
+
+**Plan (TDD):**
+1. Write failing tests in `test_runpod_training.py` covering:
+   - Local handler accepts RunPodTrainingRequest, produces ArtifactManifest +
+     ModelDossier + training receipt + signed callback envelope.
+   - Artifact manifest is hash-verifiable (same inputs -> same artifact_id).
+   - No broker credentials / Redis / stream access (hard invariant + test).
+   - Training failure returns a safe terminal status (not a crash).
+   - Time/budget limit enforcement (timeout -> terminal failure).
+   - Handler uses the same schemas/signatures as the mock dispatcher.
+2. Implement `runpod_training.py`:
+   - `RunPodTrainingHandler` — accepts a RunPodTrainingRequest, reads a
+     dataset manifest ref, trains a tiny baseline (deterministic from seed),
+     writes ArtifactManifest + ModelDossier, builds a RunPodCallbackEnvelope,
+     signs it, returns the callback payload + signature.
+   - `LocalTrainer` — CPU-only deterministic trainer (sklearn-free; uses
+     simple statistics or a stub model). No GPU dependency.
+   - Time/budget enforcement via a deadline check.
+3. Create `runpod/quant-foundry-training/`:
+   - `handler.py` — RunPod entrypoint that calls RunPodTrainingHandler.
+   - `Dockerfile` — minimal Python container (no broker creds, no Redis).
+   - `README.md` — build + run instructions.
+4. Run `uv run pytest services/quant_foundry/tests -q -k runpod_training` green;
+   ruff + mypy clean.
+5. Atomic commit.
+
+**What shipped:**
+- `runpod_training.py` — `RunPodTrainingHandler` + `LocalTrainer` +
+  `TrainingFailure` + `TrainingResult`. The handler accepts a
+  RunPodTrainingRequest, trains a tiny deterministic baseline (CPU-only,
+  no sklearn/GPU), writes ArtifactManifest + ModelDossier, builds a
+  RunPodCallbackEnvelope, signs it with the same `sign_callback` as the
+  mock dispatcher, and returns the callback payload + signature.
+  Deterministic: same inputs -> same artifact_id/sha256. Shadow-only
+  authority. Time/budget enforced (deadline_seconds, `>=` check so 0s
+  fails immediately). TrainingFailure = safe terminal status (error_code
+  + error_summary), not a raw crash.
+- `runpod/quant-foundry-training/handler.py` — RunPod serverless
+  entrypoint. Parses `event["input"]` into RunPodTrainingRequest, invokes
+  the handler, returns the signed callback (or error dict on failure).
+  Reads `QUANT_FOUNDRY_CALLBACK_SECRET` + `QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS`
+  from env. No broker/Redis/stream access.
+- `runpod/quant-foundry-training/Dockerfile` — minimal python:3.12-slim
+  container. No broker creds, no Redis. Only the callback secret is
+  injected at runtime.
+- `runpod/quant-foundry-training/README.md` — build + run instructions,
+  security boundary, contract, env vars, reproducibility pins.
+- `test_runpod_training.py` — 8 tests: imports, no broker credentials,
+  happy path (signed callback + dossier + artifact), hash verifiability
+  (same inputs -> same artifact_id), different seed -> different artifact,
+  training failure -> safe terminal, time limit enforced, same contract
+  as mock dispatcher.
+
+**Verification:**
+- `uv run pytest services/quant_foundry/tests/test_runpod_training.py -q` → 8 passed.
+- `uv run pytest services/quant_foundry/tests/test_runpod_training.py services/quant_foundry/tests/test_outbox.py services/quant_foundry/tests/test_inbox.py services/quant_foundry/tests/test_mock_flow.py services/quant_foundry/tests/test_schemas.py services/quant_foundry/tests/test_signatures.py services/quant_foundry/tests/test_ids.py services/api/tests/test_quant_foundry.py -q` → 72 passed.
+- `uv run ruff check` → All checks passed.
+- `uv run mypy runpod_training.py handler.py` → Success: no issues found in 2 source files.
+
+**Design notes:**
+- The handler is a pure function over its inputs — no I/O, no subprocess,
+  no network. The RunPod entrypoint (handler.py) is the only thing that
+  reads env vars; the handler itself takes the secret as a constructor
+  arg. This makes the handler unit-testable without env manipulation.
+- The `LocalTrainer` produces a deterministic stub model whose artifact
+  hash is `sha256(canonical_json(request_inputs))`. This proves the
+  contract end-to-end without ML deps. The future real trainer would
+  swap in here without changing the handler/callback contract.
+- The deadline check uses `>=` (not `>`) so a 0-second deadline fails
+  immediately — this is the test case for the timeout path.
+- The handler has NO `redis`, `broker`, `bus`, `producer`, `stream`,
+  `sig_predict_writer`, `order_writer`, or trading attributes. This is
+  enforced by a test that iterates over a known denylist.
+
+**File-disjoint confirmation:**
+- All files are new — no overlap with any active builder.
+- `schemas.py`, `signatures.py`, `ids.py` consumed read-only.
+- No edit to `main.py`, `config.py`, or any shared file.
+
+**Next:** TASK-0501 unblocks TASK-0502 (RunPod Job Dispatch Client) and
+TASK-0503 (Artifact Import From Object Storage). The RunPod training
+contract is now provable end-to-end locally; the next step is wiring the
+dispatcher to actually send jobs to RunPod (TASK-0502) and pull artifacts
+back (TASK-0503).

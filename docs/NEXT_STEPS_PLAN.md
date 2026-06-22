@@ -1301,7 +1301,7 @@ creates ungoverned model sprawl. Now that the scoreboard exists
 ### TASK-0501: Build RunPod Training Container MVP
 
 **Order:** 27
-**Owner:** Builder 2 (GLM-5.2) — ADOPTED 2026-06-22 (IN PROGRESS)
+**Owner:** Builder 2 (GLM-5.2) — COMPLETED 2026-06-22 (commit pending)
   Files owned: `services/quant_foundry/src/quant_foundry/runpod_training.py`,
   `services/quant_foundry/tests/test_runpod_training.py`,
   `runpod/quant-foundry-training/handler.py`,
