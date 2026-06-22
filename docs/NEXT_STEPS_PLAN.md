@@ -727,6 +727,13 @@ for production durability.
 ### TASK-0305: Add Mock Dispatcher and Mock Callback Processor
 
 **Order:** 20
+**Owner:** Builder 2 (GLM-5.2) — ADOPTED 2026-06-22 (IN PROGRESS)
+  Files owned: `services/quant_foundry/src/quant_foundry/mock_dispatcher.py`,
+  `services/quant_foundry/src/quant_foundry/callbacks.py`,
+  `services/quant_foundry/tests/test_mock_flow.py`. File-disjoint from
+  TASK-0402 (Builder 3: shadow_ledger.py — I use a stub, not the real
+  ledger), TASK-0405 (Builder 4: feature_lake.py), TASK-0203 (Builder 5:
+  modules route). See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER2.md`.
 
 **Objective:** Prove the entire Fincept-to-worker-to-Fincept loop
 without RunPod.
@@ -1109,7 +1116,7 @@ cannot interrogate is itself a risk.
 
 ### TASK-0405: Build Feature Lake Builder MVP
 
-> **Owner:** Builder 4 (GLM) — ADOPTED 2026-06-22 (BUILDING, TDD, fixture-backed).
+> **Owner:** Builder 4 (GLM) — COMPLETED 2026-06-22 (commit `7f704bd`, 18/18 tests + ruff + mypy clean).
 > Files owned: `services/quant_foundry/{feature_lake,dataset_manifest,feature_availability}.py` + `tests/test_feature_lake.py`.
 > `schemas.py` and `services/features/computer.py` are NOT touched (richer manifest kept local; fixtures only).
 
