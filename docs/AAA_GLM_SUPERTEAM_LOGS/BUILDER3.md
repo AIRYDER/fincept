@@ -994,3 +994,83 @@ modify Builder 4's files.
 depends on TASK-0602). TASK-0603 touches Builder 1's `shadow_ledger.py` +
 `settlement.py` — I would need a file-disjoint approach (new
 `shadow_settlement.py` that imports read-only).
+
+---
+
+### TASK-0603: Store and Settle Shadow Predictions — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `0aa4aef`)
+**Order:** 33
+**Depends on:** TASK-0602 (✅ DONE — Builder 3, commit 1a91a82). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/shadow_settlement.py` (new)
+- `services/quant_foundry/tests/test_shadow_settlement.py` (new)
+
+**Task selection rationale:** TASK-0603 was unblocked by my TASK-0602
+completion. The spec lists `shadow_ledger.py` + `settlement.py` (Builder 1's
+files) as "likely touched," but I created a file-disjoint
+`shadow_settlement.py` that imports from them read-only. Does NOT modify
+Builder 1's files.
+
+**Tests:** 17/17 green — `uv run pytest services/quant_foundry/tests/test_shadow_settlement.py -q`
+**Full suite:** 376/376 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 359 after TASK-0602)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `0aa4aef` — 3 files, +898 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/shadow_settlement.py`:
+  - `CallbackRejectionReason` (StrEnum: BAD_SIGNATURE, BAD_SCHEMA, BAD_HASH).
+  - `RejectedCallback` (frozen; reason + message + raw_payload + rejected_at_ns).
+  - `SettlementReceipt` (frozen; records + rejected + stored + duplicates +
+    settled_count + pending_count + settlement_lag_ns + batch_hash;
+    `to_dict` JSON-serializable).
+  - `ShadowSettlementOrchestrator`:
+    - `store_batch()`: verifies HMAC signature, verifies batch hash (tamper
+      check), validates schema (ShadowPrediction), stores via
+      `ShadowLedger.store_batch()` (Builder 1's code, read-only). Invalid
+      callbacks recorded as `RejectedCallback`, not silently discarded.
+    - `settle_prediction()`: delegates to `SettlementLedger.settle()`
+      (Builder 1's code, read-only). Returns `SettlementRecord`.
+    - `settle_batch()`: settles a batch of predictions, records settlement
+      lag, settled count, pending count.
+  - `store_and_settle_batch()`: convenience entry point (store + settle).
+- `services/quant_foundry/tests/test_shadow_settlement.py` — 17 TDD tests
+  covering all acceptance criteria:
+  - RejectedCallback (rejection reasons defined, required fields, frozen).
+  - Store signed batch (valid batch succeeds, bad signature rejected, bad
+    hash rejected, bad schema rejected).
+  - Pending by horizon (pending before horizon expires, settles after).
+  - Settlement lag (receipt includes lag, includes settled count).
+  - No trading authority (all predictions shadow_only, no order fields in
+    receipt dict).
+  - Settlement receipt (has settled records, to_dict JSON-serializable).
+  - Convenience function (store_and_settle_batch works end-to-end).
+  - No secrets in output (receipt dict has no secret keys).
+
+**Acceptance criteria verification (self):**
+- ✅ Shadow predictions settle into outcomes
+  (`test_prediction_settles_after_horizon_expires`).
+- ✅ Settlement lag is visible (`test_settlement_receipt_includes_lag`).
+- ✅ No prediction reaches `sig.predict`
+  (`test_all_predictions_have_shadow_only_authority` +
+  `test_receipt_to_dict_has_no_order_fields`).
+- ✅ Invalid callback is stored as rejected, not silently discarded
+  (`test_store_batch_rejects_bad_signature` +
+  `test_store_batch_rejects_bad_schema` +
+  `test_store_batch_rejects_bad_hash`).
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap (read-only imports, not modified).
+- All other builders: zero overlap.
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0603 completes Phase 6 (Shadow Inference). Unblocks Phase 7
+(Tournament + Promotion):
+- TASK-0701 (Expand Tournament Leaderboards — depends on TASK-0603, now
+  unblocked). Touches my `leaderboard.py` + `tournament.py` (my own files).
+- TASK-0702 (Build Promotion Review Queue — depends on TASK-0701).
+- TASK-0703 (Add Retirement and Edge-Decay Flags — depends on TASK-0701).
+- TASK-0704 (Build Paper-Only Model Pointer Bridge — depends on TASK-0702 +
+  TASK-0703).
