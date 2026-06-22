@@ -1042,6 +1042,13 @@ uv run pytest services/api/tests -q -k quant_foundry
 
 ### TASK-0404: Build Tournament Scoring Skeleton
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, fixture-backed).
+> Files owned: `services/quant_foundry/{tournament,leaderboard,significance}.py` + `tests/test_tournament.py`.
+> File-disjoint from TASK-0401/0402 (Builder 1), TASK-0304/0305 (Builder 2),
+> TASK-0405 (Builder 4), TASK-0203 (Builder 5). Consumes `SettlementRecord` and
+> `DossierRecord` shapes via a local `ScoringInput` schema (no import of
+> `outcomes.py`/`settlement.py`/`dossier.py` — keeps file-disjoint).
+
 **Order:** 25
 
 **Objective:** Rank models based on settled evidence and baseline

@@ -2,11 +2,59 @@
 
 **Agent:** Builder 3 (GLM-5.2)
 **Joined:** 2026-06-22
-**Track:** Quant Foundry evidence-loop foundations (dossier registry)
+**Track:** Quant Foundry evidence-loop foundations (dossier registry + tournament scoring)
 
 ---
 
 ## Task Adoption Log
+
+### TASK-0404: Build Tournament Scoring Skeleton — ADOPTED 2026-06-22
+
+**Status:** IN PROGRESS (TDD, fixture-backed)
+**Order:** 25
+**Depends on:** TASK-0401 (✅ DONE — Builder 1, commit 855f01b) and TASK-0403 (✅ DONE — Builder 3, commit de56c38). Both DONE — task unblocked.
+**Files owned:** `services/quant_foundry/src/quant_foundry/{tournament,leaderboard,significance}.py` + `services/quant_foundry/tests/test_tournament.py`
+
+**Task selection rationale:**
+- TASK-0403 (my previous task) is COMPLETED and committed (`de56c38`). It unblocks TASK-0404
+  (Order 25, depends on TASK-0401 + TASK-0403 — both DONE) and TASK-0406 (Order 26b,
+  depends on TASK-0403 + TASK-0404 + TASK-0405 — TASK-0404 not yet done, so 0406 still blocked).
+- No other builder has claimed TASK-0404 (verified via `findstr /i "0404 tournament"` across
+  all BUILDER*.md logs — only Builder 1's note that settlement output "can feed tournament
+  scoring" appears, which is a forward reference, not a claim).
+- File-disjoint from all active tracks: tournament/leaderboard/significance are new files;
+  I will NOT import `outcomes.py`/`settlement.py`/`dossier.py`/`shadow_ledger.py`/
+  `feature_lake.py`/`outbox.py`/`inbox.py` — the tournament consumes settled predictions and
+  dossier metadata via a local `ScoringInput` schema (plain dataclass/pydantic model), so
+  Builder 1's evidence storage internals can change without breaking the tournament and
+  vice versa. This mirrors how Builder 1 kept `SettlementRecord` local in `outcomes.py`
+  instead of modifying `schemas.PredictionOutcome`, and how I kept `DossierRecord` local
+  in `dossier.py` instead of modifying `schemas.ModelDossier`.
+- The tournament is the scoreboard that prevents overfit models from being promoted: a
+  model with high ML score but poor cost-adjusted return must lose to a simpler profitable
+  one. This is the second half of the promotion decision (the dossier is the first half).
+
+**Plan (TDD):**
+1. Write failing tests in `test_tournament.py` covering every acceptance criterion:
+   - Two fixture models rank deterministically.
+   - High-ML-score / poor-cost-return model loses to simpler profitable one.
+   - Noise/shuffled-label model fails the gate (negative control).
+   - Beats-baseline-gross-but-not-net model is blocked.
+   - Deflated Sharpe + bootstrap p-value recorded and shown.
+   - Stale or insufficient evidence blocks promotion.
+   - Tournament output can feed a promotion packet (structured `TournamentResult`).
+2. Implement `significance.py`: stationary/block bootstrap p-value vs. baseline
+   (respecting horizon-overlap autocorrelation — NOT an IID t-test), Deflated Sharpe
+   Ratio (discounts for trial count + return non-normality).
+3. Implement `tournament.py`: `ScoringInput` schema (carries trial count + OOS return
+   series, not just summary stats — bootstrap needs the series), deterministic baseline
+   comparison (zero-skill / naive persistence / buy-and-hold), explainable weighted score
+   over the components, blocking-issues list, stale-evidence handling, minimum-settled-
+   sample gate (`insufficient-evidence` status).
+4. Implement `leaderboard.py`: `Leaderboard` ranking models by tournament score, with
+   `TournamentResult` per model (score components, p-value, DSR, blocking issues,
+   promotion recommendation).
+5. Run pytest + ruff + mypy clean; atomic commit.
 
 ### TASK-0402: Add Shadow Prediction Ledger Storage — RELEASED 2026-06-22
 
