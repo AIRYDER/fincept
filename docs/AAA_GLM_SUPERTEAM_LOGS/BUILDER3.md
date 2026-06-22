@@ -1205,3 +1205,63 @@ my `dossier.py`, `sentinel.py`, and `tournament.py` (read-only).
 **Next:** TASK-0702 unblocks TASK-0704 (Build Paper-Only Model Pointer
 Bridge — depends on TASK-0702 + TASK-0703). TASK-0703 (Add Retirement and
 Edge-Decay Flags — depends on TASK-0701) is also unblocked.
+
+---
+
+### TASK-0703: Add Retirement and Edge-Decay Flags — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `ffe9ce7`)
+**Order:** 37
+**Depends on:** TASK-0701 (✅ DONE — Builder 3, commit 0831e2c). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/retirement.py` (new)
+- `services/quant_foundry/tests/test_retirement.py` (new)
+
+**Task selection rationale:** TASK-0703 was unblocked by my TASK-0701
+completion. The spec doesn't list specific files. I created a file-disjoint
+`retirement.py` that imports from my `leaderboard_expanded.py` (read-only).
+
+**Tests:** 24/24 green — `uv run pytest services/quant_foundry/tests/test_retirement.py -q`
+**Full suite:** 452/452 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 428 after TASK-0702)
+**Lint:** `uv run ruff check` — All checks passed (2 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `ffe9ce7` — 3 files, +628 lines, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/retirement.py`:
+  - `DecayReason` (StrEnum: CALIBRATION_DEGRADATION, NET_EDGE_BELOW_BASELINE,
+    FEATURE_AVAILABILITY_DEGRADATION, LATENCY_BUDGET_VIOLATION,
+    DRAWDOWN_CONTRIBUTION, STALE).
+  - `RetirementAction` (StrEnum: RETIRE, RETRAIN, MONITOR).
+  - `DecayThresholds` (frozen; max_brier_score=0.25, min_baseline_delta=0.0,
+    max_decay_score=0.3, max_days_since_settlement=30,
+    retire_decay_threshold=0.5, retrain_decay_threshold=0.3).
+  - `RetirementFlag` (frozen; model_id + reasons + action + flagged_at_ns;
+    `to_dict` JSON-serializable; no delete/deletion keys).
+  - `RetirementFlagger`:
+    - `evaluate()`: checks calibration degradation (Brier > threshold), net
+      edge below baseline (delta < threshold), stale (days > threshold or
+      is_stale), feature availability degradation (decay_score > threshold).
+      Returns `RetirementFlag` with RETIRE (decay >= 0.5), RETRAIN
+      (decay >= 0.3), or MONITOR. Returns None if healthy.
+  - `flag_model_for_retirement()`: convenience entry point.
+- `services/quant_foundry/tests/test_retirement.py` — 24 TDD tests
+  covering all acceptance criteria.
+
+**Acceptance criteria verification (self):**
+- ✅ A decayed fixture model is flagged (`test_decayed_model_is_flagged` +
+  `test_stale_model_is_flagged` + `test_calibration_degradation_is_flagged` +
+  `test_net_edge_below_baseline_is_flagged`).
+- ✅ Flag includes reason (`test_flag_includes_specific_reason` +
+  `test_flag_includes_multiple_reasons`).
+- ✅ Retirement recommendation cannot delete artifacts
+  (`test_retire_action_does_not_delete_artifacts` +
+  `test_flag_to_dict_has_no_delete_keys`).
+- ✅ Dashboard shows retire/retrain suggestion
+  (`test_retire_action_is_a_suggestion` +
+  `test_retrain_action_for_moderate_decay` +
+  `test_monitor_action_for_mild_decay`).
+
+**Next:** TASK-0703 + TASK-0702 unblock TASK-0704 (Build Paper-Only Model
+Pointer Bridge — depends on both, now unblocked). TASK-0704 is the first
+dangerous connection point (shadow -> paper).
