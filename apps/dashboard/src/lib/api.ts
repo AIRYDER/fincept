@@ -60,6 +60,9 @@ import type {
   PredictionStatsResponse,
   PromoteResponse,
   PromotionStateResponse,
+  QuantFoundryHealthResponse,
+  QuantFoundryHeartbeat,
+  QuantFoundryJob,
   RegimeResponse,
   RollbackResponse,
   ServicesResponse,
@@ -734,4 +737,17 @@ export const api = {
     request<{ ok: boolean; alert_id: string }>("/kill-switch", token, {
       method: "DELETE",
     }),
+
+  // --- quant-foundry (TASK-0801) -----------------------------------------
+  quantFoundryHealth: (token: string | null) =>
+    request<QuantFoundryHealthResponse>("/quant-foundry/health", token),
+  quantFoundryHeartbeats: (token: string | null) =>
+    request<QuantFoundryHeartbeat[]>("/quant-foundry/heartbeats", token),
+  quantFoundryJobs: (
+    token: string | null,
+    args?: { status?: string },
+  ) => {
+    const qs = args?.status ? `?status=${encodeURIComponent(args.status)}` : "";
+    return request<QuantFoundryJob[]>(`/quant-foundry/jobs${qs}`, token);
+  },
 };

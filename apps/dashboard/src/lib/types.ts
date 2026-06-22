@@ -1139,3 +1139,120 @@ export type WsFrame =
       event: { type: "prediction"; payload: Prediction };
     }
   | { topic: "alerts"; event: { type: "alert"; payload: AlertEvent } };
+
+// ---------------------------------------------------------------------------
+// On-demand module control (TASK-0203)
+// ---------------------------------------------------------------------------
+
+export type ModuleStatus =
+  | "running"
+  | "stopped"
+  | "idle"
+  | "degraded"
+  | "unknown";
+
+export type ModuleCostClass = "low" | "medium" | "high";
+
+export interface ModuleSummary {
+  module_id: string;
+  display_name: string;
+  description: string;
+  cost_class: ModuleCostClass;
+  idle_timeout_sec: number;
+  allowed_environments: string[];
+  services: string[];
+  status: ModuleStatus;
+  started_at_unix: number | null;
+  last_activity_unix: number | null;
+  idle_seconds: number;
+  idle_countdown_sec: number;
+  fresh_services: string[];
+}
+
+export interface ModulesListResponse {
+  ok: boolean;
+  modules: ModuleSummary[];
+}
+
+export interface ModuleDetailResponse {
+  ok: boolean;
+  module: ModuleSummary;
+}
+
+export interface ModuleStartResponse {
+  ok: boolean;
+  module_id: string;
+  action: "start";
+  started: boolean;
+  status: "already_running" | "launch_requested";
+  services: string[];
+  fresh_services: string[];
+  output?: string;
+}
+
+export interface ModuleControlResponse {
+  ok: boolean;
+  module_id: string;
+  action: "stop" | "restart";
+  status: "stop_requested" | "restart_requested";
+  services: string[];
+  fresh_services: string[];
+  output?: string;
+}
+
+export interface ModuleStopAllResponse {
+  ok: boolean;
+  stopped: string[];
+  ts_unix: number;
+}
+
+export interface ModuleSweepIdleResponse {
+  ok: boolean;
+  stopped: string[];
+  ts_unix: number;
+}
+
+export interface ModuleReceipt {
+  module_id: string;
+  action: "start" | "stop" | "restart" | "auto_stop";
+  status: string;
+  actor: string;
+  output?: string;
+  ts_unix: number;
+}
+
+export interface ModuleReceiptsResponse {
+  ok: boolean;
+  receipts: ModuleReceipt[];
+}
+
+// ---------------------------------------------------------------------------
+// TASK-0801: Quant Foundry overview page types.
+// Mirrors services/api/src/api/routes/quant_foundry.py + gateway.health().
+// ---------------------------------------------------------------------------
+
+export interface QuantFoundryHealthResponse {
+  enabled: boolean;
+  mode: string;
+  shadow_only?: boolean;
+  job_count?: number;
+  detail?: string;
+}
+
+export interface QuantFoundryHeartbeat {
+  worker_id: string;
+  ts_unix: number;
+  status?: string;
+}
+
+export interface QuantFoundryJob {
+  job_id: string;
+  job_type: string;
+  status: string;
+  idempotency_key?: string;
+  priority?: number;
+  budget_cents?: number | null;
+  created_at_ns?: number;
+  updated_at_ns?: number;
+  [key: string]: unknown;
+}
