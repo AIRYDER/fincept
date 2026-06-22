@@ -35,10 +35,19 @@ the article's ``created_at``; if no bar exists yet (article is newer
 than the bar feed's latest sample) we fall back to the article's
 publication minute's mark from Redis (md:last) if available, else
 omit the snapshot for that symbol.
+
+Rate-limit safety
+-----------------
+Free-tier IEX is ~200 requests/min.  An article with 10 symbols
+unfanned would consume 10 of those in a tight loop.  We bound the
+in-process concurrency with :data:`BARS_API_SEMAPHORE_LIMIT`; the
+semaphore is module-level so a long-running consumer cannot drown
+Alpaca even under backlog.  See audit R2 / P8.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import UTC, datetime
@@ -53,6 +62,7 @@ from fincept_core.clock import now_ns
 from fincept_core.events import Event
 from fincept_core.logging import get_logger
 from fincept_core.schemas import InformationEvent
+from fincept_db.provider_data import build_alpaca_news_record, write_provider_data
 from oms.alpaca.data import AlpacaDataClient, AlpacaDataError
 from oms.alpaca.marks import read_mark
 
@@ -60,6 +70,25 @@ NEWS_INDEX_KEY = "news:index"
 NEWS_INDEX_CAP = 500
 NEWS_TTL_SEC = 86_400  # 24h
 MAX_BARS_PER_SNAPSHOT = 60  # 60 mins of 1-min bars
+
+#: Concurrency ceiling for /v2/stocks/bars calls.  Free IEX is ~200 req/min
+#: so 8 concurrent callers + small jitter stays well under the limit.  The
+#: semaphore is module-level so the cap is process-global (the same process
+#: serves both ``sync_recent_news`` and ``refresh_snapshot_bars``).
+BARS_API_SEMAPHORE_LIMIT = 8
+_BARS_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _bars_semaphore() -> asyncio.Semaphore:
+    """Return the module-level semaphore, creating it on first use.
+
+    Lazy because :class:`asyncio.Semaphore` must be created inside the
+    running event loop.
+    """
+    global _BARS_SEMAPHORE
+    if _BARS_SEMAPHORE is None:
+        _BARS_SEMAPHORE = asyncio.Semaphore(BARS_API_SEMAPHORE_LIMIT)
+    return _BARS_SEMAPHORE
 
 # Headlines that match any of these patterns are skipped entirely - they
 # are filler content from Benzinga's automated feeds (listicles, halt
@@ -130,13 +159,14 @@ async def _snapshot_symbol(
     start_iso = _ns_to_iso(created_at_ns)
     end_iso = _ns_to_iso(now_ns())
     try:
-        payload = await data_client.list_bars(
-            [symbol],
-            timeframe="1Min",
-            start=start_iso,
-            end=end_iso,
-            limit=MAX_BARS_PER_SNAPSHOT,
-        )
+        async with _bars_semaphore():
+            payload = await data_client.list_bars(
+                [symbol],
+                timeframe="1Min",
+                start=start_iso,
+                end=end_iso,
+                limit=MAX_BARS_PER_SNAPSHOT,
+            )
     except AlpacaDataError as exc:
         log.debug(
             "news.bars.fetch_failed", symbol=symbol, error=str(exc)
@@ -266,6 +296,17 @@ async def sync_recent_news(
             }
 
         articles: list[dict[str, Any]] = list(payload.get("news") or [])
+        # Record provider evidence (redacted by fincept_db layer) for freshness / audit (TASK-0205)
+        try:
+            rec = build_alpaca_news_record(
+                request={"symbols": extra_symbols or [], "limit": limit, "start": start_iso},
+                response={"ok": True, "news": articles},
+                ts_event=now_ns(),
+            )
+            await write_provider_data([rec])
+        except Exception:
+            pass  # never let evidence recording break news ingest
+
         producer = Producer(redis)
         written = 0
         info_published = 0

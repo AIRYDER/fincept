@@ -164,6 +164,72 @@ def build_openbb_call_record(
     )
 
 
+def build_alpaca_news_record(
+    *,
+    request: dict[str, Any],
+    response: dict[str, Any],
+    ts_event: int | None = None,
+) -> ProviderDataRecord:
+    """Evidence record for Alpaca news ingest (used by oms.alpaca.news_sync)."""
+    clean_request = _json_safe(request)
+    clean_response = _json_safe(response)
+    articles = clean_response.get("news") if isinstance(clean_response.get("news"), list) else []
+    symbol = _clean_symbol((clean_request.get("symbols") or [""])[0] if clean_request.get("symbols") else None)
+    normalized = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "news_articles",
+        "provider": "alpaca",
+        "article_count": len(articles),
+        "symbols": clean_request.get("symbols"),
+        "start": clean_request.get("start"),
+    }
+    return _make_record(
+        provider="alpaca",
+        source="alpaca.news",
+        dataset="news",
+        endpoint="GET /v2/stocks/news",
+        symbol=symbol,
+        ts_event=ts_event,
+        request=clean_request,
+        normalized=normalized,
+        raw=clean_response,
+        row_count=len(articles),
+        ok=bool(clean_response.get("ok", True)),
+        error_type=_clean_error_type(clean_response.get("error_type")),
+    )
+
+
+def build_alpaca_mark_record(
+    *,
+    symbol: str,
+    price: Any,
+    ts_ns: int | None = None,
+) -> ProviderDataRecord:
+    """Light evidence for price mark freshness (from oms.alpaca.marks)."""
+    now = ts_ns or time.time_ns()
+    normalized = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "mark_price",
+        "provider": "alpaca",
+        "symbol": _clean_symbol(symbol),
+        "price": str(price) if price is not None else None,
+    }
+    return _make_record(
+        provider="alpaca",
+        source="alpaca.marks",
+        dataset="price.mark",
+        endpoint="md:last (redis)",
+        symbol=_clean_symbol(symbol),
+        ts_event=now,
+        request={"symbol": _clean_symbol(symbol)},
+        normalized=normalized,
+        raw={"px": str(price) if price is not None else None, "ts_ns": str(now)},
+        row_count=1,
+        ok=price is not None,
+        error_type=None,
+    )
+
+
 async def write_provider_data(records: Iterable[ProviderDataRecord]) -> int:
     rows = [_record_to_row(record) for record in records]
     if not rows:
