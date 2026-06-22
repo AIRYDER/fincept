@@ -1757,6 +1757,14 @@ decisions meaningful.
 
 ### TASK-0701: Expand Tournament Leaderboards
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/leaderboard_expanded.py` (new),
+> `services/quant_foundry/tests/test_leaderboard_expanded.py` (new).
+> Creates a file-disjoint expanded leaderboard with horizon/regime/symbol-cluster
+> slices, baseline deltas, calibration summaries, and decay indicators.
+> Imports from my `leaderboard.py` + `tournament.py` (read-only). Does NOT
+> modify them (avoids breaking existing TASK-0404 tests).
+
 **Order:** 35
 
 **Objective:** Score models by horizon, regime, symbol cluster, event
