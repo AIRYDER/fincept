@@ -1583,7 +1583,7 @@ realized outcomes but never reach `sig.predict`.
 
 ### TASK-0601: Build RunPod Inference Container MVP
 
-> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> **Owner:** Builder 3 (GLM-5.2) — COMPLETED 2026-06-22 (commit `df326d4`). REVIEW.
 > Files owned: `services/quant_foundry/src/quant_foundry/shadow_inference.py` (new),
 > `services/quant_foundry/tests/test_shadow_inference.py` (new),
 > `runpod/quant-foundry-inference/handler.py` (new),
@@ -1592,6 +1592,7 @@ realized outcomes but never reach `sig.predict`.
 > File-disjoint from Builder 2's `runpod/quant-foundry-training/` (different
 > subdirectory). Imports `ShadowPrediction` from `schemas.py` (read-only) and
 > `ArtifactRecord` from my `artifacts.py` (TASK-0503).
+> Tests: 30/30 green; full suite 330/330 green (excl. Builder 2's in-progress file); ruff + mypy clean.
 
 **Order:** 31
 

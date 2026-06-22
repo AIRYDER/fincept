@@ -805,3 +805,116 @@ Available for adoption: any unclaimed task in Phase 6+ that is file-disjoint
 from my completed work. Candidates: TASK-0601 (Build RunPod Inference
 Container MVP — depends on TASK-0504, now unblocked), TASK-0602 (depends on
 TASK-0601), TASK-0603 (depends on TASK-0602).
+
+---
+
+### TASK-0601: Build RunPod Inference Container MVP — ADOPTED + COMPLETED 2026-06-22
+
+**Status:** COMPLETED 2026-06-22 (commit `df326d4`)
+**Order:** 31
+**Depends on:** TASK-0504 (✅ DONE — Builder 3, commit caeb468). Unblocked.
+**Files owned:**
+- `services/quant_foundry/src/quant_foundry/shadow_inference.py` (new)
+- `services/quant_foundry/tests/test_shadow_inference.py` (new)
+- `runpod/quant-foundry-inference/handler.py` (new)
+- `runpod/quant-foundry-inference/Dockerfile` (new)
+- `runpod/quant-foundry-inference/README.md` (new)
+
+**Task selection rationale:** TASK-0601 was unblocked by my TASK-0504
+completion. It is the critical path for Phase 6 (shadow inference →
+feature snapshot export → shadow prediction settlement). File-disjoint
+from Builder 2's `runpod/quant-foundry-training/` (different subdirectory).
+Imports `ShadowPrediction` / `RunPodInferenceRequest` /
+`RunPodCallbackEnvelope` from `schemas.py` (read-only).
+
+**Tests:** 30/30 green — `uv run pytest services/quant_foundry/tests/test_shadow_inference.py -q`
+**Full suite:** 330/330 green — `uv run pytest services/quant_foundry/tests -q` (excluding Builder 2's in-progress `test_runpod_client.py`; no regressions; up from 300 after TASK-0504)
+**Lint:** `uv run ruff check` — All checks passed (3 files)
+**Type:** `uv run mypy` — Success: no issues found in 1 source file
+**Commit:** `df326d4` — 6 files, additive only, file-disjoint from all active tasks.
+
+**Delivered:**
+- `services/quant_foundry/src/quant_foundry/shadow_inference.py` — the shadow
+  inference engine:
+  - `InferenceDisabledError` (fail-safe: no predictions when disabled).
+  - `FeatureSnapshot` (frozen, extra='forbid'; symbols, features,
+    availability, ts_event, freshness_ns).
+  - `ShadowInferenceResult` (frozen; predictions + callback + latency_ms;
+    `to_dict` JSON-serializable).
+  - `ShadowInferenceEngine`:
+    - `run()`: accepts `RunPodInferenceRequest` + `FeatureSnapshot` +
+      `model_id`, returns `ShadowInferenceResult`. Raises
+      `InferenceDisabledError` if disabled. Abstains (skips) on missing
+      symbols / low availability / empty features. Produces deterministic
+      stub predictions (direction, confidence, p_up) from feature snapshot.
+      Attaches `latency_ms` + `feature_availability` to each prediction.
+      Builds signed `RunPodCallbackEnvelope` (result_type='inference_batch').
+  - `run_shadow_inference()`: convenience entry point.
+- `services/quant_foundry/tests/test_shadow_inference.py` — 30 TDD tests
+  covering all acceptance criteria:
+  - FeatureSnapshot (required fields, frozen).
+  - Basic inference (returns ShadowPrediction batch, correct model_id,
+    correct symbols, direction in [-1,1], confidence in [0,1]).
+  - Latency + availability (per-prediction latency_ms, feature_availability,
+    overall latency).
+  - Invalid snapshot fails safely (missing symbol abstains, empty snapshot
+    produces no predictions, low availability abstains).
+  - No order fields (predictions + result dict have no order/trading fields,
+    authority always shadow_only).
+  - Inference disabled (raises InferenceDisabledError, no predictions).
+  - Signed callback (RunPodCallbackEnvelope with job_id + result_type +
+    payload containing predictions).
+  - Convenience function (run_shadow_inference works end-to-end).
+  - Result serialization (to_dict JSON-serializable).
+  - No secrets in output (FeatureSnapshot + result dict).
+- `runpod/quant-foundry-inference/handler.py` — RunPod handler entry point.
+  Thin wrapper around `ShadowInferenceEngine`. Parses
+  `RunPodInferenceRequest` + `FeatureSnapshot` from event, runs engine,
+  returns callback + predictions. Reads `QUANT_FOUNDRY_MODE=runpod_shadow`
+  to enable inference.
+- `runpod/quant-foundry-inference/Dockerfile` — Docker build config.
+- `runpod/quant-foundry-inference/README.md` — docs + usage + architecture.
+
+**Acceptance criteria verification (self):**
+- ✅ Container returns valid shadow predictions
+  (`test_engine_returns_shadow_predictions` + `test_authority_is_always_shadow_only`).
+- ✅ Invalid feature snapshot fails safely
+  (`test_missing_symbol_in_snapshot_fails_safely` +
+  `test_empty_snapshot_fails_safely` + `test_low_availability_produces_abstain`).
+- ✅ No output contains order fields
+  (`test_predictions_have_no_order_fields` +
+  `test_result_to_dict_has_no_order_fields`).
+- ✅ Inference can be disabled without breaking Fincept
+  (`test_disabled_engine_raises_inference_disabled_error` +
+  `test_disabled_engine_does_not_produce_predictions`).
+
+**Notes for Reviewer:**
+- The engine produces deterministic stub predictions (not real model
+  inference). This is intentional for the MVP — the pipeline (request →
+  snapshot → engine → callback) is the deliverable. The RunPod handler
+  can inject a real model loader for production use.
+- The engine is disabled by default (`enabled=False`). This is fail-safe:
+  if `QUANT_FOUNDRY_MODE != runpod_shadow`, no predictions are produced.
+- File-disjoint from Builder 2's `runpod/quant-foundry-training/` (different
+  subdirectory). Imports from `schemas.py` (read-only).
+
+**File-disjoint confirmation (post-commit):**
+- Builder 1 (TASK-0401/0402): `settlement.py`, `outcomes.py`, `metrics.py`,
+  `shadow_ledger.py` — zero overlap.
+- Builder 2 (TASK-0304/0305/0501/0502): `outbox.py`, `inbox.py`,
+  `mock_dispatcher.py`, `callbacks.py`, `runpod_client.py`,
+  `runpod_training.py`, `test_runpod_training.py`,
+  `runpod/quant-foundry-training/` — zero overlap (different subdirectory).
+- Builder 4 (TASK-0405): `feature_lake.py`, `dataset_manifest.py`,
+  `feature_availability.py` — zero overlap.
+- Builder 5 (TASK-0203): `services/api/routes/modules.py`, dashboard system
+  page, `scripts/modules/` — zero overlap.
+- My own TASK-0403/0404/0406/0503/0504: `artifacts.py`, `dossier.py`,
+  `registry.py`, `tournament.py`, `leaderboard.py`, `significance.py`,
+  `sentinel.py`, `pbo.py`, `baseline_family.py` — zero overlap
+  (shadow_inference imports from `schemas.py` which is shared/read-only).
+- `schemas.py`, `ids.py`, `signatures.py` untouched by me.
+
+**Next:** TASK-0601 unblocks TASK-0602 (Add Live Feature Snapshot Export —
+depends on TASK-0601, now unblocked) and TASK-0603 (Store and Settle Shadow
+Predictions — depends on TASK-0602).
