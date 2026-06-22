@@ -540,3 +540,90 @@ and TASK-0504 (Train First Real Baseline Model Family). The RunPod dispatch
 contract is now provable end-to-end locally; the next step is pulling
 artifacts back from object storage (TASK-0503) and training a real
 baseline (TASK-0504, when GPU budget is available).
+
+---
+
+### TASK-0901 (budget-guard gateway wiring) — COMPLETED 2026-06-22 (commit `6256cdf`)
+
+**Status:** COMPLETED 2026-06-22 (commit `6256cdf`)
+**Relates to:** TASK-0901 ("Add budget guard before heavy jobs"). The durable
+`BudgetGuard` itself (monthly ceiling, kill switch, JSONL ledger, fail-closed)
+shipped earlier in commit `2bfa463`. This task is the missing **enforcement
+wiring**: the guard existed but `QuantFoundryGateway.create_job` never called
+it, so GPU spend was not actually gated. This commit closes that gap.
+
+**Why this task:**
+- The guard (`budget.py`) was built but dead — no caller. Cost governance
+  ("GPU spend must fail closed", cross-cutting rigor §4) was unenforced.
+- `gateway.py` is mine (TASK-0306/0502). `routes/quant_foundry.py` is mine
+  (TASK-0306). Both edits are additive and in my zone.
+- File-disjoint from all active builders (confirmed below).
+
+**Files owned (file-disjoint):**
+- `services/quant_foundry/src/quant_foundry/gateway.py` (additive — `budget_guard`
+  ctor param + `from_env` builds it via `budget.from_env` + `create_job`
+  enforcement block before `outbox.enqueue`).
+- `services/api/src/api/routes/quant_foundry.py` (additive — maps the gateway's
+  budget error codes to HTTP after `create_job` returns).
+- `services/quant_foundry/tests/test_gateway_budget.py` (new, 6 tests).
+- `services/api/tests/test_quant_foundry_budget.py` (new, 3 tests).
+
+**Files consumed read-only (NOT modified):**
+- `budget.py` (`BudgetGuard`, `from_env`) — consumed via the documented
+  `check_and_reserve(*, amount_cents, job_type) -> BudgetDecision` surface.
+- `outbox.py` / `mock_dispatcher.py` / `callbacks.py` — unchanged.
+
+**What shipped:**
+- `gateway.py`:
+  - `QuantFoundryGateway.__init__` gains `budget_guard: BudgetGuard | None = None`
+    (stored as `self.budget_guard`).
+  - `from_env` builds `budget_from_env(base_dir / "budget")` and injects it, so
+    the live route reads `QUANT_FOUNDRY_MONTHLY_BUDGET_CENTS` /
+    `QUANT_FOUNDRY_BUDGET_KILL_SWITCH` automatically.
+  - `create_job` — BEFORE `outbox.enqueue`, if a guard is configured it calls
+    `check_and_reserve(amount_cents=budget_cents or 0, job_type=job_type)`. On
+    `allowed=False` it returns an `ok=False` envelope with `error_code`
+    (`budget_kill_switch` if the reason mentions the kill switch, else
+    `budget_exceeded`), `detail`, `remaining_cents`, `monthly_budget_cents` —
+    and the job is **never enqueued or dispatched** (fail-closed invariant).
+    Zero-cost jobs (`budget_cents` None/0) always pass.
+- `routes/quant_foundry.py` — `POST /quant-foundry/jobs` captures the gateway
+  result and raises `HTTPException` 402 (`budget_exceeded`) / 429
+  (`budget_kill_switch`) with the gateway's detail; otherwise returns the
+  result unchanged. No new bus / sig.predict writes.
+
+**Verification:**
+- `uv run python -m pytest services/quant_foundry/tests/test_gateway_budget.py -q` → 6 passed.
+- `uv run python -m pytest services/api/tests/test_quant_foundry_budget.py -q` → 3 passed.
+- No regressions in my zone: `test_mock_flow.py` → 9 passed; `test_quant_foundry.py` → 13 passed.
+- Full `services/quant_foundry/tests` + `services/api/tests` run: 980 passed,
+  9 failed. **The 9 failures are ALL in `services/api/tests/test_news.py`
+  (`AttributeError: 'Settings' object has no attribute 'MARK_TTL_SEC'`) — a
+  separate in-progress news track, NOT caused by this commit.** My commit
+  touched only the 4 budget files (verified via `git show --stat 6256cdf`).
+
+**Design notes for downstream tasks:**
+- The reservation is on the **estimated** cost (`budget_cents`). When a RunPod
+  job completes with a known actual cost, the dispatcher should call
+  `BudgetGuard.record_spend(...)` to reconcile the reservation up/down
+  (TASK-0502's `RunPodDispatcher` path). That reconciliation is NOT wired yet
+  — `create_job` only reserves; there is no completion-time `record_spend`
+  call in the gateway. Next builder on the RunPod cost loop should add it.
+- There are now TWO `BudgetGuard` classes: the durable one in `budget.py`
+  (TASK-0901, JSONL-backed, used by the gateway) and the in-memory one in
+  `runpod_client.py` (TASK-0502, per-dispatch). They are intentionally
+  separate; when the real RunPod dispatch path is wired into the gateway,
+  consolidate onto the durable `budget.py` guard so spend survives restarts.
+- The error envelope keys (`error_code`, `detail`, `remaining_cents`,
+  `monthly_budget_cents`) are the contract the HTTP route depends on. Keep
+  them stable if `create_job`'s rejection path is refactored.
+
+**File-disjoint confirmation:**
+- `gateway.py` + `routes/quant_foundry.py` are mine (TASK-0306/0502).
+- `budget.py` consumed read-only.
+- No edit to `main.py`, `config.py`, `outbox.py`, or any other builder's files.
+
+**Next:** GPU spend now fails closed end-to-end (gateway + HTTP). Remaining
+budget work: wire actual-cost `record_spend` reconciliation at job completion
+(RunPod path, TASK-0502 follow-up) and consolidate the two `BudgetGuard`
+implementations when the real RunPod dispatcher is injected into the gateway.

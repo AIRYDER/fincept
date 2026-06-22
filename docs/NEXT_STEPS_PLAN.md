@@ -2020,12 +2020,28 @@ Always-on thin shell + on-demand workers:
 
 **Order:** 41
 
+> **Owner:** Builder 2 — runtime plan + `BudgetGuard` COMPLETED 2026-06-22
+> (commit `2bfa463`); **gateway enforcement wiring COMPLETED 2026-06-22
+> (commit `6256cdf`)**.
+> Files owned for the wiring: `services/quant_foundry/src/quant_foundry/gateway.py`
+> (additive — `budget_guard` injection + `create_job` enforcement),
+> `services/api/src/api/routes/quant_foundry.py` (additive — 402/429 mapping),
+> `services/quant_foundry/tests/test_gateway_budget.py` (new, 6 tests),
+> `services/api/tests/test_quant_foundry_budget.py` (new, 3 tests).
+> File-disjoint from all active builders. See `docs/AAA_GLM_SUPERTEAM_LOGS/BUILDER2.md`.
+
 **What to do:**
 
 - Define module list with start/stop scripts, health checks, idle
   timeout, max instances, estimated monthly cost (always-on vs 2
-  hours/day).
-- Add budget guard before heavy jobs.
+  hours/day). [DONE — `docs/MODULE_RUNTIME_PLAN.md`]
+- Add budget guard before heavy jobs. [DONE — `BudgetGuard` (durable
+  monthly ceiling + kill switch, fail-closed) is now *enforced* in
+  `QuantFoundryGateway.create_job`: a paid job whose `budget_cents` would
+  exceed the monthly ceiling, or any paid job while the kill switch is
+  active, is rejected BEFORE enqueue/dispatch (no outbox record). The
+  HTTP route maps `budget_exceeded` → 402 and `budget_kill_switch` → 429.
+  Zero-cost jobs (the `local_mock` default) are always allowed.]
 - Add "stop all optional modules."
 
 **Dependencies:** TASK-0203.
