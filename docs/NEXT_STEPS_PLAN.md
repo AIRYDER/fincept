@@ -2096,6 +2096,13 @@ before these modules can be trusted.
 
 ### TASK-1001: Mixture-of-Experts Model Router (Order 44)
 
+> **Owner:** Builder 3 (GLM-5.2) — ADOPTED 2026-06-22. IN PROGRESS (TDD, file-disjoint).
+> Files owned: `services/quant_foundry/src/quant_foundry/moe_router.py` (new),
+> `services/quant_foundry/tests/test_moe_router.py` (new).
+> Creates a file-disjoint MoE model router. Imports from my
+> `leaderboard_expanded.py` (TASK-0701), `tournament.py` (TASK-0404),
+> `shadow_inference.py` (TASK-0601). Does NOT modify them.
+
 Learn which model to trust by regime, symbol, liquidity, volatility,
 news type, horizon, feature availability, and recent calibration.
 Start with rules from tournament evidence. Add learned router only

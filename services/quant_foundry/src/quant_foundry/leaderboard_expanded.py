@@ -136,6 +136,7 @@ class ExpandedLeaderboardEntry(BaseModel):
 
     model_id: str
     total_score: float
+    settled_count: int = 0
     horizon_slices: list[HorizonSlice] = []
     regime_slices: list[RegimeSlice] = []
     symbol_cluster_slices: list[SymbolClusterSlice] = []
@@ -148,6 +149,7 @@ class ExpandedLeaderboardEntry(BaseModel):
         return {
             "model_id": self.model_id,
             "total_score": self.total_score,
+            "settled_count": self.settled_count,
             "horizon_slices": [s.model_dump() for s in self.horizon_slices],
             "regime_slices": [s.model_dump() for s in self.regime_slices],
             "symbol_cluster_slices": [s.model_dump() for s in self.symbol_cluster_slices],
