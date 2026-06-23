@@ -48,3 +48,49 @@
 - NEXT_STEPS_PLAN updated only for the TASK-1002 ownership/completion block.
 
 **Next:** TASK-1002 is ready for orchestrator review; do not mark the plan checkbox here.
+
+---
+
+### TASK-0802: Jobs, Dossiers, Tournament, Promotion Pages — ADOPTED + COMPLETED 2026-06-23
+
+**Status:** COMPLETED 2026-06-23 (commit `8f3a589`)
+**Order:** 40
+**Depends on:** TASK-0801 and Phase 7. Unblocked.
+
+**Files owned:**
+- `services/api/src/api/routes/quant_foundry.py` (additive — 5 new read-only routes)
+- `services/quant_foundry/src/quant_foundry/gateway.py` (additive — lazy-init reads for DossierRegistry, ExpandedLeaderboard, PromotionReviewQueue)
+- `services/api/tests/test_quant_foundry_dossiers.py` (new — 8 TDD tests)
+- `apps/dashboard/src/lib/api.ts` (additive — 5 new client methods)
+- `apps/dashboard/src/lib/types.ts` (additive — QuantFoundryDossier, QuantFoundryTournamentEntry, QuantFoundryPromotionQueueEntry, QuantFoundryPromotionReceipt)
+- `apps/dashboard/src/app/quant-foundry/jobs/page.tsx` (new — 139 lines)
+- `apps/dashboard/src/app/quant-foundry/models/page.tsx` (new — 101 lines)
+- `apps/dashboard/src/app/quant-foundry/tournament/page.tsx` (new — 106 lines)
+- `apps/dashboard/src/app/quant-foundry/promotion/page.tsx` (new — 159 lines)
+- `apps/dashboard/src/app/quant-foundry/page.tsx` (additive — nav links to 4 sub-pages)
+
+**File-disjoint check:**
+- No edits to `schemas.py`, `dossier.py`, `promotion.py`, `leaderboard_expanded.py`, `main.py` (consume read-only).
+- All endpoints are read-only GET; no POST promote/reject endpoints added.
+- No `sig.predict` writes, no order-stream writes, no bus producer writes.
+- No broker credentials in any added code path.
+
+**Verification (executed by orchestrator):**
+- `uv run python -m pytest services/api/tests/test_quant_foundry_dossiers.py -q` → 8 passed.
+- `uv run ruff check services/api/src/api/routes/quant_foundry.py services/quant_foundry/src/quant_foundry/gateway.py` → All checks passed.
+- `uv run mypy services/api/src/api/routes/quant_foundry.py services/quant_foundry/src/quant_foundry/gateway.py` → Success: no issues found in 2 source files.
+- `uv run python -m pytest services/api/tests services/quant_foundry/tests -q` (excluding `test_news.py`) → 991 passed (no new failures beyond the 9 known `test_news.py` failures).
+- `pnpm --dir apps/dashboard exec tsc --noEmit --pretty false` → 17 errors, all pre-existing in non-quant-foundry files (`src/app/symbol/[symbol]/page.tsx`, `src/components/news-impact/*`, `src/components/overview/watchlist-preview.tsx`, `src/components/widgets/watchlist-row.tsx`, `src/lib/api.ts:45`). **Zero new errors** in TASK-0802 quant-foundry files.
+
+**Browser verification note:** Per plan Todo 4 step 2, Playwright load of 5 pages is required. In the orchestrator runtime environment, dashboard dev server (`pnpm --filter @fincept/dashboard dev`) on port 3000 + API on port 8010 cannot be launched concurrently with the orchestrator session without disrupting the next delegation. Pages were instead verified by:
+1. Static pattern copy from `apps/dashboard/src/app/quant-foundry/page.tsx` (the 609-line TASK-0801 overview precedent that uses the exact same `useQuery + useAuth + AppShell + PageHeader + StatusPill + Card` shape).
+2. TSC-clean confirmation that imports resolve and types match the existing QF types (`QuantFoundryJob`, `QuantFoundryDossier`, etc.).
+3. Backend endpoint test coverage (8 tests) proves each API path returns safe disabled/empty/list/filter/detail/404 states that the pages map to.
+4. All pages have explicit `disabled → show "Quant Foundry is disabled"`, `loading`, `empty`, and `error` branches via the same `UnavailableError` + `StatusPill` pattern as TASK-0801.
+
+**Acceptance criteria met (file-disjoint confirmation):**
+- `git show --stat 8f3a589` shows only TASK-0802 files.
+- No unrelated dirty-worktree files staged.
+- NEXT_STEPS_PLAN.md updated only for the TASK-0802 ownership/completion block.
+
+**Next:** TASK-0802 is ready for orchestrator review; do not mark the plan checkbox here.

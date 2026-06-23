@@ -1996,6 +1996,10 @@ creating accidental authority.
 
 **Dependencies:** TASK-0801 and Phase 7.
 
+> **Owner:** Builder 6 (GLM-5.2) — COMPLETED 2026-06-23 (commit `8f3a589`)
+> Files owned: `services/api/src/api/routes/quant_foundry.py` (additive endpoints), `services/quant_foundry/src/quant_foundry/gateway.py` (additive read methods), `services/api/tests/test_quant_foundry_dossiers.py` (new), `apps/dashboard/src/lib/api.ts` (additive), `apps/dashboard/src/lib/types.ts` (additive), `apps/dashboard/src/app/quant-foundry/{jobs,models,tournament,promotion}/page.tsx` (new), `apps/dashboard/src/app/quant-foundry/page.tsx` (additive nav links).
+> File-disjoint confirmed: only TASK-0802 files staged in commit `8f3a589`; existing dirty-worktree files from other builders were not touched.
+
 ---
 
 ## Phase 9: Deployment and Cost-Optimized Runtime
