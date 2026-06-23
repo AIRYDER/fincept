@@ -1358,3 +1358,24 @@ export interface QuantFoundryPromotionReview {
   readonly rejection_reason: string | null;
   readonly decided_at_ns: number;
 }
+
+// ---------------------------------------------------------------------------
+// TASK-0604: Shadow inference health (read-only aggregate health surface).
+// Mirrors services/quant_foundry/src/quant_foundry/gateway.py::shadow_health().
+// All metrics are nullable — the gateway returns null when a value is not
+// computable from durable state (see gateway docstring).
+// ---------------------------------------------------------------------------
+
+export interface QuantFoundryShadowHealth {
+  readonly enabled: boolean;
+  readonly models_running: number;
+  readonly latest_prediction_ts: number | null;
+  readonly latency_p50_ms: number | null;
+  readonly latency_p95_ms: number | null;
+  readonly feature_availability: number | null;
+  readonly callback_rejection_rate: number | null;
+  readonly settlement_lag_seconds: number | null;
+  readonly circuit_breaker_state: "closed" | "open" | "half_open";
+  readonly prediction_count: number;
+  readonly settled_count: number;
+}

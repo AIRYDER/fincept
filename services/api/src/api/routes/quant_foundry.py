@@ -206,6 +206,23 @@ async def promotion_completed(
     return gw.completed_promotions()
 
 
+@router.get("/shadow/health")
+async def shadow_health(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Aggregate read-only health for the shadow inference surface.
+
+    Bearer-auth (TASK-0604). Returns a JSON-safe dict with documented
+    keys. Returns 503 when the gateway is absent (default disabled state).
+    When the gateway is present but the shadow ledger is empty, returns
+    zero counts + null metrics (never crash). Never returns secrets or
+    raw callback payloads.
+    """
+    gw = _require_gateway(request)
+    return gw.shadow_health()
+
+
 @router.get("/health")
 async def health(
     request: Request,

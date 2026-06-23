@@ -66,6 +66,7 @@ import type {
   QuantFoundryJob,
   QuantFoundryPromotionQueueEntry,
   QuantFoundryPromotionReview,
+  QuantFoundryShadowHealth,
   QuantFoundryTournamentEntry,
   RegimeResponse,
   RollbackResponse,
@@ -781,4 +782,6 @@ export const api = {
       "/quant-foundry/promotion/completed",
       token,
     ),
+  quantFoundryShadowHealth: (token: string | null) =>
+    request<QuantFoundryShadowHealth>("/quant-foundry/shadow/health", token),
 };

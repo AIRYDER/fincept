@@ -43,6 +43,7 @@ from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
+from quant_foundry.shadow_ledger import ShadowLedger
 from quant_foundry.signatures import verify_callback
 
 
@@ -78,6 +79,7 @@ class QuantFoundryGateway:
         self._dossier_registry: DossierRegistry | None = None
         self._expanded_leaderboard: ExpandedLeaderboard | None = None
         self._promotion_queue: PromotionReviewQueue | None = None
+        self._shadow_ledger_real: ShadowLedger | None = None
         self.dispatcher = MockDispatcher(
             outbox=self.outbox,
             inbox=self.inbox,
@@ -265,6 +267,93 @@ class QuantFoundryGateway:
             return []
         return [receipt.to_dict() for receipt in self.promotion_queue().completed()]
 
+    # --- shadow inference health (TASK-0604) ---------------------------------
+
+    def shadow_ledger_real(self) -> ShadowLedger:
+        """Return the lazily constructed real shadow prediction ledger.
+
+        Distinct from ``self.shadow_ledger`` (an in-process ``ShadowLedgerStub``
+        wired into the callback processor for local_mock mode). This is the
+        durable ``ShadowLedger`` (JSONL-backed) consumed by ``shadow_health``.
+        """
+        if self._shadow_ledger_real is None:
+            self._shadow_ledger_real = ShadowLedger(
+                base_dir=self.base_dir / "shadow_ledger",
+            )
+        return self._shadow_ledger_real
+
+    def shadow_health(self) -> dict[str, Any]:
+        """Aggregate read-only health for the shadow inference surface.
+
+        Returns a JSON-safe dict with documented keys; nulls for fields that
+        cannot be computed from durable state. Never includes secrets or raw
+        callback payloads.
+
+        When the gateway is disabled, returns ``{"enabled": False, ...}``
+        with zero counts and null metrics (no crash, no 500).
+        """
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "models_running": 0,
+                "latest_prediction_ts": None,
+                "latency_p50_ms": None,
+                "latency_p95_ms": None,
+                "feature_availability": None,
+                "callback_rejection_rate": None,
+                "settlement_lag_seconds": None,
+                "circuit_breaker_state": "closed",
+                "prediction_count": 0,
+                "settled_count": 0,
+            }
+
+        records = self.shadow_ledger_real().list()
+        prediction_count = len(records)
+        models_running = len({r.model_id for r in records})
+
+        latencies = sorted(
+            float(r.latency_ms) for r in records if r.latency_ms is not None
+        )
+        latency_p50_ms: float | None = _percentile(latencies, 0.5) if latencies else None
+        latency_p95_ms: float | None = _percentile(latencies, 0.95) if latencies else None
+
+        latest_prediction_ts: float | None = (
+            float(max(r.ts_event for r in records)) if records else None
+        )
+
+        feature_availability: float | None = _aggregate_feature_availability(records)
+
+        # The gateway rejects bad HMAC signatures without a durable inbox
+        # record (see ``receive_callback``), so we cannot compute a real
+        # rejection rate from existing state. Return ``None`` with the
+        # documented note that rejection tracking is not yet durable —
+        # do NOT invent new storage here (out of scope).
+        callback_rejection_rate: float | None = None
+
+        # The settlement ledger is wired by TASK-0603 (separate surface) and
+        # is not yet integrated into the gateway's read API. Return ``None``
+        # rather than fabricating a value.
+        settlement_lag_seconds: float | None = None
+
+        # No real drift data is collected yet. The drift sentinel is consumed
+        # read-only, so the circuit breaker defaults to "closed" (no drift =
+        # no trip). Wire real inputs when the drift surface ships.
+        circuit_breaker_state = "closed"
+
+        return {
+            "enabled": True,
+            "models_running": models_running,
+            "latest_prediction_ts": latest_prediction_ts,
+            "latency_p50_ms": latency_p50_ms,
+            "latency_p95_ms": latency_p95_ms,
+            "feature_availability": feature_availability,
+            "callback_rejection_rate": callback_rejection_rate,
+            "settlement_lag_seconds": settlement_lag_seconds,
+            "circuit_breaker_state": circuit_breaker_state,
+            "prediction_count": prediction_count,
+            "settled_count": 0,
+        }
+
     # --- callback ingestion (HMAC auth, NOT bearer) ---
 
     def receive_callback(
@@ -341,3 +430,44 @@ class QuantFoundryGateway:
             "outbox_status": proc_receipt["outbox_status"],
             "result": proc_receipt["result"],
         }
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (TASK-0604 shadow health aggregation)
+# ---------------------------------------------------------------------------
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Linear-interpolation percentile over an already-sorted numeric list."""
+    if not sorted_values:
+        raise ValueError("percentile of empty sequence")
+    if pct <= 0:
+        return sorted_values[0]
+    if pct >= 1:
+        return sorted_values[-1]
+    position = pct * (len(sorted_values) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = position - lower
+    return sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
+
+
+def _aggregate_feature_availability(records: list[Any]) -> float | None:
+    """Fraction of features marked available across all stored predictions.
+
+    Returns ``None`` when no record carries a ``feature_availability`` map —
+    preserves the spec's "null for uncomputable" contract.
+    """
+    available = 0
+    total = 0
+    for r in records:
+        fa = getattr(r, "feature_availability", None)
+        if not fa:
+            continue
+        for present in fa.values():
+            total += 1
+            if present:
+                available += 1
+    if total == 0:
+        return None
+    return available / total

@@ -152,6 +152,12 @@ const SUB_PAGES = [
     description: "Review packets, confirmation preview, and rollback visibility.",
     icon: ShieldCheck,
   },
+  {
+    href: "/quant-foundry/shadow",
+    label: "Shadow Health",
+    description: "Read-only aggregate of the shadow prediction surface.",
+    icon: Ghost,
+  },
 ] as const;
 
 // ---------------------------------------------------------------------------
