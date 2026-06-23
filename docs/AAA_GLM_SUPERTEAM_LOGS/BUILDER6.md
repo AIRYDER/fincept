@@ -130,3 +130,44 @@
 - No code files modified (only 3 docs files: the new report, NEXT_STEPS_PLAN ownership marker, BUILDER6 log entry).
 
 **Next:** TASK-1101 is ready for orchestrator review; do not mark the plan checkbox here.
+
+### TASK-0604: Shadow Inference Health Dashboard — ADOPTED + COMPLETED 2026-06-23
+
+**Status:** COMPLETED 2026-06-23 (commit `4233e64`)
+**Order:** 34
+**Depends on:** TASK-0603 (unblocked — settlement integration is not required for the read surface; null is the documented MVP behavior).
+
+**Files owned:**
+- `services/api/src/api/routes/quant_foundry.py` (additive `/shadow/health` route)
+- `services/quant_foundry/src/quant_foundry/gateway.py` (additive `shadow_ledger_real()`, `shadow_health()`, percentile + feature-availability helpers)
+- `services/api/tests/test_quant_foundry_shadow.py` (new — 6 TDD tests)
+- `apps/dashboard/src/lib/api.ts` (additive `quantFoundryShadowHealth(token)`)
+- `apps/dashboard/src/lib/types.ts` (additive `QuantFoundryShadowHealth` interface)
+- `apps/dashboard/src/app/quant-foundry/shadow/page.tsx` (new)
+- `apps/dashboard/src/app/quant-foundry/page.tsx` (additive nav link)
+
+**Task selection rationale:** TASK-0604 was the last code task in the remaining-tasks plan. It is additive read-only — no writes, no new dependencies on TASK-0603 settlement ledger (which is wired separately). The endpoint gracefully returns null for uncomputable metrics (`callback_rejection_rate`, `settlement_lag_seconds`) without inventing storage.
+
+**File-disjoint check:**
+- `shadow_ledger.py`, `shadow_settlement.py`, `drift_sentinel.py`, `main.py` were NOT modified (consumed read-only via `ShadowLedger(base_dir/"shadow_ledger")` and the existing `compute_batch_hash` helper).
+- No write endpoints added. No `sig.predict` writes. No bus producer. No order writes.
+- No flips of `QUANT_FOUNDRY_ENABLED`, `QUANT_FOUNDRY_MODE`, or any other config flag.
+- No broker credentials created.
+- No plan checkbox marked in `.omo/plans/quant-foundry-remaining-tasks.md`.
+
+**Verification:**
+- 6/6 tests pass in `services/api/tests/test_quant_foundry_shadow.py` (auth required → 401, gateway absent → 503, disabled gateway → 200 + safe empty shape, empty ledger → 200 + nulls, populated ledger → 200 + computed metrics + idempotent reads).
+- `uv run ruff check services/api/src/api/routes/quant_foundry.py services/quant_foundry/src/quant_foundry/gateway.py` clean.
+- `uv run mypy services/api/src/api/routes/quant_foundry.py services/quant_foundry/src/quant_foundry/gateway.py` clean.
+- `uv run python -m pytest services/api/tests services/quant_foundry/tests -q` → 1006 passed, 9 failed (all 9 are the known pre-existing `test_news.py::test_news_*` failures with `AttributeError: 'Settings' object has no attribute 'MARK_TTL_SEC'`); zero new failures.
+- `pnpm --dir apps/dashboard exec tsc --noEmit --pretty false` reports only the pre-existing tsc errors in unrelated files (`src/app/symbol/[symbol]/page.tsx`, `src/components/news-impact/*`, `src/components/overview/watchlist-preview.tsx`, `src/components/widgets/watchlist-row.tsx`); ZERO new errors in TASK-0604 quant-foundry files.
+- `git show --stat 4233e64` shows only the 7 TASK-0604 files.
+- `uv.lock` (workspace lockfile update that adds the `quant-foundry` editable package to the workspace) was deliberately NOT staged — it is not a TASK-0604 change and is the workspace-bootstrap task's responsibility.
+
+**Acceptance criteria met:**
+- `GET /quant-foundry/shadow/health` returns the documented health dict with `enabled`, `models_running`, `latest_prediction_ts`, `latency_p50_ms`, `latency_p95_ms`, `feature_availability`, `callback_rejection_rate`, `settlement_lag_seconds`, `circuit_breaker_state`, `prediction_count`, `settled_count`. Null values for uncomputable metrics. Never errors. 503 only when gateway absent.
+- Dashboard page renders all states (disabled, loading, empty, populated, error) without crashing.
+- 6 TDD tests cover auth, gateway absent, disabled state, empty state, populated state, and idempotent reads.
+- File-disjoint: only the 7 TASK-0604 files were modified. No edits to `shadow_ledger.py`, `shadow_settlement.py`, `drift_sentinel.py`, `main.py`.
+
+**Next:** TASK-0604 is ready for orchestrator review; do not mark the plan checkbox here.

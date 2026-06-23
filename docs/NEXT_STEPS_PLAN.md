@@ -1737,6 +1737,10 @@ drift, and settlement progress.
 
 **Dependencies:** TASK-0603.
 
+> **Owner:** Builder 6 (GLM-5.2) — COMPLETED 2026-06-23 (commit `4233e64`)
+> Files owned: `services/api/src/api/routes/quant_foundry.py` (additive `/shadow/health` route), `services/quant_foundry/src/quant_foundry/gateway.py` (additive `shadow_ledger_real()` + `shadow_health()` + helpers), `services/api/tests/test_quant_foundry_shadow.py` (new — 6 tests), `apps/dashboard/src/lib/api.ts` (additive `quantFoundryShadowHealth(token)`), `apps/dashboard/src/lib/types.ts` (additive `QuantFoundryShadowHealth` interface), `apps/dashboard/src/app/quant-foundry/shadow/page.tsx` (new — summary / latency / drift cards), `apps/dashboard/src/app/quant-foundry/page.tsx` (additive nav link).
+> File-disjoint confirmed: only TASK-0604 files staged in commit `4233e64`; `uv.lock` (workspace lockfile update) was deliberately NOT staged because it is unrelated to TASK-0604.
+
 ---
 
 ## Phase 7: Tournament Governor and Promotion Workflow
