@@ -1256,3 +1256,105 @@ export interface QuantFoundryJob {
   updated_at_ns?: number;
   [key: string]: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// TASK-0802: Quant Foundry dossier, tournament, and promotion read models.
+// Mirrors quant_foundry.dossier, leaderboard_expanded, and promotion to_dict().
+// ---------------------------------------------------------------------------
+
+export interface QuantFoundryDossier {
+  readonly schema_version: number;
+  readonly model_id: string;
+  readonly artifact_manifest_id: string;
+  readonly artifact_sha256: string;
+  readonly dataset_manifest_id: string;
+  readonly dataset_manifest_ref?: string | null;
+  readonly feature_schema_hash: string;
+  readonly label_schema_hash: string;
+  readonly code_git_sha?: string | null;
+  readonly lockfile_hash?: string | null;
+  readonly container_image_digest?: string | null;
+  readonly random_seed?: number | null;
+  readonly hardware_class?: string | null;
+  readonly trial_count: number;
+  readonly training_metrics: Record<string, number>;
+  readonly status: string;
+  readonly settlement_evidence_refs: readonly string[];
+  readonly shadow_prediction_refs: readonly string[];
+  readonly blocking_issues: readonly Record<string, unknown>[];
+  readonly registered_at_ns?: number | null;
+  readonly content_hash: string;
+}
+
+export interface QuantFoundryLeaderboardSlice {
+  readonly horizon?: string;
+  readonly regime?: string;
+  readonly cluster?: string;
+  readonly score: number;
+}
+
+export interface QuantFoundryBaselineDelta {
+  readonly baseline_model_id: string;
+  readonly delta: number;
+  readonly baseline_score: number;
+}
+
+export interface QuantFoundryCalibrationSummary {
+  readonly brier_score: number;
+  readonly reliability: number;
+  readonly n_bins: number;
+}
+
+export interface QuantFoundryDecayIndicator {
+  readonly decay_score: number;
+  readonly is_stale: boolean;
+  readonly is_decayed: boolean;
+  readonly days_since_last_settlement: number;
+}
+
+export interface QuantFoundryTournamentEntry {
+  readonly model_id: string;
+  readonly total_score: number;
+  readonly settled_count: number;
+  readonly horizon_slices: readonly QuantFoundryLeaderboardSlice[];
+  readonly regime_slices: readonly QuantFoundryLeaderboardSlice[];
+  readonly symbol_cluster_slices: readonly QuantFoundryLeaderboardSlice[];
+  readonly baseline_delta: QuantFoundryBaselineDelta | null;
+  readonly calibration_summary: QuantFoundryCalibrationSummary | null;
+  readonly decay_indicator: QuantFoundryDecayIndicator | null;
+}
+
+export interface QuantFoundryPromotionRequest {
+  readonly model_id: string;
+  readonly target_level: string;
+  readonly review_note: string;
+  readonly waivers: readonly {
+    readonly issue_code: string;
+    readonly waived_by: string;
+    readonly reason: string;
+  }[];
+}
+
+export interface QuantFoundryPromotionEvidence {
+  readonly dossier: QuantFoundryDossier | null;
+  readonly tournament_result: Record<string, unknown> | null;
+  readonly sentinel_receipt: Record<string, unknown> | null;
+  readonly blocking_issues: readonly {
+    readonly code: string;
+    readonly severity: string;
+    readonly message: string;
+  }[];
+}
+
+export interface QuantFoundryPromotionQueueEntry {
+  readonly request: QuantFoundryPromotionRequest;
+  readonly evidence: QuantFoundryPromotionEvidence;
+}
+
+export interface QuantFoundryPromotionReview {
+  readonly decision: string;
+  readonly request: QuantFoundryPromotionRequest;
+  readonly review_note: string;
+  readonly rejection_reason: string | null;
+  readonly decided_at_ns: number;
+}

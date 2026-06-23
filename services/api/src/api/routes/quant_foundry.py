@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
 
 from api.auth import require_user
+from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outbox import JobStatus
 
@@ -141,6 +142,68 @@ async def get_job(
             detail=f"unknown job_id: {job_id}",
         )
     return rec
+
+
+@router.get("/dossiers")
+async def list_dossiers(
+    request: Request,
+    status_filter: str | None = Query(default=None, alias="status"),
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    gw = _require_gateway(request)
+    dossier_status: DossierStatus | None = None
+    if status_filter is not None:
+        try:
+            dossier_status = DossierStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"invalid status filter: {status_filter}",
+            )
+    return gw.list_dossiers(status=dossier_status)
+
+
+@router.get("/dossiers/{model_id}")
+async def get_dossier(
+    model_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    gw = _require_gateway(request)
+    rec = gw.get_dossier(model_id)
+    if rec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown model_id: {model_id}",
+        )
+    return rec
+
+
+@router.get("/tournament/leaderboard")
+async def tournament_leaderboard(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    gw = _require_gateway(request)
+    return gw.tournament_leaderboard()
+
+
+@router.get("/promotion/queue")
+async def promotion_queue(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    gw = _require_gateway(request)
+    return gw.pending_promotions()
+
+
+@router.get("/promotion/completed")
+async def promotion_completed(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    gw = _require_gateway(request)
+    return gw.completed_promotions()
 
 
 @router.get("/health")

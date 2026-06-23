@@ -36,9 +36,13 @@ from typing import Any
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.budget import from_env as budget_from_env
 from quant_foundry.callbacks import CallbackProcessor, DossierStub, ShadowLedgerStub
+from quant_foundry.dossier import DossierStatus
 from quant_foundry.inbox import CallbackInbox
+from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
 from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.promotion import PromotionReviewQueue
+from quant_foundry.registry import DossierRegistry
 from quant_foundry.signatures import verify_callback
 
 
@@ -71,6 +75,9 @@ class QuantFoundryGateway:
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
         self.shadow_ledger = ShadowLedgerStub()
         self.dossier_store = DossierStub()
+        self._dossier_registry: DossierRegistry | None = None
+        self._expanded_leaderboard: ExpandedLeaderboard | None = None
+        self._promotion_queue: PromotionReviewQueue | None = None
         self.dispatcher = MockDispatcher(
             outbox=self.outbox,
             inbox=self.inbox,
@@ -201,6 +208,62 @@ class QuantFoundryGateway:
         if rec is None:
             return None
         return rec.model_dump()
+
+    # --- dossier / tournament / promotion reads ---
+
+    def dossier_registry(self) -> DossierRegistry:
+        """Return the lazily constructed real dossier registry."""
+        if self._dossier_registry is None:
+            self._dossier_registry = DossierRegistry(self.base_dir / "dossier_registry")
+        return self._dossier_registry
+
+    def expanded_leaderboard(self) -> ExpandedLeaderboard:
+        """Return the lazily constructed expanded leaderboard."""
+        if self._expanded_leaderboard is None:
+            self._expanded_leaderboard = ExpandedLeaderboard()
+        return self._expanded_leaderboard
+
+    def promotion_queue(self) -> PromotionReviewQueue:
+        """Return the lazily constructed promotion review queue."""
+        if self._promotion_queue is None:
+            self._promotion_queue = PromotionReviewQueue()
+        return self._promotion_queue
+
+    def list_dossiers(self, *, status: DossierStatus | None = None) -> list[dict[str, Any]]:
+        """List persisted dossiers from the real registry. Empty when disabled."""
+        if not self.enabled:
+            return []
+        return [
+            dossier.model_dump(mode="json")
+            for dossier in self.dossier_registry().list(status=status)
+        ]
+
+    def get_dossier(self, model_id: str) -> dict[str, Any] | None:
+        """Return a persisted dossier dict, or None if unknown / disabled."""
+        if not self.enabled:
+            return None
+        dossier = self.dossier_registry().get(model_id)
+        if dossier is None:
+            return None
+        return dossier.model_dump(mode="json")
+
+    def tournament_leaderboard(self) -> list[dict[str, Any]]:
+        """Return the ranked expanded leaderboard. Empty when disabled."""
+        if not self.enabled:
+            return []
+        return [entry.to_dict() for entry in self.expanded_leaderboard().ranked()]
+
+    def pending_promotions(self) -> list[dict[str, Any]]:
+        """Return pending promotion review queue entries. Empty when disabled."""
+        if not self.enabled:
+            return []
+        return [entry.model_dump(mode="json") for entry in self.promotion_queue().pending()]
+
+    def completed_promotions(self) -> list[dict[str, Any]]:
+        """Return completed promotion receipts. Empty when disabled."""
+        if not self.enabled:
+            return []
+        return [receipt.to_dict() for receipt in self.promotion_queue().completed()]
 
     # --- callback ingestion (HMAC auth, NOT bearer) ---
 

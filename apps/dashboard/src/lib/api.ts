@@ -62,7 +62,11 @@ import type {
   PromotionStateResponse,
   QuantFoundryHealthResponse,
   QuantFoundryHeartbeat,
+  QuantFoundryDossier,
   QuantFoundryJob,
+  QuantFoundryPromotionQueueEntry,
+  QuantFoundryPromotionReview,
+  QuantFoundryTournamentEntry,
   RegimeResponse,
   RollbackResponse,
   ServicesResponse,
@@ -750,4 +754,31 @@ export const api = {
     const qs = args?.status ? `?status=${encodeURIComponent(args.status)}` : "";
     return request<QuantFoundryJob[]>(`/quant-foundry/jobs${qs}`, token);
   },
+  quantFoundryDossiers: (
+    token: string | null,
+    args?: { status?: string },
+  ) => {
+    const qs = args?.status ? `?status=${encodeURIComponent(args.status)}` : "";
+    return request<QuantFoundryDossier[]>(`/quant-foundry/dossiers${qs}`, token);
+  },
+  quantFoundryDossier: (token: string | null, modelId: string) =>
+    request<QuantFoundryDossier>(
+      `/quant-foundry/dossiers/${encodeURIComponent(modelId)}`,
+      token,
+    ),
+  quantFoundryTournamentLeaderboard: (token: string | null) =>
+    request<QuantFoundryTournamentEntry[]>(
+      "/quant-foundry/tournament/leaderboard",
+      token,
+    ),
+  quantFoundryPromotionQueue: (token: string | null) =>
+    request<QuantFoundryPromotionQueueEntry[]>(
+      "/quant-foundry/promotion/queue",
+      token,
+    ),
+  quantFoundryPromotionCompleted: (token: string | null) =>
+    request<QuantFoundryPromotionReview[]>(
+      "/quant-foundry/promotion/completed",
+      token,
+    ),
 };

@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   Trophy,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo } from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
@@ -123,6 +124,33 @@ const MODULES: readonly ModuleCardSpec[] = [
     label: "Shadow Inference",
     description: "Shadow-only predictions (no sig.predict — Phase 6).",
     icon: Ghost,
+  },
+] as const;
+
+const SUB_PAGES = [
+  {
+    href: "/quant-foundry/jobs",
+    label: "Jobs",
+    description: "Queued, running, retrying, failed, and completed jobs.",
+    icon: Activity,
+  },
+  {
+    href: "/quant-foundry/models",
+    label: "Models",
+    description: "Dossier registry, artifact hashes, and evidence completeness.",
+    icon: Archive,
+  },
+  {
+    href: "/quant-foundry/tournament",
+    label: "Tournament",
+    description: "Leaderboard, baseline deltas, and decay flags.",
+    icon: Trophy,
+  },
+  {
+    href: "/quant-foundry/promotion",
+    label: "Promotion",
+    description: "Review packets, confirmation preview, and rollback visibility.",
+    icon: ShieldCheck,
   },
 ] as const;
 
@@ -323,6 +351,27 @@ export default function QuantFoundryPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {SUB_PAGES.map((page) => {
+          const Icon = page.icon;
+          return (
+            <Link
+              key={page.href}
+              href={page.href}
+              className="rounded-lg border border-border/40 bg-card/40 p-3 transition-colors hover:border-primary/50 hover:bg-card/70 focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Icon className="h-4 w-4 text-primary" />
+                {page.label}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {page.description}
+              </p>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Error banner (only for real errors, not 503-disabled) */}
