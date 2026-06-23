@@ -2129,6 +2129,12 @@ after enough settled data exists. Add abstain output.
 
 ### TASK-1002: Causal Market Memory Graph (Order 45)
 
+> **Owner:** Builder 6 (GLM-5.2) — COMPLETED 2026-06-23 (commit `808e7ab`). REVIEW.
+> Files owned: `services/quant_foundry/src/quant_foundry/causal_graph.py` (new),
+> `services/quant_foundry/tests/test_causal_graph.py` (new).
+> Creates a file-disjoint causal market memory graph. Does NOT import from
+> other builders' files. Tests: 12/12 green; full suite 582/582 green; ruff + mypy clean.
+
 Represent historical relationships between symbols, sectors, events,
 regimes, and outcomes. Start with offline graph build. Use graph
 features in research only. Add analog explanations.
