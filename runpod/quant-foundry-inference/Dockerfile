@@ -33,7 +33,10 @@ COPY runpod/quant-foundry-inference/handler.py /app/handler.py
 # Install dependencies.
 RUN pip install --no-cache-dir \
     "pydantic>=2.7" \
-    "httpx>=0.27"
+    "httpx>=0.27" \
+    "onnxruntime>=1.17" \
+    "lightgbm>=4.3" \
+    "numpy>=1.26"
 
 # Pin the code git SHA at build time (for reproducibility).
 ARG GIT_SHA=unknown
