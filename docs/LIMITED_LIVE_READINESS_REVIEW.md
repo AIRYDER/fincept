@@ -267,13 +267,27 @@ Until those eight steps complete, this report's verdict stands.
 
 ## 11. Conclusion
 
-**NOT READY — but significantly closer than the 2026-06-23 baseline.**
+**NOT READY — but all code gaps are now closed. Remaining work is operational only.**
 
-Resolved blockers: B2 (shadow inference is live, not stub), B6 (real RunPod GPU has run — both training and inference completed on real endpoints).
+Resolved blockers: B2 (shadow inference code resolved — `RealInferenceEngine` loads real ONNX/LightGBM models), B6 (real RunPod GPU has run — both training and inference completed on real endpoints; real ML trainer + inference engine now implemented, pending container rebuild + re-run).
 
-Partially resolved: B1 (promotion endpoints exist and are wired, but no model has been promoted through the real gate yet), B3 (paper bridge integration test passes, but never enabled against a real promoted model), B8 (settlement sweep worker exists and is wired, but no long-term real market data history).
+Partially resolved: B1 (promotion endpoints exist and are wired, MVP limit raised to `PAPER_APPROVED`, `LIMITED_LIVE_APPROVED` added to `DossierStatus`, but no model has been promoted through the real gate yet), B3 (paper bridge integration test passes, MVP limit no longer blocks, but never enabled against a real promoted model), B8 (settlement sweep worker exists and is wired, scheduled dispatch loop automates prediction production, but no long-term real market data history).
 
 Remaining blockers: B4 (no production deployment environment), B5 (no broker credentials configured), B7 (sentinel un-runnable without a promoted model family).
+
+**Code gaps closed (2026-06-25, 4 parallel agents):**
+- Real LightGBM trainer replaces deterministic hash stub (Agent A)
+- Real model-loading inference engine replaces linear-combination stub (Agent B)
+- Scheduled shadow inference dispatch loop replaces manual-only dispatch (Agent C)
+- MVP promotion limit raised to `PAPER_APPROVED` + `LIMITED_LIVE_APPROVED` status added (Agent D)
+
+**Operational gaps remaining:**
+- Rebuild RunPod training container with `lightgbm>=4.0` + `pyarrow>=14.0`, re-dispatch real training job
+- Rebuild RunPod inference container with `onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26`, run 30 days
+- Deploy AWS production control plane (Terraform exists, Agent E working on deployment prep)
+- Configure broker sandbox credentials
+- Process first real promotion through the gate
+- Enable paper bridge against promoted model, run 30 days
 
 No code path skips risk/OMS. Live mode remains disabled by default (`QUANT_FOUNDRY_ENABLED=false`, `QUANT_FOUNDRY_MODE=local_mock`, `QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE` unset). The paper bridge is structurally refused. BudgetGuard is fail-closed. RunPod handlers see only the callback HMAC secret. Human approval is required by `PromotionGate.evaluate()`.
 
@@ -325,11 +339,11 @@ Commits: `3f29bbb` (gateway wiring), `f3bc3d0` (backward-compat callback signing
 | 2 | Backtest path handling | MET | MET | Unchanged |
 | 3 | Verification receipts | MET | MET | Unchanged |
 | 4 | Quant Foundry contract-tested | MET | MET | 675 tests passing (up from 991 at 2026-06-23 baseline — test suite restructured) |
-| 5 | Settlement ledger reliable | PARTIAL | **IMPROVED** | Settlement sweep worker implemented and wired to gateway. Periodic polling. Real `settled_count` and `settlement_lag_seconds` in `shadow_health()`. No long-term real market data history yet. |
-| 6 | Dossier registry reliable | PARTIAL | **MET** | Durable `DossierRegistry` in use. Live RunPod training produces real dossiers. `DossierStub` replaced with `DurableDossierStore`. |
-| 7 | Tournament scoring reliable | PARTIAL | **IMPROVED** | Tournament sweep worker implemented and wired. Real leaderboard data from `ExpandedLeaderboard.ranked()`. No long-term settlement evidence yet (only test data). |
-| 8 | Leakage/overfit sentinel green | NOT MET | NOT MET | No model has been promoted through the real gate yet. |
-| 9 | Shadow inference settled history | NOT MET | **PARTIAL** | Shadow predictions are live (RunPod inference proven). Settlement sweep exists. But settlement history is short (test data only, no long-term real predictions). |
+| 5 | Settlement ledger reliable | PARTIAL | **IMPROVED** | Settlement sweep worker implemented and wired to gateway. Periodic polling. Real `settled_count` and `settlement_lag_seconds` in `shadow_health()`. Scheduled shadow dispatch loop (Agent C) now automates prediction production. No long-term real market data history yet. |
+| 6 | Dossier registry reliable | PARTIAL | **MET** | Durable `DossierRegistry` in use. Live RunPod training produces real dossiers. `DossierStub` replaced with `DurableDossierStore`. Real LightGBM trainer (Agent A) ready to produce real dossiers once container is rebuilt. |
+| 7 | Tournament scoring reliable | PARTIAL | **IMPROVED** | Tournament sweep worker implemented and wired. Real leaderboard data from `ExpandedLeaderboard.ranked()`. Scheduled dispatch loop (Agent C) will feed continuous predictions. No long-term settlement evidence yet (only test data). |
+| 8 | Leakage/overfit sentinel green | NOT MET | NOT MET | No model has been promoted through the real gate yet. MVP limit raised to `PAPER_APPROVED` (Agent D) — gate no longer blocks paper promotions. |
+| 9 | Shadow inference settled history | NOT MET | **PARTIAL** | Shadow predictions are live (RunPod inference proven). Real inference engine (Agent B) + scheduled dispatch loop (Agent C) implemented. Settlement sweep exists. But settlement history is short (test data only, no long-term real predictions). |
 | 10 | Paper bridge has run safely | NOT MET | **PARTIAL** | Paper bridge code complete. 27 integration tests pass. 14-step proof script passes. But never enabled against a real promoted model with `QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true` in production. |
 | 11 | Rollback pointer exists | MET | MET | Unchanged |
 | 12 | OMS and risk authoritative | MET | MET | Unchanged — zero imports between quant_foundry and oms/risk |
@@ -341,14 +355,14 @@ Commits: `3f29bbb` (gateway wiring), `f3bc3d0` (backward-compat callback signing
 
 | Blocker | Previous | Current | Resolution |
 |---|---|---|---|
-| B1 — No promoted model family | OPEN | **PARTIALLY RESOLVED** | Promotion endpoints exist and are wired. Dashboard submit form works. But no model has been promoted through the real gate with real evidence yet. |
-| B2 — Shadow inference is stub-only | OPEN | **RESOLVED** | Live RunPod inference proven. `ShadowLedgerStub` replaced with durable `ShadowLedger`. Real predictions stored. |
-| B3 — Paper bridge never enabled | OPEN | **PARTIALLY RESOLVED** | 27 integration tests pass. 14-step proof script passes. But never enabled against a real promoted model in production. |
+| B1 — No promoted model family | OPEN | **PARTIALLY RESOLVED** | Promotion endpoints exist and are wired. Dashboard submit form works. MVP limit raised to `PAPER_APPROVED` (Agent D). `LIMITED_LIVE_APPROVED` added to `DossierStatus`. But no model has been promoted through the real gate with real evidence yet. |
+| B2 — Shadow inference is stub-only | OPEN | **CODE RESOLVED** | `RealInferenceEngine` (`real_inference.py`, ~330 lines) now loads real ONNX/LightGBM models. Replaces the linear-combination `ShadowInferenceEngine` stub. Scheduled dispatch loop added (`dispatch_shadow_inference_batch()` in `gateway.py`, poll task in `api/main.py`). **Operational gap remains**: rebuild RunPod inference container with `onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26`, then run 30 days. |
+| B3 — Paper bridge never enabled | OPEN | **PARTIALLY RESOLVED** | 27 integration tests pass. 14-step proof script passes. MVP limit no longer blocks `PAPER_APPROVED` promotions. But never enabled against a real promoted model in production. |
 | B4 — No production deployment | OPEN | OPEN | No change. |
 | B5 — No broker credentials | OPEN | OPEN | No change. |
-| B6 — Real RunPod GPU never run | OPEN | **RESOLVED** | Both training and inference completed on real RunPod endpoints (`8vol1uc9l75jgs`, `36mz2q30jdyvru`). |
+| B6 — Real RunPod GPU never run | OPEN | **CODE RESOLVED (ops pending)** | Both training and inference completed on real RunPod endpoints (`8vol1uc9l75jgs`, `36mz2q30jdyvru`) — but with STUB engines. Real ML trainer (`RealLightGBMTrainer`, `real_trainer.py`, 374 lines) and real inference engine (`RealInferenceEngine`, `real_inference.py`, ~330 lines) are now implemented. **Operational gap remains**: rebuild both RunPod containers with real ML deps, re-dispatch training + inference jobs. |
 | B7 — Sentinel un-runnable | OPEN | OPEN | No promoted model family yet. |
-| B8 — Settled history is empty | OPEN | **PARTIALLY RESOLVED** | Settlement sweep worker exists and is wired. But no long-term real market data history — only test data has been settled. |
+| B8 — Settled history is empty | OPEN | **PARTIALLY RESOLVED** | Settlement sweep worker exists and is wired. Scheduled shadow dispatch loop now automates prediction production. But no long-term real market data history — only test data has been settled. |
 
 ### Remaining Steps to Live Readiness
 
@@ -368,3 +382,115 @@ Commits: `3f29bbb` (gateway wiring), `f3bc3d0` (backward-compat callback signing
 | Dashboard TypeScript | 0 errors | Passing |
 | Paper bridge integration | 27 | All passing |
 | **Total new tests from Tracks A/B/C** | **89+** | All passing |
+
+---
+
+## 13. Code Gaps Resolved — 2026-06-25 (4 Parallel Agents)
+
+Four parallel agents closed the remaining code gaps identified in the
+2026-06-25 baseline review. All gaps were *code* gaps — the operational
+gaps (30-day runs, AWS deployment, broker credentials) remain. The
+verdict is unchanged (NOT READY) but the remaining work is now
+**operational only**.
+
+### Agent A — Real LightGBM Trainer (replaces `LocalTrainer` stub)
+
+**Gap:** `LocalTrainer` in `runpod_training.py` produced deterministic
+artifact hashes from request inputs — not real ML training. No
+LightGBM/CatBoost/sklearn. Training metrics were synthetic.
+
+**Fix:** `RealLightGBMTrainer` implemented in `real_trainer.py` (374
+lines). Reads dataset manifest, loads real feature data from parquet,
+trains a real LightGBM baseline, runs walk-forward validation, produces
+real calibration / feature-importance / economic-metrics reports,
+packages the trained model as a real artifact (LightGBM format) with a
+real hash. `TrainerProtocol` added to `runpod_training.py` for
+dependency injection (stub vs real trainer selectable at runtime).
+
+**Container update:** Training Dockerfile updated with
+`lightgbm>=4.0` + `pyarrow>=14.0`.
+
+**Tests:** 16 new tests covering real training, artifact packaging,
+metric production, and protocol injection.
+
+**Status:** CODE RESOLVED. Operational gap: build dataset manifest,
+rebuild RunPod container, dispatch real training job.
+
+### Agent B — Real Model-Loading Inference Engine (replaces `ShadowInferenceEngine` stub)
+
+**Gap:** `ShadowInferenceEngine` in `shadow_inference.py` produced
+deterministic predictions from `sum(features) / len(features)` — a
+linear combination, not real model inference. No model loading. No
+ONNX/pickle.
+
+**Fix:** `RealInferenceEngine` implemented in `real_inference.py`
+(~330 lines). Loads model artifacts from S3/RunPod volume in ONNX or
+LightGBM format. Runs real predictions on `FeatureSnapshot` data.
+Keeps `Authority.SHADOW_ONLY` enforced, disabled-by-default fail-safe,
+latency tracking, feature-availability checks, and
+abstain-on-low-availability behavior.
+
+**Container update:** Inference Dockerfile updated with
+`onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26`.
+
+**Tests:** 38 new tests covering ONNX loading, LightGBM loading,
+prediction correctness, abstain paths, and fail-safe behavior.
+
+**Status:** CODE RESOLVED. Operational gap: rebuild RunPod inference
+container, configure dispatch, run 30 days.
+
+### Agent C — Scheduled Shadow Inference Dispatch Loop (replaces manual-only dispatch)
+
+**Gap:** No scheduled shadow inference dispatch task existed — only
+manual `create_job()` API calls. Shadow predictions could not be
+produced continuously without operator intervention.
+
+**Fix:** `dispatch_shadow_inference_batch()` method added to
+`gateway.py`. Queries the dossier registry for models with
+`SHADOW_APPROVED` or higher status, builds feature snapshots via
+`FeatureSnapshotExport`, dispatches inference jobs to the RunPod
+inference endpoint. `shadow_dispatch_status` property exposes dispatch
+metrics. Poll task wired to `api/main.py`:
+`_poll_quant_foundry_shadow_dispatch()` with env var
+`QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS=300` (5 minutes). Two
+new API endpoints: `POST /shadow/dispatch` (manual trigger) and
+`GET /shadow/dispatch-status` (status query).
+
+**Tests:** 18 new tests covering dispatch logic, status reporting,
+API endpoints, and poll-task wiring.
+
+**Status:** CODE RESOLVED. Operational gap: configure gateway for
+continuous dispatch, deploy, run 30 days.
+
+### Agent D — MVP Promotion Limit Raised + `LIMITED_LIVE_APPROVED` Status Added
+
+**Gap:** `PromotionGate._MVP_MAX_LEVEL = SHADOW_APPROVED` blocked
+promotions to `PAPER_APPROVED` through the real gate. The paper bridge
+integration test worked around this by setting dossier status
+directly. `DossierStatus` enum had no `LIMITED_LIVE_APPROVED` for the
+Phase 12 live pilot path.
+
+**Fix:** `PromotionGate._MVP_MAX_LEVEL` raised from `SHADOW_APPROVED`
+to `PAPER_APPROVED`. `LIMITED_LIVE_APPROVED` added to `DossierStatus`
+enum. `_LEVEL_ORDER` in `promotion.py` updated.
+`PromotionGate.evaluate()` handles the new level. 5 test files updated
+to reflect the new MVP limit and enum member.
+
+**Tests:** 77 + 12 tests passing across the updated files.
+
+**Status:** CODE RESOLVED. Operational gap: run sentinel, promote
+model through the real gate, enable paper bridge, run 30 days.
+
+### Summary: Code vs Operational
+
+| Gap | Type | Status |
+|---|---|---|
+| Real LightGBM trainer | Code | ✅ RESOLVED (Agent A) |
+| Real model-loading inference engine | Code | ✅ RESOLVED (Agent B) |
+| Scheduled shadow inference dispatch loop | Code | ✅ RESOLVED (Agent C) |
+| MVP promotion limit + `LIMITED_LIVE_APPROVED` | Code | ✅ RESOLVED (Agent D) |
+| 30-day settled shadow history | Operational | ⏳ Pending (rebuild containers + run) |
+| AWS production deployment | Operational | ⏳ Pending (Terraform exists, Agent E) |
+| Broker sandbox credentials | Operational | ⏳ Pending (Phase 12) |
+| First real promotion through the gate | Operational | ⏳ Pending (after 30-day run) |
+| Paper bridge enabled against real model | Operational | ⏳ Pending (after promotion) |

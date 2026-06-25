@@ -9,7 +9,7 @@
 
 ## Where We Are
 
-All code for Phases 0–10 of the BIG_PLAN is implemented. The RunPod loop is live-proven (training + inference jobs completed on real GPUs — but with STUB trainers/inference engines, not real ML models). Settlement, tournament, promotion, and paper bridge are wired end-to-end with 89+ new tests. The readiness review verdict is **NOT READY** — the remaining gaps are a mix of code gaps (real ML training/inference, scheduled dispatch loop, live_approved status) and operational gaps (30-day evidence runs, AWS deployment, broker credentials).
+All code for Phases 0–10 of the BIG_PLAN is implemented. The RunPod loop is live-proven (training + inference jobs completed on real GPUs — but with STUB trainers/inference engines, not real ML models). Settlement, tournament, promotion, and paper bridge are wired end-to-end with 89+ new tests. **All 5 code gaps identified in the 2026-06-25 baseline were closed by 4 parallel agents on 2026-06-25** (real LightGBM trainer, real inference engine, scheduled dispatch loop, MVP limit raised, `LIMITED_LIVE_APPROVED` added). The readiness review verdict is **NOT READY** — but the remaining gaps are **operational only** (30-day evidence runs, AWS deployment, broker credentials).
 
 ### What's done (verified 2026-06-25)
 
@@ -20,8 +20,8 @@ All code for Phases 0–10 of the BIG_PLAN is implemented. The RunPod loop is li
 | Phase 2: Dashboard and operator workflow | ✅ Complete | |
 | Phase 3: Quant Foundry contracts and mock connectivity | ✅ Complete | |
 | Phase 4: Evidence loop foundations | ✅ Complete | feature lake (346 lines), shadow ledger (324 lines), dossier registry, tournament, sentinel (764 lines) |
-| Phase 5: RunPod research foundry MVP | ⚠️ Code complete + live-proven, but STUB trainer | `LocalTrainer` produces deterministic hashes, NOT real ML. No LightGBM/CatBoost. RunPod job ran the stub. |
-| Phase 6: Shadow inference swarm MVP | ⚠️ Code complete + live-proven, but STUB inference + no dispatch loop | `ShadowInferenceEngine` produces linear-combination stubs, NOT real model predictions. No scheduled dispatch task exists. |
+| Phase 5: RunPod research foundry MVP | ✅ Code complete + live-proven + **real trainer implemented** | `RealLightGBMTrainer` (`real_trainer.py`, 374 lines) replaces deterministic hash stub. `TrainerProtocol` added for injection. RunPod job ran the stub; real trainer needs container rebuild + re-dispatch. |
+| Phase 6: Shadow inference swarm MVP | ✅ Code complete + live-proven + **real inference + dispatch loop implemented** | `RealInferenceEngine` (`real_inference.py`, ~330 lines) loads real ONNX/LightGBM models. `dispatch_shadow_inference_batch()` + poll task automate dispatch. RunPod job ran the stub; real engine needs container rebuild + re-run. |
 | Phase 7: Tournament governor and promotion | ✅ Complete + wired | But MVP gate limits promotions to SHADOW_APPROVED only |
 | Phase 8: Quant Foundry dashboard | ✅ Complete + promotion buttons wired | |
 | Phase 9: Deployment and cost-optimized runtime | ✅ Railway staging + AWS Terraform exists | 15 Terraform files (2,280 lines) in `infra/aws/` — NOT just design |
@@ -30,89 +30,84 @@ All code for Phases 0–10 of the BIG_PLAN is implemented. The RunPod loop is li
 
 ### What's not done (verified 2026-06-25)
 
-The remaining work is a mix of **code gaps** and **operational execution**:
+The remaining work is **operational execution only** — all code gaps
+were closed on 2026-06-25 by 4 parallel agents (see "Code Gaps
+Resolved" section below).
 
-**Code gaps (must be fixed before operational use):**
-1. `LocalTrainer` in `runpod_training.py` is a STUB — produces deterministic hashes, not real ML training. Needs real LightGBM/CatBoost.
-2. `ShadowInferenceEngine` in `shadow_inference.py` is a STUB — produces linear-combination predictions, not real model inference. Needs real model loading (ONNX/pickle).
-3. No scheduled shadow inference dispatch loop — only manual API calls. Need a periodic task in `api/main.py` that dispatches new shadow predictions.
-4. `DossierStatus` enum has no `LIVE_APPROVED` — only goes up to `PAPER_APPROVED`. Need to add for live trading path.
-5. `PromotionGate._MVP_MAX_LEVEL = SHADOW_APPROVED` — blocks promotions to `PAPER_APPROVED` through the gate. Paper bridge integration test works around this by setting dossier status directly. Need to raise the MVP limit to `PAPER_APPROVED` for the paper bridge to work through the real gate.
+**Code gaps — ✅ ALL RESOLVED (2026-06-25):**
+1. ~~`LocalTrainer` in `runpod_training.py` is a STUB~~ — ✅ RESOLVED (Agent A). `RealLightGBMTrainer` in `real_trainer.py` (374 lines) trains real LightGBM models. `TrainerProtocol` added for injection.
+2. ~~`ShadowInferenceEngine` in `shadow_inference.py` is a STUB~~ — ✅ RESOLVED (Agent B). `RealInferenceEngine` in `real_inference.py` (~330 lines) loads real ONNX/LightGBM models.
+3. ~~No scheduled shadow inference dispatch loop~~ — ✅ RESOLVED (Agent C). `dispatch_shadow_inference_batch()` in `gateway.py` + poll task in `api/main.py` + 2 API endpoints.
+4. ~~`DossierStatus` enum has no `LIVE_APPROVED`~~ — ✅ RESOLVED (Agent D). `LIMITED_LIVE_APPROVED` added to `DossierStatus`.
+5. ~~`PromotionGate._MVP_MAX_LEVEL = SHADOW_APPROVED`~~ — ✅ RESOLVED (Agent D). Raised to `PAPER_APPROVED`.
 
 **Operational gaps (code is ready, needs execution):**
-1. No real model has been trained against real market data
-2. No 30-day settled shadow history exists
-3. No model has been promoted through the real gate
-4. Paper bridge has never been enabled against a real promoted model
-5. AWS Terraform exists but has never been `terraform apply`'d
+1. No real model has been trained against real market data (container rebuild + dispatch pending)
+2. No 30-day settled shadow history exists (container rebuild + 30-day run pending)
+3. No model has been promoted through the real gate (after 30-day run)
+4. Paper bridge has never been enabled against a real promoted model (after promotion)
+5. AWS Terraform exists but has never been `terraform apply`'d (Agent E working on deployment prep)
 6. No broker credentials configured (OMS paper-only is enforced)
 
 ---
 
 ## The Next Five Tasks
 
-### Task 1: Train First Real Baseline Model Family (TASK-0504 — CODE GAP + operational)
+### Task 1: Train First Real Baseline Model Family (TASK-0504 — OPERATIONAL ONLY, code gap fixed)
 
 **BIG_PLAN reference:** TASK-0504, Order 30, Phase 5
-**Status:** ⚠️ CODE GAP — `LocalTrainer` is a STUB. RunPod handler works but trains nothing real.
+**Status:** ✅ CODE GAP FIXED — `RealLightGBMTrainer` implemented. Remaining work is OPERATIONAL ONLY.
 
 #### What exists
 
-- `services/quant_foundry/src/quant_foundry/runpod_training.py` (271 lines) — `RunPodTrainingHandler` class
-  - **`LocalTrainer` (lines 76-168) is a STUB**: produces deterministic artifact hashes from request inputs, NOT real ML training. No LightGBM/CatBoost/sklearn. Training metrics (`accuracy`, `logloss`, `pbo`, `deflated_sharpe`) are all synthetic.
+- `services/quant_foundry/src/quant_foundry/runpod_training.py` (271+ lines) — `RunPodTrainingHandler` class
+  - **`RealLightGBMTrainer` (`real_trainer.py`, 374 lines) — IMPLEMENTED (Agent A)**: trains real LightGBM models, reads dataset manifests, loads real feature data from parquet, runs walk-forward validation, produces real calibration / feature-importance / economic-metrics reports, packages trained model as real artifact with real hash. `TrainerProtocol` added to `runpod_training.py` for dependency injection (stub vs real selectable at runtime).
   - `RunPodTrainingHandler` (lines 174+) wraps the trainer, enforces deadlines, signs callbacks — this part is real.
 - `runpod/quant-foundry-training/handler.py` (148 lines) — RunPod serverless entrypoint. Real RunPod protocol handler. Calls `RunPodTrainingHandler.handle()`.
-- RunPod training endpoint `8vol1uc9l75jgs` is live and proven — but it ran the STUB trainer.
+- RunPod training endpoint `8vol1uc9l75jgs` is live and proven — but it ran the STUB trainer. Needs container rebuild + re-dispatch with real trainer.
+- `runpod/quant-foundry-training/Dockerfile` — **UPDATED (Agent A)** with `lightgbm>=4.0` + `pyarrow>=14.0`.
 - `services/quant_foundry/src/quant_foundry/feature_lake.py` (346 lines) — `FeatureLakeBuilder` with PIT proof, purged folds, manifest hashing. REAL implementation.
 - `services/quant_foundry/src/quant_foundry/artifacts.py` (383 lines) — `import_artifact()` with hash verification, URI allowlist, path traversal defense. REAL implementation.
 - `libs/fincept-db/src/fincept_db/bars.py` (144 lines) — PostgreSQL bars table with async read/write. REAL.
 - `scripts/ingest_bars.py` (358 lines) — ingests OHLCV from Alpaca or yfinance into parquet. REAL.
 - `services/ingestor/` — live market data ingestor for Binance, Coinbase, Kraken. REAL.
+- **16 new tests** covering real training, artifact packaging, metric production, and protocol injection.
 
 #### What needs to be done
 
-**CODE GAP — Replace stub trainer with real ML:**
+**✅ CODE GAP FIXED (Agent A, 2026-06-25):**
 
-1. **Implement a real trainer** in `runpod_training.py` (or a new module):
-   - Replace `LocalTrainer.train()` with real LightGBM or CatBoost training
-   - Read the dataset manifest ref → load actual feature data from parquet/S3
-   - Train a real baseline model (LightGBM recommended — simple, fast, interpretable)
-   - Run walk-forward validation on real data
-   - Produce real calibration report (reliability diagrams, Brier score)
-   - Produce real feature importance report
-   - Produce real economic metrics (Sharpe, max drawdown, win rate)
-   - Package the trained model as a real artifact (pickle/ONNX) with real hash
-   - Keep `Authority.SHADOW_ONLY` enforced
-   - Keep deadline/budget enforcement
-
-2. **Update the RunPod training container** (`runpod/quant-foundry-training/`):
-   - Add `lightgbm` (or `catboost`) to `Dockerfile` dependencies
-   - Ensure the container can read dataset manifests from S3 or RunPod volume
-   - Ensure the container can write artifacts to S3 or RunPod volume
+The `RealLightGBMTrainer` is implemented in `real_trainer.py` (374 lines).
+`TrainerProtocol` added to `runpod_training.py` for dependency injection.
+Training Dockerfile updated with `lightgbm>=4.0` + `pyarrow>=14.0`.
+16 new tests added. No further code work needed.
 
 **OPERATIONAL — Build manifest and dispatch:**
 
-3. **Build a real dataset manifest** using `FeatureLakeBuilder` against actual market data from `fincept_db.bars`:
+1. **Build a real dataset manifest** using `FeatureLakeBuilder` against actual market data from `fincept_db.bars`:
    - Point-in-time proof fields
    - Feature schema hash + label schema hash
    - Train/validation/test windows with purged-fold boundaries
    - Row count and checksum
    - Feature availability report
 
-4. **Dispatch a real training job** to RunPod endpoint `8vol1uc9l75jgs` with:
+2. **Rebuild the RunPod training container** with the updated Dockerfile (`lightgbm>=4.0` + `pyarrow>=14.0` — already added by Agent A).
+
+3. **Dispatch a real training job** to RunPod endpoint `8vol1uc9l75jgs` with:
    - The real dataset manifest URI
    - A simple model config (LightGBM baseline)
    - Walk-forward validation enabled
    - Budget limits enforced via BudgetGuard
 
-5. **Verify the trained artifact imports** through `artifacts.py` and dossier is registered.
+4. **Verify the trained artifact imports** through `artifacts.py` and dossier is registered.
 
-6. **Keep the model at `candidate` or `research_approved` status** — do NOT promote yet.
+5. **Keep the model at `candidate` or `research_approved` status** — do NOT promote yet.
 
 #### Acceptance criteria
 
-- [ ] `LocalTrainer` replaced with real LightGBM/CatBoost trainer
-- [ ] RunPod container has ML dependencies installed
+- [x] `LocalTrainer` replaced with real LightGBM trainer (`RealLightGBMTrainer`, Agent A)
+- [x] RunPod container Dockerfile updated with ML dependencies (Agent A)
+- [ ] RunPod training container rebuilt and deployed
 - [ ] One real trained artifact imports successfully
 - [ ] Dossier includes dataset and feature schema
 - [ ] Dossier includes real training metrics (not synthetic)
@@ -126,89 +121,85 @@ The remaining work is a mix of **code gaps** and **operational execution**:
 - `fincept_db.bars` must have real market data (infrastructure exists, may need data ingestion)
 - RunPod training endpoint must be running (confirmed: `8vol1uc9l75jgs` is live)
 - BudgetGuard must have budget allocated
-- LightGBM/CatBoost must be added to RunPod container Dockerfile
+- ~~LightGBM/CatBoost must be added to RunPod container Dockerfile~~ ✅ Done (Agent A)
 
 #### Estimated effort
 
-6-10 hours of agent work (implement real trainer, update Dockerfile, build manifest, dispatch job, verify import). The training job itself may take 30-60 minutes on the GPU.
+2-4 hours of operational work (build manifest, rebuild container, dispatch job, verify import). The training job itself may take 30-60 minutes on the GPU. Code work is complete.
 
 #### Risk
 
-Medium-high. Real ML training introduces dependency management, data format compatibility, and GPU memory constraints. The RunPod container needs ML libraries installed.
+Medium. Real ML training introduces data format compatibility and GPU memory constraints. The RunPod container Dockerfile is already updated — risk is now operational (data availability, GPU cost).
 
 ---
 
-### Task 2: 30-Day Shadow Inference Run (CODE GAP + operational — the long pole)
+### Task 2: 30-Day Shadow Inference Run (OPERATIONAL ONLY, code gaps fixed — the long pole)
 
 **BIG_PLAN reference:** Phase 6 operational completion
-**Status:** ⚠️ CODE GAP — `ShadowInferenceEngine` is a STUB. No scheduled dispatch loop exists.
+**Status:** ✅ CODE GAPS FIXED — `RealInferenceEngine` implemented (Agent B) + scheduled dispatch loop implemented (Agent C). Remaining work is OPERATIONAL ONLY.
 
 #### What exists
 
-- `services/quant_foundry/src/quant_foundry/shadow_inference.py` (231 lines) — `ShadowInferenceEngine` class
-  - **STUB**: produces deterministic predictions from `sum(features) / len(features)` — a linear combination, NOT real model inference. No model loading. No ONNX/pickle. The docstring explicitly says "The engine does NOT load actual model artifacts."
+- `services/quant_foundry/src/quant_foundry/shadow_inference.py` (231+ lines) — `ShadowInferenceEngine` class (stub, retained for fallback)
+  - **`RealInferenceEngine` (`real_inference.py`, ~330 lines) — IMPLEMENTED (Agent B)**: loads real model artifacts from S3/RunPod volume in ONNX or LightGBM format. Runs real predictions on `FeatureSnapshot` data. Keeps `Authority.SHADOW_ONLY` enforced, disabled-by-default fail-safe, latency tracking, feature-availability checks, abstain-on-low-availability behavior.
   - Disabled by default (fail-safe). Signed callbacks work. Shadow-only authority enforced.
+- `runpod/quant-foundry-inference/Dockerfile` — **UPDATED (Agent B)** with `onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26`.
 - `services/quant_foundry/src/quant_foundry/callbacks.py` (341 lines) — `CallbackProcessor` with HMAC verification, tamper check, idempotent processing. REAL.
 - `services/quant_foundry/src/quant_foundry/shadow_ledger.py` (324 lines) — durable JSONL `ShadowLedger` with idempotency, order-field rejection, batch hash verification. REAL.
 - `services/quant_foundry/src/quant_foundry/feature_snapshot_export.py` (261 lines) — `FeatureSnapshotExport` with PIT filtering, availability tracking, freshness metadata. REAL.
 - `services/quant_foundry/src/quant_foundry/settlement_sweep.py` — periodic settlement. REAL + wired.
 - `services/quant_foundry/src/quant_foundry/market_data_adapter.py` — `BarDataAdapter` reads from `fincept_db.bars`. REAL.
-- RunPod inference endpoint `36mz2q30jdyvru` is live and proven — but it ran the STUB engine.
+- RunPod inference endpoint `36mz2q30jdyvru` is live and proven — but it ran the STUB engine. Needs container rebuild + re-run with real engine.
 - Gateway has `run_settlement_sweep()` and `run_tournament_sweep()` wired to API poll tasks.
-- **NO scheduled shadow inference dispatch task exists** — only manual `create_job()` API calls.
+- **Scheduled shadow inference dispatch loop — IMPLEMENTED (Agent C)**:
+  - `dispatch_shadow_inference_batch()` method in `gateway.py` — queries dossier registry for `SHADOW_APPROVED`+ models, builds feature snapshots, dispatches inference jobs.
+  - `shadow_dispatch_status` property — exposes dispatch metrics.
+  - `_poll_quant_foundry_shadow_dispatch()` poll task in `services/api/src/api/main.py` with env var `QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS=300` (5 minutes).
+  - `POST /shadow/dispatch` endpoint — manual trigger.
+  - `GET /shadow/dispatch-status` endpoint — status query.
+- **38 new tests (Agent B)** + **18 new tests (Agent C)** — all passing.
 
 #### What needs to be done
 
-**CODE GAP — Replace stub inference engine + add dispatch loop:**
+**✅ CODE GAPS FIXED (Agents B + C, 2026-06-25):**
 
-1. **Implement a real inference engine** in `shadow_inference.py` (or a new module):
-   - Replace `ShadowInferenceEngine.run()` stub with real model loading
-   - Load model artifact from S3/RunPod volume (ONNX or pickle format)
-   - Run real predictions on `FeatureSnapshot` data
-   - Keep `Authority.SHADOW_ONLY` enforced
-   - Keep disabled-by-default fail-safe
-   - Keep latency tracking and feature availability checks
-   - Keep abstain-on-low-availability behavior
+The `RealInferenceEngine` is implemented in `real_inference.py` (~330 lines) —
+loads real ONNX/LightGBM models (Agent B). Inference Dockerfile updated with
+`onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26`. 38 new tests added.
 
-2. **Update the RunPod inference container** (`runpod/quant-foundry-inference/`):
-   - Add `onnxruntime` (or `lightgbm`) to `Dockerfile` dependencies
-   - Ensure the container can load model artifacts from S3 or RunPod volume
-   - Ensure the container can read feature snapshots
+The scheduled shadow inference dispatch loop is implemented (Agent C):
+`dispatch_shadow_inference_batch()` in `gateway.py`, poll task in `api/main.py`
+with `QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS=300`, and 2 API endpoints
+(`POST /shadow/dispatch`, `GET /shadow/dispatch-status`). 18 new tests added.
 
-3. **Implement a scheduled shadow inference dispatch loop**:
-   - Add a new method to `gateway.py`: `dispatch_shadow_inference_batch()` that:
-     - Queries the dossier registry for models with `SHADOW_APPROVED` or higher status
-     - Builds feature snapshots from the feature lake (using `FeatureSnapshotExport`)
-     - Dispatches inference jobs to the RunPod inference endpoint via `create_job()`
-     - Returns a dispatch receipt
-   - Add a new poll task in `services/api/src/api/main.py`:
-     - `_poll_quant_foundry_shadow_dispatch()` — runs on a configurable interval (e.g., every 5 minutes during market hours)
-     - Env var: `QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS` (default 300)
-     - Only dispatches if `QUANT_FOUNDRY_MODE=runpod_shadow`
+No further code work needed.
 
 **OPERATIONAL — Configure and run for 30 days:**
 
-4. **Configure the gateway for continuous shadow inference**:
+1. **Rebuild the RunPod inference container** with the updated Dockerfile (`onnxruntime>=1.17` + `lightgbm>=4.3` + `numpy>=1.26` — already added by Agent B).
+
+2. **Configure the gateway for continuous shadow inference**:
    - `QUANT_FOUNDRY_ENABLED=true`
    - `QUANT_FOUNDRY_MODE=runpod_shadow`
    - `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT=36mz2q30jdyvru`
    - `QUANT_FOUNDRY_CALLBACK_SECRET=<real secret>`
    - `QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS=300`
 
-5. **Deploy the gateway** somewhere stable (Railway staging or AWS ECS):
+3. **Deploy the gateway** somewhere stable (Railway staging or AWS ECS):
    - API must be reachable for RunPod callbacks
    - Durable stores must persist
 
-6. **Monitor for 30 days**:
+4. **Monitor for 30 days**:
    - Daily health checks via `GET /quant-foundry/shadow/health`
    - Weekly tournament status via `GET /quant-foundry/tournament/status`
    - Track `settled_count`, `settlement_lag_seconds`, prediction accuracy
 
 #### Acceptance criteria
 
-- [ ] `ShadowInferenceEngine` replaced with real model-loading inference
-- [ ] RunPod inference container has ML dependencies installed
-- [ ] Scheduled dispatch loop implemented and wired to API poll task
+- [x] `ShadowInferenceEngine` replaced with real model-loading inference (`RealInferenceEngine`, Agent B)
+- [x] RunPod inference container Dockerfile updated with ML dependencies (Agent B)
+- [x] Scheduled dispatch loop implemented and wired to API poll task (Agent C)
+- [ ] RunPod inference container rebuilt and deployed
 - [ ] 30+ days of continuous shadow predictions stored in `ShadowLedger`
 - [ ] Settlement records accumulated in `SettlementLedger`
 - [ ] Tournament leaderboard shows real model performance
@@ -225,7 +216,7 @@ Medium-high. Real ML training introduces dependency management, data format comp
 
 #### Estimated effort
 
-8-12 hours of agent work (real inference engine + dispatch loop + container update + deployment). Then 30 days of wall-clock time for the evidence run.
+2-4 hours of operational work (rebuild container, configure gateway, deploy). Then 30 days of wall-clock time for the evidence run. Code work is complete.
 
 #### Risk
 
@@ -392,18 +383,18 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
 
 ---
 
-### Task 5: First Real Promotion + Paper Bridge Enablement (CODE GAP + operational)
+### Task 5: First Real Promotion + Paper Bridge Enablement (OPERATIONAL ONLY, code gap fixed)
 
 **BIG_PLAN reference:** Phase 7 + Phase 11 operational completion
-**Status:** ⚠️ CODE GAP — `PromotionGate._MVP_MAX_LEVEL = SHADOW_APPROVED` blocks promotions to PAPER_APPROVED. `DossierStatus` has no LIVE_APPROVED.
+**Status:** ✅ CODE GAP FIXED — `PromotionGate._MVP_MAX_LEVEL` raised to `PAPER_APPROVED` + `LIMITED_LIVE_APPROVED` added to `DossierStatus` (Agent D). Remaining work is OPERATIONAL ONLY.
 
 #### What exists
 
-- `services/quant_foundry/src/quant_foundry/promotion.py` (325 lines) — REAL implementation:
+- `services/quant_foundry/src/quant_foundry/promotion.py` (325+ lines) — REAL implementation:
   - `PromotionGate.evaluate()` — fail-closed gate with 4 checks (dossier, tournament, settlement, sentinel)
   - `PromotionReviewQueue` — submit/process pending/completed
   - `PromotionEvidence`, `PromotionRequest`, `PromotionReceipt` — all frozen + extra='forbid'
-  - **BUT**: `_MVP_MAX_LEVEL = DossierStatus.SHADOW_APPROVED` (line 176) — blocks promotions to `PAPER_APPROVED` with `MVP_LEVEL_LIMIT` rejection. The paper bridge integration test works around this by setting dossier status directly.
+  - **`_MVP_MAX_LEVEL = DossierStatus.PAPER_APPROVED` — FIXED (Agent D)**: raised from `SHADOW_APPROVED`. Promotions to `PAPER_APPROVED` now go through the real gate. The paper bridge integration test no longer needs to work around the MVP limit.
 - `services/quant_foundry/src/quant_foundry/sentinel.py` (764 lines) — REAL implementation:
   - `LeakageSentinel` with negative controls (shuffled labels, time-reversed, future-leak), purged-fold verifier, PBO, train/live gap, feature stability
   - `SentinelReceipt` with `passed` flag and blocking issues
@@ -413,12 +404,13 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
   - `RollbackPointer` — created before publishing
   - `PaperPrediction` — no order/OMS fields
 - `services/quant_foundry/src/quant_foundry/dossier.py` — `DossierStatus` enum:
-  - `CANDIDATE`, `RESEARCH_APPROVED`, `SHADOW_APPROVED`, `PAPER_APPROVED`, `REJECTED`
-  - **NO `LIVE_APPROVED` or `LIMITED_LIVE_APPROVED`** — mentioned in promotion.py docstring but not in enum
+  - `CANDIDATE`, `RESEARCH_APPROVED`, `SHADOW_APPROVED`, `PAPER_APPROVED`, `LIMITED_LIVE_APPROVED`, `REJECTED`
+  - **`LIMITED_LIVE_APPROVED` ADDED (Agent D)** — for Phase 12 limited live pilot path. Added to `_LEVEL_ORDER` in `promotion.py`. `PromotionGate.evaluate()` handles the new level.
 - Gateway: `submit_promotion()`, `process_promotion()` (approve/reject) — wired
 - API: `POST /quant-foundry/promotion/submit`, `/approve`, `/reject` — wired
 - Dashboard: promotion submit form + approve/reject buttons — wired
 - 27 integration tests + 14-step proof script — all passing
+- **5 test files updated (Agent D)** — 77 + 12 tests passing across updated files.
 - `services/oms/src/oms/` — OMS with Alpaca broker integration (REAL):
   - `alpaca/client.py` — `submit_order()`, `get_order()`, `cancel_order()`, `get_account()`, `list_positions()`
   - `alpaca/runtime.py` — Alpaca order management runtime
@@ -428,37 +420,30 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
 
 #### What needs to be done
 
-**CODE GAP — Fix MVP level limit:**
+**✅ CODE GAP FIXED (Agent D, 2026-06-25):**
 
-1. **Raise `PromotionGate._MVP_MAX_LEVEL`** from `SHADOW_APPROVED` to `PAPER_APPROVED`:
-   - This allows promotions to `PAPER_APPROVED` through the real gate
-   - The paper bridge requires `PAPER_APPROVED` status to publish
-   - The integration test currently works around this by setting dossier status directly — the real flow should go through the gate
-   - Update tests that depend on the MVP limit
-
-2. **(Optional, for Phase 12) Add `LIVE_APPROVED` to `DossierStatus` enum**:
-   - Add `LIMITED_LIVE_APPROVED = "limited_live_approved"` to `DossierStatus`
-   - Add to `_LEVEL_ORDER` in `promotion.py`
-   - Update `PromotionGate.evaluate()` to handle the new level
-   - This is NOT needed for Task 5 (paper bridge only needs `PAPER_APPROVED`) but IS needed for Phase 12 (limited live pilot)
+`PromotionGate._MVP_MAX_LEVEL` raised from `SHADOW_APPROVED` to `PAPER_APPROVED`.
+`LIMITED_LIVE_APPROVED` added to `DossierStatus` enum. `_LEVEL_ORDER` in
+`promotion.py` updated. `PromotionGate.evaluate()` handles the new level.
+5 test files updated. 77 + 12 tests passing. No further code work needed.
 
 **OPERATIONAL — Run sentinel, promote, enable paper bridge:**
 
-3. **Run the leakage/overfit sentinel** against the trained baseline model after 30 days of settled shadow history:
+1. **Run the leakage/overfit sentinel** against the trained baseline model after 30 days of settled shadow history:
    - `LeakageSentinel.run()` with real `SentinelInput`
    - Verify `SentinelReceipt.passed == True`
    - If sentinel fails, do NOT promote — investigate and retrain
 
-4. **Build the promotion evidence packet**:
+2. **Build the promotion evidence packet**:
    - `PromotionEvidence` with real dossier, tournament result, sentinel receipt
 
-5. **Submit the promotion request** via the dashboard or API:
+3. **Submit the promotion request** via the dashboard or API:
    - `POST /quant-foundry/promotion/submit` with `target_level=paper_approved`
    - `POST /quant-foundry/promotion/approve` after human review
    - Verify `PromotionReceipt.status == APPROVED`
    - Verify dossier status updated to `PAPER_APPROVED`
 
-6. **Enable the paper bridge**:
+4. **Enable the paper bridge**:
    - Set `QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true`
    - Set `QUANT_FOUNDRY_MODE=paper`
    - Verify `PaperBridge.publish()` succeeds
@@ -466,7 +451,7 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
    - Verify rollback pointer created
    - Verify `PaperPrediction` has no order/OMS fields
 
-7. **Run paper bridge for 30 days**:
+5. **Run paper bridge for 30 days**:
    - Monitor `BridgeReceipt` outputs
    - Verify circuit breaker doesn't trip
    - Track paper prediction accuracy vs. shadow predictions
@@ -474,8 +459,9 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
 
 #### Acceptance criteria
 
-- [ ] `PromotionGate._MVP_MAX_LEVEL` raised to `PAPER_APPROVED`
-- [ ] Tests updated and all passing
+- [x] `PromotionGate._MVP_MAX_LEVEL` raised to `PAPER_APPROVED` (Agent D)
+- [x] `LIMITED_LIVE_APPROVED` added to `DossierStatus` (Agent D)
+- [x] Tests updated and all passing (77 + 12 tests, Agent D)
 - [ ] Leakage/overfit sentinel passes on the trained model
 - [ ] Promotion evidence packet is complete
 - [ ] Human reviews and approves the promotion
@@ -497,11 +483,11 @@ Low code risk (Terraform is written). Medium operational risk (AWS credentials, 
 
 #### Estimated effort
 
-2-4 hours of agent work (fix MVP limit + update tests + run sentinel + build evidence + submit promotion). Then 30 days of paper bridge operation.
+1-2 hours of operational work (run sentinel + build evidence + submit promotion). Then 30 days of paper bridge operation. Code work is complete.
 
 #### Risk
 
-High. This is the first time the system transitions from shadow to paper. The sentinel may fail, requiring retraining. The MVP level limit change could expose edge cases in the promotion gate.
+Medium. This is the first time the system transitions from shadow to paper. The sentinel may fail, requiring retraining. The MVP level limit change is code-complete and tested — risk is now operational (sentinel outcome, paper bridge stability).
 
 #### Rollback
 
@@ -567,58 +553,144 @@ After the limited live pilot is stable:
 
 ---
 
-## Task Dependency Graph (verified 2026-06-25)
+## Task Dependency Graph (updated 2026-06-25 — code gaps resolved)
 
 ```
-Task 1: Real ML Trainer (CODE GAP — replace LocalTrainer stub)
+Task 1: Real ML Trainer (✅ CODE RESOLVED — Agent A; OPERATIONAL: rebuild container + dispatch)
   │
-  ├──→ Task 2: 30-Day Shadow Run (CODE GAP — real inference + dispatch loop)
+  ├──→ Task 2: 30-Day Shadow Run (✅ CODE RESOLVED — Agents B+C; OPERATIONAL: rebuild container + 30-day run)
   │      │
-  │      └──→ Task 5: First Promotion + Paper Bridge (CODE GAP — fix MVP limit)
+  │      └──→ Task 5: First Promotion + Paper Bridge (✅ CODE RESOLVED — Agent D; OPERATIONAL: sentinel + promote + 30-day paper)
   │             │
-  │             └──→ Phase 12: Limited Live Pilot (needs LIVE_APPROVED status)
+  │             └──→ Phase 12: Limited Live Pilot (LIMITED_LIVE_APPROVED added — Agent D; needs broker creds)
   │
   ├──→ Task 3: Alpha Genome Lab (✅ ALREADY IMPLEMENTED — operational use only)
   │
-  └──→ Task 4: AWS Deploy (✅ IaC EXISTS — terraform apply only)
+  └──→ Task 4: AWS Deploy (✅ IaC EXISTS — terraform apply only; Agent E working on deployment prep)
 ```
 
-**Critical path:** Task 1 (real trainer) → Task 2 (real inference + 30-day run) → Task 5 (fix MVP limit + promote + 30-day paper)
-**Parallel tracks:** Task 4 (AWS deploy) can run at any time. Task 3 is already done.
+**Critical path:** Task 1 (rebuild container + dispatch real training) → Task 2 (rebuild container + 30-day run) → Task 5 (sentinel + promote + 30-day paper)
+**Parallel tracks:** Task 4 (AWS deploy) can run at any time. Task 3 is already done. All code gaps are closed — remaining work is operational.
 
 ---
 
-## Recommended Execution Order (verified 2026-06-25)
+## Recommended Execution Order (updated 2026-06-25 — code gaps resolved)
 
-1. **Start Task 4 (AWS deploy) immediately** — Terraform exists, just needs `terraform apply`. Parallel to everything.
-2. **Start Task 1 (real ML trainer)** — CODE GAP. Replace `LocalTrainer` stub with real LightGBM. Prerequisite for Tasks 2, 3, and 5.
-3. **Start Task 2 (real inference + dispatch loop)** — CODE GAP. Replace `ShadowInferenceEngine` stub, add scheduled dispatch. After Task 1.
-4. **Start Task 5 (fix MVP limit + promote)** — CODE GAP (small: raise `_MVP_MAX_LEVEL`). After Task 2's 30-day run.
+1. **Start Task 4 (AWS deploy) immediately** — Terraform exists, Agent E working on deployment prep. Parallel to everything.
+2. **Start Task 1 (rebuild + dispatch real training)** — ✅ Code resolved (Agent A). Rebuild RunPod training container, build dataset manifest, dispatch real training job. Prerequisite for Tasks 2, 3, and 5.
+3. **Start Task 2 (rebuild + 30-day shadow run)** — ✅ Code resolved (Agents B+C). Rebuild RunPod inference container, configure dispatch, run 30 days. After Task 1.
+4. **Start Task 5 (sentinel + promote + paper bridge)** — ✅ Code resolved (Agent D). Run sentinel, promote through real gate, enable paper bridge, run 30 days. After Task 2's 30-day run.
 5. **Task 3 (Alpha Genome Lab)** — ✅ Already implemented. Use operationally after Task 1.
 
-**Parallel agent opportunities:**
-- Task 1 (real trainer) and Task 4 (AWS deploy) can be worked on by parallel agents immediately
-- Task 2 (real inference + dispatch loop) can start code work in parallel with Task 1 (the stub replacement is independent of the trainer replacement), but can't run operationally until Task 1 produces a real model
-- Task 5's code gap (MVP limit fix) can be fixed immediately in parallel with everything else
+**All code gaps are closed.** The remaining work is operational: container rebuilds, dataset manifests, 30-day runs, AWS deployment, broker credentials. No further agent code work is needed for Tasks 1, 2, or 5.
 
 ---
 
-## Current Blocker Resolution Status (verified 2026-06-25)
+## Current Blocker Resolution Status (updated 2026-06-25 — code gaps resolved)
 
 | Blocker | Current Status | After 5 Tasks |
 |---|---|---|
-| B1 — No promoted model family | PARTIALLY RESOLVED (endpoints wired, no real promotion) | **RESOLVED** by Task 5 |
-| B2 — Shadow inference is stub-only | ⚠️ **STILL STUB** — `ShadowInferenceEngine` produces linear-combination stubs | **RESOLVED** by Task 2 (real inference engine) |
-| B3 — Paper bridge never enabled | PARTIALLY RESOLVED (27 integration tests pass, never enabled in prod) | **RESOLVED** by Task 5 |
-| B4 — No production deployment | ⚠️ Terraform exists but not deployed | **RESOLVED** by Task 4 |
+| B1 — No promoted model family | PARTIALLY RESOLVED (endpoints wired, MVP limit raised, no real promotion yet) | **RESOLVED** by Task 5 |
+| B2 — Shadow inference is stub-only | ✅ **CODE RESOLVED** (Agent B: `RealInferenceEngine` loads real ONNX/LightGBM; Agent C: dispatch loop) | **RESOLVED** by Task 2 (rebuild container + 30-day run) |
+| B3 — Paper bridge never enabled | PARTIALLY RESOLVED (27 integration tests pass, MVP limit no longer blocks, never enabled in prod) | **RESOLVED** by Task 5 |
+| B4 — No production deployment | ⚠️ Terraform exists but not deployed (Agent E working on deployment prep) | **RESOLVED** by Task 4 |
 | B5 — No broker credentials | OPEN | Still OPEN — resolved in Phase 12 |
-| B6 — Real RunPod GPU never run | RESOLVED (training + inference on real GPUs — but with STUB engines) | **RESOLVED** (with real engines after Tasks 1+2) |
+| B6 — Real RunPod GPU never run | ✅ **CODE RESOLVED** (Agent A: real trainer; Agent B: real inference engine; ran on real GPUs with stubs, needs container rebuild + re-run) | **RESOLVED** (with real engines after Tasks 1+2) |
 | B7 — Sentinel un-runnable | OPEN (no promoted model) | **RESOLVED** by Task 5 (sentinel runs on real model) |
-| B8 — Settled history is empty | PARTIALLY RESOLVED (sweep worker exists, no long-term history) | **RESOLVED** by Task 2 (30 days of settled history) |
+| B8 — Settled history is empty | PARTIALLY RESOLVED (sweep worker + dispatch loop exist, no long-term history) | **RESOLVED** by Task 2 (30 days of settled history) |
 
 After these 5 tasks: **7 of 8 blockers resolved.** Only B5 (broker credentials) remains, which is a Phase 12 task.
 
-**Key correction from previous report:** B2 and B6 were reported as RESOLVED. They are only partially resolved — the RunPod loop ran on real GPUs, but with STUB trainers and inference engines. The stubs produce deterministic hashes and linear-combination predictions, not real ML. Tasks 1 and 2 replace the stubs with real ML.
+**Update from previous report:** All 5 code gaps (real trainer, real inference engine, dispatch loop, MVP limit, `LIMITED_LIVE_APPROVED` status) were closed on 2026-06-25 by 4 parallel agents. The RunPod loop previously ran on real GPUs with stub engines — real ML trainer and inference engine are now implemented and need container rebuilds + re-runs.
+
+---
+
+## Code Gaps Resolved (2026-06-25)
+
+Four parallel agents closed all 5 code gaps identified in the 2026-06-25
+baseline. The remaining work for Tasks 1, 2, and 5 is now **operational
+only** (container rebuilds, dataset manifests, 30-day runs, AWS
+deployment, broker credentials). No further agent code work is needed.
+
+### Agent A — Real LightGBM Trainer (Task 1 code gap)
+
+**Gap closed:** `LocalTrainer` stub replaced with real ML training.
+
+- `real_trainer.py` (374 lines) — `RealLightGBMTrainer` class. Reads
+  dataset manifests, loads real feature data from parquet, trains a
+  real LightGBM baseline, runs walk-forward validation, produces real
+  calibration / feature-importance / economic-metrics reports, packages
+  trained model as real artifact (LightGBM format) with real hash.
+- `TrainerProtocol` added to `runpod_training.py` for dependency
+  injection (stub vs real trainer selectable at runtime).
+- Training Dockerfile updated with `lightgbm>=4.0` + `pyarrow>=14.0`.
+- 16 new tests covering real training, artifact packaging, metric
+  production, and protocol injection.
+
+**Task 1 status:** CODE GAP FIXED → OPERATIONAL ONLY.
+
+### Agent B — Real Model-Loading Inference Engine (Task 2 code gap #1)
+
+**Gap closed:** `ShadowInferenceEngine` stub replaced with real model
+loading.
+
+- `real_inference.py` (~330 lines) — `RealInferenceEngine` class.
+  Loads model artifacts from S3/RunPod volume in ONNX or LightGBM
+  format. Runs real predictions on `FeatureSnapshot` data. Keeps
+  `Authority.SHADOW_ONLY` enforced, disabled-by-default fail-safe,
+  latency tracking, feature-availability checks,
+  abstain-on-low-availability behavior.
+- Inference Dockerfile updated with `onnxruntime>=1.17` +
+  `lightgbm>=4.3` + `numpy>=1.26`.
+- 38 new tests covering ONNX loading, LightGBM loading, prediction
+  correctness, abstain paths, and fail-safe behavior.
+
+**Task 2 status:** CODE GAP #1 FIXED.
+
+### Agent C — Scheduled Shadow Inference Dispatch Loop (Task 2 code gap #2)
+
+**Gap closed:** Manual-only dispatch replaced with scheduled loop.
+
+- `dispatch_shadow_inference_batch()` method added to `gateway.py`.
+  Queries dossier registry for `SHADOW_APPROVED`+ models, builds
+  feature snapshots via `FeatureSnapshotExport`, dispatches inference
+  jobs to RunPod inference endpoint.
+- `shadow_dispatch_status` property exposes dispatch metrics.
+- `_poll_quant_foundry_shadow_dispatch()` poll task wired to
+  `api/main.py` with env var
+  `QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS=300` (5 minutes).
+- 2 new API endpoints: `POST /shadow/dispatch` (manual trigger),
+  `GET /shadow/dispatch-status` (status query).
+- 18 new tests covering dispatch logic, status reporting, API
+  endpoints, and poll-task wiring.
+
+**Task 2 status:** CODE GAP #2 FIXED → OPERATIONAL ONLY.
+
+### Agent D — MVP Promotion Limit + `LIMITED_LIVE_APPROVED` (Task 5 code gap)
+
+**Gap closed:** MVP limit raised, live pilot status added.
+
+- `PromotionGate._MVP_MAX_LEVEL` raised from `SHADOW_APPROVED` to
+  `PAPER_APPROVED`. Promotions to `PAPER_APPROVED` now go through the
+  real gate. Paper bridge integration test no longer needs to work
+  around the MVP limit.
+- `LIMITED_LIVE_APPROVED` added to `DossierStatus` enum for Phase 12
+  limited live pilot path.
+- `_LEVEL_ORDER` in `promotion.py` updated.
+  `PromotionGate.evaluate()` handles the new level.
+- 5 test files updated. 77 + 12 tests passing across updated files.
+
+**Task 5 status:** CODE GAP FIXED → OPERATIONAL ONLY.
+
+### Summary
+
+| Code Gap | Agent | Status | Remaining |
+|---|---|---|---|
+| Real LightGBM trainer | A | ✅ RESOLVED | Build manifest, rebuild container, dispatch job |
+| Real inference engine | B | ✅ RESOLVED | Rebuild container, run 30 days |
+| Scheduled dispatch loop | C | ✅ RESOLVED | Configure gateway, deploy, run 30 days |
+| MVP limit raised | D | ✅ RESOLVED | Run sentinel, promote, enable paper bridge |
+| `LIMITED_LIVE_APPROVED` added | D | ✅ RESOLVED | Phase 12 (broker creds + live pilot) |
 
 ---
 
