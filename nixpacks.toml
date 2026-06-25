@@ -6,7 +6,7 @@ dependsOn = ["setup"]
 cmds = [
   "python -m venv --copies /opt/venv",
   "/opt/venv/bin/pip install uv==0.4.30",
-  "VIRTUAL_ENV=/opt/venv /opt/venv/bin/uv sync --no-dev --python /opt/venv/bin/python"
+  "UV_PROJECT_ENVIRONMENT=/opt/venv /opt/venv/bin/uv sync --no-dev --package api"
 ]
 cacheDirectories = ["/root/.cache/uv"]
 
