@@ -50,6 +50,12 @@ from quant_foundry.schemas import (
     RunPodTrainingRequest,
 )
 
+try:
+    from fincept_core.storage import StorageBackend, get_storage_backend
+except ImportError:  # pragma: no cover - fincept-core always present in-workspace
+    StorageBackend = None  # type: ignore[assignment,misc]
+    get_storage_backend = None  # type: ignore[assignment,misc]
+
 
 @dataclass
 class RealLightGBMTrainer:
@@ -73,6 +79,7 @@ class RealLightGBMTrainer:
     should_fail: bool = False
     n_folds: int = 3
     annualization_factor: int = 252
+    storage_backend: Any = None
 
     # --- public API ------------------------------------------------------
 
@@ -192,7 +199,13 @@ class RealLightGBMTrainer:
     # --- dataset loading -------------------------------------------------
 
     def _resolve_path(self, ref: str) -> Path:
-        """Resolve a dataset reference (file:// URI or plain path) to a Path."""
+        """Resolve a dataset reference (file:// URI, s3:// URI, or plain path) to a Path.
+
+        For ``s3://`` URIs, the configured ``storage_backend`` (or the factory
+        singleton) is used to download the object to a temp file, which is
+        returned. For ``file://`` URIs and bare paths, behavior is unchanged
+        (backward compat).
+        """
         parsed = urlparse(ref)
         if parsed.scheme == "file":
             path = unquote(parsed.path)
@@ -202,10 +215,30 @@ class RealLightGBMTrainer:
         elif parsed.scheme == "":
             return Path(ref)
         elif parsed.scheme == "s3":
-            raise TrainingFailure(
-                error_code="unsupported_uri",
-                error_summary=f"s3 dataset loading not yet implemented: {ref}",
-            )
+            backend = self.storage_backend
+            if backend is None and get_storage_backend is not None:
+                try:
+                    backend = get_storage_backend()
+                except Exception as exc:
+                    raise TrainingFailure(
+                        error_code="unsupported_uri",
+                        error_summary=f"no storage backend available for s3 dataset: {exc}",
+                    )
+            if backend is None:
+                raise TrainingFailure(
+                    error_code="unsupported_uri",
+                    error_summary=f"s3 dataset loading requires a storage backend: {ref}",
+                )
+            try:
+                tmp_path = backend.download_to_temp(ref)
+            except TrainingFailure:
+                raise
+            except Exception as exc:
+                raise TrainingFailure(
+                    error_code="unsupported_uri",
+                    error_summary=f"failed to fetch s3 dataset {ref!r}: {exc}",
+                )
+            return Path(tmp_path)
         else:
             raise TrainingFailure(
                 error_code="unsupported_uri",

@@ -39,6 +39,12 @@ from quant_foundry.shadow_inference import (
     ShadowInferenceResult,
 )
 
+try:
+    from fincept_core.storage import StorageBackend, get_storage_backend
+except ImportError:  # pragma: no cover - fincept-core always present in-workspace
+    StorageBackend = None  # type: ignore[assignment,misc]
+    get_storage_backend = None  # type: ignore[assignment,misc]
+
 
 # ---------------------------------------------------------------------------
 # Model loader
@@ -70,8 +76,10 @@ class ModelLoader:
     def __init__(
         self,
         fetcher: Callable[[str], str] | None = None,
+        storage_backend: Any = None,
     ) -> None:
         self.fetcher = fetcher
+        self.storage_backend = storage_backend
 
     def load(self, uri: str) -> _Scorer:
         """Load a model artifact from a URI and return a scorer.
@@ -91,15 +99,34 @@ class ModelLoader:
         )
 
     def _resolve_uri(self, uri: str) -> str:
-        """Resolve a URI to a local filesystem path."""
+        """Resolve a URI to a local filesystem path.
+
+        For ``s3://`` URIs, the configured ``storage_backend`` (or the factory
+        singleton, when it is S3-capable) is used to download the artifact to a
+        temp file. The legacy ``fetcher`` callable is still honored for backward
+        compat. For ``file://`` URIs and bare paths, behavior is unchanged.
+        """
         if uri.startswith("file://"):
             return uri[len("file://") :]
         if uri.startswith("s3://"):
-            if self.fetcher is None:
-                raise RuntimeError(
-                    "s3:// URIs require an injected fetcher callable"
-                )
-            return self.fetcher(uri)
+            if self.storage_backend is not None:
+                return self.storage_backend.download_to_temp(uri)
+            if get_storage_backend is not None:
+                try:
+                    backend = get_storage_backend()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"no storage backend available for s3 model artifact: {exc}"
+                    )
+                try:
+                    return backend.download_to_temp(uri)
+                except Exception:
+                    pass
+            if self.fetcher is not None:
+                return self.fetcher(uri)
+            raise RuntimeError(
+                "s3:// URIs require an injected storage_backend or fetcher callable"
+            )
         # Treat bare paths as local filesystem paths.
         return uri
 
@@ -163,8 +190,8 @@ class ModelLoader:
 # ===========================================================================
 
 
-def _default_model_loader() -> ModelLoader:
-    return ModelLoader()
+def _default_model_loader(storage_backend: Any = None) -> ModelLoader:
+    return ModelLoader(storage_backend=storage_backend)
 
 
 def _sigmoid(x: float) -> float:
@@ -193,9 +220,11 @@ class RealInferenceEngine:
         self,
         enabled: bool = False,
         model_loader: Callable[[str], Any] | None = None,
+        storage_backend: Any = None,
     ) -> None:
         self.enabled = enabled
         self.model_loader = model_loader
+        self.storage_backend = storage_backend
 
     def run(
         self,
@@ -245,7 +274,7 @@ class RealInferenceEngine:
         if scored_symbols:
             loader = self.model_loader
             if loader is None:
-                loader = _default_model_loader().load
+                loader = _default_model_loader(self.storage_backend).load
             scorer = loader(request.artifact_ref)
             raw_outputs = list(scorer.predict(rows))
 
@@ -333,6 +362,7 @@ def run_real_inference(
     model_id: str,
     enabled: bool = False,
     model_loader: Callable[[str], Any] | None = None,
+    storage_backend: Any = None,
 ) -> ShadowInferenceResult:
     """Run real shadow inference on a feature snapshot.
 
@@ -340,5 +370,9 @@ def run_real_inference(
     ``RealInferenceEngine`` and runs it. Raises ``InferenceDisabledError`` if
     ``enabled`` is False.
     """
-    engine = RealInferenceEngine(enabled=enabled, model_loader=model_loader)
+    engine = RealInferenceEngine(
+        enabled=enabled,
+        model_loader=model_loader,
+        storage_backend=storage_backend,
+    )
     return engine.run(request=request, snapshot=snapshot, model_id=model_id)
