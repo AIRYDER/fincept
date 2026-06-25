@@ -39,7 +39,9 @@ COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 RUN pip install --no-cache-dir \
     "pydantic>=2.7" \
     "httpx>=0.27" \
-    "runpod>=1.6"
+    "runpod>=1.6" \
+    "lightgbm>=4.0" \
+    "pyarrow>=14.0"
 
 # Pin the code git SHA at build time (for reproducibility).
 # Override with --build-arg GIT_SHA=$(git rev-parse HEAD)
