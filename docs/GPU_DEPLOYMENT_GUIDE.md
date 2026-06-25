@@ -6,6 +6,23 @@
 
 ---
 
+## Deployed Endpoints (Live)
+
+| Endpoint | ID | Template ID | Network Volume |
+| --- | --- | --- | --- |
+| Training | `8vol1uc9l75jgs` | `me58r5vdrp` | `rrsd005i3g` (10GB, US-NC-1) |
+| Inference | `36mz2q30jdyvru` | `wnasp3v5jn` | `rrsd005i3g` (10GB, US-NC-1) |
+
+**Base image:** `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` (Python 3.11, CUDA 12.4)
+**Network volume mount:** `/runpod-volume` (serverless) / `/workspace` (pods)
+**Code location on volume:** `/runpod-volume/fincept-terminal/` (git clone of `codex/portfolio-optimizer-core` branch)
+**Python libs on volume:** `/runpod-volume/python-libs/` (pydantic, httpx, runpod SDK)
+**Start scripts:** `/runpod-volume/start-training.sh`, `/runpod-volume/start-inference.sh`
+
+**Key deployment fix:** The `runpod/pytorch` base image has an ENTRYPOINT that starts nginx/ssh. For serverless workers, this must be overridden with `dockerEntrypoint: []` (empty array) in the template, otherwise the handler never starts and the worker goes `unhealthy`.
+
+---
+
 ## Table of Contents
 
 1. [Architecture overview](#1-architecture-overview)
