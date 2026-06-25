@@ -1,0 +1,109 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "_description": "Railway production service topology for the Fincept Terminal. Railway does not natively parse a multi-service JSON config the way docker-compose does; this file is operator documentation that mirrors the service graph to create in the Railway dashboard. Pair with docs/RAILWAY_DEPLOY_GUIDE.md. Paper-only trading is enforced (FINCEPT_TRADING_MODE=paper, FINCEPT_OMS_ROUTER=sim). No real secrets are stored here — every secret is a ${{secrets.NAME}} placeholder to be set in the Railway dashboard.",
+  "_safety_invariants": [
+    "FINCEPT_TRADING_MODE=paper (no live orders)",
+    "FINCEPT_OMS_ROUTER=sim (in-process PaperFiller, no broker)",
+    "No broker credentials (ALPACA_API_KEY / ALPACA_API_SECRET) are set on Railway",
+    "All secrets use ${{secrets.NAME}} placeholders — set them in the Railway dashboard, never in the repo",
+    "RunPod GPU workloads run externally; Railway hosts the API + Dashboard control plane only"
+  ],
+  "services": {
+    "postgres": {
+      "type": "managed-postgres",
+      "notes": "Provision via Railway dashboard (Add → Database → PostgreSQL). The connection string is exposed as the service's DATABASE_URL variable. Wire it into the API service as FINCEPT_DB_URL. Hobby plan (~1GB) is sufficient for v1; upgrade to a larger plan when artifact rows exceed ~500k."
+    },
+    "redis": {
+      "type": "managed-redis",
+      "notes": "Provision via Railway dashboard (Add → Database → Redis). The connection string is exposed as the service's REDIS_URL variable. Wire it into the API service as FINCEPT_REDIS_URL. Used for the shared Redis client opened in api.main.lifespan, the AlpacaScheduler, NewsScheduler, and the api heartbeat."
+    },
+    "object-storage": {
+      "type": "managed-object-storage",
+      "notes": "Provision via Railway dashboard (Add → Object Storage). S3-compatible. Railway exposes ENDPOINT, ACCESS_KEY, SECRET_KEY, and a default bucket region. Create a bucket named 'fincept-artifacts' for model weights, training receipts, dossiers, and shadow-ledger snapshots."
+    },
+    "api": {
+      "type": "container",
+      "source": "services/api",
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "uvicorn api.main:app --host 0.0.0.0 --port $PORT",
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 30,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
+      },
+      "env": {
+        "FINCEPT_DB_URL": "${{postgres.DATABASE_URL}}",
+        "FINCEPT_REDIS_URL": "${{redis.REDIS_URL}}",
+        "FINCEPT_STORAGE_BACKEND": "s3",
+        "FINCEPT_STORAGE_S3_ENDPOINT": "${{object-storage.ENDPOINT}}",
+        "FINCEPT_STORAGE_S3_ACCESS_KEY": "${{object-storage.ACCESS_KEY}}",
+        "FINCEPT_STORAGE_S3_SECRET_KEY": "${{object-storage.SECRET_KEY}}",
+        "FINCEPT_STORAGE_S3_BUCKET": "fincept-artifacts",
+        "FINCEPT_TRADING_MODE": "paper",
+        "FINCEPT_OMS_ROUTER": "sim",
+        "QUANT_FOUNDRY_ENABLED": "true",
+        "QUANT_FOUNDRY_MODE": "runpod_shadow",
+        "QUANT_FOUNDRY_BASE_DIR": "/data/quant-foundry",
+        "QUANT_FOUNDRY_CALLBACK_SECRET": "${{secrets.CALLBACK_SECRET}}",
+        "QUANT_FOUNDRY_RUNPOD_API_KEY": "${{secrets.RUNPOD_API_KEY}}",
+        "QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT": "8vol1uc9l75jgs",
+        "QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT": "36mz2q30jdyvru",
+        "QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS": "300",
+        "QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS": "60",
+        "QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS": "300",
+        "QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS": "15"
+      },
+      "volumes": {
+        "/data": "persistent volume for quant foundry durable stores (outbox, inbox, shadow ledger, dossier registry). Mount before first deploy so the lifespan-created gateway has a writable base dir."
+      },
+      "notes": "The FastAPI lifespan (services/api/src/api/main.py) starts four background poll tasks when QUANT_FOUNDRY_ENABLED=true and mode is runpod_shadow: RunPod result poll (15s), settlement sweep (60s), tournament sweep (300s), and shadow dispatch (300s). The /health endpoint is public (no auth) so Railway's healthcheck can probe it."
+    },
+    "dashboard": {
+      "type": "container",
+      "source": "apps/dashboard",
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "cd apps/dashboard && pnpm start --port $PORT",
+        "healthcheckPath": "/api/health",
+        "healthcheckTimeout": 30
+      },
+      "env": {
+        "NEXT_PUBLIC_API_URL": "${{api.RAILWAY_PUBLIC_DOMAIN}}"
+      },
+      "notes": "Next.js dashboard. NEXT_PUBLIC_API_URL must be the API service's public Railway domain (https://<api>.up.railway.app) so the browser can reach the API. If a custom domain is configured, point this at the custom domain instead."
+    }
+  },
+  "_secret_injection": {
+    "description": "Secrets are NOT stored in this file or in the repo. Set each ${{secrets.NAME}} placeholder in the Railway dashboard under the API service's Variables tab (mark as secret so it is masked in logs).",
+    "secrets": [
+      {
+        "name": "CALLBACK_SECRET",
+        "purpose": "HMAC secret validating RunPod → API callback requests (quant_foundry callback endpoint). Generate with: openssl rand -hex 32",
+        "where_to_set": "Railway dashboard → API service → Variables → New Variable → mark as Secret"
+      },
+      {
+        "name": "RUNPOD_API_KEY",
+        "purpose": "RunPod API key for dispatching training/inference jobs from the API to the RunPod endpoints. Obtain from the RunPod dashboard.",
+        "where_to_set": "Railway dashboard → API service → Variables → New Variable → mark as Secret"
+      }
+    ],
+    "never_on_railway": [
+      "FINCEPT_ALPACA_API_KEY — broker credentials stay off Railway (paper-only, OMS_ROUTER=sim)",
+      "FINCEPT_ALPACA_API_SECRET — broker credentials stay off Railway",
+      "FINCEPT_BINANCE_API_SECRET — exchange secrets stay off Railway"
+    ]
+  },
+  "_cross_references": [
+    "railway.json — staging config (READ ONLY; this file is the production counterpart)",
+    "docs/RAILWAY_DEPLOY_GUIDE.md — step-by-step deployment + cost comparison with AWS",
+    "reports/verification/railway-deployment-template.md — post-deploy verification checklist",
+    ".env.example — canonical env var documentation",
+    "services/api/src/api/main.py — FastAPI lifespan (background poll tasks)",
+    "infra/aws/ — AWS Terraform fallback/upgrade path"
+  ]
+}
