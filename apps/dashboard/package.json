@@ -23,6 +23,13 @@
     "test:news-intelligence": "node scripts/run-news-intelligence-tests.cjs",
     "test:source-health": "node scripts/run-source-health-tests.cjs",
     "test:strategy-readiness": "node scripts/run-strategy-readiness-tests.cjs",
+    "test:shadow-news-impact": "node scripts/run-shadow-news-impact-tests.cjs",
+    "test:watchlist-row": "node scripts/run-watchlist-row-tests.cjs",
+    "test:watchlist-preview": "node scripts/run-watchlist-preview-tests.cjs",
+    "test:led-dot": "node scripts/run-led-dot-tests.cjs",
+    "test:mock-badge": "node scripts/run-mock-badge-tests.cjs",
+    "test:signal-card": "node scripts/run-signal-card-tests.cjs",
+    "test:trading-chart": "node scripts/run-trading-chart-tests.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -44,7 +51,7 @@
     "framer-motion": "^11.11.9",
     "jose": "^5.9.6",
     "lucide-react": "^0.452.0",
-    "next": "14.2.15",
+    "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.0",
