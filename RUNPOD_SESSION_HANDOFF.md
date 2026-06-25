@@ -55,29 +55,36 @@ uv sync --package api --dev
 
 ## Live proof status
 
-**Inference loop: PROVEN LIVE** (2026-06-25, commit `f3bc3d0`)
+**Full end-to-end loop: PROVEN LIVE** (2026-06-25, commits `f3bc3d0` + `3f29bbb`)
 
+### Inference (completed in ~5s)
 ```
-Dispatch inference job (qf:infer:live:150ec161)
-  → RunPod endpoint 36mz2q30jdyvru processes it (worker ready)
-  → Poller detects completion (~5s)
+Dispatch inference job (qf:infer:live:b4e40df8)
+  → RunPod endpoint 36mz2q30jdyvru (24GB Pro GPU, ready worker)
+  → Poller detects completion (poll 1, ~5s)
   → Backward-compat callback signing (old handler format)
   → Callback ingested: inbox_status=processed, outbox_status=completed
   → Shadow prediction stored in durable ShadowLedger
-  → shadow_health: prediction_count=1, feature_availability=1.0, latency_p50=0.14ms
 ```
 
-**Training loop: NOT YET PROVEN LIVE**
-The training endpoint `8vol1uc9l75jgs` worker is throttled (no GPU available in US-NC-1). Jobs will queue until a GPU frees up. The gateway routing and polling code is identical to inference, so it will work once a GPU is available.
-
-**Deployed handler update needed:**
-The RunPod volume has the old handler code (returns unsigned `callback` dict). The backward-compat shim in the poller handles this by signing on the Fincept side. Once the volume code is updated (git pull on `/runpod-volume/fincept-terminal/`), the normal signed-callback path takes over.
-
-**Remaining live proof milestone (training):**
+### Training (completed in ~75s, queued waiting for GPU)
 ```
-POST training job → RunPod completes → callback ingested → dossier visible
-→ settlement runs → tournament/promotion surfaces update
+Dispatch training job (qf:train:live:85bcc44e)
+  → RunPod endpoint 8vol1uc9l75jgs (throttled, queued ~70s)
+  → Worker picked up job after GPU freed
+  → Poller detects completion (poll 15, ~75s)
+  → Backward-compat callback signing
+  → Callback ingested: inbox_status=processed, outbox_status=completed
+  → Dossier stored in durable DossierRegistry
 ```
+
+### Final state
+- `prediction_count=2`, `feature_availability=1.0`, `latency_p50=0.12ms`
+- `dossier_count=1` (model:qf:train:live:85bcc44e, artifact:4ac7e423edbd4cf7)
+- All 5 jobs in outbox: 3 completed, 2 failed (earlier runs before compat fix)
+
+**Deployed handler update needed (low priority):**
+The RunPod volume has old handler code (returns unsigned `callback` dict). The backward-compat shim handles this. Once the volume code is updated (git pull on `/runpod-volume/fincept-terminal/`), the normal signed-callback path takes over.
 
 ## Key files
 
