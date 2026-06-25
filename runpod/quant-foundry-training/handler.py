@@ -110,15 +110,38 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 # the worker. When run as a script (local testing), accept JSON on stdin.
 if __name__ == "__main__":  # pragma: no cover
     import sys
+    import traceback
+
+    # Debug logging to network volume
+    def _log(msg):
+        print(msg, flush=True)
+        try:
+            with open("/runpod-volume/handler-debug.log", "a") as f:
+                f.write(msg + "\n")
+        except Exception:
+            pass
+
+    _log(f"=== Handler starting at {__file__} ===")
+    _log(f"PYTHONPATH={os.environ.get('PYTHONPATH', 'NOT SET')}")
+    _log(f"sys.path={sys.path}")
+
+    # Check if handler file exists
+    _log(f"Handler file exists: {os.path.exists(__file__)}")
 
     # Try RunPod serverless mode first (uses runpod SDK)
     try:
         import runpod
-
+        _log(f"runpod SDK imported, version: {getattr(runpod, '__version__', 'unknown')}")
+        _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
-    except ImportError:
+    except ImportError as e:
+        _log(f"ImportError: {e}")
         # runpod SDK not installed — fall back to stdin mode for local testing
         raw = sys.stdin.read()
         event = json.loads(raw) if raw else {}
         result = handler(event)
         print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+    except Exception as e:
+        _log(f"ERROR in runpod.serverless.start(): {e}")
+        _log(traceback.format_exc())
+        raise
