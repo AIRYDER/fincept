@@ -56,8 +56,13 @@ from quant_foundry.runpod_client import (
     RunPodDispatcher,
 )
 from quant_foundry.schemas import RunPodInferenceRequest
+from quant_foundry.settlement import SettlementLedger
+from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
+from quant_foundry.market_data_adapter import BarDataAdapter
 from quant_foundry.shadow_ledger import ShadowLedger
 from quant_foundry.signatures import sign_callback, verify_callback
+from quant_foundry.tournament import Tournament
+from quant_foundry.tournament_sweep import TournamentSweep
 
 
 class QuantFoundryGateway:
@@ -93,6 +98,11 @@ class QuantFoundryGateway:
         self._expanded_leaderboard: ExpandedLeaderboard | None = None
         self._promotion_queue: PromotionReviewQueue | None = None
         self._shadow_ledger_real: ShadowLedger | None = None
+        self._tournament_sweep: TournamentSweep | None = None
+        self._settlement_ledger: SettlementLedger | None = None
+        self._tournament: Tournament | None = None
+        # --- Settlement wiring (Agent A) ---
+        self._settlement_sweep: Any = None
         self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
         self.dossier_store = DurableDossierStore(self.dossier_registry())
         self._runpod_client = runpod_client
@@ -580,6 +590,122 @@ class QuantFoundryGateway:
             return []
         return [receipt.to_dict() for receipt in self.promotion_queue().completed()]
 
+    # --- Tournament wiring (Agent B) ----------------------------------------
+
+    def settlement_ledger(self) -> SettlementLedger:
+        """Return the lazily constructed settlement ledger."""
+        if self._settlement_ledger is None:
+            self._settlement_ledger = SettlementLedger(
+                root=self.base_dir / "settlements",
+            )
+        return self._settlement_ledger
+
+    def tournament(self) -> Tournament:
+        """Return the lazily constructed tournament scorer."""
+        if self._tournament is None:
+            self._tournament = Tournament()
+        return self._tournament
+
+    def tournament_sweep(self) -> TournamentSweep:
+        """Return the lazily constructed tournament sweep worker."""
+        if self._tournament_sweep is None:
+            self._tournament_sweep = TournamentSweep(
+                settlement_ledger=self.settlement_ledger(),
+                dossier_registry=self.dossier_registry(),
+                tournament=self.tournament(),
+                leaderboard=self.expanded_leaderboard(),
+            )
+        return self._tournament_sweep
+
+    def run_tournament_sweep(self) -> dict[str, Any]:
+        """Run one tournament sweep and return the receipt dict.
+
+        Reads all settlement records, scores each model, populates the
+        expanded leaderboard, and returns a JSON-serializable receipt
+        with scored/blocked/stale model lists. Advisory-only — never
+        promotes a model.
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+        receipt = self.tournament_sweep().sweep()
+        result = receipt.to_dict()
+        result["enabled"] = True
+        return result
+
+    def tournament_status(self) -> dict[str, Any]:
+        """Return a summary of the current tournament state.
+
+        Includes the ranked leaderboard, scored/blocked/stale counts,
+        and the last sweep timestamp. Advisory-only — no promotion.
+        """
+        if not self.enabled:
+            return {"enabled": False, "scored": 0, "blocked": 0, "stale": 0, "leaderboard": []}
+        leaderboard = self.expanded_leaderboard()
+        return {
+            "enabled": True,
+            "scored": len(leaderboard.ranked()),
+            "blocked": 0,
+            "stale": len(leaderboard.stale_models()),
+            "leaderboard": [e.to_dict() for e in leaderboard.ranked()],
+        }
+
+    # --- Settlement wiring (Agent A) ----------------------------------------
+
+    def settlement_sweep(self) -> SettlementSweep:
+        """Return the lazily constructed settlement sweep worker."""
+        if self._settlement_sweep is None:
+            self._settlement_sweep = SettlementSweep(
+                shadow_ledger=self.shadow_ledger_real(),
+                settlement_ledger=self.settlement_ledger(),
+                market_data_adapter=BarDataAdapter(),
+                cost_model=default_cost_model(),
+            )
+        return self._settlement_sweep
+
+    def run_settlement_sweep(self) -> dict[str, Any]:
+        """Run one settlement sweep and return the receipt dict.
+
+        Sweeps all shadow predictions, settles expired ones, and returns
+        a JSON-serializable receipt with settled / pending_time /
+        pending_data / failed counts. Idempotent — safe to rerun.
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+        receipt = self.settlement_sweep().sweep()
+        return receipt.to_dict()
+
+    def settlement_status(self) -> dict[str, Any]:
+        """Return a summary of the current settlement state.
+
+        Returns settled / pending_time / pending_data / failed counts
+        from the settlement ledger. Empty when disabled.
+        """
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "settled_count": 0,
+                "pending_time_count": 0,
+                "pending_data_count": 0,
+                "total": 0,
+            }
+        records = self.settlement_ledger().read_all()
+        settled_count = sum(
+            1 for r in records if r.status.value == "settled"
+        )
+        pending_time_count = sum(
+            1 for r in records if r.status.value == "pending_time"
+        )
+        pending_data_count = sum(
+            1 for r in records if r.status.value == "pending_data"
+        )
+        return {
+            "enabled": True,
+            "settled_count": settled_count,
+            "pending_time_count": pending_time_count,
+            "pending_data_count": pending_data_count,
+            "total": len(records),
+        }
+
     # --- shadow inference health (TASK-0604) ---------------------------------
 
     def shadow_ledger_real(self) -> ShadowLedger:
@@ -643,10 +769,22 @@ class QuantFoundryGateway:
         # do NOT invent new storage here (out of scope).
         callback_rejection_rate: float | None = None
 
-        # The settlement ledger is wired by TASK-0603 (separate surface) and
-        # is not yet integrated into the gateway's read API. Return ``None``
-        # rather than fabricating a value.
-        settlement_lag_seconds: float | None = None
+        # --- Settlement wiring (Agent A) ---
+        # Read real settled_count and settlement_lag_seconds from the
+        # settlement ledger.
+        settlement_records = self.settlement_ledger().read_all()
+        settled_records = [
+            r for r in settlement_records if r.status.value == "settled"
+        ]
+        settled_count = len(settled_records)
+        if settled_records and settled_records[0].settled_at_ns is not None:
+            import time as _time
+
+            settlement_lag_seconds = (
+                _time.time_ns() - settled_records[0].settled_at_ns
+            ) / 1e9
+        else:
+            settlement_lag_seconds = None
 
         # No real drift data is collected yet. The drift sentinel is consumed
         # read-only, so the circuit breaker defaults to "closed" (no drift =
@@ -664,7 +802,7 @@ class QuantFoundryGateway:
             "settlement_lag_seconds": settlement_lag_seconds,
             "circuit_breaker_state": circuit_breaker_state,
             "prediction_count": prediction_count,
-            "settled_count": 0,
+            "settled_count": settled_count,
         }
 
     # --- callback ingestion (HMAC auth, NOT bearer) ---

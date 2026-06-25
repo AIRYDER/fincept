@@ -75,6 +75,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     heartbeat_task = asyncio.create_task(beat_periodically(redis, "api"))
     app.state.heartbeat_task = heartbeat_task
     quant_foundry_poll_task: asyncio.Task[None] | None = None
+    quant_foundry_tournament_task: asyncio.Task[None] | None = None
+    # --- Settlement wiring (Agent A) ---
+    quant_foundry_settlement_task: asyncio.Task[None] | None = None
     poll_interval = _quant_foundry_poll_interval_seconds()
     if (
         quant_foundry_gateway.enabled
@@ -85,11 +88,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _poll_quant_foundry_runpod(quant_foundry_gateway, poll_interval)
         )
         app.state.quant_foundry_poll_task = quant_foundry_poll_task
+    tournament_interval = _quant_foundry_tournament_interval_seconds()
+    if quant_foundry_gateway.enabled and tournament_interval > 0:
+        quant_foundry_tournament_task = asyncio.create_task(
+            _poll_quant_foundry_tournament(quant_foundry_gateway, tournament_interval)
+        )
+        app.state.quant_foundry_tournament_task = quant_foundry_tournament_task
+    # --- Settlement wiring (Agent A) ---
+    settlement_interval = _quant_foundry_settlement_interval_seconds()
+    if quant_foundry_gateway.enabled and settlement_interval > 0:
+        quant_foundry_settlement_task = asyncio.create_task(
+            _poll_quant_foundry_settlement(quant_foundry_gateway, settlement_interval)
+        )
+        app.state.quant_foundry_settlement_task = quant_foundry_settlement_task
     log.info("api.start", version=API_VERSION, redis_url=settings.REDIS_URL)
     try:
         yield
     finally:
         log.info("api.stop")
+        # --- Settlement wiring (Agent A) ---
+        if quant_foundry_settlement_task is not None:
+            quant_foundry_settlement_task.cancel()
+            try:
+                await quant_foundry_settlement_task
+            except asyncio.CancelledError:
+                pass
+        if quant_foundry_tournament_task is not None:
+            quant_foundry_tournament_task.cancel()
+            try:
+                await quant_foundry_tournament_task
+            except asyncio.CancelledError:
+                pass
         if quant_foundry_poll_task is not None:
             quant_foundry_poll_task.cancel()
             try:
@@ -135,6 +164,55 @@ async def _poll_quant_foundry_runpod(
         except Exception as exc:
             log.warning(
                 "quant_foundry.runpod_poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+
+def _quant_foundry_tournament_interval_seconds() -> float:
+    raw = os.environ.get("QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS", "300")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 300.0
+
+
+async def _poll_quant_foundry_tournament(
+    gateway: QuantFoundryGateway,
+    interval_seconds: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(gateway.run_tournament_sweep)
+        except Exception as exc:
+            log.warning(
+                "quant_foundry.tournament_poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+
+# --- Settlement wiring (Agent A) ---
+
+
+def _quant_foundry_settlement_interval_seconds() -> float:
+    raw = os.environ.get("QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS", "60")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 60.0
+
+
+async def _poll_quant_foundry_settlement(
+    gateway: QuantFoundryGateway,
+    interval_seconds: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(gateway.run_settlement_sweep)
+        except Exception as exc:
+            log.warning(
+                "quant_foundry.settlement_poll_failed",
                 error=f"{type(exc).__name__}: {exc}",
             )
 

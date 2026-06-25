@@ -206,6 +206,18 @@ async def promotion_completed(
     return gw.completed_promotions()
 
 
+# --- Tournament wiring (Agent B) -------------------------------------------
+
+
+@router.get("/tournament/status")
+async def tournament_status(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    gw = _require_gateway(request)
+    return gw.tournament_status()
+
+
 @router.get("/shadow/health")
 async def shadow_health(
     request: Request,
