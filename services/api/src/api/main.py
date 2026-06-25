@@ -41,6 +41,7 @@ from api.routes import (
     strategies,
 )
 from api.routes import quant_foundry as quant_foundry_route
+from api.routes import quant_foundry_alpha as quant_foundry_alpha_route
 from api.routes import modules as modules_route
 from api.ws import router as ws_router
 from fincept_core.heartbeat import beat_periodically
@@ -78,6 +79,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     quant_foundry_tournament_task: asyncio.Task[None] | None = None
     # --- Settlement wiring (Agent A) ---
     quant_foundry_settlement_task: asyncio.Task[None] | None = None
+    # --- Shadow dispatch wiring (Agent C) ---
+    quant_foundry_shadow_dispatch_task: asyncio.Task[None] | None = None
     poll_interval = _quant_foundry_poll_interval_seconds()
     if (
         quant_foundry_gateway.enabled
@@ -101,11 +104,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _poll_quant_foundry_settlement(quant_foundry_gateway, settlement_interval)
         )
         app.state.quant_foundry_settlement_task = quant_foundry_settlement_task
+    # --- Shadow dispatch wiring (Agent C) ---
+    shadow_dispatch_interval = _quant_foundry_shadow_dispatch_interval_seconds()
+    if quant_foundry_gateway.enabled and shadow_dispatch_interval > 0:
+        quant_foundry_shadow_dispatch_task = asyncio.create_task(
+            _poll_quant_foundry_shadow_dispatch(
+                quant_foundry_gateway, shadow_dispatch_interval
+            )
+        )
+        app.state.quant_foundry_shadow_dispatch_task = (
+            quant_foundry_shadow_dispatch_task
+        )
     log.info("api.start", version=API_VERSION, redis_url=settings.REDIS_URL)
     try:
         yield
     finally:
         log.info("api.stop")
+        # --- Shadow dispatch wiring (Agent C) ---
+        if quant_foundry_shadow_dispatch_task is not None:
+            quant_foundry_shadow_dispatch_task.cancel()
+            try:
+                await quant_foundry_shadow_dispatch_task
+            except asyncio.CancelledError:
+                pass
         # --- Settlement wiring (Agent A) ---
         if quant_foundry_settlement_task is not None:
             quant_foundry_settlement_task.cancel()
@@ -217,6 +238,32 @@ async def _poll_quant_foundry_settlement(
             )
 
 
+# --- Shadow dispatch wiring (Agent C) ---
+
+
+def _quant_foundry_shadow_dispatch_interval_seconds() -> float:
+    raw = os.environ.get("QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS", "300")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 300.0
+
+
+async def _poll_quant_foundry_shadow_dispatch(
+    gateway: QuantFoundryGateway,
+    interval_seconds: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(gateway.dispatch_shadow_inference_batch)
+        except Exception as exc:
+            log.warning(
+                "quant_foundry.shadow_dispatch_poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+
 app = FastAPI(title="Fincept API", version=API_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -257,6 +304,10 @@ app.include_router(control.router, prefix="", tags=["control"])
 # Quant Foundry gateway (TASK-0306). Disabled by default; operator endpoints
 # bearer-auth, callback endpoint HMAC-auth. No bus / sig.predict writes.
 app.include_router(quant_foundry_route.router, prefix="/quant-foundry", tags=["quant-foundry"])
+# Alpha Genome Lab (TASK-1005) — recipe sweep surface, mounted under the same
+# gateway prefix so the operator URL is consistent. Bearer-auth; opt-in; no
+# bypass of tournament / promotion gates.
+app.include_router(quant_foundry_alpha_route.router, prefix="/quant-foundry/alpha", tags=["quant-foundry-alpha"])
 # On-demand module control (TASK-0203). Auth-required, local-only launches.
 app.include_router(modules_route.router, prefix="/modules", tags=["modules"])
 # WebSocket multiplexer.
