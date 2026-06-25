@@ -324,7 +324,7 @@ class TestFullPromotionFlow:
         assert result["receipt"]["decision"] == "rejected"
         assert result["receipt"]["rejection_reason"] == "insufficient_evidence"
 
-    def test_promotion_rejected_mvp_level_limit(
+    def test_promotion_to_paper_approved_succeeds(
         self, tmp_path: pathlib.Path
     ) -> None:
         gw = _make_gateway(tmp_path / "qf")
@@ -342,6 +342,29 @@ class TestFullPromotionFlow:
         )
         result = gw.process_promotion(
             model_id="mvp-model",
+            approve=True,
+            review_note="test",
+        )
+        assert result["receipt"]["decision"] == "approved"
+
+    def test_promotion_to_limited_live_approved_rejected_mvp_level_limit(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        gw = _make_gateway(tmp_path / "qf")
+        gw.dossier_registry().register(_make_dossier(
+            model_id="live-model",
+            status=DossierStatus.PAPER_APPROVED,
+        ))
+        _write_settlements(tmp_path / "qf", "live-model", 12)
+
+        gw.run_tournament_sweep()
+        gw.submit_promotion(
+            model_id="live-model",
+            target_level="limited_live_approved",
+            review_note="attempting limited live pilot",
+        )
+        result = gw.process_promotion(
+            model_id="live-model",
             approve=True,
             review_note="test",
         )

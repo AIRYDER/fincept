@@ -19,7 +19,7 @@ Additional checks from the spec:
 - Enforce a minimum settled-evidence bar server-side.
 - Add rejection reasons.
 - Add immutable promotion receipt.
-- For MVP, allow only up to `shadow-approved`.
+- For MVP, allow only up to `paper_approved`.
 
 File-disjoint from Builder 2's `services/api/src/api/routes/quant_foundry.py`
 and Builder 1's `apps/dashboard/`. Imports from my `dossier.py` (TASK-0403),
@@ -353,12 +353,12 @@ class TestBlockingIssuesAndWaivers:
 
 
 # ---------------------------------------------------------------------------
-# MVP: only up to shadow-approved
+# MVP: only up to paper-approved
 # ===========================================================================
 
 
 class TestMvpPromotionLimit:
-    """For MVP, allow only up to `shadow-approved`."""
+    """For MVP, allow only up to `paper_approved`."""
 
     def test_promotion_to_shadow_approved_is_allowed(self) -> None:
         """Promotion to shadow_approved is allowed."""
@@ -373,13 +373,27 @@ class TestMvpPromotionLimit:
         receipt = gate.evaluate(request=req, evidence=ev)
         assert receipt.decision == ReviewDecision.APPROVED
 
-    def test_promotion_to_paper_approved_is_rejected(self) -> None:
-        """Promotion to paper_approved is rejected (MVP limit)."""
+    def test_promotion_to_paper_approved_succeeds_with_evidence(self) -> None:
+        """Promotion to paper_approved is approved when evidence is complete."""
         ev = _make_evidence()
         req = PromotionRequest(
             model_id="m1",
             target_level=DossierStatus.PAPER_APPROVED,
-            review_note="test",
+            review_note="ready for paper trading",
+            waivers=[],
+        )
+        gate = PromotionGate()
+        receipt = gate.evaluate(request=req, evidence=ev)
+        assert receipt.decision == ReviewDecision.APPROVED
+        assert receipt.rejection_reason is None
+
+    def test_promotion_to_limited_live_approved_is_rejected(self) -> None:
+        """Promotion to limited_live_approved is rejected (MVP limit)."""
+        ev = _make_evidence()
+        req = PromotionRequest(
+            model_id="m1",
+            target_level=DossierStatus.LIMITED_LIVE_APPROVED,
+            review_note="attempting limited live pilot",
             waivers=[],
         )
         gate = PromotionGate()

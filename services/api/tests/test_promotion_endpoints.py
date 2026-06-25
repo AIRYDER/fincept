@@ -305,6 +305,48 @@ async def test_submit_promotion_invalid_target_level_returns_422(
 
 
 # ---------------------------------------------------------------------------
+# MVP level limit: limited_live_approved → rejected receipt
+# ---------------------------------------------------------------------------
+
+
+async def test_submit_then_approve_limited_live_approved_rejected_mvp_limit(
+    qf_promo_client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    from api.main import app
+
+    gw: QuantFoundryGateway = app.state.quant_foundry_gateway
+    gw.dossier_registry().register(_dossier("model-live-limit"))
+    _write_settlements(gw.base_dir, "model-live-limit", 12)
+
+    # Submit a promotion to limited_live_approved (above MVP max).
+    response = await qf_promo_client.post(
+        "/quant-foundry/promotion/submit",
+        json={
+            "model_id": "model-live-limit",
+            "target_level": "limited_live_approved",
+            "review_note": "attempting limited live pilot",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+
+    # Approve — gate should reject with MVP_LEVEL_LIMIT.
+    response = await qf_promo_client.post(
+        "/quant-foundry/promotion/approve",
+        json={"model_id": "model-live-limit", "review_note": "approve attempt"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    receipt = body["receipt"]
+    assert receipt["decision"] == "rejected"
+    assert receipt["rejection_reason"] == "mvp_level_limit"
+
+
+# ---------------------------------------------------------------------------
 # Gate fails closed: insufficient evidence → rejected receipt
 # ---------------------------------------------------------------------------
 
