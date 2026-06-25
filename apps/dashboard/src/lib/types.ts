@@ -494,6 +494,40 @@ export interface NewsImpactOptimizeResponse {
   mode: "experimental_demo";
 }
 
+// --- /news-impact/signals (shadow stream) ---------------------------------
+// Read-only inspection surface for the `sig.news_impact` Redis stream.
+// These signals are shadow-only and never drive execution.  Shape mirrors
+// the stream envelope emitted by the news_impact_agent.
+
+export interface NewsImpactSignal {
+  schema_version: number;
+  agent_id: string;
+  event_id: string;
+  symbol: string;
+  ts_event: number;
+  available_at_ns: number;
+  event_type: string;
+  confidence: number;
+  horizons: Record<string, NewsImpactHorizon>;
+  source_urls: string[];
+  similar_event_ids: string[];
+  model_version: string;
+  metadata: Record<string, string>;
+}
+
+export interface NewsImpactSignalEnvelope {
+  stream_id: string;
+  type: "news_impact";
+  published_at: string;
+  payload: NewsImpactSignal;
+}
+
+export interface NewsImpactSignalsResponse {
+  stream: string;
+  count: number;
+  signals: NewsImpactSignalEnvelope[];
+}
+
 // --- /research/exa -------------------------------------------------------
 
 export type ExaSearchType =
@@ -1236,6 +1270,8 @@ export interface QuantFoundryHealthResponse {
   mode: string;
   shadow_only?: boolean;
   job_count?: number;
+  runpod_wired?: boolean;
+  runpod_routes?: Record<string, string | null>;
   detail?: string;
 }
 

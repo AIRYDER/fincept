@@ -151,10 +151,13 @@ uv run --package quant-foundry python -c "import quant_foundry; print('OK')"
 | Variable | Default | Required in `runpod` mode? | Description |
 |----------|---------|---------------------------|-------------|
 | `RUNPOD_API_KEY` | `""` | **Yes** | Your RunPod API key. Get it from [runpod.io > Settings > API Keys](https://runpod.io/console/settings). |
-| `RUNPOD_ENDPOINT_ID` | `""` | **Yes** | The serverless endpoint ID for the training or inference worker. Shown in the RunPod console after endpoint creation. |
+| `RUNPOD_TRAINING_ENDPOINT_ID` | `""` | **Yes for training** | Serverless endpoint ID for the training worker. |
+| `RUNPOD_INFERENCE_ENDPOINT_ID` | `""` | **Yes for inference** | Serverless endpoint ID for the shadow inference worker. |
+| `RUNPOD_ENDPOINT_ID` | `""` | No | Legacy fallback used only when a job-type-specific endpoint ID is unset. |
 | `RUNPOD_BASE_URL` | `https://api.runpod.ai/v2` | No | RunPod API base URL. Override only for testing. |
 | `RUNPOD_TIMEOUT_SECONDS` | `30` | No | HTTP request timeout for dispatch calls. |
 | `RUNPOD_COST_PER_DISPATCH_CENTS` | `0` | No | Estimated cost per dispatch (for budget guard prospective cost check). Set to your expected per-job cost in cents. |
+| `QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS` | `15` | No | API startup poll interval for completed RunPod job outputs. Set `0` to disable automatic polling. |
 
 ### Budget guard config
 
@@ -458,7 +461,7 @@ console for template creation.
      - `QUANT_FOUNDRY_CALLBACK_SECRET` = `<your-secret>` (must match Fincept-side)
      - `QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS` = `600`
 4. Click **Create**.
-5. Copy the **Endpoint ID** — this is your `RUNPOD_ENDPOINT_ID`.
+5. Copy the **Endpoint ID** — this is your `RUNPOD_TRAINING_ENDPOINT_ID`.
 
 ### 3.4 Create a serverless endpoint for inference
 
@@ -468,7 +471,7 @@ console for template creation.
    - **Environment variables:**
      - `QUANT_FOUNDRY_CALLBACK_SECRET` = `<your-secret>` (same as training)
      - `QUANT_FOUNDRY_MODE` = `runpod_shadow`
-2. Copy the **Endpoint ID** — this is your inference `RUNPOD_ENDPOINT_ID`.
+2. Copy the **Endpoint ID** — this is your `RUNPOD_INFERENCE_ENDPOINT_ID`.
 
 ### 3.5 Verify endpoint health
 
@@ -604,10 +607,12 @@ $env:QUANT_FOUNDRY_CALLBACK_SECRET = "<your-secret-from-step-6.1>"
 
 # --- RunPod API config ---
 $env:RUNPOD_API_KEY = "<your-runpod-api-key>"
-$env:RUNPOD_ENDPOINT_ID = "<training-endpoint-id>"
+$env:RUNPOD_TRAINING_ENDPOINT_ID = "<training-endpoint-id>"
+$env:RUNPOD_INFERENCE_ENDPOINT_ID = "<inference-endpoint-id>"
 $env:RUNPOD_BASE_URL = "https://api.runpod.ai/v2"
 $env:RUNPOD_TIMEOUT_SECONDS = "30"
 $env:RUNPOD_COST_PER_DISPATCH_CENTS = "50"
+$env:QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS = "15"
 
 # --- Budget guard (fail-closed on GPU spend) ---
 $env:QUANT_FOUNDRY_MONTHLY_BUDGET_CENTS = "5000"
@@ -634,7 +639,11 @@ curl http://127.0.0.1:8000/quant-foundry/health -H "Authorization: Bearer <your-
   "mode": "runpod",
   "shadow_only": true,
   "job_count": 0,
-  "runpod_wired": true
+  "runpod_wired": true,
+  "runpod_routes": {
+    "training": "<training-endpoint-id>",
+    "inference": "<inference-endpoint-id>"
+  }
 }
 ```
 
@@ -647,7 +656,7 @@ from quant_foundry.runpod_client import HttpRunPodClient
 import os
 client = HttpRunPodClient(
     api_key=os.environ['RUNPOD_API_KEY'],
-    endpoint_id=os.environ['RUNPOD_ENDPOINT_ID'],
+    endpoint_id=os.environ['RUNPOD_TRAINING_ENDPOINT_ID'],
 )
 try:
     health = client.check_health()
@@ -722,7 +731,7 @@ from quant_foundry.runpod_client import HttpRunPodClient
 import os, json
 client = HttpRunPodClient(
     api_key=os.environ['RUNPOD_API_KEY'],
-    endpoint_id=os.environ['RUNPOD_ENDPOINT_ID'],
+    endpoint_id=os.environ['RUNPOD_TRAINING_ENDPOINT_ID'],
 )
 # Replace with the runpod_job_id from the job detail:
 status = client.check_status('rp-job-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
@@ -734,33 +743,26 @@ print(json.dumps(status, indent=2))
 
 ## Step 8 — Receive the callback
 
-When the RunPod worker finishes, it returns a signed callback. In the
-current architecture, the callback is returned as the RunPod job output
-(not via an HTTP webhook). The operator must process it manually or
-build a polling loop.
+When the RunPod worker finishes, it returns a signed callback as the RunPod
+job output. The API startup now runs a polling loop when
+`QUANT_FOUNDRY_MODE` is `runpod`, `runpod_research`, or `runpod_shadow` and
+`QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS` is greater than zero. The poller
+checks `RUNNING` outbox records, extracts `callback_payload`,
+`callback_signature`, and `callback_ts`, and submits them to
+`/quant-foundry/callbacks/runpod`.
 
-### 8.1 Manual callback processing
+### 8.1 Automated callback polling
 
 ```powershell
-# Get the RunPod job output (contains the signed callback):
+# The API process polls automatically. To trigger one poll manually:
 uv run --package quant-foundry python -c "
-from quant_foundry.runpod_client import HttpRunPodClient
-import os, json
-client = HttpRunPodClient(
-    api_key=os.environ['RUNPOD_API_KEY'],
-    endpoint_id=os.environ['RUNPOD_ENDPOINT_ID'],
-)
-status = client.check_status('rp-job-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
-if status.get('status') == 'COMPLETED':
-    output = status['output']
-    print('Callback payload:', output['callback_payload'][:200])
-    print('Signature:', output['callback_signature'])
-    print('Artifact ID:', output['artifact_id'])
-    print('Dossier ID:', output['dossier_id'])
+from quant_foundry.gateway import QuantFoundryGateway
+gateway = QuantFoundryGateway.from_env()
+print(gateway.poll_runpod_results())
 "
 ```
 
-### 8.2 Submit the callback to Fincept
+### 8.2 Manual callback submission fallback
 
 ```powershell
 # Send the callback to the Fincept callback endpoint (HMAC auth, NOT bearer):
@@ -801,13 +803,7 @@ curl http://127.0.0.1:8000/quant-foundry/dossiers/model:qf:train:runpod:1 `
 
 ## Step 9 — Dispatch a real shadow inference job
 
-### 9.1 Switch the endpoint ID to the inference endpoint
-
-```powershell
-$env:RUNPOD_ENDPOINT_ID = "<inference-endpoint-id>"
-```
-
-### 9.2 Create an inference job
+### 9.1 Create an inference job
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/quant-foundry/jobs `
@@ -821,7 +817,31 @@ curl -X POST http://127.0.0.1:8000/quant-foundry/jobs `
       "job_id": "qf:infer:runpod:1",
       "artifact_ref": "file:///model.pkl",
       "symbols": ["AAPL", "MSFT"],
-      "horizons_ns": [3600000000000]
+      "horizons_ns": [3600000000000],
+      "feature_snapshot_ref": "snap:live:example",
+      "model_id": "model:qf:train:runpod:1",
+      "decision_time": 1000,
+      "expected_features": ["momentum", "volatility"],
+      "feature_rows": [
+        {
+          "symbol": "AAPL",
+          "event_ts": 900,
+          "decision_time": 1000,
+          "features": [
+            {"name": "momentum", "value": 0.25, "observed_at": 990},
+            {"name": "volatility", "value": 0.05, "observed_at": 990}
+          ]
+        },
+        {
+          "symbol": "MSFT",
+          "event_ts": 900,
+          "decision_time": 1000,
+          "features": [
+            {"name": "momentum", "value": 0.18, "observed_at": 990},
+            {"name": "volatility", "value": 0.07, "observed_at": 990}
+          ]
+        }
+      ]
     },
     "priority": 0,
     "budget_cents": 10

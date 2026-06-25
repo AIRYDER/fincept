@@ -31,12 +31,15 @@ COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 
-# Install dependencies. httpx is needed for the HTTP RunPod client
-# (used when the handler needs to check status or health). pydantic
-# is the core schema library.
+# Install dependencies. `runpod` is the serverless worker SDK that
+# registers the handler with RunPod's control plane. Without it, the
+# worker process exits immediately and RunPod marks it unhealthy.
+# httpx is needed for the HTTP RunPod client (status/health checks).
+# pydantic is the core schema library.
 RUN pip install --no-cache-dir \
     "pydantic>=2.7" \
-    "httpx>=0.27"
+    "httpx>=0.27" \
+    "runpod>=1.6"
 
 # Pin the code git SHA at build time (for reproducibility).
 # Override with --build-arg GIT_SHA=$(git rev-parse HEAD)

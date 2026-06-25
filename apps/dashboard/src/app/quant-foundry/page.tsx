@@ -116,13 +116,13 @@ const MODULES: readonly ModuleCardSpec[] = [
   {
     id: "runpod_research",
     label: "RunPod Research",
-    description: "Remote training dispatch (not yet wired — Phase 5).",
+    description: "Remote training dispatch through the RunPod gateway.",
     icon: FlaskConical,
   },
   {
     id: "shadow_inference",
     label: "Shadow Inference",
-    description: "Shadow-only predictions (no sig.predict — Phase 6).",
+    description: "Shadow-only predictions with point-in-time snapshots.",
     icon: Ghost,
   },
 ] as const;
@@ -167,6 +167,7 @@ const SUB_PAGES = [
 type QFMode =
   | "disabled"
   | "local_mock"
+  | "runpod"
   | "runpod_research"
   | "runpod_shadow"
   | "paper_bridge";
@@ -176,16 +177,36 @@ function classifyMode(health: QuantFoundryHealthResponse | undefined): QFMode {
   if (!health.enabled) return "disabled";
   const mode = health.mode ?? "local_mock";
   if (mode === "local_mock") return "local_mock";
+  if (mode === "runpod") return "runpod";
   if (mode === "runpod_research") return "runpod_research";
   if (mode === "runpod_shadow") return "runpod_shadow";
   if (mode === "paper_bridge") return "paper_bridge";
   return "local_mock";
 }
 
-function modeToIntent(mode: QFMode): SemanticIntent {
+function hasRunpodRoute(
+  health: QuantFoundryHealthResponse | undefined,
+  jobType: "training" | "inference",
+): boolean {
+  return Boolean(health?.runpod_wired && health.runpod_routes?.[jobType]);
+}
+
+function modeToIntent(
+  mode: QFMode,
+  health: QuantFoundryHealthResponse | undefined,
+): SemanticIntent {
   if (mode === "disabled") return "inactive";
   if (mode === "local_mock") return "verified";
-  return "degraded"; // runpod_* / paper_bridge are not yet wired
+  if (mode === "runpod") {
+    return health?.runpod_wired ? "verified" : "degraded";
+  }
+  if (mode === "runpod_research") {
+    return hasRunpodRoute(health, "training") ? "verified" : "degraded";
+  }
+  if (mode === "runpod_shadow") {
+    return hasRunpodRoute(health, "inference") ? "verified" : "degraded";
+  }
+  return "degraded";
 }
 
 function modeLabel(mode: QFMode): string {
@@ -194,6 +215,8 @@ function modeLabel(mode: QFMode): string {
       return "DISABLED";
     case "local_mock":
       return "LOCAL MOCK";
+    case "runpod":
+      return "RUNPOD";
     case "runpod_research":
       return "RUNPOD RESEARCH";
     case "runpod_shadow":
@@ -203,16 +226,29 @@ function modeLabel(mode: QFMode): string {
   }
 }
 
-function modeDescription(mode: QFMode): string {
+function modeDescription(
+  mode: QFMode,
+  health: QuantFoundryHealthResponse | undefined,
+): string {
+  const trainingEndpoint = health?.runpod_routes?.training;
+  const inferenceEndpoint = health?.runpod_routes?.inference;
   switch (mode) {
     case "disabled":
       return "Quant Foundry is disabled by default (QUANT_FOUNDRY_ENABLED=false). No jobs are created or processed. This is the safe resting state — not a failure.";
     case "local_mock":
       return "Local mock mode: the full job loop (enqueue → dispatch → process) runs synchronously in-process. No external workers, no RunPod, no sig.predict writes. Safe for local dev.";
+    case "runpod":
+      return health?.runpod_wired
+        ? `RunPod mode: training route ${trainingEndpoint ?? "unconfigured"} and inference route ${inferenceEndpoint ?? "unconfigured"}. The API poller ingests signed worker output into durable stores.`
+        : "RunPod mode: dispatch is enabled but no RunPod endpoints are configured.";
     case "runpod_research":
-      return "RunPod research mode: training jobs are dispatched to RunPod workers. Not yet wired (Phase 5).";
+      return trainingEndpoint
+        ? `RunPod research mode: training jobs dispatch to ${trainingEndpoint}. The API poller ingests signed worker output into durable dossiers.`
+        : "RunPod research mode: training dispatch is enabled but no training endpoint is configured.";
     case "runpod_shadow":
-      return "RunPod shadow mode: shadow inference against live features. Not yet wired (Phase 6).";
+      return inferenceEndpoint
+        ? `RunPod shadow mode: inference jobs dispatch to ${inferenceEndpoint} with point-in-time feature snapshots. Signed outputs land in the durable shadow ledger.`
+        : "RunPod shadow mode: inference dispatch is enabled but no inference endpoint is configured.";
     case "paper_bridge":
       return "Paper bridge mode: paper-only model pointer bridge. Not yet wired (Phase 7).";
   }
@@ -237,6 +273,8 @@ function deriveModuleStatuses(
   health: QuantFoundryHealthResponse | undefined,
 ): ModuleStatus[] {
   const enabled = mode !== "disabled";
+  const trainingEndpoint = health?.runpod_routes?.training;
+  const inferenceEndpoint = health?.runpod_routes?.inference;
   return MODULES.map((spec) => {
     let state: ModuleStatus["state"];
     let detail: string;
@@ -244,16 +282,25 @@ function deriveModuleStatuses(
     if (!enabled) {
       state = "disabled";
       detail = "Gateway disabled — module is at rest.";
-    } else if (
-      spec.id === "runpod_research" ||
-      spec.id === "shadow_inference"
-    ) {
-      // These modules are not yet wired in the current phase.
-      state = "not_wired";
-      detail = "Not yet wired in the current phase.";
+    } else if (spec.id === "runpod_research") {
+      if (trainingEndpoint) {
+        state = "active";
+        detail = `Training endpoint: ${trainingEndpoint}. Poller ingests signed RunPod outputs.`;
+      } else {
+        state = "not_wired";
+        detail = "Missing RUNPOD_TRAINING_ENDPOINT_ID for training jobs.";
+      }
+    } else if (spec.id === "shadow_inference") {
+      if (inferenceEndpoint) {
+        state = "active";
+        detail = `Inference endpoint: ${inferenceEndpoint}. Dispatch includes feature snapshots.`;
+      } else {
+        state = "not_wired";
+        detail = "Missing RUNPOD_INFERENCE_ENDPOINT_ID for inference jobs.";
+      }
     } else if (spec.id === "gateway") {
       state = "active";
-      detail = `Mode: ${health?.mode ?? "local_mock"}. Shadow-only: ${health?.shadow_only ?? true}.`;
+      detail = `Mode: ${health?.mode ?? "local_mock"}. Shadow-only: ${health?.shadow_only ?? true}. RunPod wired: ${health?.runpod_wired ?? false}.`;
     } else if (spec.id === "outbox" || spec.id === "inbox") {
       state = "active";
       detail = `Job count: ${health?.job_count ?? 0}.`;
@@ -334,7 +381,7 @@ export default function QuantFoundryPage() {
         action={
           <div className="flex items-center gap-2">
             <StatusPill
-              intent={modeToIntent(mode)}
+              intent={modeToIntent(mode, healthQ.data)}
               label={modeLabel(mode)}
             />
             {healthQ.data?.shadow_only !== false && (
@@ -353,7 +400,7 @@ export default function QuantFoundryPage() {
           <div className="min-w-0">
             <p className="text-sm font-medium">{modeLabel(mode)}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {modeDescription(mode)}
+              {modeDescription(mode, healthQ.data)}
             </p>
           </div>
         </div>
@@ -468,8 +515,6 @@ function CostBudgetCard({
   mode: QFMode;
   jobCount: number;
 }) {
-  // In local_mock mode, costs are zero (no external workers). In RunPod
-  // modes, costs would come from the gateway — not yet wired.
   const hasCostData = mode !== "disabled" && mode !== "local_mock";
 
   return (
@@ -495,13 +540,17 @@ function CostBudgetCard({
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Estimated spend</span>
           <span className="font-medium">
-            {hasCostData ? "Not yet wired" : "$0.00"}
+            {hasCostData ? "Job history" : "$0.00"}
           </span>
         </div>
-        {!hasCostData && (
+        {hasCostData ? (
           <p className="pt-2 text-xs text-muted-foreground">
-            No external workers in this mode. RunPod cost tracking will be
-            wired in Phase 5.
+            RunPod dispatch history carries endpoint, cost, duration, and failure
+            receipts per job.
+          </p>
+        ) : (
+          <p className="pt-2 text-xs text-muted-foreground">
+            No external workers in this mode.
           </p>
         )}
       </CardContent>

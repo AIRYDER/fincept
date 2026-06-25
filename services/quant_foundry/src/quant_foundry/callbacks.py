@@ -30,13 +30,15 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from quant_foundry.dossier import DossierRecord
 from quant_foundry.ids import hash_payload
 from quant_foundry.inbox import CallbackInbox, CallbackStatus
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.registry import DossierRegistry
 from quant_foundry.schemas import (
     ArtifactManifest,
     Authority,
@@ -44,6 +46,17 @@ from quant_foundry.schemas import (
     RunPodCallbackEnvelope,
     ShadowPrediction,
 )
+from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
+
+
+class ShadowLedgerSink(Protocol):
+    def store(self, predictions: list[dict[str, Any]]) -> None:
+        ...
+
+
+class DossierStoreSink(Protocol):
+    def store(self, training_result: dict[str, Any]) -> None:
+        ...
 
 
 class ShadowLedgerStub:
@@ -100,6 +113,59 @@ class DossierStub:
         return list(self._records)
 
 
+class DurableShadowLedgerStore:
+    def __init__(self, ledger: ShadowLedger) -> None:
+        self._ledger = ledger
+
+    def store(self, predictions: list[dict[str, Any]]) -> None:
+        batch_hash = compute_batch_hash(predictions)
+        self._ledger.store_batch(predictions, batch_hash)
+
+    def list(self) -> list[dict[str, Any]]:
+        return [record.model_dump(mode="json") for record in self._ledger.list()]
+
+
+class DurableDossierStore:
+    def __init__(self, registry: DossierRegistry) -> None:
+        self._registry = registry
+
+    def store(self, training_result: dict[str, Any]) -> None:
+        dossier = ModelDossier.model_validate(training_result["dossier"])
+        artifact = ArtifactManifest.model_validate(training_result["artifact_manifest"])
+        if dossier.artifact_manifest_id != artifact.artifact_id:
+            raise ValueError(
+                "dossier artifact_manifest_id does not match artifact manifest artifact_id"
+            )
+
+        training_metrics = dict(dossier.training_metrics)
+        if dossier.pbo is not None:
+            training_metrics["pbo"] = float(dossier.pbo)
+        if dossier.deflated_sharpe is not None:
+            training_metrics["deflated_sharpe"] = float(dossier.deflated_sharpe)
+
+        record = DossierRecord(
+            model_id=dossier.model_id,
+            artifact_manifest_id=artifact.artifact_id,
+            artifact_sha256=artifact.sha256,
+            dataset_manifest_id=dossier.dataset_manifest_id,
+            dataset_manifest_ref=dossier.dataset_manifest_id,
+            feature_schema_hash=artifact.feature_schema_hash,
+            label_schema_hash=artifact.label_schema_hash,
+            code_git_sha=dossier.code_git_sha or artifact.code_git_sha,
+            lockfile_hash=dossier.lockfile_hash or artifact.lockfile_hash,
+            container_image_digest=(
+                dossier.container_image_digest or artifact.container_image_digest
+            ),
+            random_seed=dossier.random_seed,
+            hardware_class=dossier.hardware_class,
+            training_metrics=training_metrics,
+        )
+        self._registry.register(record)
+
+    def list(self) -> list[dict[str, Any]]:
+        return [record.model_dump(mode="json") for record in self._registry.list()]
+
+
 class CallbackProcessor:
     """Processes signed callbacks from the inbox. Fail-closed, idempotent.
 
@@ -115,8 +181,8 @@ class CallbackProcessor:
         outbox: JobOutbox,
         inbox: CallbackInbox,
         callback_secret: str,
-        shadow_ledger: ShadowLedgerStub,
-        dossier_store: DossierStub,
+        shadow_ledger: ShadowLedgerSink,
+        dossier_store: DossierStoreSink,
     ) -> None:
         self.outbox = outbox
         self.inbox = inbox

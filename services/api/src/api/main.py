@@ -14,6 +14,8 @@ task — for v1 the API only runs behind localhost or a reverse proxy).
 from __future__ import annotations
 
 import asyncio
+import os
+import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -45,6 +47,7 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
+from quant_foundry.gateway import QuantFoundryGateway
 
 API_VERSION = "0.1.0"
 
@@ -60,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     configure_tracing("api")
     settings = get_settings()
+    quant_foundry_gateway = configure_quant_foundry_gateway(app)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     app.state.redis = redis
     scheduler = AlpacaScheduler(redis)
@@ -70,11 +74,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.news_scheduler = news_scheduler
     heartbeat_task = asyncio.create_task(beat_periodically(redis, "api"))
     app.state.heartbeat_task = heartbeat_task
+    quant_foundry_poll_task: asyncio.Task[None] | None = None
+    poll_interval = _quant_foundry_poll_interval_seconds()
+    if (
+        quant_foundry_gateway.enabled
+        and quant_foundry_gateway.mode in {"runpod", "runpod_research", "runpod_shadow"}
+        and poll_interval > 0
+    ):
+        quant_foundry_poll_task = asyncio.create_task(
+            _poll_quant_foundry_runpod(quant_foundry_gateway, poll_interval)
+        )
+        app.state.quant_foundry_poll_task = quant_foundry_poll_task
     log.info("api.start", version=API_VERSION, redis_url=settings.REDIS_URL)
     try:
         yield
     finally:
         log.info("api.stop")
+        if quant_foundry_poll_task is not None:
+            quant_foundry_poll_task.cancel()
+            try:
+                await quant_foundry_poll_task
+            except asyncio.CancelledError:
+                pass
         heartbeat_task.cancel()
         try:
             await heartbeat_task
@@ -83,6 +104,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await news_scheduler.stop()
         await scheduler.stop()
         await redis.aclose()  # type: ignore[attr-defined]
+
+
+def configure_quant_foundry_gateway(
+    app: FastAPI,
+    *,
+    base_dir: pathlib.Path | str | None = None,
+) -> QuantFoundryGateway:
+    gateway = QuantFoundryGateway.from_env(base_dir=base_dir)
+    app.state.quant_foundry_gateway = gateway
+    return gateway
+
+
+def _quant_foundry_poll_interval_seconds() -> float:
+    raw = os.environ.get("QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS", "15")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 15.0
+
+
+async def _poll_quant_foundry_runpod(
+    gateway: QuantFoundryGateway,
+    interval_seconds: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(gateway.poll_runpod_results)
+        except Exception as exc:
+            log.warning(
+                "quant_foundry.runpod_poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
 
 app = FastAPI(title="Fincept API", version=API_VERSION, lifespan=lifespan)

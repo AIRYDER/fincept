@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from typing import Any
 
 # Add the quant_foundry package to the path (for RunPod container).
@@ -39,6 +40,14 @@ from quant_foundry.shadow_inference import (
     InferenceDisabledError,
     ShadowInferenceEngine,
 )
+from quant_foundry.signatures import sign_callback
+
+
+def _get_callback_secret() -> str:
+    secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
+    if not secret:
+        return "dev-callback-secret-DO-NOT-USE-IN-PROD"
+    return secret
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
@@ -67,7 +76,18 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     engine = ShadowInferenceEngine(enabled=enabled)
     try:
         result = engine.run(request=request, snapshot=snapshot, model_id=model_id)
+        callback_payload = result.callback.model_dump_json().encode("utf-8")
+        callback_ts = int(time.time())
         return {
+            "job_id": request.job_id,
+            "callback_payload": callback_payload.decode("utf-8"),
+            "callback_signature": sign_callback(
+                callback_payload,
+                secret=_get_callback_secret(),
+                ts=callback_ts,
+                job_id=request.job_id,
+            ),
+            "callback_ts": callback_ts,
             "callback": result.callback.model_dump(),
             "predictions": [p.model_dump() for p in result.predictions],
             "latency_ms": result.latency_ms,

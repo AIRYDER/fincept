@@ -221,6 +221,10 @@ class HttpRunPodClient:
         self.cost_per_dispatch_cents = cost_per_dispatch_cents
         self._transport = transport
 
+    @property
+    def endpoint_id(self) -> str:
+        return self._endpoint_id
+
     def _build_client(self) -> Any:
         """Build an httpx.Client. Uses injected transport for tests."""
         import httpx
@@ -367,6 +371,7 @@ class RunPodDispatcher:
     mode: str = "local_mock"
     budget_guard: BudgetGuard = field(default_factory=lambda: BudgetGuard(monthly_budget_cents=0))
     max_dispatches_per_sweep: int | None = None
+    endpoint_id: str | None = None
 
     def dispatch(
         self, job_id: str, *, request_payload: dict[str, Any],
@@ -441,12 +446,18 @@ class RunPodDispatcher:
 
         # Store RunPod job ID + cost + duration in outbox.
         if result.runpod_job_id:
+            endpoint_id = self.endpoint_id
+            if endpoint_id is None:
+                endpoint_id = getattr(self.client, "endpoint_id", None)
+            if endpoint_id is None:
+                endpoint_id = getattr(self.client, "_endpoint_id", None)
             note = json.dumps({
                 "cost_cents": result.cost_cents,
                 "duration_seconds": result.duration_seconds or elapsed,
             })
             self.outbox.update_status(
                 job_id, JobStatus.RUNNING,
+                runpod_endpoint_id=endpoint_id,
                 runpod_job_id=result.runpod_job_id,
                 note=note,
             )
