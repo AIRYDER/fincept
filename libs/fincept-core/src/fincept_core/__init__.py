@@ -1,4 +1,15 @@
-from . import clock, config, errors, events, ids, leadership, logging, schemas, tracing
+from . import (
+    clock,
+    config,
+    errors,
+    events,
+    ids,
+    leadership,
+    logging,
+    schemas,
+    storage,
+    tracing,
+)
 
 __all__ = [
     "clock",
@@ -9,5 +20,6 @@ __all__ = [
     "leadership",
     "logging",
     "schemas",
+    "storage",
     "tracing",
 ]
