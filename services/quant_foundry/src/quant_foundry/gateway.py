@@ -737,8 +737,6 @@ class QuantFoundryGateway:
 
         from quant_foundry.promotion import (
             PromotionRejectionReason,
-            PromotionWaiver,
-            ReviewDecision,
         )
 
         pending = self.promotion_queue().pending()
@@ -889,7 +887,7 @@ class QuantFoundryGateway:
             )
         return self._settlement_sweep
 
-    def run_settlement_sweep(self) -> dict[str, Any]:
+    def run_settlement_sweep(self, now_ns: int | None = None) -> dict[str, Any]:
         """Run one settlement sweep and return the receipt dict.
 
         Sweeps all shadow predictions, settles expired ones, and returns
@@ -898,7 +896,7 @@ class QuantFoundryGateway:
         """
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
-        receipt = self.settlement_sweep().sweep()
+        receipt = self.settlement_sweep().sweep(now_ns=now_ns)
         return receipt.to_dict()
 
     def settlement_status(self) -> dict[str, Any]:

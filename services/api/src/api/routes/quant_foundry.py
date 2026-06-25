@@ -330,3 +330,138 @@ async def settlement_status(
     """
     gw = _require_gateway(request)
     return gw.settlement_status()
+
+
+# --- Promotion POST endpoints (Agent B) ---
+
+
+class SubmitPromotionRequest(BaseModel):
+    """Body for POST /quant-foundry/promotion/submit."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    target_level: str
+    review_note: str = ""
+
+
+class ApprovePromotionRequest(BaseModel):
+    """Body for POST /quant-foundry/promotion/approve."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    review_note: str = ""
+
+
+class RejectPromotionRequest(BaseModel):
+    """Body for POST /quant-foundry/promotion/reject."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    review_note: str = ""
+    rejection_reason: str | None = None
+
+
+@router.post("/promotion/submit")
+async def submit_promotion(
+    body: SubmitPromotionRequest,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Submit a model for promotion review.
+
+    Bearer-auth. Builds evidence from dossier + tournament + sentinel
+    and submits to the review queue. Returns the pending entry.
+    Advisory-only — does not promote.
+    """
+    gw = _require_gateway(request)
+    result = gw.submit_promotion(
+        model_id=body.model_id,
+        target_level=body.target_level,
+        review_note=body.review_note,
+    )
+    if not result.get("enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quant Foundry is disabled",
+        )
+    if result.get("error_code") == "no_dossier":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.get("detail", "no dossier found"),
+        )
+    if result.get("error_code") == "invalid_target_level":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.get("detail", "invalid target level"),
+        )
+    return result
+
+
+@router.post("/promotion/approve")
+async def approve_promotion(
+    body: ApprovePromotionRequest,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Approve a pending promotion request.
+
+    Bearer-auth. Processes the pending entry through the promotion gate.
+    The gate fails closed — missing evidence or blocking issues result
+    in REJECTED, not APPROVED. Returns the promotion receipt.
+    """
+    gw = _require_gateway(request)
+    result = gw.process_promotion(
+        model_id=body.model_id,
+        approve=True,
+        review_note=body.review_note,
+    )
+    if not result.get("enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quant Foundry is disabled",
+        )
+    if result.get("error_code") == "no_pending_request":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.get("detail", "no pending promotion request"),
+        )
+    return result
+
+
+@router.post("/promotion/reject")
+async def reject_promotion(
+    body: RejectPromotionRequest,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Reject a pending promotion request.
+
+    Bearer-auth. Rejects the pending entry with a reason. Returns the
+    promotion receipt.
+    """
+    gw = _require_gateway(request)
+    result = gw.process_promotion(
+        model_id=body.model_id,
+        approve=False,
+        review_note=body.review_note,
+        rejection_reason=body.rejection_reason,
+    )
+    if not result.get("enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quant Foundry is disabled",
+        )
+    if result.get("error_code") == "no_pending_request":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.get("detail", "no pending promotion request"),
+        )
+    if result.get("error_code") == "invalid_rejection_reason":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.get("detail", "invalid rejection reason"),
+        )
+    return result
