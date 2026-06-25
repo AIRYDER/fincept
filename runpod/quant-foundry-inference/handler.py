@@ -82,20 +82,13 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Check if we're being called by RunPod serverless (env var set by RunPod)
-    if os.environ.get("RUNPOD_ENDPOINT_ID") or os.environ.get("RUNPOD_POD_ID"):
-        # RunPod serverless mode: use the runpod SDK
-        try:
-            import runpod
+    # Try RunPod serverless mode first (uses runpod SDK)
+    try:
+        import runpod
 
-            runpod.serverless.start({"handler": handler})
-        except ImportError:
-            # runpod SDK not installed — fall back to stdin mode
-            event = json.loads(sys.stdin.read())
-            result = handler(event)
-            sys.stdout.write(json.dumps(result, indent=2))
-    else:
-        # For local testing: read JSON from stdin.
+        runpod.serverless.start({"handler": handler})
+    except ImportError:
+        # runpod SDK not installed — fall back to stdin mode for local testing
         event = json.loads(sys.stdin.read())
         result = handler(event)
         sys.stdout.write(json.dumps(result, indent=2))
