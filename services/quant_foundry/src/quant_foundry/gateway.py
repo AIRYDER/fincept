@@ -43,6 +43,11 @@ from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
+from quant_foundry.runpod_client import (
+    BudgetGuard as DispatchBudgetGuard,
+    HttpRunPodClient,
+    RunPodDispatcher,
+)
 from quant_foundry.shadow_ledger import ShadowLedger
 from quant_foundry.signatures import verify_callback
 
@@ -63,6 +68,7 @@ class QuantFoundryGateway:
         callback_secret: str,
         base_dir: pathlib.Path | str,
         budget_guard: BudgetGuard | None = None,
+        runpod_client: Any = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -80,6 +86,8 @@ class QuantFoundryGateway:
         self._expanded_leaderboard: ExpandedLeaderboard | None = None
         self._promotion_queue: PromotionReviewQueue | None = None
         self._shadow_ledger_real: ShadowLedger | None = None
+        self._runpod_client = runpod_client
+        self._runpod_dispatcher: RunPodDispatcher | None = None
         self.dispatcher = MockDispatcher(
             outbox=self.outbox,
             inbox=self.inbox,
@@ -94,9 +102,41 @@ class QuantFoundryGateway:
             dossier_store=self.dossier_store,
         )
 
+        # When mode == "runpod", wire the RunPodDispatcher with the
+        # HttpRunPodClient (or an injected client for tests). The mock
+        # dispatcher remains available for local_mock fallback.
+        if self.mode == "runpod" and runpod_client is not None:
+            dispatch_budget = DispatchBudgetGuard(
+                monthly_budget_cents=(
+                    budget_guard.monthly_budget_cents
+                    if budget_guard is not None
+                    else 0
+                ),
+            )
+            self._runpod_dispatcher = RunPodDispatcher(
+                outbox=self.outbox,
+                client=runpod_client,
+                mode="runpod",
+                budget_guard=dispatch_budget,
+            )
+
     @classmethod
     def from_env(cls, base_dir: pathlib.Path | str | None = None) -> QuantFoundryGateway:
-        """Construct from env vars with spec defaults."""
+        """Construct from env vars with spec defaults.
+
+        When ``QUANT_FOUNDRY_MODE=runpod``, reads the following additional
+        env vars to construct the HttpRunPodClient:
+
+        - ``RUNPOD_API_KEY`` (required in runpod mode) — RunPod API key.
+        - ``RUNPOD_ENDPOINT_ID`` (required in runpod mode) — serverless
+          endpoint ID for the training or inference worker.
+        - ``RUNPOD_BASE_URL`` (optional, default
+          ``https://api.runpod.ai/v2``) — RunPod API base URL.
+        - ``RUNPOD_TIMEOUT_SECONDS`` (optional, default ``30``) — HTTP
+          request timeout for dispatch calls.
+        - ``RUNPOD_COST_PER_DISPATCH_CENTS`` (optional, default ``0``) —
+          estimated cost per dispatch for budget guard checks.
+        """
         enabled = os.environ.get("QUANT_FOUNDRY_ENABLED", "false").lower() == "true"
         mode = os.environ.get("QUANT_FOUNDRY_MODE", "local_mock")
         shadow_only = os.environ.get("QUANT_FOUNDRY_SHADOW_ONLY", "true").lower() == "true"
@@ -104,6 +144,30 @@ class QuantFoundryGateway:
         if base_dir is None:
             base_dir = os.environ.get("QUANT_FOUNDRY_BASE_DIR", "reports/quant-foundry")
         budget_guard = budget_from_env(pathlib.Path(base_dir) / "budget")
+
+        runpod_client: HttpRunPodClient | None = None
+        if mode == "runpod":
+            api_key = os.environ.get("RUNPOD_API_KEY", "")
+            endpoint_id = os.environ.get("RUNPOD_ENDPOINT_ID", "")
+            base_url = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
+            timeout_str = os.environ.get("RUNPOD_TIMEOUT_SECONDS", "30")
+            cost_str = os.environ.get("RUNPOD_COST_PER_DISPATCH_CENTS", "0")
+            try:
+                timeout_s = float(timeout_str)
+            except ValueError:
+                timeout_s = 30.0
+            try:
+                cost_cents = int(cost_str)
+            except ValueError:
+                cost_cents = 0
+            runpod_client = HttpRunPodClient(
+                api_key=api_key,
+                endpoint_id=endpoint_id,
+                base_url=base_url,
+                timeout_seconds=timeout_s,
+                cost_per_dispatch_cents=cost_cents,
+            )
+
         return cls(
             enabled=enabled,
             mode=mode,
@@ -111,6 +175,7 @@ class QuantFoundryGateway:
             callback_secret=callback_secret,
             base_dir=base_dir,
             budget_guard=budget_guard,
+            runpod_client=runpod_client,
         )
 
     # --- health / state ---
@@ -122,7 +187,28 @@ class QuantFoundryGateway:
             "mode": self.mode,
             "shadow_only": self.shadow_only,
             "job_count": len(self.outbox.list()) if self.enabled else 0,
+            "runpod_wired": self._runpod_dispatcher is not None,
         }
+
+    def runpod_health(self) -> dict[str, Any]:
+        """Check RunPod endpoint health (only in runpod mode).
+
+        Returns a dict with ``ok``, ``status``, and ``detail``. Never
+        raises — network errors are caught and reported as ``ok=False``.
+        When not in runpod mode or no client is wired, returns
+        ``{"ok": False, "status": "not_runpod_mode"}``.
+        """
+        if self.mode != "runpod" or self._runpod_client is None:
+            return {"ok": False, "status": "not_runpod_mode"}
+        try:
+            result = self._runpod_client.check_health()  # type: ignore[union-attr]
+            return {"ok": True, "status": "healthy", "detail": result}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "status": "error",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
 
     def heartbeats(self) -> list[dict[str, Any]]:
         """Worker heartbeats. In local_mock mode there are no external
@@ -188,6 +274,12 @@ class QuantFoundryGateway:
         if self.mode == "local_mock":
             self.dispatcher.dispatch(job_id, request_payload=request_payload)
             self.processor.process(job_id)
+        elif self.mode == "runpod" and self._runpod_dispatcher is not None:
+            # Dispatch to RunPod via the HTTP client. The callback will
+            # arrive asynchronously at POST /quant-foundry/callbacks/runpod.
+            self._runpod_dispatcher.dispatch(
+                job_id, request_payload=request_payload,
+            )
         rec = self.outbox.get(job_id)
         return {
             "enabled": True,

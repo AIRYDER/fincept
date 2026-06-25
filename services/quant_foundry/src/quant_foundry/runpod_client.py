@@ -181,16 +181,53 @@ class HttpRunPodClient:
     The API key is read from the constructor (server-side only) and NEVER
     returned in results, logs, or outbox records.
 
-    NOTE: Full HTTP implementation is deferred until RunPod credentials
-    are available. The class is defined here so the dispatcher can be
-    wired with it via config; the actual HTTP calls will be added when
-    TASK-0502 is exercised against a real RunPod endpoint.
+    Uses RunPod's async ``/run`` endpoint: the job is submitted and the
+    RunPod job ID is returned immediately. The actual result comes back
+    via the HMAC-signed callback endpoint
+    (``POST /quant-foundry/callbacks/runpod``), not via polling.
+
+    Error classification:
+    - HTTP 429, 502, 503, 504 → TRANSIENT_FAILURE (retryable)
+    - HTTP 400, 401, 403, 422 → TERMINAL_FAILURE (not retryable)
+    - Network errors (connect/timeout) → TRANSIENT_FAILURE (retryable)
+    - HTTP 200 → DISPATCHED (success; RunPod job ID in response)
+
+    Args:
+        api_key: RunPod API key (server-side only, never exposed).
+        endpoint_id: RunPod serverless endpoint ID.
+        base_url: RunPod API base URL (default: ``https://api.runpod.ai/v2``).
+        timeout_seconds: HTTP request timeout for the dispatch call.
+        cost_per_dispatch_cents: estimated cost per dispatch (for budget
+            guard prospective cost check; actual cost is recorded when the
+            callback returns).
+        transport: optional httpx transport (for testing; production uses
+            the default httpx transport).
     """
 
-    def __init__(self, *, api_key: str, endpoint_id: str, base_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        endpoint_id: str,
+        base_url: str = "https://api.runpod.ai/v2",
+        timeout_seconds: float = 30.0,
+        cost_per_dispatch_cents: int = 0,
+        transport: Any = None,
+    ) -> None:
         self._api_key = api_key  # private, never exposed
         self._endpoint_id = endpoint_id
-        self._base_url = base_url
+        self._base_url = base_url.rstrip("/")
+        self._timeout = timeout_seconds
+        self.cost_per_dispatch_cents = cost_per_dispatch_cents
+        self._transport = transport
+
+    def _build_client(self) -> Any:
+        """Build an httpx.Client. Uses injected transport for tests."""
+        import httpx
+
+        if self._transport is not None:
+            return httpx.Client(transport=self._transport, timeout=self._timeout)
+        return httpx.Client(timeout=self._timeout)
 
     def dispatch(
         self,
@@ -198,11 +235,112 @@ class HttpRunPodClient:
         job_id: str,
         request_payload: dict[str, Any],
         budget_cents: int | None,
-    ) -> DispatchResult:  # pragma: no cover — HTTP path deferred
-        raise NotImplementedError(
-            "HttpRunPodClient.dispatch is not yet implemented; "
-            "use MockRunPodClient for tests or set QUANT_FOUNDRY_MODE=local_mock."
+    ) -> DispatchResult:
+        """Submit a job to RunPod's async ``/run`` endpoint.
+
+        Returns a DispatchResult. On success, ``runpod_job_id`` is the
+        RunPod-assigned job ID (from the ``id`` field of the response).
+        Cost and duration are 0 at dispatch time; they are recorded when
+        the callback returns.
+        """
+        url = f"{self._base_url}/{self._endpoint_id}/run"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        body = json.dumps({"input": request_payload})
+
+        try:
+            client = self._build_client()
+            with client as c:
+                resp = c.post(url, headers=headers, content=body)
+        except Exception as exc:
+            # Network errors (connect failure, timeout, DNS) → transient.
+            return DispatchResult(
+                job_id=job_id,
+                status=DispatchStatus.TRANSIENT_FAILURE,
+                error_code="network_error",
+                error_summary=f"RunPod HTTP request failed: {type(exc).__name__}: {exc}",
+            )
+
+        # Classify HTTP status.
+        if resp.status_code == 200:
+            try:
+                data = resp.json()
+            except Exception as exc:
+                return DispatchResult(
+                    job_id=job_id,
+                    status=DispatchStatus.TERMINAL_FAILURE,
+                    error_code="bad_response_body",
+                    error_summary=f"RunPod returned 200 but body was not valid JSON: {exc}",
+                )
+            runpod_job_id = data.get("id")
+            if not runpod_job_id:
+                return DispatchResult(
+                    job_id=job_id,
+                    status=DispatchStatus.TERMINAL_FAILURE,
+                    error_code="missing_job_id",
+                    error_summary="RunPod response missing 'id' field",
+                )
+            return DispatchResult(
+                job_id=job_id,
+                status=DispatchStatus.DISPATCHED,
+                runpod_job_id=str(runpod_job_id),
+                cost_cents=0,  # actual cost recorded on callback
+                duration_seconds=0.0,
+            )
+
+        # Transient: 429 (rate limit), 502/503/504 (upstream errors).
+        if resp.status_code in (429, 502, 503, 504):
+            return DispatchResult(
+                job_id=job_id,
+                status=DispatchStatus.TRANSIENT_FAILURE,
+                error_code=f"http_{resp.status_code}",
+                error_summary=f"RunPod returned HTTP {resp.status_code} (transient): {resp.text[:200]}",
+            )
+
+        # Terminal: all other 4xx/5xx.
+        return DispatchResult(
+            job_id=job_id,
+            status=DispatchStatus.TERMINAL_FAILURE,
+            error_code=f"http_{resp.status_code}",
+            error_summary=f"RunPod returned HTTP {resp.status_code} (terminal): {resp.text[:200]}",
         )
+
+    def check_status(self, runpod_job_id: str) -> dict[str, Any]:
+        """Poll RunPod ``/status/{job_id}`` for job status.
+
+        Returns the raw JSON response dict. Raises on network/HTTP errors.
+        Useful for debugging or for a polling fallback if callbacks are
+        not received.
+        """
+        url = f"{self._base_url}/{self._endpoint_id}/status/{runpod_job_id}"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Accept": "application/json",
+        }
+        client = self._build_client()
+        with client as c:
+            resp = c.get(url, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+    def check_health(self) -> dict[str, Any]:
+        """Check RunPod endpoint health via ``/health``.
+
+        Returns the raw JSON response dict.
+        """
+        url = f"{self._base_url}/{self._endpoint_id}/health"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Accept": "application/json",
+        }
+        client = self._build_client()
+        with client as c:
+            resp = c.get(url, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
 
 
 # --- dispatcher ------------------------------------------------------------

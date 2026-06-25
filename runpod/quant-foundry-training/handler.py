@@ -106,11 +106,27 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
 
 # RunPod's serverless module loader looks for a `handler` function at the
-# top level. When run as a script (local testing), accept JSON on stdin.
+# top level. When running on RunPod serverless, use the runpod SDK to start
+# the worker. When run as a script (local testing), accept JSON on stdin.
 if __name__ == "__main__":  # pragma: no cover
     import sys
 
-    raw = sys.stdin.read()
-    event = json.loads(raw) if raw else {}
-    result = handler(event)
-    print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+    # Check if we're being called by RunPod serverless (env var set by RunPod)
+    if os.environ.get("RUNPOD_ENDPOINT_ID") or os.environ.get("RUNPOD_POD_ID"):
+        # RunPod serverless mode: use the runpod SDK
+        try:
+            import runpod
+
+            runpod.serverless.start({"handler": handler})
+        except ImportError:
+            # runpod SDK not installed — fall back to stdin mode
+            raw = sys.stdin.read()
+            event = json.loads(raw) if raw else {}
+            result = handler(event)
+            print(json.dumps(result, indent=2))
+    else:
+        # Local testing mode: read JSON from stdin
+        raw = sys.stdin.read()
+        event = json.loads(raw) if raw else {}
+        result = handler(event)
+        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
