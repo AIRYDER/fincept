@@ -332,6 +332,40 @@ async def settlement_status(
     return gw.settlement_status()
 
 
+# --- Shadow dispatch wiring (Agent C) ---
+
+
+@router.post("/shadow/dispatch")
+async def shadow_dispatch(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Manually trigger a shadow inference dispatch batch.
+
+    Bearer-auth. Dispatches inference jobs for SHADOW_APPROVED models via
+    ``dispatch_shadow_inference_batch``. Returns the dispatch receipt with
+    dispatched / skipped counts and job_ids. Returns 503 when the gateway
+    is absent (default disabled state). Never returns secrets.
+    """
+    gw = _require_gateway(request)
+    return gw.dispatch_shadow_inference_batch()
+
+
+@router.get("/shadow/dispatch-status")
+async def shadow_dispatch_status(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Return the current shadow dispatch loop status.
+
+    Bearer-auth. Returns the cumulative dispatch count, last dispatch
+    timestamp (ns), and enabled flag. Returns 503 when the gateway is
+    absent (default disabled state). Never returns secrets.
+    """
+    gw = _require_gateway(request)
+    return gw.shadow_dispatch_status
+
+
 # --- Promotion POST endpoints (Agent B) ---
 
 
