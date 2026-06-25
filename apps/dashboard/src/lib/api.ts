@@ -66,7 +66,12 @@ import type {
   QuantFoundryJob,
   QuantFoundryPromotionQueueEntry,
   QuantFoundryPromotionReview,
+  QuantFoundryPromotionReceiptResponse,
   QuantFoundryShadowHealth,
+  QuantFoundrySubmitPromotionBody,
+  QuantFoundrySubmitPromotionResponse,
+  QuantFoundryApprovePromotionBody,
+  QuantFoundryRejectPromotionBody,
   QuantFoundryTournamentEntry,
   RegimeResponse,
   RollbackResponse,
@@ -784,4 +789,33 @@ export const api = {
     ),
   quantFoundryShadowHealth: (token: string | null) =>
     request<QuantFoundryShadowHealth>("/quant-foundry/shadow/health", token),
+
+  // --- quant-foundry promotion POST (Agent B) -----------------------------
+  quantFoundrySubmitPromotion: (
+    token: string | null,
+    body: QuantFoundrySubmitPromotionBody,
+  ) =>
+    request<QuantFoundrySubmitPromotionResponse>(
+      "/quant-foundry/promotion/submit",
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  quantFoundryApprovePromotion: (
+    token: string | null,
+    body: QuantFoundryApprovePromotionBody,
+  ) =>
+    request<QuantFoundryPromotionReceiptResponse>(
+      "/quant-foundry/promotion/approve",
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  quantFoundryRejectPromotion: (
+    token: string | null,
+    body: QuantFoundryRejectPromotionBody,
+  ) =>
+    request<QuantFoundryPromotionReceiptResponse>(
+      "/quant-foundry/promotion/reject",
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 };

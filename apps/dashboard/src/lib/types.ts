@@ -1396,6 +1396,44 @@ export interface QuantFoundryPromotionReview {
 }
 
 // ---------------------------------------------------------------------------
+// Promotion POST request/response types (Agent B).
+// Mirrors services/api/src/api/routes/quant_foundry.py promotion endpoints.
+// ---------------------------------------------------------------------------
+
+export interface QuantFoundrySubmitPromotionBody {
+  readonly model_id: string;
+  readonly target_level: string;
+  readonly review_note: string;
+}
+
+export interface QuantFoundrySubmitPromotionResponse {
+  readonly enabled: boolean;
+  readonly ok: boolean;
+  readonly entry?: QuantFoundryPromotionQueueEntry;
+  readonly error_code?: string;
+  readonly detail?: string;
+}
+
+export interface QuantFoundryApprovePromotionBody {
+  readonly model_id: string;
+  readonly review_note: string;
+}
+
+export interface QuantFoundryRejectPromotionBody {
+  readonly model_id: string;
+  readonly review_note: string;
+  readonly rejection_reason: string | null;
+}
+
+export interface QuantFoundryPromotionReceiptResponse {
+  readonly enabled: boolean;
+  readonly ok: boolean;
+  readonly receipt?: QuantFoundryPromotionReview;
+  readonly error_code?: string;
+  readonly detail?: string;
+}
+
+// ---------------------------------------------------------------------------
 // TASK-0604: Shadow inference health (read-only aggregate health surface).
 // Mirrors services/quant_foundry/src/quant_foundry/gateway.py::shadow_health().
 // All metrics are nullable — the gateway returns null when a value is not
