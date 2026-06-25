@@ -29,6 +29,7 @@ Invariants:
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 from collections.abc import Mapping
@@ -46,19 +47,21 @@ from quant_foundry.feature_lake import FeatureRow, FeatureValue
 from quant_foundry.feature_snapshot_export import export_feature_snapshot
 from quant_foundry.inbox import CallbackInbox
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
+from quant_foundry.market_data_adapter import BarDataAdapter
 from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
 from quant_foundry.runpod_client import (
     BudgetGuard as DispatchBudgetGuard,
+)
+from quant_foundry.runpod_client import (
     HttpRunPodClient,
     RunPodDispatcher,
 )
 from quant_foundry.schemas import RunPodInferenceRequest
 from quant_foundry.settlement import SettlementLedger
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
-from quant_foundry.market_data_adapter import BarDataAdapter
 from quant_foundry.shadow_ledger import ShadowLedger
 from quant_foundry.signatures import sign_callback, verify_callback
 from quant_foundry.tournament import Tournament
@@ -97,12 +100,18 @@ class QuantFoundryGateway:
         self._dossier_registry: DossierRegistry | None = None
         self._expanded_leaderboard: ExpandedLeaderboard | None = None
         self._promotion_queue: PromotionReviewQueue | None = None
+        self._promotion_gate: Any = None
+        self._alpha_genome_lab: Any = None
+        self._alpha_sweep_receipts: dict[str, dict[str, Any]] = {}
         self._shadow_ledger_real: ShadowLedger | None = None
         self._tournament_sweep: TournamentSweep | None = None
         self._settlement_ledger: SettlementLedger | None = None
         self._tournament: Tournament | None = None
         # --- Settlement wiring (Agent A) ---
         self._settlement_sweep: Any = None
+        # --- Shadow dispatch loop (Agent C) ---
+        self._shadow_dispatch_count: int = 0
+        self._last_shadow_dispatch_ns: int = 0
         self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
         self.dossier_store = DurableDossierStore(self.dossier_registry())
         self._runpod_client = runpod_client
@@ -776,7 +785,6 @@ class QuantFoundryGateway:
 
     def _process_specific_entry(self, entry: Any) -> Any:
         """Process a specific pending entry through the gate."""
-        from quant_foundry.promotion import PromotionRequest
 
         pending = self.promotion_queue()._pending
         idx = pending.index(entry)
@@ -873,6 +881,186 @@ class QuantFoundryGateway:
                 ))
 
         return issues
+
+    def promotion_gate(self) -> Any:
+        """Return the lazily constructed promotion gate.
+
+        Exposes the same ``PromotionGate`` that the review queue uses.
+        The Alpha Genome Lab (TASK-1005) requires a gate for its
+        evidence-backed registration — every candidate recipe must pass
+        through this gate, no shortcut, no bypass.
+        """
+        if self._promotion_gate is None:
+            from quant_foundry.promotion import PromotionGate
+
+            self._promotion_gate = PromotionGate()
+        return self._promotion_gate
+
+    # --- Alpha Genome Lab wiring (TASK-1005) ------------------------------
+
+    def alpha_genome_lab(
+        self,
+        *,
+        dispatcher: Any = None,
+        tournament_probe: Any = None,
+    ) -> Any:
+        """Return the lazily constructed Alpha Genome Lab (TASK-1005).
+
+        The lab is **opt-in**: constructing it does not start any work.
+        Operators trigger sweeps via ``start_alpha_sweep(...)``. Every
+        candidate recipe flows through ``PromotionGate.evaluate()`` —
+        no shortcut, no bypass (per the TASK-1005 acceptance criteria).
+
+        Args:
+            dispatcher: optional training dispatcher (a callable taking
+                a ``Recipe`` and returning a TrainingOutcome). If None,
+                a built-in mock is used that produces a benign
+                TrainingOutcome so the sweep can be observed end-to-end
+                without GPU spend. Wire a real dispatcher when RunPod
+                is the dispatch target.
+            tournament_probe: optional callable taking ``recipe_id`` and
+                returning a tournament score (or None). When None, no
+                early-stop decision is made — the lab only enforces
+                budget limits.
+
+        Returns:
+            An ``AlphaGenomeLab`` instance ready to ``run_sweep``.
+
+        Invariants (enforced by the underlying ``AlphaGenomeLab``):
+        - No recipe can bypass the gate (``gate.evaluate(...)`` is the
+          only registration path).
+        - No recipe can be registered with authority above
+          ``SHADOW_ONLY`` (alpha-genome recipes are SHADOW_ONLY by
+          construction — promotion to paper_approved requires the same
+          human approval path as any other model).
+        - Budget exhaustion stops new trials, doesn't kill running ones.
+        - No secrets in any receipt.
+        """
+        if self._alpha_genome_lab is None:
+            from quant_foundry.alpha_genome import (
+                AlphaGenomeLab,
+                EarlyStopper,
+                TrialBudget,
+            )
+
+            lab_dispatcher = dispatcher if dispatcher is not None else _alpha_default_dispatcher
+            lab_tournament_probe = (
+                tournament_probe
+                if tournament_probe is not None
+                else _alpha_default_tournament_probe
+            )
+            self._alpha_genome_lab = AlphaGenomeLab(
+                gate=self.promotion_gate(),
+                budget=TrialBudget(),
+                early_stopper=EarlyStopper(),
+                dispatcher=lab_dispatcher,
+                tournament_probe=lab_tournament_probe,
+                registry=_AlphaDossierUpsertAdapter(self.dossier_registry()),
+            )
+        return self._alpha_genome_lab
+
+    def start_alpha_sweep(
+        self,
+        *,
+        seed_recipe: Any,
+        n_recipes: int,
+        sweep_id: str | None = None,
+        dispatcher: Any = None,
+        tournament_probe: Any = None,
+    ) -> dict[str, Any]:
+        """Start an Alpha Genome Lab sweep and return the receipt as JSON.
+
+        The sweep runs synchronously: ``run_sweep`` iterates ``n_recipes``
+        mutations from the seed, dispatches each through the wired
+        dispatcher, evaluates through the gate, and either registers the
+        survivor via the dossier registry or discards the rest with a
+        receipt. The full per-trial list is returned.
+
+        The sweep's overall lifecycle is bounded — it runs to completion
+        or stops at the budget ceiling. There is no long-running daemon.
+
+        Args:
+            seed_recipe: a ``Recipe`` instance to mutate from.
+            n_recipes: number of candidate recipes to generate (>0).
+            sweep_id: optional caller-supplied sweep id; if None, a
+                deterministic id is derived from the seed + timestamp.
+            dispatcher: optional per-call dispatcher override.
+            tournament_probe: optional per-call tournament probe override.
+
+        Returns:
+            JSON-safe dict with the full ``SweepReceipt`` plus an
+            ``enabled`` flag. On error, ``error_code`` + ``detail``.
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+
+        lab = self.alpha_genome_lab(
+            dispatcher=dispatcher,
+            tournament_probe=tournament_probe,
+        )
+        try:
+            receipt = lab.run_sweep(
+                seed_recipe=seed_recipe,
+                n_recipes=n_recipes,
+                sweep_id=sweep_id,
+            )
+        except (TypeError, ValueError) as exc:
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "invalid_sweep_request",
+                "detail": str(exc),
+            }
+        except Exception as exc:
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "sweep_failed",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
+
+        payload = _sweep_receipt_to_dict(receipt)
+        # Stash for status lookups. In-memory only — operator persistence
+        # happens via the per-trial dossier registrations.
+        self._alpha_sweep_receipts[receipt.sweep_id] = payload
+        return {"enabled": True, "ok": True, "sweep": payload}
+
+    def alpha_sweep_status(self, sweep_id: str) -> dict[str, Any] | None:
+        """Return a stored sweep receipt, or None if unknown.
+
+        Receipts are stored in-memory after ``start_alpha_sweep`` and
+        are cleared on process restart. The authoritative audit trail is
+        the per-trial dossier registrations (via ``DossierRegistry``).
+        """
+        if not self.enabled:
+            return None
+        return self._alpha_sweep_receipts.get(sweep_id)
+
+    def list_alpha_sweeps(self) -> list[dict[str, Any]]:
+        """Return every in-memory sweep receipt. Empty when disabled."""
+        if not self.enabled:
+            return []
+        return list(self._alpha_sweep_receipts.values())
+
+    def register_recipe_candidate(self, dossier: Any) -> dict[str, Any]:
+        """Register a dossier produced by a recipe candidate.
+
+        This is the explicit dossier registration contract for the Alpha
+        Genome Lab. It is wired to the same ``DossierRegistry`` as every
+        other model — there is no separate registry, no shortcut.
+
+        Returns the registered dossier as a JSON-safe dict. Raises
+        ``ValueError`` on a content-hash mismatch for an existing
+        model_id (security event).
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+        registered = self.dossier_registry().register(dossier)
+        return {
+            "enabled": True,
+            "ok": True,
+            "dossier": registered.model_dump(mode="json"),
+        }
 
     # --- Settlement wiring (Agent A) ----------------------------------------
 
@@ -1030,6 +1218,160 @@ class QuantFoundryGateway:
             "settled_count": settled_count,
         }
 
+    # --- shadow inference dispatch loop (Agent C) ---------------------------
+
+    def dispatch_shadow_inference_batch(self) -> dict[str, Any]:
+        """Dispatch one batch of shadow inference jobs for SHADOW_APPROVED models.
+
+        Queries the dossier registry for models with status
+        ``SHADOW_APPROVED`` or higher, builds a feature snapshot for each,
+        and dispatches an inference job via ``create_job``. Only runs in
+        ``runpod_shadow`` or ``runpod_research`` mode. Errors for one model
+        are caught and recorded — a single model failing does not stop the
+        rest of the batch.
+
+        Returns a JSON-safe dispatch receipt:
+        ``{"dispatched": N, "skipped": M, "job_ids": [...], "errors": [...]}``
+        with an ``enabled`` / ``skipped`` flag when the gateway is disabled
+        or not in shadow mode.
+        """
+        if not self.enabled:
+            return {"enabled": False}
+
+        if self.mode not in {"runpod_shadow", "runpod_research"}:
+            return {"enabled": True, "skipped": True, "reason": "not in shadow mode"}
+
+        import time as _time
+        import uuid as _uuid
+
+        dossiers = self.list_dossiers(status=DossierStatus.SHADOW_APPROVED)
+        dispatched = 0
+        skipped = 0
+        job_ids: list[str] = []
+        errors: list[dict[str, Any]] = []
+
+        for dossier in dossiers:
+            model_id = str(dossier.get("model_id") or "")
+            if not model_id:
+                skipped += 1
+                continue
+            try:
+                snapshot_payload = self._build_shadow_snapshot_payload(model_id)
+                job_id = f"shadow-inference-{model_id}-{_uuid.uuid4().hex[:12]}"
+                idempotency_key = f"shadow-dispatch-{model_id}-{_time.time_ns()}"
+                request_payload: dict[str, Any] = {
+                    "job_id": job_id,
+                    "artifact_ref": str(
+                        dossier.get("artifact_manifest_id") or model_id
+                    ),
+                    "symbols": [],
+                    "horizons_ns": [86_400_000_000_000],
+                    "snapshot": snapshot_payload,
+                    "model_id": model_id,
+                }
+                receipt = self.create_job(
+                    job_id=job_id,
+                    job_type="inference",
+                    idempotency_key=idempotency_key,
+                    request_payload=request_payload,
+                )
+                if receipt.get("ok") is False:
+                    errors.append({
+                        "model_id": model_id,
+                        "error_code": str(receipt.get("error_code") or "unknown"),
+                        "detail": str(receipt.get("detail") or ""),
+                    })
+                    skipped += 1
+                    continue
+                if receipt.get("status") == "failed":
+                    errors.append({
+                        "model_id": model_id,
+                        "error_code": "job_failed",
+                        "detail": str(receipt.get("detail") or "job status is failed"),
+                    })
+                    skipped += 1
+                    continue
+                job_ids.append(job_id)
+                dispatched += 1
+            except Exception as exc:
+                errors.append({
+                    "model_id": model_id,
+                    "error_code": type(exc).__name__,
+                    "detail": str(exc),
+                })
+                skipped += 1
+
+        self._shadow_dispatch_count += dispatched
+        if dispatched > 0:
+            self._last_shadow_dispatch_ns = _time.time_ns()
+
+        return {
+            "enabled": True,
+            "dispatched": dispatched,
+            "skipped": skipped,
+            "job_ids": job_ids,
+            "errors": errors,
+        }
+
+    def _build_shadow_snapshot_payload(self, model_id: str) -> dict[str, Any]:
+        """Build a feature snapshot payload for a model.
+
+        Uses ``FeatureSnapshotExport`` when feature rows are available from
+        the feature lake. When no rows are available, returns a minimal
+        empty snapshot so the inference worker can abstain safely rather
+        than crash.
+        """
+        import time as _time
+
+        decision_time = int(_time.time_ns())
+        rows = self._collect_feature_rows(model_id)
+        if rows:
+            snapshot = export_feature_snapshot(
+                rows=tuple(rows),
+                decision_time=decision_time,
+            )
+            return snapshot.model_dump(mode="json")
+        return {
+            "symbols": [],
+            "features": {},
+            "availability": {},
+            "ts_event": decision_time,
+            "freshness_ns": 0,
+        }
+
+    def _collect_feature_rows(self, model_id: str) -> list[FeatureRow]:
+        """Collect feature rows for a model from the feature lake.
+
+        Returns an empty list when no feature lake is wired or no rows are
+        available. This is the extension point for a real feature lake
+        adapter — the default returns no rows so the dispatch loop can run
+        end-to-end without a live feature store.
+        """
+        feature_lake = getattr(self, "_feature_lake", None)
+        if feature_lake is None:
+            return []
+        reader = getattr(feature_lake, "read_rows", None)
+        if reader is None:
+            return []
+        try:
+            return list(reader(model_id=model_id))
+        except Exception:
+            return []
+
+    @property
+    def shadow_dispatch_status(self) -> dict[str, Any]:
+        """Return the current shadow dispatch loop status.
+
+        Returns a JSON-safe dict with the cumulative dispatch count, the
+        last dispatch timestamp (ns), and the enabled flag. Never includes
+        secrets or job payloads.
+        """
+        return {
+            "dispatch_count": self._shadow_dispatch_count,
+            "last_dispatch_ns": self._last_shadow_dispatch_ns,
+            "enabled": self.enabled,
+        }
+
     # --- callback ingestion (HMAC auth, NOT bearer) ---
 
     def receive_callback(
@@ -1115,6 +1457,106 @@ class QuantFoundryGateway:
         payload_path = payload_dir / f"{safe_name}.json"
         payload_path.write_bytes(payload)
         return str(payload_path)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers (TASK-1005 Alpha Genome Lab integration)
+# ---------------------------------------------------------------------------
+
+
+class _AlphaDossierUpsertAdapter:
+    """Adapter that exposes ``upsert(dossier)`` on a ``DossierRegistry``.
+
+    ``AlphaGenomeLab.run_sweep`` calls ``registry.upsert(dossier)`` to
+    register a candidate recipe's dossier. The canonical registry exposes
+    ``register(...)`` (idempotent, security-checked). This adapter bridges
+    the two names without forcing the lab to know about registry internals.
+    """
+
+    def __init__(self, registry: Any) -> None:
+        self._registry = registry
+
+    def upsert(self, dossier: Any) -> Any:
+        """Forward to ``DossierRegistry.register``."""
+        return self._registry.register(dossier)
+
+
+@dataclasses.dataclass
+class _AlphaMockTrainingOutcome:
+    """Mock TrainingOutcome used by the default dispatcher.
+
+    Carries the minimum fields ``AlphaGenomeLab.run_sweep`` reads off the
+    outcome (``model_id``, ``cost_cents``, ``dossier_evidence``). The
+    dossier_evidence is intentionally None so the gate rejects with
+    ``NO_DOSSIER`` — the safe default path. A real dispatcher must supply
+    a real ``DossierRecord``.
+    """
+
+    model_id: str
+    cost_cents: int = 0
+    duration_seconds: float = 0.0
+    dossier_evidence: Any = None
+    tournament_result: Any = None
+    sentinel_receipt: Any = None
+
+
+def _alpha_default_dispatcher(recipe: Any) -> Any:
+    """Default dispatcher for the Alpha Genome Lab.
+
+    Returns a benign TrainingOutcome so the sweep can be observed
+    end-to-end without GPU spend. The lab's gate rejects with
+    ``NO_DOSSIER`` because ``dossier_evidence`` is None — this is the
+    safe path. Operators wire a real dispatcher (RunPod or local training)
+    in production.
+    """
+    return _AlphaMockTrainingOutcome(
+        model_id=f"alpha-mock-{recipe.recipe_id}",
+        cost_cents=0,
+        duration_seconds=0.0,
+        dossier_evidence=None,
+        tournament_result=None,
+        sentinel_receipt=None,
+    )
+
+
+def _alpha_default_tournament_probe(recipe_id: str) -> None:
+    """Default tournament probe — always returns None (no early stop)."""
+    return None
+
+
+def _sweep_receipt_to_dict(receipt: Any) -> dict[str, Any]:
+    """Convert a SweepReceipt dataclass to a JSON-safe dict.
+
+    The trial_receipts list is converted to a list of dicts; the rest of
+    the top-level fields are scalars. No secrets — the SweepReceipt
+    carries only recipe ids, hashes, and counts.
+    """
+    trials: list[dict[str, Any]] = []
+    for tr in receipt.trial_receipts:
+        trials.append({
+            "recipe_id": tr.recipe_id,
+            "parent_recipe_id": tr.parent_recipe_id,
+            "status": tr.status.value,
+            "reason": tr.reason,
+            "model_id": tr.model_id,
+            "cost_cents": tr.cost_cents,
+            "duration_seconds": tr.duration_seconds,
+            "promotion_decision": tr.promotion_decision,
+            "sweep_id": tr.sweep_id,
+        })
+    return {
+        "sweep_id": receipt.sweep_id,
+        "seed_recipe_id": receipt.seed_recipe_id,
+        "n_recipes": receipt.n_recipes,
+        "n_registered": receipt.n_registered,
+        "n_rejected": receipt.n_rejected,
+        "n_killed_early": receipt.n_killed_early,
+        "n_discarded": receipt.n_discarded,
+        "sweep_cost_cents": receipt.sweep_cost_cents,
+        "started_at_ns": receipt.started_at_ns,
+        "ended_at_ns": receipt.ended_at_ns,
+        "trial_receipts": trials,
+    }
 
 
 # ---------------------------------------------------------------------------
