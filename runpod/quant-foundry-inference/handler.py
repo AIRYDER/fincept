@@ -40,6 +40,7 @@ from quant_foundry.shadow_inference import (
     InferenceDisabledError,
     ShadowInferenceEngine,
 )
+from quant_foundry.real_inference import RealInferenceEngine
 from quant_foundry.signatures import sign_callback
 
 
@@ -72,8 +73,20 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # Check if inference is enabled.
     enabled = os.environ.get("QUANT_FOUNDRY_MODE", "") == "runpod_shadow"
 
-    # Run the inference engine.
-    engine = ShadowInferenceEngine(enabled=enabled)
+    # Decide whether to use the real model-loading engine or the stub.
+    # Real inference is used when QUANT_FOUNDRY_USE_REAL_INFERENCE=true AND
+    # the request carries an artifact_ref that points at a model artifact
+    # (file:// or s3://). Otherwise we fall back to the stub engine for
+    # backward-compatible testing.
+    use_real = (
+        os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
+        and bool(request.artifact_ref)
+    )
+
+    if use_real:
+        engine = RealInferenceEngine(enabled=enabled)
+    else:
+        engine = ShadowInferenceEngine(enabled=enabled)
     try:
         result = engine.run(request=request, snapshot=snapshot, model_id=model_id)
         callback_payload = result.callback.model_dump_json().encode("utf-8")
