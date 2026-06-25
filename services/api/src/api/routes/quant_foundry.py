@@ -313,3 +313,20 @@ async def receive_callback(
             detail=receipt.get("detail", "payload hash mismatch (security event)"),
         )
     return receipt
+
+
+# --- Settlement wiring (Agent A) ---
+
+
+@router.get("/settlement/status")
+async def settlement_status(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Return the current settlement state (settled / pending / total).
+
+    Bearer-auth. Returns 503 when the gateway is absent (default disabled
+    state). Never returns secrets or raw prediction payloads.
+    """
+    gw = _require_gateway(request)
+    return gw.settlement_status()

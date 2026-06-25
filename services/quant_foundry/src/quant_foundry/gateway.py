@@ -649,6 +649,233 @@ class QuantFoundryGateway:
             "leaderboard": [e.to_dict() for e in leaderboard.ranked()],
         }
 
+    # --- Promotion wiring (Agent B) -----------------------------------------
+
+    def submit_promotion(
+        self,
+        model_id: str,
+        target_level: str,
+        review_note: str,
+    ) -> dict[str, Any]:
+        """Submit a model for promotion review.
+
+        Builds PromotionEvidence from the dossier, tournament result,
+        and sentinel receipt (if available), then submits a
+        PromotionRequest to the PromotionReviewQueue. Returns the
+        pending entry dict. Advisory-only — does not promote.
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+
+        from quant_foundry.promotion import (
+            PromotionEvidence,
+            PromotionRequest,
+        )
+
+        dossier = self.dossier_registry().get(model_id)
+        if dossier is None:
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "no_dossier",
+                "detail": f"no dossier found for model_id {model_id}",
+            }
+
+        try:
+            target = DossierStatus(target_level)
+        except ValueError:
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "invalid_target_level",
+                "detail": f"invalid target_level: {target_level}",
+            }
+
+        tournament_result = self._find_tournament_result(model_id)
+        sentinel_receipt = self._find_sentinel_receipt(model_id)
+
+        blocking_issues = self._build_blocking_issues(
+            dossier, tournament_result, sentinel_receipt
+        )
+
+        evidence = PromotionEvidence(
+            dossier=dossier,
+            tournament_result=tournament_result,
+            sentinel_receipt=sentinel_receipt,
+            blocking_issues=blocking_issues,
+        )
+        request = PromotionRequest(
+            model_id=model_id,
+            target_level=target,
+            review_note=review_note,
+        )
+        self.promotion_queue().submit(request, evidence)
+
+        pending = self.promotion_queue().pending()
+        entry = pending[-1] if pending else None
+        if entry is None:
+            return {"enabled": True, "ok": False, "error_code": "submit_failed"}
+        return {"enabled": True, "ok": True, "entry": entry.model_dump(mode="json")}
+
+    def process_promotion(
+        self,
+        model_id: str,
+        *,
+        approve: bool,
+        review_note: str,
+        rejection_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Process the next pending promotion request for a model.
+
+        Finds the pending entry matching ``model_id``, processes it
+        through the PromotionGate, and returns the receipt dict.
+        The gate fails closed — missing evidence or blocking issues
+        result in REJECTED, not APPROVED.
+        """
+        if not self.enabled:
+            return {"enabled": False, "detail": "Quant Foundry is disabled"}
+
+        from quant_foundry.promotion import (
+            PromotionRejectionReason,
+            PromotionWaiver,
+            ReviewDecision,
+        )
+
+        pending = self.promotion_queue().pending()
+        target_entry = None
+        for entry in pending:
+            if entry.request.model_id == model_id:
+                target_entry = entry
+                break
+
+        if target_entry is None:
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "no_pending_request",
+                "detail": f"no pending promotion request for model_id {model_id}",
+            }
+
+        if approve:
+            receipt = self._process_specific_entry(target_entry)
+        else:
+            rejection_reason_enum = None
+            if rejection_reason is not None:
+                try:
+                    rejection_reason_enum = PromotionRejectionReason(rejection_reason)
+                except ValueError:
+                    return {
+                        "enabled": True,
+                        "ok": False,
+                        "error_code": "invalid_rejection_reason",
+                        "detail": f"invalid rejection_reason: {rejection_reason}",
+                    }
+            receipt = self._reject_specific_entry(
+                target_entry, rejection_reason_enum, review_note
+            )
+
+        return {"enabled": True, "ok": True, "receipt": receipt.to_dict()}
+
+    def _process_specific_entry(self, entry: Any) -> Any:
+        """Process a specific pending entry through the gate."""
+        from quant_foundry.promotion import PromotionRequest
+
+        pending = self.promotion_queue()._pending
+        idx = pending.index(entry)
+        pending.pop(idx)
+        gate = self.promotion_queue()._gate
+        receipt = gate.evaluate(request=entry.request, evidence=entry.evidence)
+        self.promotion_queue()._completed.append(receipt)
+        return receipt
+
+    def _reject_specific_entry(
+        self, entry: Any, rejection_reason: Any, review_note: str
+    ) -> Any:
+        """Reject a specific pending entry directly."""
+        from quant_foundry.promotion import PromotionReceipt, ReviewDecision
+
+        pending = self.promotion_queue()._pending
+        idx = pending.index(entry)
+        pending.pop(idx)
+
+        import time as _time
+
+        receipt = PromotionReceipt(
+            decision=ReviewDecision.REJECTED,
+            request=entry.request,
+            review_note=review_note,
+            rejection_reason=rejection_reason,
+            decided_at_ns=_time.time_ns(),
+        )
+        self.promotion_queue()._completed.append(receipt)
+        return receipt
+
+    def _find_tournament_result(self, model_id: str) -> Any:
+        """Find the tournament result for a model from the last sweep."""
+        sweep = self.tournament_sweep()
+        records = sweep.settlement_ledger.read_all()
+        by_model = {
+            r.model_id: r for r in records
+            if r.model_id == model_id and r.status.value == "settled"
+        }
+        if not by_model:
+            return None
+        from quant_foundry.outcomes import SettlementStatus
+
+        model_records = [
+            r for r in records
+            if r.model_id == model_id and r.status == SettlementStatus.SETTLED
+        ]
+        if len(model_records) < sweep.min_settled_samples:
+            return None
+        scoring_input = sweep._build_scoring_input(
+            model_id=model_id,
+            records=model_records,
+            now_ns=int(__import__("time").time_ns()),
+            last_settled_at_ns=max((r.settled_at_ns or 0) for r in model_records),
+            is_stale=False,
+        )
+        return sweep.tournament.score(scoring_input)
+
+    def _find_sentinel_receipt(self, model_id: str) -> Any:
+        """Find a sentinel receipt for a model (None if not available)."""
+        return None
+
+    def _build_blocking_issues(
+        self, dossier: Any, tournament_result: Any, sentinel_receipt: Any
+    ) -> list[Any]:
+        """Build BlockingIssue list from dossier, tournament, and sentinel."""
+        from quant_foundry.promotion import BlockingIssue
+        from quant_foundry.sentinel import SentinelSeverity
+
+        issues: list[BlockingIssue] = []
+
+        if dossier is not None:
+            for bi in dossier.blocking_issues:
+                issues.append(BlockingIssue(
+                    code=str(bi.get("code", "unknown")),
+                    severity=SentinelSeverity.BLOCKING,
+                    message=str(bi.get("note") or bi.get("code", "blocking issue")),
+                ))
+
+        if tournament_result is not None:
+            for bi in tournament_result.blocking_issues:
+                issues.append(BlockingIssue(
+                    code=str(bi.get("code", "unknown")),
+                    severity=SentinelSeverity.BLOCKING,
+                    message=str(bi.get("message", "tournament blocking issue")),
+                ))
+
+        if sentinel_receipt is not None:
+            for issue in sentinel_receipt.issues:
+                issues.append(BlockingIssue(
+                    code=str(issue.code),
+                    severity=issue.severity,
+                    message=str(issue.message),
+                ))
+
+        return issues
+
     # --- Settlement wiring (Agent A) ----------------------------------------
 
     def settlement_sweep(self) -> SettlementSweep:
