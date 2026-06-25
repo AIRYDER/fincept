@@ -30,6 +30,7 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from quant_foundry.schemas import (
     ArtifactManifest,
@@ -171,6 +172,20 @@ class LocalTrainer:
 # --- handler ---------------------------------------------------------------
 
 
+class TrainerProtocol(Protocol):
+    """Protocol for trainers injectable into ``RunPodTrainingHandler``.
+
+    Both ``LocalTrainer`` and ``RealLightGBMTrainer`` satisfy this protocol.
+    """
+
+    def train(
+        self,
+        req: RunPodTrainingRequest,
+        *,
+        deadline_ns: int,
+    ) -> tuple[ArtifactManifest, ModelDossier]: ...
+
+
 _DEFAULT_DEADLINE_SECONDS = 600  # 10 min default
 
 
@@ -191,7 +206,7 @@ class RunPodTrainingHandler:
     """
 
     callback_secret: str
-    trainer: LocalTrainer = field(default_factory=LocalTrainer)
+    trainer: TrainerProtocol = field(default_factory=LocalTrainer)
     deadline_seconds: int = _DEFAULT_DEADLINE_SECONDS
     worker_id: str = "runpod-worker-1"
 
