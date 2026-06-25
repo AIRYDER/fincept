@@ -45,14 +45,16 @@ class DossierStatus(StrEnum):
     """Promotion lifecycle states for a model dossier.
 
     A model moves candidate -> research_approved -> shadow_approved -> paper_approved
-    only with dossiers, settlement evidence, tournament scores, receipts, and human
-    approval. ``rejected`` is terminal-reachable from any state.
+    -> limited_live_approved only with dossiers, settlement evidence, tournament
+    scores, receipts, and human approval. ``rejected`` is terminal-reachable
+    from any state.
     """
 
     CANDIDATE = "candidate"
     RESEARCH_APPROVED = "research_approved"
     SHADOW_APPROVED = "shadow_approved"
     PAPER_APPROVED = "paper_approved"
+    LIMITED_LIVE_APPROVED = "limited_live_approved"
     REJECTED = "rejected"
 
 

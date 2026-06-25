@@ -7,7 +7,7 @@ trading." Requires human approval and evidence packets for model promotion.
 Promotion levels (from ``DossierStatus``):
 ``candidate`` → ``research_approved`` → ``shadow_approved`` →
 ``paper_approved`` → ``limited_live_approved`` → ``active``.
-For MVP, allow only up to ``shadow_approved``.
+For MVP, allow only up to ``paper_approved``.
 
 Key invariants:
 - **No model can be promoted without a dossier.** A missing dossier rejects
@@ -22,8 +22,8 @@ Key invariants:
 - **Human approval is stored.** The receipt carries the review note.
 - **Rejection is stored with reason.** The receipt carries the rejection
   reason.
-- **For MVP, allow only up to ``shadow_approved``.** Promotion to
-  ``paper_approved`` or higher rejects with ``MVP_LEVEL_LIMIT``.
+- **For MVP, allow only up to ``paper_approved``.** Promotion to
+  ``limited_live_approved`` or higher rejects with ``MVP_LEVEL_LIMIT``.
 - **The promotion receipt is immutable.** Frozen + extra='forbid'.
 
 File-disjoint from Builder 2's ``services/api/src/api/routes/quant_foundry.py``
@@ -172,8 +172,8 @@ class PromotionReceipt(BaseModel):
 # ===========================================================================
 
 
-# MVP: allow only up to shadow_approved.
-_MVP_MAX_LEVEL = DossierStatus.SHADOW_APPROVED
+# MVP: allow only up to paper_approved.
+_MVP_MAX_LEVEL = DossierStatus.PAPER_APPROVED
 
 # Explicit promotion level order (candidate < research < shadow < paper < ...).
 _LEVEL_ORDER: dict[DossierStatus, int] = {
@@ -181,6 +181,7 @@ _LEVEL_ORDER: dict[DossierStatus, int] = {
     DossierStatus.RESEARCH_APPROVED: 1,
     DossierStatus.SHADOW_APPROVED: 2,
     DossierStatus.PAPER_APPROVED: 3,
+    DossierStatus.LIMITED_LIVE_APPROVED: 4,
 }
 
 
@@ -189,7 +190,7 @@ class PromotionGate:
 
     The gate fails closed: if any required evidence is missing or any
     blocking issue is unwaived, the request is rejected. For MVP, only
-    promotions up to ``shadow_approved`` are allowed.
+    promotions up to ``paper_approved`` are allowed.
     """
 
     def __init__(self, min_settled_count: int = 10) -> None:
