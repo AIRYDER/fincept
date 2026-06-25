@@ -112,14 +112,15 @@ if __name__ == "__main__":  # pragma: no cover
     import sys
     import traceback
 
-    # Debug logging to network volume
+    # Debug logging to network volume (try both mount paths)
     def _log(msg):
         print(msg, flush=True)
-        try:
-            with open("/runpod-volume/handler-debug.log", "a") as f:
-                f.write(msg + "\n")
-        except Exception:
-            pass
+        for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
+            try:
+                with open(path, "a") as f:
+                    f.write(msg + "\n")
+            except Exception:
+                pass
 
     _log(f"=== Handler starting at {__file__} ===")
     _log(f"PYTHONPATH={os.environ.get('PYTHONPATH', 'NOT SET')}")
