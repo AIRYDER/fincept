@@ -100,3 +100,100 @@ def test_value_keys_are_stable_across_first_and_subsequent_bars() -> None:
     f0 = c.compute(_bar("BTC-USD", ts_event=1_000, close="100"))
     f1 = c.compute(_bar("BTC-USD", ts_event=2_000, close="105"))
     assert set(f0.values) == set(f1.values)
+
+
+# ---------------------------------------------------------------------------
+# Eviction
+# ---------------------------------------------------------------------------
+
+
+def test_evict_stale_removes_inactive_symbols() -> None:
+    """Symbols inactive beyond retention should be evicted."""
+    # Use a small retention for testing: 1000 ns
+    c = FeatureComputer(benchmark_symbol="BTC-USD", state_retention_ns=1000)
+
+    # Feed two symbols at ts=0.
+    c.compute(_bar("BTC-USD", ts_event=0, close="100"))
+    c.compute(_bar("ETH-USD", ts_event=0, close="50"))
+    assert c.cached_symbols == 2
+
+    # Feed BTC again at ts=2000 (active), ETH stays at ts=0 (inactive).
+    c.compute(_bar("BTC-USD", ts_event=2000, close="105"))
+    # Evict with now=2000.  ETH's last_seen=0, 2000-0=2000 > 1000 retention.
+    evicted = c.evict_stale(now_ns=2000)
+    assert evicted == 1
+    assert c.cached_symbols == 1
+    assert "ETH-USD" not in c._price
+    assert "ETH-USD" not in c._vol
+    assert c.total_evicted == 1
+
+
+def test_evict_stale_preserves_active_symbols() -> None:
+    """Active symbols should not be evicted."""
+    c = FeatureComputer(benchmark_symbol="BTC-USD", state_retention_ns=10_000)
+
+    c.compute(_bar("BTC-USD", ts_event=0, close="100"))
+    c.compute(_bar("ETH-USD", ts_event=5000, close="50"))
+
+    # now=8000: BTC silent=8000 < 10000, ETH silent=3000 < 10000
+    evicted = c.evict_stale(now_ns=8000)
+    assert evicted == 0
+    assert c.cached_symbols == 2
+
+
+def test_evict_stale_no_entries_returns_zero() -> None:
+    c = FeatureComputer()
+    assert c.evict_stale(now_ns=1_000_000) == 0
+    assert c.total_evicted == 0
+
+
+def test_evicted_symbol_re_added_on_activity() -> None:
+    """If a symbol becomes active again after eviction, it's re-added."""
+    c = FeatureComputer(benchmark_symbol="BTC-USD", state_retention_ns=1000)
+
+    c.compute(_bar("ETH-USD", ts_event=0, close="50"))
+    c.evict_stale(now_ns=2000)
+    assert c.cached_symbols == 0
+
+    # New bar for ETH re-adds the entry.
+    c.compute(_bar("ETH-USD", ts_event=2000, close="55"))
+    assert c.cached_symbols == 1
+    assert "ETH-USD" in c._price
+
+
+def test_evict_stale_uses_max_ts_when_now_ns_is_none() -> None:
+    """When now_ns is None, use the max ts_event as reference (for offline)."""
+    c = FeatureComputer(benchmark_symbol="BTC-USD", state_retention_ns=1000)
+
+    c.compute(_bar("BTC-USD", ts_event=0, close="100"))
+    c.compute(_bar("ETH-USD", ts_event=0, close="50"))
+    c.compute(_bar("BTC-USD", ts_event=2000, close="105"))
+
+    # now=None -> ref=max(last_seen)=2000.  ETH at 0, 2000-0=2000 > 1000.
+    evicted = c.evict_stale()
+    assert evicted == 1
+    assert "ETH-USD" not in c._price
+
+
+def test_evict_stale_accumulates_total_count() -> None:
+    """total_evicted should accumulate across multiple calls."""
+    c = FeatureComputer(benchmark_symbol="BTC-USD", state_retention_ns=1000)
+
+    c.compute(_bar("ETH-USD", ts_event=0, close="50"))
+    c.evict_stale(now_ns=2000)
+    assert c.total_evicted == 1
+
+    c.compute(_bar("SOL-USD", ts_event=2000, close="30"))
+    c.evict_stale(now_ns=4000)
+    assert c.total_evicted == 2
+
+
+def test_cached_symbols_property() -> None:
+    c = FeatureComputer(benchmark_symbol="BTC-USD")
+    assert c.cached_symbols == 0
+
+    c.compute(_bar("BTC-USD", ts_event=0, close="100"))
+    assert c.cached_symbols == 1
+
+    c.compute(_bar("ETH-USD", ts_event=0, close="50"))
+    assert c.cached_symbols == 2

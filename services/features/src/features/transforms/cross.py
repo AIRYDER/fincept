@@ -15,6 +15,10 @@ ts_event-keyed dict.  Spec landmine #5 documents this trade-off.
 
 Until both deques have ``w`` samples, beta and corr are ``None`` (no
 defaulting to zero — that would lie about the data).
+
+Eviction: ``evict_stale()`` removes symbol entries that haven't been
+updated within the retention period, preventing unbounded growth when
+symbols are removed from the universe.
 """
 
 from __future__ import annotations
@@ -44,6 +48,8 @@ class CrossFeatures:
         cap = max(windows)
         self._bench_rets: deque[float] = deque(maxlen=cap)
         self._sym_rets: dict[str, deque[float]] = {}
+        self._last_seen: dict[str, int] = {}
+        self._evicted_count = 0
 
     @property
     def benchmark(self) -> str:
@@ -62,12 +68,14 @@ class CrossFeatures:
         if r is not None:
             self._bench_rets.append(r)
 
-    def on_symbol_ret(self, symbol: str, r: float | None) -> dict[str, float | None]:
+    def on_symbol_ret(self, symbol: str, r: float | None, *, ts_event: int = 0) -> dict[str, float | None]:
         """Append a symbol return and return all (beta, corr) for that symbol."""
         cap = self._bench_rets.maxlen
         d = self._sym_rets.setdefault(symbol, deque(maxlen=cap))
         if r is not None:
             d.append(r)
+        if ts_event:
+            self._last_seen[symbol] = ts_event
 
         out: dict[str, float | None] = {}
         for w in self._windows:
@@ -75,6 +83,31 @@ class CrossFeatures:
             out[f"beta_{self._bench}_{w}"] = beta
             out[f"corr_{self._bench}_{w}"] = corr
         return out
+
+    def evict_stale(self, *, now_ns: int, retention_ns: int) -> int:
+        """Remove symbols inactive longer than ``retention_ns``.
+
+        Returns the number of evicted entries.  The benchmark symbol
+        is never evicted (it's tracked via _bench_rets, not _sym_rets,
+        but we also keep its _last_seen entry for consistency).
+        """
+        evict: list[str] = []
+        for sym, ts in self._last_seen.items():
+            if now_ns - ts > retention_ns:
+                evict.append(sym)
+        for sym in evict:
+            self._sym_rets.pop(sym, None)
+            self._last_seen.pop(sym, None)
+        self._evicted_count += len(evict)
+        return len(evict)
+
+    @property
+    def total_evicted(self) -> int:
+        return self._evicted_count
+
+    @property
+    def cached_symbols(self) -> int:
+        return len(self._sym_rets)
 
     def _beta_and_corr(self, sym_rets: deque[float], w: int) -> tuple[float | None, float | None]:
         if len(sym_rets) < w or len(self._bench_rets) < w:

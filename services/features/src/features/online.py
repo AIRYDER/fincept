@@ -84,6 +84,10 @@ class OnlineRunner:
         )
         if self._online_store is not None:
             await self._online_store.put(frame)
+        # Evict inactive symbols to prevent unbounded dict growth.
+        evicted = self._computer.evict_stale(now_ns=bar.ts_event)
+        if evicted:
+            log.debug("features.evicted", count=evicted, total=self._computer.total_evicted)
         log.debug(
             "features.published",
             symbol=bar.symbol,
