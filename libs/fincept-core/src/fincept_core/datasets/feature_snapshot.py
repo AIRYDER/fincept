@@ -65,20 +65,12 @@ def _default_snapshots_dir() -> pathlib.Path:
 
 # Reject agent ids that could escape the snapshots dir or break a path
 # join.  This is the SAME allow-list as
-# ``fincept_core.prediction_log._validate_agent_id`` (lines 69-78) and
-# ``fincept_core.datasets.settlement._validate_agent_id``: a future audit
-# grep must find the identical forbidden-character set in every store so
-# they stay symmetric.
-_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
+# Name validation is shared across all stores via fincept_core.naming.
+from fincept_core.naming import validate_name as _validate_name
 
 
 def _validate_agent_id(agent_id: str) -> None:
-    if not agent_id:
-        raise ValueError("agent_id must be non-empty")
-    if any(c in _BAD_NAME_CHARS for c in agent_id):
-        raise ValueError(f"agent_id contains forbidden character: {agent_id!r}")
-    if agent_id in {".", ".."} or agent_id.startswith("."):
-        raise ValueError(f"agent_id may not start with '.': {agent_id!r}")
+    _validate_name(agent_id, field="agent_id")
 
 
 # --------------------------------------------------------------------------- #

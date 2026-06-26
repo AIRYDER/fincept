@@ -63,19 +63,12 @@ def _default_predictions_dir() -> pathlib.Path:
     return pathlib.Path(os.environ.get("PREDICTIONS_DIR", "data/predictions"))
 
 
-# Reject agent ids that could escape the predictions dir or break a
-# path join.  Same allow-list as api.promotions for consistency: a
-# human-typed identifier with dots, dashes, and underscores.
-_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
+# Name validation is shared across all stores via fincept_core.naming.
+from fincept_core.naming import validate_name as _validate_name
 
 
 def _validate_agent_id(agent_id: str) -> None:
-    if not agent_id:
-        raise ValueError("agent_id must be non-empty")
-    if any(c in _BAD_NAME_CHARS for c in agent_id):
-        raise ValueError(f"agent_id contains forbidden character: {agent_id!r}")
-    if agent_id in {".", ".."} or agent_id.startswith("."):
-        raise ValueError(f"agent_id may not start with '.': {agent_id!r}")
+    _validate_name(agent_id, field="agent_id")
 
 
 # --------------------------------------------------------------------------- #

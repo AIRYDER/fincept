@@ -9,12 +9,18 @@ def label_event_impact(
     asset_prices: list[PricePoint],
     benchmark_prices: list[PricePoint],
     horizons_ns: dict[str, int],
+    asset_beta: float = 1.0,
 ) -> ImpactLabels:
     """Build abnormal-return labels for one historical news event.
 
     The base price is the latest observation at or before availability time.
     The horizon price is the first observation at or after ``available_at + h``.
-    Abnormal return subtracts benchmark return from asset return.
+    Abnormal return = asset_return - beta * benchmark_return.
+
+    When ``asset_beta`` is 1.0 (default), this is a simple market-model
+    abnormal return.  When beta is provided (e.g., 1.5 for a high-beta
+    stock), the benchmark return is scaled by beta before subtraction,
+    isolating the idiosyncratic (stock-specific) component of the move.
     """
     if not horizons_ns:
         raise ValueError("horizons_ns must not be empty")
@@ -37,7 +43,7 @@ def label_event_impact(
             continue
         asset_ret = _simple_return(base_asset.price, asset_future.price)
         benchmark_ret = _simple_return(base_benchmark.price, benchmark_future.price)
-        abnormal[label] = round(asset_ret - benchmark_ret, 12)
+        abnormal[label] = round(asset_ret - asset_beta * benchmark_ret, 12)
 
     if not abnormal:
         raise ValueError("no horizon labels could be built from supplied prices")

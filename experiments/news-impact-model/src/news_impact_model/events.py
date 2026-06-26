@@ -16,6 +16,7 @@ from news_impact_model.schema import NewsEvent
 
 NS_PER_SECOND = 1_000_000_000
 NS_PER_MILLISECOND = 1_000_000
+NS_PER_MICROSECOND = 1_000
 NS_PER_MINUTE = 60 * NS_PER_SECOND
 
 EVENT_TYPES = (
@@ -492,7 +493,7 @@ def _coerce_epoch_number_to_ns(value: int | float) -> int:
     if numeric > 1e17:
         return int(numeric)
     if numeric > 1e14:
-        return int(numeric * NS_PER_MILLISECOND)
+        return int(numeric * NS_PER_MICROSECOND)
     if numeric > 1e11:
         return int(numeric * NS_PER_MILLISECOND)
     return int(numeric * NS_PER_SECOND)

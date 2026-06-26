@@ -71,10 +71,8 @@ def _default_configs_dir() -> pathlib.Path:
     return pathlib.Path(os.environ.get("STRATEGIES_DIR", "strategies"))
 
 
-# Same anti-traversal allow-list as agent_id / model_name in
-# api.promotions and agent_id in prediction_log.  Keep these three
-# in sync if the policy ever changes.
-_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
+# Name validation is shared across all stores via fincept_core.naming.
+from fincept_core.naming import BAD_NAME_CHARS as _BAD_NAME_CHARS
 
 
 class StrategyConfigError(ValueError):

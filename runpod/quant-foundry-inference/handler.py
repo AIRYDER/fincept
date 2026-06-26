@@ -47,7 +47,14 @@ from quant_foundry.signatures import sign_callback  # noqa: E402
 def _get_callback_secret() -> str:
     secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
     if not secret:
-        return "dev-callback-secret-DO-NOT-USE-IN-PROD"
+        # Fail closed: no callback secret means callbacks cannot be
+        # signed, which would allow forgery.  Refuse to start rather
+        # than silently falling back to a known-weak default.
+        raise RuntimeError(
+            "QUANT_FOUNDRY_CALLBACK_SECRET is not set. "
+            "This secret is required to sign HMAC callbacks to the API. "
+            "Set it in the RunPod template environment or container env."
+        )
     return secret
 
 
