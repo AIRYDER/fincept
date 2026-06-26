@@ -70,11 +70,11 @@ try:
         make_folds,
     )
 except ImportError:  # pragma: no cover - safety net for cv.py import errors
-    Fold = None
-    WalkForwardWindow = None
-    derive_walk_forward_window = None
-    fold_iter_to_dicts = None
-    make_folds = None
+    Fold = None  # type: ignore[assignment,misc]
+    WalkForwardWindow = None  # type: ignore[assignment,misc]
+    derive_walk_forward_window = None  # type: ignore[assignment]
+    fold_iter_to_dicts = None  # type: ignore[assignment]
+    make_folds = None  # type: ignore[assignment]
 
 
 # --------------------------------------------------------------------------- #

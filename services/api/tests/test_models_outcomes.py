@@ -226,8 +226,13 @@ async def test_outcomes_since_ns_filters_predictions(
     )
     assert r.status_code == 200
     body = r.json()
-    # We expect at most 3 rows (those with ts_recorded >= cutoff).
-    assert body["count"] <= 3
+    # The filter keeps rows with ts_recorded >= cutoff.  On platforms
+    # with coarse clock granularity (e.g. Windows ~15ms), predictions
+    # written in a tight loop can share the same ts_recorded value, so
+    # the exact count depends on how many ties exist at the cutoff.
+    # Assert the route returns exactly the rows the filter should keep.
+    expected = sum(1 for p in all_preds if p.ts_recorded >= cutoff)
+    assert body["count"] == expected
     assert body["count"] >= 1
 
 
