@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from typing import Any, cast
@@ -30,10 +31,39 @@ DLQ_SUFFIX = ".dlq"
 # DLQ retention: keep last 100k failed messages per stream.
 DLQ_RETENTION = 100_000
 
+# Default handler timeout in milliseconds.  This is separate from
+# ``block_ms`` (which controls how long xreadgroup blocks waiting for
+# new messages).  A handler that exceeds this timeout raises
+# TimeoutError, which is treated as a handler failure (the message
+# stays in the PEL for retry or eventual DLQ).
+DEFAULT_HANDLER_TIMEOUT_MS = 5_000
+
+# Retry backoff: multiply the claim idle time by this factor for each
+# delivery attempt.  This prevents tight retry loops where a failing
+# message is re-claimed and re-failed immediately.
+#   attempt 1: claim_idle_ms * BACKOFF_FACTOR^0 = claim_idle_ms
+#   attempt 2: claim_idle_ms * BACKOFF_FACTOR^1 = claim_idle_ms * 2
+#   attempt 3: claim_idle_ms * BACKOFF_FACTOR^2 = claim_idle_ms * 4
+#   ...
+# Capped at BACKOFF_MAX_MS to avoid excessively long delays.
+BACKOFF_FACTOR = 2.0
+BACKOFF_MAX_MS = 300_000  # 5 minutes
+
 
 def _dlq_stream(stream: str) -> str:
     """Return the DLQ stream name for a given source stream."""
     return f"{stream}{DLQ_SUFFIX}"
+
+
+def _backoff_idle_ms(base_idle_ms: int, delivery_count: int) -> int:
+    """Calculate the idle time before re-claiming a failed message.
+
+    Exponential backoff: base * factor^(delivery_count - 1), capped.
+    """
+    if delivery_count <= 1:
+        return base_idle_ms
+    backoff = int(base_idle_ms * (BACKOFF_FACTOR ** (delivery_count - 1)))
+    return min(backoff, BACKOFF_MAX_MS)
 
 
 class Consumer:
@@ -51,10 +81,46 @@ class Consumer:
         batch: int = 100,
         claim_idle_ms: int = 60_000,
         max_delivery_attempts: int = DEFAULT_MAX_DELIVERY_ATTEMPTS,
+        handler_timeout_ms: int | None = None,
+        stop_event: asyncio.Event | None = None,
     ) -> None:
+        """Consume messages from one or more streams.
+
+        Parameters
+        ----------
+        streams
+            Stream names to read from.
+        group
+            Consumer group name.
+        consumer_name
+            This consumer's name (for PEL tracking).
+        handler
+            Async callable invoked for each event.
+        block_ms
+            How long xreadgroup blocks waiting for new messages (ms).
+        batch
+            Max messages per xreadgroup call.
+        claim_idle_ms
+            Base idle time before claiming stale pending messages (ms).
+            Actual idle time is increased with exponential backoff for
+            messages that have failed multiple times.
+        max_delivery_attempts
+            Delivery count at which a message is moved to the DLQ.
+        handler_timeout_ms
+            Max time a handler may take per event (ms).  If None,
+            defaults to ``block_ms`` (backward compatible).
+        stop_event
+            If provided, the consume loop checks this event after each
+            iteration and exits gracefully when set.  In-flight handlers
+            are allowed to complete before exiting.
+        """
         await self.ensure_groups(streams, group)
         stream_offsets = {stream: ">" for stream in streams}
+        effective_timeout = handler_timeout_ms if handler_timeout_ms is not None else block_ms
         while True:
+            if stop_event is not None and stop_event.is_set():
+                log.info("consumer.shutdown", group=group, consumer=consumer_name)
+                return
             await self._claim_stale(
                 streams,
                 group,
@@ -62,9 +128,12 @@ class Consumer:
                 handler,
                 claim_idle_ms,
                 batch,
-                block_ms,
+                effective_timeout,
                 max_delivery_attempts,
             )
+            if stop_event is not None and stop_event.is_set():
+                log.info("consumer.shutdown", group=group, consumer=consumer_name)
+                return
             response = await self.redis.xreadgroup(
                 group,
                 consumer_name,
@@ -72,18 +141,25 @@ class Consumer:
                 count=batch,
                 block=block_ms,
             )
+            # Batch ACK: collect successful message IDs per stream.
             for stream_name, messages in response:
                 stream = self._to_text(stream_name)
+                ack_ids: list[Any] = []
                 for message_id, fields in messages:
-                    await self._handle_message(
+                    handled = await self._handle_message(
                         stream,
                         group,
                         message_id,
                         fields,
                         handler,
-                        block_ms,
+                        effective_timeout,
                         max_delivery_attempts,
                     )
+                    if handled:
+                        ack_ids.append(message_id)
+                # Batch ACK all successfully handled messages in one call.
+                if ack_ids:
+                    await self._xack_batch(stream, group, ack_ids)
 
     async def ensure_groups(self, streams: Iterable[str], group: ConsumerGroupName) -> None:
         for stream in streams:
@@ -107,15 +183,24 @@ class Consumer:
         count: int = 100,
         block_ms: int = 1000,
         max_delivery_attempts: int = DEFAULT_MAX_DELIVERY_ATTEMPTS,
+        handler_timeout_ms: int | None = None,
     ) -> int:
+        """Claim and re-process stale pending messages.
+
+        Uses exponential backoff: messages that have failed multiple
+        times are only re-claimed after a longer idle period, preventing
+        tight retry loops.
+        """
         await self.ensure_group(stream, group)
+        effective_timeout = handler_timeout_ms if handler_timeout_ms is not None else block_ms
         pending = await self.redis.xpending_range(stream, group, min="-", max="+", count=count)
+        # Group messages by their backoff-adjusted idle time.  We only
+        # claim messages whose time_since_delivered exceeds the
+        # backoff-adjusted threshold for their delivery count.
         message_ids: list[Any] = []
         for entry in pending:
-            if int(entry["time_since_delivered"]) < min_idle_ms:
-                continue
-            # Check delivery count — if exceeded, move to DLQ instead of retrying.
             times_delivered = int(entry.get("times_delivered", 1))
+            # Check delivery count — if exceeded, move to DLQ instead of retrying.
             if times_delivered >= max_delivery_attempts:
                 await self._move_to_dlq(
                     stream,
@@ -125,23 +210,32 @@ class Consumer:
                     "max_delivery_attempts_exceeded",
                 )
                 continue
+            # Apply exponential backoff: increase the required idle time
+            # based on how many times the message has been delivered.
+            required_idle = _backoff_idle_ms(min_idle_ms, times_delivered)
+            if int(entry["time_since_delivered"]) < required_idle:
+                continue
             message_ids.append(entry["message_id"])
         if not message_ids:
             return 0
         claimed = await self._xclaim(stream, group, consumer_name, min_idle_ms, message_ids)
         handled = 0
+        ack_ids: list[Any] = []
         for message_id, fields in claimed:
-            acked = await self._handle_message(
+            ok = await self._handle_message(
                 stream,
                 group,
                 message_id,
                 fields,
                 handler,
-                block_ms,
+                effective_timeout,
                 max_delivery_attempts,
             )
-            if acked:
+            if ok:
+                ack_ids.append(message_id)
                 handled += 1
+        if ack_ids:
+            await self._xack_batch(stream, group, ack_ids)
         return handled
 
     async def _claim_stale(
@@ -152,7 +246,7 @@ class Consumer:
         handler: Handler,
         min_idle_ms: int,
         count: int,
-        block_ms: int,
+        handler_timeout_ms: int,
         max_delivery_attempts: int,
     ) -> None:
         for stream in streams:
@@ -163,8 +257,9 @@ class Consumer:
                 handler,
                 min_idle_ms=min_idle_ms,
                 count=count,
-                block_ms=block_ms,
+                block_ms=handler_timeout_ms,
                 max_delivery_attempts=max_delivery_attempts,
+                handler_timeout_ms=handler_timeout_ms,
             )
 
     async def _handle_message(
@@ -174,9 +269,19 @@ class Consumer:
         message_id: StreamID | bytes,
         fields: RedisFields,
         handler: Handler,
-        block_ms: int,
+        handler_timeout_ms: int,
         max_delivery_attempts: int = DEFAULT_MAX_DELIVERY_ATTEMPTS,
     ) -> bool:
+        """Process a single message.  Returns True if the message was
+        successfully handled (and should be acked), False if it should
+        stay in the PEL for retry.
+
+        On handler failure:
+        - Log the error (previously silent).
+        - Check delivery count.  If >= max_delivery_attempts, move to DLQ
+          and return True (acked via DLQ move).
+        - Otherwise return False (stays pending for retry with backoff).
+        """
         event = deserialize(fields)
         started_ns = time.perf_counter_ns()
         try:
@@ -202,10 +307,11 @@ class Consumer:
                 return True  # Acked via DLQ move — message is handled.
             return False
         elapsed_ns = time.perf_counter_ns() - started_ns
-        if elapsed_ns > block_ms * 1_000_000:
-            raise TimeoutError("consumer handler exceeded block_ms")
-        await self._xack(stream, group, message_id)
-        return True
+        if elapsed_ns > handler_timeout_ms * 1_000_000:
+            raise TimeoutError(
+                f"consumer handler exceeded handler_timeout_ms ({handler_timeout_ms}ms)"
+            )
+        return True  # Caller will batch-ack.
 
     async def _get_delivery_count(
         self,
@@ -301,8 +407,23 @@ class Consumer:
     async def _xack(
         self, stream: str, group: ConsumerGroupName, message_id: StreamID | bytes
     ) -> None:
+        """Acknowledge a single message (used by DLQ moves)."""
         redis = cast(Any, self.redis)
         await redis.xack(stream, group, message_id)
+
+    async def _xack_batch(
+        self, stream: str, group: ConsumerGroupName, message_ids: list[StreamID | bytes]
+    ) -> None:
+        """Acknowledge multiple messages in a single Redis call.
+
+        This is significantly more efficient than per-message xack calls
+        for high-throughput streams.  Redis xack accepts multiple IDs:
+        ``XACK stream group id1 id2 id3 ...``
+        """
+        if not message_ids:
+            return
+        redis = cast(Any, self.redis)
+        await redis.xack(stream, group, *message_ids)
 
     @staticmethod
     def _to_text(value: Any) -> str:

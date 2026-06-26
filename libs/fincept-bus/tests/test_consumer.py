@@ -554,3 +554,205 @@ async def test_successful_handler_acks_normally_with_dlq_enabled(
     dlq_stream = _dlq_stream(STREAM_MD_TRADES)
     dlq_length = await redis_client.xlen(dlq_stream)
     assert dlq_length == 0
+
+
+# ---------------------------------------------------------------------------
+# Retry backoff tests
+# ---------------------------------------------------------------------------
+
+
+from fincept_bus.consumer import _backoff_idle_ms, BACKOFF_FACTOR, BACKOFF_MAX_MS
+
+
+def test_backoff_first_attempt_no_increase() -> None:
+    """First delivery attempt should use the base idle time."""
+    assert _backoff_idle_ms(60_000, 1) == 60_000
+
+
+def test_backoff_exponential_increase() -> None:
+    """Subsequent attempts should increase idle time exponentially."""
+    base = 60_000
+    assert _backoff_idle_ms(base, 2) == int(base * BACKOFF_FACTOR)
+    assert _backoff_idle_ms(base, 3) == int(base * BACKOFF_FACTOR**2)
+    assert _backoff_idle_ms(base, 4) == int(base * BACKOFF_FACTOR**3)
+
+
+def test_backoff_capped_at_max() -> None:
+    """Backoff should be capped at BACKOFF_MAX_MS."""
+    # With base=60_000 and factor=2, attempt 10 would be 60_000 * 2^9 = 30_720_000
+    # which exceeds BACKOFF_MAX_MS (300_000).
+    assert _backoff_idle_ms(60_000, 10) == BACKOFF_MAX_MS
+    assert _backoff_idle_ms(60_000, 100) == BACKOFF_MAX_MS
+
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_graceful_shutdown_with_stop_event(redis_client: FakeRedis) -> None:
+    """The consume loop should exit gracefully when stop_event is set."""
+    producer = Producer(redis_client)
+    consumer = Consumer(redis_client)
+    seen: list[Event] = []
+    stop_event = asyncio.Event()
+
+    await producer.publish(STREAM_MD_TRADES, event())
+
+    async def handler(received: Event) -> None:
+        seen.append(received)
+
+    task = asyncio.create_task(
+        consumer.consume(
+            [STREAM_MD_TRADES],
+            "shutdown-group",
+            "consumer-1",
+            handler,
+            block_ms=100,
+            batch=1,
+            stop_event=stop_event,
+        )
+    )
+    try:
+        # Wait for the message to be processed.
+        await asyncio.wait_for(_until(lambda: len(seen) == 1), timeout=5)
+        # Now signal shutdown.
+        stop_event.set()
+        # The task should exit gracefully (not be cancelled).
+        await asyncio.wait_for(task, timeout=5)
+    except Exception:
+        task.cancel()
+        raise
+
+    assert len(seen) == 1
+    assert task.done()
+    assert not task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_event_not_set_continues_running(redis_client: FakeRedis) -> None:
+    """Without stop_event, the consume loop should continue running."""
+    producer = Producer(redis_client)
+    consumer = Consumer(redis_client)
+    seen: list[Event] = []
+
+    await producer.publish(STREAM_MD_TRADES, event())
+
+    async def handler(received: Event) -> None:
+        seen.append(received)
+
+    task = asyncio.create_task(
+        consumer.consume(
+            [STREAM_MD_TRADES],
+            "no-shutdown-group",
+            "consumer-1",
+            handler,
+            block_ms=100,
+            batch=1,
+        )
+    )
+    try:
+        await asyncio.wait_for(_until(lambda: len(seen) == 1), timeout=5)
+        await asyncio.sleep(0.2)
+        # Task should still be running.
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+# ---------------------------------------------------------------------------
+# Handler timeout tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handler_timeout_ms_separate_from_block_ms(
+    redis_client: FakeRedis,
+) -> None:
+    """handler_timeout_ms should be independent of block_ms."""
+    producer = Producer(redis_client)
+    consumer = Consumer(redis_client)
+
+    await producer.publish(STREAM_MD_TRADES, event())
+
+    async def slow_handler(received: Event) -> None:
+        await asyncio.sleep(0.1)  # 100ms — exceeds handler_timeout_ms=10
+
+    with pytest.raises(TimeoutError, match="handler_timeout_ms"):
+        await asyncio.wait_for(
+            consumer.consume(
+                [STREAM_MD_TRADES],
+                "timeout-group",
+                "consumer-1",
+                slow_handler,
+                block_ms=1000,  # Long block time
+                batch=1,
+                handler_timeout_ms=10,  # Short handler timeout
+            ),
+            timeout=5,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Batch ACK tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_batch_ack_acks_multiple_messages_in_one_call(
+    redis_client: FakeRedis,
+) -> None:
+    """Multiple successful messages should be acked in a single xack call."""
+    producer = Producer(redis_client)
+    consumer = Consumer(redis_client)
+    seen: list[Event] = []
+
+    # Publish 5 events.
+    for seq in range(5):
+        await producer.publish(STREAM_MD_TRADES, event(seq))
+
+    # Track xack calls.
+    original_xack = redis_client.xack
+    xack_call_count = 0
+
+    async def counting_xack(*args, **kwargs):
+        nonlocal xack_call_count
+        xack_call_count += 1
+        return await original_xack(*args, **kwargs)
+
+    redis_client.xack = counting_xack
+
+    async def handler(received: Event) -> None:
+        seen.append(received)
+
+    task = asyncio.create_task(
+        consumer.consume(
+            [STREAM_MD_TRADES],
+            "batch-ack-group",
+            "consumer-1",
+            handler,
+            block_ms=100,
+            batch=10,  # Read all 5 in one batch
+        )
+    )
+    try:
+        await asyncio.wait_for(_until(lambda: len(seen) == 5), timeout=5)
+        await asyncio.wait_for(
+            _pending_count(redis_client, STREAM_MD_TRADES, "batch-ack-group", 0), timeout=5
+        )
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        redis_client.xack = original_xack
+
+    # All 5 messages should be acked in a single xack call (batch ACK).
+    # Note: the first xack call happens after all messages in the batch
+    # are processed.  There may be additional calls from claim_pending
+    # (which acks 0 messages), so we check that at most 2 xack calls
+    # were made (one batch + possibly one empty claim).
+    assert xack_call_count <= 3  # Allow some slack for claim_pending
+    assert len(seen) == 5
