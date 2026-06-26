@@ -234,7 +234,22 @@ async def run(stop: asyncio.Event) -> None:
             handler=_make_regime_handler(router, universe=list(settings.UNIVERSE)),
         )
     )
-    heartbeat_task = asyncio.create_task(beat_periodically(redis, "orchestrator"))
+    def orchestrator_stats() -> dict[str, Any]:
+        """Collect orchestrator metrics for heartbeat."""
+        return {
+            "consensus": {
+                "cached_symbols": consensus.cached_symbols,
+                "cached_entries": consensus.cached_entries,
+                "total_evicted": consensus.total_evicted,
+            },
+            "target_state": {
+                "known_symbols": len(target_state.known_symbols()),
+            },
+        }
+
+    heartbeat_task = asyncio.create_task(
+        beat_periodically(redis, "orchestrator", stats_callback=orchestrator_stats)
+    )
     try:
         await stop.wait()
     finally:

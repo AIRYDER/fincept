@@ -147,7 +147,26 @@ async def _main(venue: str) -> None:
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
 
-    heartbeat_task = asyncio.create_task(beat_periodically(redis, "ingestor"))
+    def ingestor_stats() -> dict[str, Any]:
+        """Collect ingestor metrics for heartbeat."""
+        trades_pending, books_pending = writer.pending
+        trades_dropped, books_dropped = writer.dropped
+        snapshots = latency.snapshot()
+        return {
+            "buffer": {
+                "trades_pending": trades_pending,
+                "books_pending": books_pending,
+                "trades_dropped": trades_dropped,
+                "books_dropped": books_dropped,
+            },
+            "channels": len(snapshots),
+            "total_gaps": sum(s.total_gaps for s in snapshots),
+            "max_latency_ns": max((s.max_latency_ns for s in snapshots), default=0),
+        }
+
+    heartbeat_task = asyncio.create_task(
+        beat_periodically(redis, "ingestor", stats_callback=ingestor_stats)
+    )
     try:
         await run_loop(adapter, writer, latency, stop)
     finally:
