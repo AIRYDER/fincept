@@ -29,6 +29,7 @@ Invariants:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import pathlib
@@ -37,6 +38,7 @@ from typing import Any, cast
 
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.budget import from_env as budget_from_env
+from quant_foundry.callback_metrics import CallbackMetricsStore
 from quant_foundry.callbacks import (
     CallbackProcessor,
     DurableDossierStore,
@@ -108,6 +110,7 @@ class QuantFoundryGateway:
         self._alpha_genome_lab: Any = None
         self._alpha_sweep_receipts: dict[str, dict[str, Any]] = {}
         self._shadow_ledger_real: ShadowLedger | None = None
+        self._callback_metrics_store: CallbackMetricsStore | None = None
         self._tournament_sweep: TournamentSweep | None = None
         self._settlement_ledger: SettlementLedger | None = None
         self._tournament: Tournament | None = None
@@ -456,6 +459,13 @@ class QuantFoundryGateway:
                 # callback_payload/callback_signature/callback_ts fields. The
                 # Fincept side only verifies (verify_callback) — it never signs
                 # on behalf of an unsigned handler (legacy compat shim removed).
+                # Metrics are observability, not security — a disk error
+                # must not mask the fail-closed verdict below.
+                with contextlib.suppress(OSError):
+                    self.callback_metrics_store().record(
+                        "rejected",
+                        reason_code="missing_runpod_callback_fields",
+                    )
                 self.outbox.update_status(
                     rec.job_id,
                     JobStatus.FAILED,
@@ -1174,6 +1184,21 @@ class QuantFoundryGateway:
             )
         return self._shadow_ledger_real
 
+    def callback_metrics_store(self) -> CallbackMetricsStore:
+        """Return the lazily constructed durable callback-metrics store.
+
+        Writes JSONL at ``<base_dir>/callback_metrics/callback_metrics.jsonl``
+        (under ``base_dir`` so tests get an isolated tmp_path). Used by
+        ``receive_callback`` / ``poll_runpod_results`` to record
+        ``received`` / ``accepted`` / ``rejected`` events and by
+        ``shadow_health`` to compute a rolling rejection rate.
+        """
+        if self._callback_metrics_store is None:
+            self._callback_metrics_store = CallbackMetricsStore(
+                metrics_dir=self.base_dir / "callback_metrics",
+            )
+        return self._callback_metrics_store
+
     def shadow_health(self) -> dict[str, Any]:
         """Aggregate read-only health for the shadow inference surface.
 
@@ -1214,11 +1239,18 @@ class QuantFoundryGateway:
         feature_availability: float | None = _aggregate_feature_availability(records)
 
         # The gateway rejects bad HMAC signatures without a durable inbox
-        # record (see ``receive_callback``), so we cannot compute a real
-        # rejection rate from existing state. Return ``None`` with the
-        # documented note that rejection tracking is not yet durable —
-        # do NOT invent new storage here (out of scope).
-        callback_rejection_rate: float | None = None
+        # record (see ``receive_callback``), so the rejection rate is
+        # computed from the append-only ``CallbackMetricsStore`` (JSONL at
+        # ``<base_dir>/callback_metrics/callback_metrics.jsonl``) rather
+        # than the inbox. ``received`` events are excluded from the
+        # denominator — only ``accepted`` + ``rejected`` count. Return
+        # ``None`` only when no callback events have been recorded at all;
+        # otherwise surface the numeric rate (even if 0.0).
+        metrics_store = self.callback_metrics_store()
+        if metrics_store.has_any_events():
+            callback_rejection_rate: float | None = metrics_store.rejection_rate()
+        else:
+            callback_rejection_rate = None
 
         # --- Settlement wiring (Agent A) ---
         # Read real settled_count and settlement_lag_seconds from the
@@ -1431,9 +1463,22 @@ class QuantFoundryGateway:
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
 
+        # Record the inbound event first so the rejection rate's
+        # denominator reflects every callback we saw (accepted + rejected
+        # are recorded below). Best-effort: a metrics write failure must
+        # not block the security path, but we do NOT silently swallow it
+        # at the store level (the store raises on write failure). Suppress
+        # OSError here so a disk error does not turn a bad-signature
+        # reject into a 500.
+        metrics = self.callback_metrics_store()
+        with contextlib.suppress(OSError):
+            metrics.record("received", reason_code=None)
+
         # The job must exist in the outbox (callback for unknown job = reject).
         ob_rec = self.outbox.get(job_id)
         if ob_rec is None:
+            with contextlib.suppress(OSError):
+                metrics.record("rejected", reason_code="unknown_job")
             return {
                 "enabled": True,
                 "ok": False,
@@ -1455,6 +1500,8 @@ class QuantFoundryGateway:
         if not signature_valid:
             # Bad signature: reject immediately without recording in the
             # inbox. No domain effect, no durable trace of the bad payload.
+            with contextlib.suppress(OSError):
+                metrics.record("rejected", reason_code="bad_signature")
             return {
                 "enabled": True,
                 "ok": False,
@@ -1477,6 +1524,8 @@ class QuantFoundryGateway:
                 payload_ref=self._write_callback_payload(job_id, payload),
             )
         except ValueError as exc:
+            with contextlib.suppress(OSError):
+                metrics.record("rejected", reason_code="payload_hash_mismatch")
             return {
                 "enabled": True,
                 "ok": False,
@@ -1486,6 +1535,8 @@ class QuantFoundryGateway:
 
         # Process the callback (idempotent + fail-closed on schema/etc).
         proc_receipt = self.processor.process(job_id)
+        with contextlib.suppress(OSError):
+            metrics.record("accepted", reason_code=None)
         return {
             "enabled": True,
             "ok": True,
