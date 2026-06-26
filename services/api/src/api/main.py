@@ -26,6 +26,7 @@ from redis.asyncio import Redis
 
 from api.background import AlpacaScheduler, NewsScheduler
 from api.approved_roots import register_approved_roots_handler
+from api.task_manager import TaskManager
 from api.settlements_poller import (
     _poll_settlements_worker,
     _settlements_worker_interval_seconds,
@@ -138,116 +139,64 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     quant_foundry_gateway = configure_quant_foundry_gateway(
         app, prediction_publisher=publisher
     )
-    scheduler = AlpacaScheduler(redis)
-    scheduler.start()
-    app.state.alpaca_scheduler = scheduler
-    news_scheduler = NewsScheduler(redis)
-    news_scheduler.start()
-    app.state.news_scheduler = news_scheduler
-    heartbeat_task = asyncio.create_task(beat_periodically(redis, "api"))
-    app.state.heartbeat_task = heartbeat_task
-    quant_foundry_poll_task: asyncio.Task[None] | None = None
-    quant_foundry_tournament_task: asyncio.Task[None] | None = None
-    # --- Settlement wiring (Agent A) ---
-    quant_foundry_settlement_task: asyncio.Task[None] | None = None
-    # --- Shadow dispatch wiring (Agent C) ---
-    quant_foundry_shadow_dispatch_task: asyncio.Task[None] | None = None
-    # --- New settlements worker (fincept_core.datasets spine) ---
-    settlements_worker_task: asyncio.Task[None] | None = None
+    # --- TaskManager: uniform background task lifecycle ---
+    tm = TaskManager()
+    app.state.task_manager = tm
+    # Schedulers (start/stop pattern).
+    tm.add_scheduler("alpaca", AlpacaScheduler(redis))
+    tm.add_scheduler("news", NewsScheduler(redis))
+    tm.start_all()
+    app.state.alpaca_scheduler = tm._schedulers["alpaca"]
+    app.state.news_scheduler = tm._schedulers["news"]
+    # Background poll tasks.
+    tm.add_task("heartbeat", beat_periodically(redis, "api"))
+    # Quant Foundry poll tasks (conditional on gateway config).
     poll_interval = _quant_foundry_poll_interval_seconds()
     if (
         quant_foundry_gateway.enabled
         and quant_foundry_gateway.mode in {"runpod", "runpod_research", "runpod_shadow"}
         and poll_interval > 0
     ):
-        quant_foundry_poll_task = asyncio.create_task(
-            _poll_quant_foundry_runpod(quant_foundry_gateway, poll_interval)
+        tm.add_task(
+            "quant_foundry_poll",
+            _poll_quant_foundry_runpod(quant_foundry_gateway, poll_interval),
         )
-        app.state.quant_foundry_poll_task = quant_foundry_poll_task
     tournament_interval = _quant_foundry_tournament_interval_seconds()
     if quant_foundry_gateway.enabled and tournament_interval > 0:
-        quant_foundry_tournament_task = asyncio.create_task(
-            _poll_quant_foundry_tournament(quant_foundry_gateway, tournament_interval)
+        tm.add_task(
+            "quant_foundry_tournament",
+            _poll_quant_foundry_tournament(quant_foundry_gateway, tournament_interval),
         )
-        app.state.quant_foundry_tournament_task = quant_foundry_tournament_task
-    # --- Settlement wiring (Agent A) ---
     settlement_interval = _quant_foundry_settlement_interval_seconds()
     if quant_foundry_gateway.enabled and settlement_interval > 0:
-        quant_foundry_settlement_task = asyncio.create_task(
-            _poll_quant_foundry_settlement(quant_foundry_gateway, settlement_interval)
+        tm.add_task(
+            "quant_foundry_settlement",
+            _poll_quant_foundry_settlement(quant_foundry_gateway, settlement_interval),
         )
-        app.state.quant_foundry_settlement_task = quant_foundry_settlement_task
-    # --- Shadow dispatch wiring (Agent C) ---
     shadow_dispatch_interval = _quant_foundry_shadow_dispatch_interval_seconds()
     if quant_foundry_gateway.enabled and shadow_dispatch_interval > 0:
-        quant_foundry_shadow_dispatch_task = asyncio.create_task(
+        tm.add_task(
+            "quant_foundry_shadow_dispatch",
             _poll_quant_foundry_shadow_dispatch(
                 quant_foundry_gateway, shadow_dispatch_interval
-            )
+            ),
         )
-        app.state.quant_foundry_shadow_dispatch_task = (
-            quant_foundry_shadow_dispatch_task
-        )
-    # --- New settlements worker (fincept_core.datasets spine) ---
-    # Coexists with the quant_foundry settlement sweep above: the new
-    # worker writes to fincept_core.datasets.SettlementStore (keyed by
-    # agent_id, cost model v1.default) while the old sweep writes to
-    # quant_foundry.settlement.SettlementLedger (keyed by model_id,
-    # cost model cm-v1).  See api.settlements_poller for the full
-    # reconciliation strategy.  Runs regardless of gateway mode so the
-    # /models/{name}/outcomes route is fed even when quant_foundry is
-    # disabled; set SETTLEMENTS_WORKER_POLL_S=0 to disable.
+    # New settlements worker (fincept_core.datasets spine).
+    # Runs regardless of gateway mode so the /models/{name}/outcomes route
+    # is fed even when quant_foundry is disabled; set SETTLEMENTS_WORKER_POLL_S=0
+    # to disable.
     settlements_worker_interval = _settlements_worker_interval_seconds()
     if settlements_worker_interval > 0:
-        settlements_worker_task = asyncio.create_task(
-            _poll_settlements_worker(settlements_worker_interval)
+        tm.add_task(
+            "settlements_worker",
+            _poll_settlements_worker(settlements_worker_interval),
         )
-        app.state.settlements_worker_task = settlements_worker_task
     log.info("api.start", version=API_VERSION, redis_url=settings.REDIS_URL)
     try:
         yield
     finally:
         log.info("api.stop")
-        # --- Shadow dispatch wiring (Agent C) ---
-        if quant_foundry_shadow_dispatch_task is not None:
-            quant_foundry_shadow_dispatch_task.cancel()
-            try:
-                await quant_foundry_shadow_dispatch_task
-            except asyncio.CancelledError:
-                pass
-        # --- New settlements worker (fincept_core.datasets spine) ---
-        if settlements_worker_task is not None:
-            settlements_worker_task.cancel()
-            try:
-                await settlements_worker_task
-            except asyncio.CancelledError:
-                pass
-        # --- Settlement wiring (Agent A) ---
-        if quant_foundry_settlement_task is not None:
-            quant_foundry_settlement_task.cancel()
-            try:
-                await quant_foundry_settlement_task
-            except asyncio.CancelledError:
-                pass
-        if quant_foundry_tournament_task is not None:
-            quant_foundry_tournament_task.cancel()
-            try:
-                await quant_foundry_tournament_task
-            except asyncio.CancelledError:
-                pass
-        if quant_foundry_poll_task is not None:
-            quant_foundry_poll_task.cancel()
-            try:
-                await quant_foundry_poll_task
-            except asyncio.CancelledError:
-                pass
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        await news_scheduler.stop()
-        await scheduler.stop()
+        await tm.shutdown()
         await redis.aclose()  # type: ignore[attr-defined]
 
 
