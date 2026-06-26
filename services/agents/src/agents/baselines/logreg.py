@@ -19,7 +19,7 @@ import numpy as np
 def _sigmoid(z: np.ndarray) -> np.ndarray:
     # Numerically stable sigmoid; clips the argument to avoid overflow.
     z = np.clip(z, -30.0, 30.0)
-    return 1.0 / (1.0 + np.exp(-z))
+    return np.asarray(1.0 / (1.0 + np.exp(-z)), dtype=float)
 
 
 @dataclass
@@ -38,7 +38,7 @@ class LogRegBaseline:
             raise ValueError(
                 f"X must be 2-D with {self.n_features} columns; got shape {X.shape}"
             )
-        return X @ self.weights + self.bias
+        return np.asarray(X @ self.weights + self.bias, dtype=float)
 
 
 def fit_logreg_baseline(
@@ -116,4 +116,4 @@ def roc_auc(y_true: np.ndarray, y_score: np.ndarray) -> float:
     # Pairwise comparison via broadcasting; ties count as 0.5.
     diff = pos[:, None] - neg[None, :]
     wins = float(np.sum(diff > 0)) + 0.5 * float(np.sum(diff == 0))
-    return wins / (pos.size * neg.size)
+    return float(wins / (pos.size * neg.size))

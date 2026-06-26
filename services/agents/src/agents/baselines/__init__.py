@@ -1,5 +1,7 @@
 """agents.baselines - stdlib-only baseline models (no sklearn dep)."""
 
+from __future__ import annotations
+
 from agents.baselines.logreg import (
     LogRegBaseline,
     fit_logreg_baseline,

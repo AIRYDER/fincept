@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import tempfile
 
 import pytest
 
@@ -42,8 +43,9 @@ def gate(data_root: pathlib.Path) -> ApprovedRoots:
 
 def _can_symlink() -> bool:
     """True if the current process can create a symlink."""
-    probe = pathlib.Path(os.path.join(os.getcwd(), "_aprobed_symlink"))
-    target = pathlib.Path(os.path.join(os.getcwd(), "_aprobed_target"))
+    tmp_dir = pathlib.Path(tempfile.gettempdir())
+    probe = tmp_dir / "_aprobed_symlink"
+    target = tmp_dir / "_aprobed_target"
     try:
         target.write_bytes(b"")
         os.symlink(target, probe)

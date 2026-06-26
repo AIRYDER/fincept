@@ -217,7 +217,7 @@ async def tick(
         close_t1 = await market_data_source(pred.symbol, ts_event, ts_event)
         close_t2 = await market_data_source(pred.symbol, ts_event, ts_horizon)
 
-        if close_t1 is None or close_t2 is None or close_t1 == 0:
+        if close_t1 is None or close_t2 is None or close_t1 == 0 or close_t2 == 0:
             if prior == "pending_data":
                 # Still no data and we already recorded pending_data --
                 # don't append a duplicate pending row on every retry.
@@ -267,7 +267,7 @@ def tick_sync(
         close_t1 = market_data_source(pred.symbol, ts_event, ts_event)
         close_t2 = market_data_source(pred.symbol, ts_event, ts_horizon)
 
-        if close_t1 is None or close_t2 is None or close_t1 == 0:
+        if close_t1 is None or close_t2 is None or close_t1 == 0 or close_t2 == 0:
             if prior == "pending_data":
                 continue
             record = _build_pending_data_record(pred)

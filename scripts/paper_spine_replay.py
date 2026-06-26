@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import fakeredis.aioredis
 from settlements.worker import tick_sync
@@ -310,7 +310,7 @@ async def run_replay() -> dict[str, Any]:
     if not passed:
         failed = [name for name, ok in assertions.items() if not ok]
         raise AssertionError(f"paper spine replay failed assertions: {failed}")
-    return to_jsonable(receipt)
+    return cast(dict[str, Any], to_jsonable(receipt))
 
 
 def _make_fixture_market_data_source(
@@ -494,7 +494,7 @@ def run_settlement_proof() -> dict[str, Any]:
             raise AssertionError(
                 f"settlement proof failed assertions: {failed} (evidence={evidence})"
             )
-        return to_jsonable(evidence)
+        return cast(dict[str, Any], to_jsonable(evidence))
     finally:
         shutil.rmtree(worker_root, ignore_errors=True)
 
