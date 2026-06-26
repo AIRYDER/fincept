@@ -1,5 +1,80 @@
 # RunPod Quant Foundry — Compacted Session Context
 
+> ⚠️ See the **RESOLUTION (2026-06-26)** section immediately below for the
+> current, authoritative state. The rest of this document describes the older
+> volume-based architecture and stale endpoint IDs.
+
+---
+
+## RESOLUTION (2026-06-26) — REAL ML PIPELINE PROVEN LIVE ✅
+
+The "worker ready but jobs stuck IN_QUEUE / unhealthy" blocker is **resolved**.
+Real LightGBM training and real inference now run end-to-end on RunPod.
+
+### Root cause (the real one)
+
+The endpoint templates had **`containerRegistryAuthId: null`**, but the images
+live at `ghcr.io/airyder/fincept/...` which is a **private** registry. RunPod
+could not pull the image, so workers crash-looped (`unhealthy`) or never
+started (`ready=0`) and jobs sat `IN_QUEUE` forever. The runpod-SDK /
+ENTRYPOINT-vs-CMD / Python-3.12 theories were all red herrings.
+
+Two existing ghcr credentials were already registered in the RunPod account
+(`ghcr.io-fincept`, `ghcr-fincept`); the templates just weren't linked to them.
+Linking `containerRegistryAuthId=cmqu7l5rz0047nzyt0o28je3d` fixed image pulls.
+
+A secondary scheduler-state corruption (from repeated REST PATCH calls, RunPod
+version field > ~10) required **deleting and recreating** both endpoints.
+
+### NEW endpoint IDs (the old ones were DELETED)
+
+| Endpoint | NEW ID | Template ID | Image |
+|---|---|---|---|
+| Training | `h2blqodcicxqyy` | `me58r5vdrp` | `ghcr.io/airyder/fincept/quant-foundry-training` |
+| Inference | `t31u1z426jy1ub` | `wnasp3v5jn` | `ghcr.io/airyder/fincept/quant-foundry-inference` |
+
+> **ACTION REQUIRED:** update your shell env vars — the old IDs
+> (`8vol1uc9l75jgs`, `36mz2q30jdyvru`) are gone:
+> ```powershell
+> setx RUNPOD_ENDPOINT_ID h2blqodcicxqyy
+> setx RUNPOD_INFERENCE_ENDPOINT_ID t31u1z426jy1ub
+> ```
+
+### Architecture is now baked-in images (NOT volume code)
+
+Code is baked into the container image (`/worker`, `/app`) via the Dockerfiles +
+`build-images.yml` CI. The `runpod/pytorch` base + `/runpod-volume` start-script
+approach described below is **superseded**. `fincept_core` is intentionally not
+baked in; `real_trainer`/`real_inference` import it behind try/except with
+stdlib fallbacks.
+
+### Proof (real, not stub)
+
+E2E run (`scripts/e2e_runpod_real_ml.py`, receipt at
+`reports/quant-foundry/e2e_real_ml_runpod.txt`):
+- **Training:** `accuracy=0.918`, `logloss=0.231`, `brier=0.067`,
+  `sharpe=26.99`, trainer=`real_lightgbm`, 142KB model artifact.
+  Confirmed `accuracy != stub 0.5+pbo/2`.
+- **Inference:** 3 real predictions, `authority=shadow-only`, valid ranges.
+
+### Fixes committed this session
+
+- Link `containerRegistryAuthId` to templates (`scripts/set_registry_auth.py`).
+- Recreate endpoints to reset scheduler state (`scripts/recreate_endpoints.py`).
+- handler: pop `inline_dataset_csv` before schema validation.
+- `real_trainer`: treat single-letter URI scheme as Windows drive letter.
+- `real_inference`: make `fincept_core.logging` import optional (stdlib fallback)
+  — this was crashing the inference worker (`unhealthy`).
+
+### Helper scripts (this session)
+
+`scripts/wait_worker.py <eid>`, `scripts/update_image_sha.py <sha>`,
+`scripts/clear_docker_args.py`, `scripts/set_registry_auth.py`,
+`scripts/recreate_endpoints.py`, `scripts/probe_new_endpoints.py`,
+`scripts/probe_inference_new.py`, `scripts/check_both_health.py`.
+
+---
+
 > Source: Codex session `019f000e-c6b8-7131-9c87-a85173da36d9` (2026-06-25, 18:33–20:04 CT)
 > Branch: `codex/portfolio-optimizer-core` | Repo: `fincept-terminal`
 
