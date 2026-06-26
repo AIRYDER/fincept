@@ -2,7 +2,7 @@
 
 > **Source:** Derived from `BLUEPRINT.md` with realistic scoping applied.
 > **Audience:** Engineering leadership, product, founding team.
-> **Last updated:** 2026-05-09
+> **Last updated:** 2026-06-23
 > **Current-state note:** this roadmap began as a pragmatic plan derived from `BLUEPRINT.md`. The local codebase now contains working slices from later phases, including paper trading services, API/dashboard surfaces, strategy configuration, agents, research/data-source tooling, and model workflows. Treat earlier phase tables as planning context, not a strict remaining-work checklist.
 
 ---
@@ -528,3 +528,46 @@ Move these items to the front of the local queue:
 2. Extend `scripts/paper_spine_replay.py` from fakeredis-only proof to a service-backed receipt when Redis/Timescale are available.
 3. Add the dashboard route inventory smoke before expanding the new UI pages.
 4. Split the large worktree into reviewable slices before any commit or PR preparation.
+
+## 18. Automation Review Update - 2026-06-23 America/Chicago
+
+This pass reviewed local files only and did not use GitHub. The branch is now
+`codex/portfolio-optimizer-core` at `751d212`, with a large local commit stack
+since the older `9c1aba1` automation baseline. The new committed work is
+centered on Quant Foundry rather than the earlier mock terminal and
+news-impact-only slices.
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Quant Foundry service vertical | Recent commits add `services/quant_foundry` modules for schemas, IDs/signatures, outbox/inbox, callbacks, RunPod training/inference clients, S3 artifacts, feature lake, feature snapshots, baseline families, settlement, shadow ledger/settlement, tournament, promotion, paper bridge, MoE router, conformal gate, drift sentinel, causal graph, and gateway budget controls. | Treat Quant Foundry as a major implemented vertical that needs a release-readiness receipt and review slicing, not as a speculative future idea. |
+| Dashboard route expansion | New committed pages exist under `/quant-foundry`, `/quant-foundry/jobs`, `/quant-foundry/models`, `/quant-foundry/shadow`, `/quant-foundry/tournament`, and `/quant-foundry/promotion`, plus API client/type additions. | Add a Quant Foundry route smoke atlas before more dashboard surfaces are added. |
+| Cloud/runtime planning | `docs/AWS_PRODUCTION_CONTROL_PLANE.md`, `docs/MODULE_RUNTIME_PLAN.md`, `docs/ON_DEMAND_MODULES.md`, `docs/RAILWAY_STAGING_GUIDE.md`, RunPod container folders, and gateway budget guard code are present. | Separate code-level dispatch/budget proof from live cloud acceptance; use dry-run drills before any GPU spend. |
+| Live readiness review | `docs/LIMITED_LIVE_READINESS_REVIEW.md` records that the current live path is not ready and lists blockers. | Keep live-capital and production claims blocked until the limited-readiness blockers have dated receipts. |
+| Provider evidence hardening | Provider evidence redaction and freshness receipt code/tests landed in `libs/fincept-db` and API/provider tests. | Promote redaction/freshness into the standard release receipt instead of leaving it as a one-off task. |
+| Shadow receipt script drift | `node scripts/run-shadow-news-impact-tests.cjs` still passes directly, but `apps/dashboard/package.json` no longer exposes `test:shadow-news-impact`; only `test:source-health` and `test:strategy-readiness` are currently listed for this proof family. | Restore the npm alias or update the receipt runner so the canonical command is stable before future automations rely on it. |
+| Current dirty tree | The tracked dirty diff is only `uv.lock`, but many untracked local artifacts remain under dashboard docs/routes, tool folders, reports, research, docs, and agent areas. | Before staging anything, classify `uv.lock` as required or local churn and keep untracked local artifacts out of the Quant Foundry review slice unless intentionally promoted. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Quant Foundry release receipt | One artifact records focused service tests, dashboard type check or route smoke, provider redaction/freshness proof, budget-gateway proof, branch, commit, skipped live dependencies, and open blockers. |
+| P0 | Promotion safety ledger | A model state machine combines settlement, tournament score, conformal interval, drift status, retirement flags, and paper-only bridge state into `shadow`, `paper-only`, `promotable`, `blocked`, or `retired`. |
+| P0 | Gateway budget drill | RunPod dispatch is proven fail-closed for kill switch, exhausted budget, duplicate callback, and bad signature cases without spending GPU dollars. |
+| P1 | Quant Foundry route smoke | A single command probes every `/quant-foundry/*` page for load status, latency, mode, and missing dependency message. |
+| P1 | Lockfile and artifact hygiene | The current `uv.lock` delta is explained, and untracked local tool/report artifacts stay excluded from product review slices unless intentionally promoted. |
+| P1 | Shadow helper script contract | `test:shadow-news-impact` is restored in `apps/dashboard/package.json` or the receipt docs name `node scripts/run-shadow-news-impact-tests.cjs` as the canonical command. |
+| P1 | Existing shadow/news-impact backlog | The older `/news-impact/signals` receipt, malformed-row accounting, source-health/readiness receipt, mock route atlas, and `.devin` path check stay visible as separate slices. |
+
+### Recommended next local sequence
+
+1. Classify the `uv.lock` delta and exclude local/generated tool folders from
+   the Quant Foundry review slice.
+2. Build a Quant Foundry release-readiness receipt around focused service tests,
+   dashboard checks, provider redaction/freshness, and live blockers.
+3. Add the promotion safety ledger before any production or live-capital claim.
+4. Dry-run the RunPod gateway budget and callback safety path.
+5. Add route smoke for all `/quant-foundry/*` pages.
+6. Resume the prior shadow news-impact receipt and mock-route atlas queue.

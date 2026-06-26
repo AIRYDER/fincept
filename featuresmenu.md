@@ -1,6 +1,6 @@
 # Fincept Terminal Features Menu
 
-Last updated: 2026-05-09
+Last updated: 2026-06-23
 
 ## Local Analysis Snapshot
 
@@ -202,3 +202,34 @@ The local project is no longer just planning docs. It has a monorepo scaffold wi
 | Frontend route QA automation      | Auto-discover dashboard pages and smoke their render/API contracts.                              | Every new page appears in a route atlas receipt.                                            |
 | Provider readiness modeling       | Model OpenBB readiness as layers instead of a single health boolean.                             | The UI says whether platform, package, provider, or policy blocked a call.                  |
 | Change decomposition              | Produce review slices from the current worktree before commit work.                              | A reviewer can inspect docs, receipts, API, UI, agents, and generated artifacts separately. |
+
+## Automation Feature Additions - 2026-06-23
+
+The local branch is now `codex/portfolio-optimizer-core` at `751d212`.
+Compared with the 2026-06-21 automation baseline, the meaningful new work is
+the Quant Foundry vertical: RunPod training/inference containers, strict
+schemas, signed callbacks, job outbox/inbox, S3 artifact import, feature lake
+and feature snapshot export, baseline training, shadow prediction settlement,
+expanded tournament/promotion, paper-only model pointers, MoE routing,
+conformal risk gates, adversarial drift sentinels, causal market memory, and
+dashboard pages under `/quant-foundry/*`. The older shadow news-impact queue is
+still relevant, but it is no longer the only active proof surface.
+
+| Feature | First build step | Acceptance check |
+|---|---|---|
+| Quant Foundry release receipt | Add one receipt command that runs the highest-signal Quant Foundry service tests plus dashboard type checks and writes `reports/quant-foundry/release-readiness-<date>.md`. | The receipt names branch `codex/portfolio-optimizer-core`, commit `751d212`, test commands, modules covered, skipped live dependencies, and stale blockers from `docs/LIMITED_LIVE_READINESS_REVIEW.md`. |
+| Shadow-to-promotion safety ledger | Connect `shadow_ledger`, `shadow_settlement`, `promotion`, `conformal_gate`, and `drift_sentinel` into a single promotion-blocker report. | A model cannot appear in the promotion queue unless settlement, calibration, conformal interval, drift, retirement, and paper-only pointer status are all present. |
+| RunPod budget kill-switch drill | Add a local dry-run that exercises `quant_foundry.gateway` and `budget.py` with monthly ceiling, kill switch, idempotency, and callback replay fixtures. | GPU dispatch fails closed when budget or kill-switch policy blocks, and the durable JSONL ledger records why without leaking secrets. |
+| Causal memory operator panel | Extend `/quant-foundry/models` or `/quant-foundry/shadow` with a read-only causal-graph explanation view for one model/signal pair. | The panel shows edge source, confidence, supporting events, and no-order boundary using the existing `causal_graph.py` fixture. |
+| Quant Foundry route smoke atlas | Add dashboard route probes for `/quant-foundry`, `/quant-foundry/jobs`, `/quant-foundry/models`, `/quant-foundry/shadow`, `/quant-foundry/tournament`, and `/quant-foundry/promotion`. | One command proves each page loads or returns a stable degraded state without requiring live RunPod credentials. |
+| Lockfile churn classifier | Explain the current tracked `uv.lock` delta and tie it to the Quant Foundry dependency set or revert plan. | A reviewer can tell whether the 34-line lockfile change is required by `services/quant_foundry` or only local environment noise. |
+
+## Next Skills To Deepen - 2026-06-23
+
+| Skill | First exercise | Done when |
+|---|---|---|
+| ML release governance | Build the Quant Foundry release receipt from service tests, dashboard type checks, and live-readiness blockers. | Quant Foundry status is proven by one dated artifact, not by commit count. |
+| Promotion risk engineering | Compose settlement, conformal, drift, retirement, and paper-pointer gates into one blocker report. | A model has an explainable reason for promote, hold, retire, or paper-only. |
+| Cloud cost control | Dry-run the gateway budget guard and RunPod dispatch path. | GPU jobs fail closed under budget and kill-switch policy with auditable receipts. |
+| Causal model explainability | Surface the causal market memory graph in a read-only dashboard panel. | Operators can inspect why a model/signal is trusted without creating an execution path. |
+| Review-slice hygiene | Classify `uv.lock`, generated reports, local tool folders, and Quant Foundry source slices before staging. | The next review can split docs, service code, dashboard pages, infra, and local artifacts cleanly. |
