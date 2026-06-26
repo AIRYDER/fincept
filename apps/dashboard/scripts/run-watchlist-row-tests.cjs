@@ -15,7 +15,7 @@ const testFile = path.join(
 );
 
 try {
-  execSync(`npx tsx --tsconfig tsconfig.test.json "${testFile}"`, {
+  execSync(`npx --yes tsx --tsconfig tsconfig.test.json "${testFile}"`, {
     cwd: path.join(__dirname, ".."),
     stdio: "inherit",
   });

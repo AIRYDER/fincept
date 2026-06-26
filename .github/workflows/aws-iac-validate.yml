@@ -129,9 +129,13 @@ jobs:
         id: plan
         working-directory: infra/aws
         run: |
+          if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "::notice::Skipping terraform plan; AWS credentials are unavailable in this context."
+            exit 0
+          fi
           terraform plan -input=false -no-color -out=tfplan \
             -var="aws_region=us-east-1" \
-            -var="environment=plan-mock" \
+            -var="environment=staging" \
             -var="owner_contact=ci@fincept.local" \
             -var="cost_center=fincept-platform"
         env:
@@ -141,10 +145,15 @@ jobs:
 
       - name: Show plan summary
         working-directory: infra/aws
-        run: terraform show -no-color tfplan | head -200
+        run: |
+          if [ ! -f tfplan ]; then
+            echo "::notice::No tfplan file produced; plan was skipped."
+            exit 0
+          fi
+          terraform show -no-color tfplan | head -200 | tee tfplan-summary.txt
 
       - name: Post plan as PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && hashFiles('infra/aws/tfplan-summary.txt') != ''
         uses: actions/github-script@v7
         with:
           script: |

@@ -10,7 +10,7 @@ const testFile = path.join(
 );
 
 try {
-  execSync(`npx tsx "${testFile}"`, {
+  execSync(`npx --yes tsx "${testFile}"`, {
     cwd: path.join(__dirname, ".."),
     stdio: "inherit",
   });

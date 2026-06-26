@@ -99,6 +99,9 @@ function Invoke-Check {
     $status = if ($code -eq 0) { "pass" } else { "fail" }
     $color = if ($status -eq "pass") { "Green" } else { "Red" }
     Write-Host "   -> $status (exit $code, $($sw.ElapsedMilliseconds)ms)" -ForegroundColor $color
+    if ($status -eq "fail" -and -not [string]::IsNullOrWhiteSpace($output)) {
+        Write-Host $output
+    }
     Add-Result -Name $Name -Command $Command -Status $status -ExitCode $code `
         -DurationMs $sw.ElapsedMilliseconds -Required $Required
 }

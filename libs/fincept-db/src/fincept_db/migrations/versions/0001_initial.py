@@ -125,6 +125,20 @@ def upgrade() -> None:
     op.execute("SELECT add_compression_policy('bars', 2592000000000000)")
     op.execute("SELECT add_compression_policy('book_deltas', 86400000000000)")
 
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION fincept_now_ns()
+        RETURNS BIGINT
+        LANGUAGE SQL
+        STABLE
+        AS $$
+            SELECT (EXTRACT(EPOCH FROM now()) * 1000000000)::BIGINT
+        $$
+        """
+    )
+    op.execute("SELECT set_integer_now_func('trades', 'fincept_now_ns')")
+    op.execute("SELECT set_integer_now_func('book_deltas', 'fincept_now_ns')")
+
     op.execute("SELECT add_retention_policy('trades', 2592000000000000)")
     op.execute("SELECT add_retention_policy('book_deltas', 604800000000000)")
 
@@ -147,3 +161,4 @@ def downgrade() -> None:
     op.drop_table("bars")
     op.drop_index("ix_trades_symbol_ts", table_name="trades")
     op.drop_table("trades")
+    op.execute("DROP FUNCTION IF EXISTS fincept_now_ns()")

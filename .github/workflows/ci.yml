@@ -172,6 +172,18 @@ jobs:
       - name: Sync workspace
         run: uv sync --all-packages --all-groups
 
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dashboard dependencies
+        run: pnpm install --frozen-lockfile=false
+
       - name: Run verification receipt (pwsh)
         shell: pwsh
         run: ./scripts/verification-receipt.ps1
