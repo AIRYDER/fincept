@@ -62,6 +62,8 @@ from backtester.runner import (
 )
 from backtester.strategies import GBMStrategy
 from fincept_core.config import Settings
+from fincept_core.datasets.cv import Fold as _SharedFold
+from fincept_core.datasets.cv import make_folds as _shared_make_folds
 from fincept_core.schemas import AssetClass, BarEvent, Venue
 
 # --------------------------------------------------------------------------- #
@@ -92,6 +94,54 @@ class Fold:
         return self.val_end - self.val_start
 
 
+def _to_local_fold(shared: _SharedFold) -> Fold:
+    """Convert a shared Pydantic ``Fold`` to the local dataclass ``Fold``.
+
+    The canonical :class:`fincept_core.datasets.cv.Fold` is a Pydantic
+    model; this module's historical :class:`Fold` is a frozen dataclass
+    with the same fields.  We translate so callers that import
+    ``backtester.walk_forward.Fold`` keep getting dataclass instances
+    (preserving ``isinstance`` / ``dataclasses.fields`` expectations).
+    """
+    return Fold(
+        index=shared.index,
+        train_start=shared.train_start,
+        train_end=shared.train_end,
+        val_start=shared.val_start,
+        val_end=shared.val_end,
+    )
+
+
+def _make_folds_local(
+    n_bars: int,
+    *,
+    n_folds: int,
+    train_min_bars: int,
+    val_bars: int,
+    purge_bars: int = 0,
+    embargo_bars: int = 0,
+) -> list[Fold]:
+    """Internal fold builder delegating to the shared CV utility.
+
+    Returns local :class:`Fold` dataclass instances so the rest of this
+    module (and external callers that import
+    ``backtester.walk_forward.Fold``) keep working unchanged.  This
+    private helper does *not* emit a deprecation warning so internal
+    call sites (e.g. :func:`walk_forward_backtest`) stay quiet.
+    """
+    return [
+        _to_local_fold(f)
+        for f in _shared_make_folds(
+            n_bars,
+            n_folds=n_folds,
+            train_min_bars=train_min_bars,
+            val_bars=val_bars,
+            purge_bars=purge_bars,
+            embargo_bars=embargo_bars,
+        )
+    ]
+
+
 def make_folds(
     n_bars: int,
     *,
@@ -101,62 +151,43 @@ def make_folds(
     purge_bars: int = 0,
     embargo_bars: int = 0,
 ) -> list[Fold]:
-    """Build ``n_folds`` expanding-window folds over ``n_bars`` timestamps.
+    """Deprecated thin shim around :func:`fincept_core.datasets.cv.make_folds`.
 
-    Constraints checked up-front (so callers see a clean error before
-    spending minutes training models):
+    The canonical expanding-window purged+embargoed fold math now lives
+    in ``fincept_core.datasets.cv`` (re-exported from
+    ``fincept_core.datasets``).  This wrapper remains so existing
+    imports of ``make_folds`` from the backtester path keep working,
+    but it emits a :class:`DeprecationWarning` directing callers to
+    the shared utility.
 
-      - ``n_folds >= 1``
-      - ``train_min_bars >= 1``
-      - ``val_bars >= 1``
-      - ``purge_bars >= 0``, ``embargo_bars >= 0``
-      - total bars must accommodate ``train_min_bars + n_folds *
-        (purge_bars + val_bars) + (n_folds - 1) * embargo_bars``
+    Returned folds are local :class:`Fold` dataclass instances (not the
+    Pydantic ``fincept_core.datasets.cv.Fold``) to preserve the
+    historical return type.  The underlying validation error messages
+    are identical to the previous inline implementation because the
+    shared utility is a verbatim port of it.
 
-    Returns folds ordered by ascending ``train_end``.  Successive folds
-    share the same training start (``0``) and grow by ``val_bars +
-    embargo_bars`` per step.
+    .. deprecated::
+        Use :func:`fincept_core.datasets.cv.make_folds` (or
+        ``fincept_core.datasets.make_folds``) instead.
     """
-    if n_folds < 1:
-        raise ValueError(f"n_folds must be >= 1, got {n_folds}")
-    if train_min_bars < 1:
-        raise ValueError(f"train_min_bars must be >= 1, got {train_min_bars}")
-    if val_bars < 1:
-        raise ValueError(f"val_bars must be >= 1, got {val_bars}")
-    if purge_bars < 0:
-        raise ValueError(f"purge_bars must be >= 0, got {purge_bars}")
-    if embargo_bars < 0:
-        raise ValueError(f"embargo_bars must be >= 0, got {embargo_bars}")
+    import warnings
 
-    required = train_min_bars + n_folds * (purge_bars + val_bars) + (n_folds - 1) * embargo_bars
-    if n_bars < required:
-        raise ValueError(
-            f"need at least {required} bars for {n_folds} folds with "
-            f"train_min={train_min_bars}, val={val_bars}, purge={purge_bars}, "
-            f"embargo={embargo_bars}; got {n_bars}"
-        )
-
-    folds: list[Fold] = []
-    train_end = train_min_bars
-    for k in range(n_folds):
-        val_start = train_end + purge_bars
-        val_end = val_start + val_bars
-        if val_end > n_bars:
-            raise ValueError(
-                f"fold {k} val_end={val_end} exceeds n_bars={n_bars} "
-                "(internal arithmetic error — please file a bug)"
-            )
-        folds.append(
-            Fold(
-                index=k,
-                train_start=0,
-                train_end=train_end,
-                val_start=val_start,
-                val_end=val_end,
-            )
-        )
-        train_end = val_end + embargo_bars
-    return folds
+    warnings.warn(
+        "backtester.walk_forward.make_folds is deprecated; import "
+        "make_folds from fincept_core.datasets.cv (or "
+        "fincept_core.datasets) instead. The local Fold dataclass is "
+        "retained for backwards compatibility.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _make_folds_local(
+        n_bars,
+        n_folds=n_folds,
+        train_min_bars=train_min_bars,
+        val_bars=val_bars,
+        purge_bars=purge_bars,
+        embargo_bars=embargo_bars,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -461,7 +492,7 @@ async def walk_forward_backtest(
         raise ValueError(f"parquet at {parquet_path} contains no rows")
 
     timestamps = _canonical_timestamps(bars_by_symbol)
-    folds = make_folds(
+    folds = _make_folds_local(
         len(timestamps),
         n_folds=n_folds,
         train_min_bars=train_min_bars,

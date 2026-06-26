@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import pathlib
+from contextlib import contextmanager
 from decimal import Decimal
 
 import numpy as np
@@ -31,6 +32,15 @@ from backtester.walk_forward import (
 )
 from fincept_core.schemas import AssetClass, BarEvent, Venue
 
+
+@contextmanager
+def _expects_deprecation() -> None:
+    """Context asserting that ``backtester.walk_forward.make_folds``
+    emits a :class:`DeprecationWarning` (it is now a shim around
+    :func:`fincept_core.datasets.cv.make_folds`)."""
+    with pytest.warns(DeprecationWarning):
+        yield
+
 # --------------------------------------------------------------------------- #
 # make_folds                                                                  #
 # --------------------------------------------------------------------------- #
@@ -38,14 +48,15 @@ from fincept_core.schemas import AssetClass, BarEvent, Venue
 
 class TestMakeFolds:
     def test_basic_three_folds_no_purge(self) -> None:
-        folds = make_folds(
-            n_bars=100,
-            n_folds=3,
-            train_min_bars=40,
-            val_bars=10,
-            purge_bars=0,
-            embargo_bars=0,
-        )
+        with _expects_deprecation():
+            folds = make_folds(
+                n_bars=100,
+                n_folds=3,
+                train_min_bars=40,
+                val_bars=10,
+                purge_bars=0,
+                embargo_bars=0,
+            )
         assert len(folds) == 3
         # Expanding window: train_start always 0, train_end grows by val_bars.
         assert all(f.train_start == 0 for f in folds)
@@ -58,14 +69,15 @@ class TestMakeFolds:
         ]
 
     def test_purge_creates_gap_between_train_and_val(self) -> None:
-        folds = make_folds(
-            n_bars=200,
-            n_folds=2,
-            train_min_bars=50,
-            val_bars=20,
-            purge_bars=5,
-            embargo_bars=0,
-        )
+        with _expects_deprecation():
+            folds = make_folds(
+                n_bars=200,
+                n_folds=2,
+                train_min_bars=50,
+                val_bars=20,
+                purge_bars=5,
+                embargo_bars=0,
+            )
         f0, f1 = folds
         # Fold 0: train [0..50), val [55..75)
         assert (f0.train_end, f0.val_start, f0.val_end) == (50, 55, 75)
@@ -76,27 +88,29 @@ class TestMakeFolds:
         assert f1.val_start - f1.train_end == 5
 
     def test_embargo_creates_gap_between_folds(self) -> None:
-        folds = make_folds(
-            n_bars=200,
-            n_folds=2,
-            train_min_bars=50,
-            val_bars=20,
-            purge_bars=0,
-            embargo_bars=10,
-        )
+        with _expects_deprecation():
+            folds = make_folds(
+                n_bars=200,
+                n_folds=2,
+                train_min_bars=50,
+                val_bars=20,
+                purge_bars=0,
+                embargo_bars=10,
+            )
         f0, f1 = folds
         # Embargo means fold 1's train_end starts after fold 0's val_end + 10.
         assert f1.train_end == f0.val_end + 10
 
     def test_val_windows_are_disjoint(self) -> None:
-        folds = make_folds(
-            n_bars=500,
-            n_folds=5,
-            train_min_bars=100,
-            val_bars=30,
-            purge_bars=2,
-            embargo_bars=3,
-        )
+        with _expects_deprecation():
+            folds = make_folds(
+                n_bars=500,
+                n_folds=5,
+                train_min_bars=100,
+                val_bars=30,
+                purge_bars=2,
+                embargo_bars=3,
+            )
         ranges = [(f.val_start, f.val_end) for f in folds]
         for i in range(len(ranges) - 1):
             a_end = ranges[i][1]
@@ -104,14 +118,15 @@ class TestMakeFolds:
             assert a_end <= b_start, f"{a_end=} overlaps {b_start=}"
 
     def test_indices_are_monotonically_increasing(self) -> None:
-        folds = make_folds(
-            n_bars=300,
-            n_folds=4,
-            train_min_bars=50,
-            val_bars=20,
-            purge_bars=1,
-            embargo_bars=2,
-        )
+        with _expects_deprecation():
+            folds = make_folds(
+                n_bars=300,
+                n_folds=4,
+                train_min_bars=50,
+                val_bars=20,
+                purge_bars=1,
+                embargo_bars=2,
+            )
         for f in folds:
             assert f.train_start < f.train_end < f.val_start < f.val_end
         for i in range(len(folds) - 1):
@@ -120,7 +135,8 @@ class TestMakeFolds:
             assert prev.val_start < cur.val_start
 
     def test_fold_indices_set_in_order(self) -> None:
-        folds = make_folds(n_bars=200, n_folds=4, train_min_bars=50, val_bars=20)
+        with _expects_deprecation():
+            folds = make_folds(n_bars=200, n_folds=4, train_min_bars=50, val_bars=20)
         assert [f.index for f in folds] == [0, 1, 2, 3]
 
     @pytest.mark.parametrize(
@@ -153,13 +169,29 @@ class TestMakeFolds:
         ],
     )
     def test_rejects_invalid_args(self, kwargs: dict[str, int], match: str) -> None:
-        with pytest.raises(ValueError, match=match):
+        with _expects_deprecation(), pytest.raises(ValueError, match=match):
             make_folds(n_bars=500, **kwargs)
 
     def test_rejects_too_few_bars(self) -> None:
-        with pytest.raises(ValueError, match="need at least"):
+        with _expects_deprecation(), pytest.raises(ValueError, match="need at least"):
             # 30 bars can't fit 50 train + 1 fold * 10 val = 60.
             make_folds(n_bars=30, n_folds=1, train_min_bars=50, val_bars=10)
+
+    def test_make_folds_returns_local_dataclass_fold(self) -> None:
+        """The deprecated shim must still return the *local* dataclass
+        :class:`Fold`, not the Pydantic ``fincept_core.datasets.cv.Fold``,
+        so existing ``isinstance`` / ``dataclasses.fields`` callers keep
+        working."""
+        import dataclasses
+
+        from fincept_core.datasets.cv import Fold as SharedFold
+
+        with _expects_deprecation():
+            folds = make_folds(n_bars=100, n_folds=2, train_min_bars=40, val_bars=10)
+        assert all(isinstance(f, Fold) for f in folds)
+        # The local Fold is a dataclass; the shared Fold is a Pydantic model.
+        assert all(dataclasses.is_dataclass(f) for f in folds)
+        assert not any(isinstance(f, SharedFold) for f in folds)
 
 
 # --------------------------------------------------------------------------- #
