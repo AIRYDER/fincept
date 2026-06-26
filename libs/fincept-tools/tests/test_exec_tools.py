@@ -87,9 +87,7 @@ async def test_submit_order_paper_mode_succeeds(monkeypatch: pytest.MonkeyPatch)
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
     fake_redis.aclose = AsyncMock()
 
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.return_value = fake_redis
-
+    with patch("fincept_tools.exec.tools.get_redis", return_value=fake_redis):
         tool = SubmitOrderTool()
         result = await tool(
             SubmitOrderInput(
@@ -148,9 +146,7 @@ async def test_submit_order_redis_failure_returns_error(monkeypatch: pytest.Monk
     monkeypatch.setenv("FINCEPT_TRADING_MODE", "paper")
     Settings.clear_cache()
 
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.side_effect = ConnectionRefusedError("no redis")
-
+    with patch("fincept_tools.exec.tools.get_redis", side_effect=ConnectionRefusedError("no redis")):
         tool = SubmitOrderTool()
         result = await tool(
             SubmitOrderInput(
@@ -185,9 +181,7 @@ async def test_cancel_order_paper_mode_succeeds(monkeypatch: pytest.MonkeyPatch)
     fake_redis.xadd = AsyncMock(return_value=b"1234-0")
     fake_redis.aclose = AsyncMock()
 
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.return_value = fake_redis
-
+    with patch("fincept_tools.exec.tools.get_redis", return_value=fake_redis):
         tool = CancelOrderTool()
         result = await tool(
             CancelOrderInput(
@@ -269,8 +263,7 @@ async def test_get_order_status_finds_recent_match() -> None:
     )
     fake_redis.aclose = AsyncMock()
 
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.return_value = fake_redis
+    with patch("fincept_tools.exec.tools.get_redis", return_value=fake_redis):
 
         tool = GetOrderStatusTool()
         result = await tool(GetOrderStatusInput(order_id=target))
@@ -290,8 +283,7 @@ async def test_get_order_status_returns_none_state_when_not_found() -> None:
     )
     fake_redis.aclose = AsyncMock()
 
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.return_value = fake_redis
+    with patch("fincept_tools.exec.tools.get_redis", return_value=fake_redis):
 
         tool = GetOrderStatusTool()
         result = await tool(GetOrderStatusInput(order_id="01ARZ3NDEKTSV4RRFFQ69G5FAV"))
@@ -303,8 +295,7 @@ async def test_get_order_status_returns_none_state_when_not_found() -> None:
 
 @pytest.mark.asyncio
 async def test_get_order_status_redis_failure_returns_typed_error() -> None:
-    with patch("fincept_tools.exec.tools.Redis") as mock_redis_cls:
-        mock_redis_cls.from_url.side_effect = ConnectionError("no redis")
+    with patch("fincept_tools.exec.tools.get_redis", side_effect=ConnectionError("no redis")):
 
         tool = GetOrderStatusTool()
         result = await tool(GetOrderStatusInput(order_id="x"))

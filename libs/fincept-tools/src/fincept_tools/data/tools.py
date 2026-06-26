@@ -34,6 +34,7 @@ from fincept_db.models import UniverseSymbol
 from fincept_db.ticks import read_trades
 from fincept_tools.errors import NotInUniverse, ToolBackendError
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
+from fincept_tools.redis_client import get_redis
 from fincept_tools.registry import register
 
 # ---------------------------------------------------------------------------
@@ -307,13 +308,9 @@ class GetPositionsTool(BaseTool):
 
     async def _run(self, payload: ToolInput) -> ToolOutput:
         assert isinstance(payload, GetPositionsInput)
-        settings = get_settings()
         try:
-            r: Redis[Any] = Redis.from_url(settings.REDIS_URL)
-            try:
-                raw_messages = await r.xrevrange("ord.positions", count=500)
-            finally:
-                await r.aclose()  # type: ignore[attr-defined]
+            r = get_redis()
+            raw_messages = await r.xrevrange("ord.positions", count=500)
         except Exception as exc:
             raise ToolBackendError(f"positions stream read failed: {exc}") from exc
 
@@ -402,14 +399,10 @@ class GetFeaturesTool(BaseTool):
 
     async def _run(self, payload: ToolInput) -> ToolOutput:
         assert isinstance(payload, GetFeaturesInput)
-        settings = get_settings()
         key = f"features:online:{payload.symbol}"
         try:
-            r: Redis[Any] = Redis.from_url(settings.REDIS_URL)
-            try:
-                raw: dict[bytes | str, bytes | str] = await r.hgetall(key)
-            finally:
-                await r.aclose()  # type: ignore[attr-defined]
+            r = get_redis()
+            raw: dict[bytes | str, bytes | str] = await r.hgetall(key)
         except Exception as exc:
             raise ToolBackendError(f"feature store read failed: {exc}") from exc
 

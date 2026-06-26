@@ -37,6 +37,7 @@ from fincept_core.schemas import (
     Venue,
 )
 from fincept_tools.errors import PaperOnlyExec, ToolBackendError
+from fincept_tools.redis_client import get_redis
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
 from fincept_tools.registry import register
 
@@ -122,13 +123,10 @@ class SubmitOrderTool(BaseTool):
         )
 
         try:
-            r: Redis[Any] = Redis.from_url(get_settings().REDIS_URL)
-            try:
-                producer = Producer(r)
-                event = make_event("order_intent", intent)
-                await producer.publish(STREAM_ORDERS, event)
-            finally:
-                await r.aclose()  # type: ignore[attr-defined]
+            r = get_redis()
+            producer = Producer(r)
+            event = make_event("order_intent", intent)
+            await producer.publish(STREAM_ORDERS, event)
         except Exception as exc:
             raise ToolBackendError(f"order publish failed: {exc}") from exc
 
@@ -189,13 +187,10 @@ class CancelOrderTool(BaseTool):
         )
 
         try:
-            r: Redis[Any] = Redis.from_url(get_settings().REDIS_URL)
-            try:
-                producer = Producer(r)
-                event = make_event("cancel_request", cancel_request)
-                await producer.publish(STREAM_ORDERS, event)
-            finally:
-                await r.aclose()  # type: ignore[attr-defined]
+            r = get_redis()
+            producer = Producer(r)
+            event = make_event("cancel_request", cancel_request)
+            await producer.publish(STREAM_ORDERS, event)
         except Exception as exc:
             raise ToolBackendError(f"cancel publish failed: {exc}") from exc
 
@@ -260,11 +255,8 @@ class GetOrderStatusTool(BaseTool):
         assert isinstance(payload, GetOrderStatusInput)
         # Read-only — no PaperOnlyExec gate; safe in any mode.
         try:
-            r: Redis[Any] = Redis.from_url(get_settings().REDIS_URL)
-            try:
-                raw_messages = await r.xrevrange(STREAM_ORDERS, count=payload.scan_limit)
-            finally:
-                await r.aclose()  # type: ignore[attr-defined]
+            r = get_redis()
+            raw_messages = await r.xrevrange(STREAM_ORDERS, count=payload.scan_limit)
         except Exception as exc:
             raise ToolBackendError(f"order stream read failed: {exc}") from exc
 
