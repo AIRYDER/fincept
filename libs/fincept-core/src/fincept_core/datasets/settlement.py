@@ -47,7 +47,7 @@ import pathlib
 import time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 # --------------------------------------------------------------------------- #
 # Configuration                                                              #
@@ -165,6 +165,27 @@ class SettlementRecord(BaseModel):
         """Render to a JSONL line."""
         return self.model_dump_json()
 
+    @field_validator("cost_breakdown_spread_bps")
+    @classmethod
+    def _spread_bps_sanity_bound(cls, v: float) -> float:
+        """Reject absurd spread values (> 100 bps = 1% is a sanity ceiling)."""
+        if v > 100.0:
+            raise ValueError(
+                f"cost_breakdown_spread_bps={v} exceeds sanity bound of 100 bps"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _decision_window_ordering(self) -> SettlementRecord:
+        """decision_window_start_ns must not exceed decision_window_end_ns."""
+        if self.decision_window_start_ns > self.decision_window_end_ns:
+            raise ValueError(
+                "decision_window_start_ns "
+                f"({self.decision_window_start_ns}) > "
+                f"decision_window_end_ns ({self.decision_window_end_ns})"
+            )
+        return self
+
     @classmethod
     def from_json(cls, line: str) -> SettlementRecord:
         """Parse a JSONL line.  Raises on malformed JSON or schema mismatch."""
@@ -248,21 +269,25 @@ class SettlementStore:
                 ),
             )
 
-        # Idempotency: a settled row for (prediction_id, cost_model_version)
-        # must not be written twice -- we raise so the caller learns the
-        # duplicate is a bug, not a no-op.  A non-settled row (pending_data,
-        # pending_time, failed) MAY be superseded by a later append (e.g. a
-        # pending_data row followed by a settled row once the price feed
-        # catches up); the earlier row is retained as history because the
-        # ledger is append-only.
+        # Idempotency: a settled OR failed row for
+        # (prediction_id, cost_model_version) is terminal -- re-writing
+        # with the same cost_model_version raises ``duplicate`` so the
+        # caller learns the repeat is a bug, not a no-op.  A non-terminal
+        # row (pending_data, pending_time) MAY be superseded by a later
+        # append (e.g. a pending_data row followed by a settled row once
+        # the price feed catches up); the earlier row is retained as
+        # history because the ledger is append-only.  A failed row may
+        # be re-settled under a *different* cost_model_version (the
+        # ``_find`` scan is keyed on cost_model_version, so a different
+        # version simply does not match and is allowed through).
         existing = self._find(record.agent_id, record.prediction_id, record.cost_model_version)
-        if existing is not None and existing.status == "settled":
+        if existing is not None and existing.status in ("settled", "failed"):
             raise SettlementError(
                 "duplicate",
                 (
                     f"(prediction_id={record.prediction_id!r}, "
                     f"cost_model_version={record.cost_model_version!r}) "
-                    "already settled in the settlement ledger"
+                    f"already {existing.status} in the settlement ledger"
                 ),
             )
 
