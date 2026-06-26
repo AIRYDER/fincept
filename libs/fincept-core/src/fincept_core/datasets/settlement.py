@@ -248,16 +248,21 @@ class SettlementStore:
                 ),
             )
 
-        # Idempotency: same (prediction_id, cost_model_version) must
-        # not be written twice.  We do NOT silently skip -- we raise so
-        # the caller learns the duplicate is a bug, not a no-op.
-        if self._find(record.agent_id, record.prediction_id, record.cost_model_version) is not None:
+        # Idempotency: a settled row for (prediction_id, cost_model_version)
+        # must not be written twice -- we raise so the caller learns the
+        # duplicate is a bug, not a no-op.  A non-settled row (pending_data,
+        # pending_time, failed) MAY be superseded by a later append (e.g. a
+        # pending_data row followed by a settled row once the price feed
+        # catches up); the earlier row is retained as history because the
+        # ledger is append-only.
+        existing = self._find(record.agent_id, record.prediction_id, record.cost_model_version)
+        if existing is not None and existing.status == "settled":
             raise SettlementError(
                 "duplicate",
                 (
                     f"(prediction_id={record.prediction_id!r}, "
                     f"cost_model_version={record.cost_model_version!r}) "
-                    "already exists in the settlement ledger"
+                    "already settled in the settlement ledger"
                 ),
             )
 

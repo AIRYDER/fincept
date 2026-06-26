@@ -23,6 +23,7 @@ members = [
     "services/jobs",
     "services/strategy_host",
     "services/quant_foundry",
+    "services/settlements",
 ]
 
 [tool.uv.sources]
@@ -40,6 +41,7 @@ oms = { workspace = true }
 orchestrator = { workspace = true }
 backtester = { workspace = true }
 strategy_host = { workspace = true }
+settlements = { workspace = true }
 
 [dependency-groups]
 dev = [
