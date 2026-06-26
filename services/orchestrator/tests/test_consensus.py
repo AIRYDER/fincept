@@ -151,3 +151,107 @@ def test_some_agents_stale_others_fresh_returns_only_fresh() -> None:
     assert out is not None
     assert out.contributing_agents == ("new",)
     assert out.direction == -1.0
+
+
+# ---------------------------------------------------------------------------
+# Eviction
+# ---------------------------------------------------------------------------
+
+
+def test_evict_stale_removes_stale_entries() -> None:
+    """evict_stale() should remove stale predictions from the cache."""
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)  # 10s
+    cb.update(_pred(agent_id="old", ts_event=0, horizon_ns=0))
+    cb.update(_pred(agent_id="new", ts_event=50_000_000_000, horizon_ns=0))
+
+    # Before eviction: 2 entries cached.
+    assert cb.cached_entries == 2
+
+    evicted = cb.evict_stale(now_ns=55_000_000_000)
+    assert evicted == 1  # Only "old" is stale.
+    assert cb.cached_entries == 1
+    assert cb.total_evicted == 1
+
+
+def test_evict_stale_removes_empty_symbols() -> None:
+    """When all agents for a symbol are stale, the symbol key is removed."""
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)
+    cb.update(_pred(agent_id="a1", symbol="BTC-USD", ts_event=0, horizon_ns=0))
+    cb.update(_pred(agent_id="a2", symbol="ETH-USD", ts_event=50_000_000_000, horizon_ns=0))
+
+    # At now=55s, BTC-USD's only agent is stale.
+    evicted = cb.evict_stale(now_ns=55_000_000_000)
+    assert evicted == 1
+    assert cb.cached_symbols == 1  # Only ETH-USD remains.
+    assert "BTC-USD" not in cb._latest
+
+
+def test_evict_stale_with_no_entries_returns_zero() -> None:
+    cb = ConsensusBuilder()
+    assert cb.evict_stale(now_ns=1_000_000_000) == 0
+    assert cb.total_evicted == 0
+
+
+def test_evict_stale_preserves_fresh_entries() -> None:
+    """Fresh entries should not be evicted."""
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)
+    cb.update(_pred(agent_id="fresh", ts_event=50_000_000_000, horizon_ns=0))
+    evicted = cb.evict_stale(now_ns=55_000_000_000)
+    assert evicted == 0
+    assert cb.cached_entries == 1
+
+
+def test_evict_stale_with_horizon_based_staleness() -> None:
+    """Predictions with explicit horizons should be evicted when expired."""
+    cb = ConsensusBuilder()
+    cb.update(_pred(agent_id="h", ts_event=0, horizon_ns=5_000_000_000))  # 5s horizon
+    # At 6s, past horizon -> stale.
+    evicted = cb.evict_stale(now_ns=6_000_000_000)
+    assert evicted == 1
+    assert cb.cached_entries == 0
+
+
+def test_evict_stale_accumulates_total_count() -> None:
+    """total_evicted should accumulate across multiple evict_stale calls."""
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)
+    cb.update(_pred(agent_id="a1", symbol="BTC", ts_event=0, horizon_ns=0))
+    cb.update(_pred(agent_id="a2", symbol="ETH", ts_event=0, horizon_ns=0))
+
+    cb.evict_stale(now_ns=55_000_000_000)
+    assert cb.total_evicted == 2
+
+    cb.update(_pred(agent_id="a3", symbol="BTC", ts_event=0, horizon_ns=0))
+    cb.evict_stale(now_ns=55_000_000_000)
+    assert cb.total_evicted == 3
+
+
+def test_cached_properties() -> None:
+    """cached_symbols and cached_entries should report accurate counts."""
+    cb = ConsensusBuilder()
+    assert cb.cached_symbols == 0
+    assert cb.cached_entries == 0
+
+    cb.update(_pred(agent_id="a1", symbol="BTC-USD"))
+    cb.update(_pred(agent_id="a2", symbol="BTC-USD"))
+    cb.update(_pred(agent_id="a1", symbol="ETH-USD"))
+
+    assert cb.cached_symbols == 2
+    assert cb.cached_entries == 3
+
+
+def test_eviction_does_not_affect_consensus_correctness() -> None:
+    """consensus() should return the same result before and after eviction
+    for fresh entries (eviction only removes stale entries, which
+    consensus() already filters)."""
+    cb = ConsensusBuilder(max_age_ns=10_000_000_000)
+    cb.update(_pred(agent_id="old", direction=1.0, ts_event=0, horizon_ns=0))
+    cb.update(_pred(agent_id="new", direction=-1.0, ts_event=50_000_000_000, horizon_ns=0))
+
+    before = cb.consensus("BTC-USD", now_ns=55_000_000_000)
+    cb.evict_stale(now_ns=55_000_000_000)
+    after = cb.consensus("BTC-USD", now_ns=55_000_000_000)
+
+    assert before is not None
+    assert after is not None
+    assert before.direction == after.direction
+    assert before.contributing_agents == after.contributing_agents

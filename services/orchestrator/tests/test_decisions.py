@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
+import fakeredis.aioredis
 import pytest
 
 from fincept_core.schemas import OrderType, Side, TimeInForce, Venue
-from orchestrator.decisions import TargetState, build_decision_and_intent
+from orchestrator.decisions import TARGET_STATE_KEY, TargetState, build_decision_and_intent
 
 
 # ---------------------------------------------------------------------------
@@ -167,3 +169,118 @@ def test_quantity_quantized_to_eight_decimals() -> None:
     )
     # 1/30000 = 0.00003333...; quantize to 8 decimals -> 0.00003333
     assert intent.quantity == Decimal("0.00003333")
+
+
+# ---------------------------------------------------------------------------
+# TargetState Redis persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def redis() -> Any:
+    r = fakeredis.aioredis.FakeRedis()
+    yield r
+    await r.aclose()
+
+
+@pytest.mark.asyncio
+async def test_hydrate_returns_empty_when_no_data(redis: Any) -> None:
+    st = TargetState(redis=redis)
+    await st.hydrate()
+    assert st.targets == {}
+    assert st.known_symbols() == set()
+
+
+@pytest.mark.asyncio
+async def test_update_persists_to_redis(redis: Any) -> None:
+    """update() should persist to Redis so a restart can hydrate."""
+    import asyncio
+
+    st = TargetState(redis=redis)
+    st.update("BTC-USD", Decimal("5000"))
+    st.update("ETH-USD", Decimal("3000"))
+    # The persist is fire-and-forget; let the event loop process it.
+    await asyncio.sleep(0.05)
+
+    # Verify the data is in Redis.
+    raw = await redis.hgetall(TARGET_STATE_KEY)
+    assert b"BTC-USD" in raw or "BTC-USD" in raw
+    # Hydrate a new instance from the same Redis.
+    st2 = TargetState(redis=redis)
+    await st2.hydrate()
+    assert st2.targets["BTC-USD"] == Decimal("5000")
+    assert st2.targets["ETH-USD"] == Decimal("3000")
+
+
+@pytest.mark.asyncio
+async def test_clear_removes_from_redis(redis: Any) -> None:
+    import asyncio
+
+    st = TargetState(redis=redis)
+    st.update("BTC-USD", Decimal("5000"))
+    st.update("ETH-USD", Decimal("3000"))
+    await asyncio.sleep(0.05)
+    st.clear("BTC-USD")
+    await asyncio.sleep(0.05)
+
+    st2 = TargetState(redis=redis)
+    await st2.hydrate()
+    assert "BTC-USD" not in st2.targets
+    assert "ETH-USD" in st2.targets
+
+
+@pytest.mark.asyncio
+async def test_hydrate_handles_redis_failure() -> None:
+    """If Redis fails during hydrate, targets stays empty (safe default)."""
+
+    class FailingRedis:
+        async def hgetall(self, *args, **kwargs):
+            raise ConnectionError("redis down")
+
+    st = TargetState(redis=FailingRedis())  # type: ignore[arg-type]
+    await st.hydrate()
+    assert st.targets == {}
+
+
+@pytest.mark.asyncio
+async def test_hydrate_skips_corrupt_entries(redis: Any) -> None:
+    """Corrupt entries in Redis should be skipped, not crash."""
+    await redis.hset(TARGET_STATE_KEY, "BTC-USD", "5000.00")
+    await redis.hset(TARGET_STATE_KEY, "BAD", "not-a-decimal")
+
+    st = TargetState(redis=redis)
+    await st.hydrate()
+    assert "BTC-USD" in st.targets
+    assert "BAD" not in st.targets
+
+
+@pytest.mark.asyncio
+async def test_restart_simulation(redis: Any) -> None:
+    """Simulate: update targets → restart → hydrate → deltas preserved."""
+    import asyncio
+
+    # Phase 1: "first orchestrator instance" updates targets.
+    st1 = TargetState(redis=redis)
+    st1.update("BTC-USD", Decimal("5000"))
+    st1.update("ETH-USD", Decimal("-2000"))
+    await asyncio.sleep(0.05)
+
+    # Phase 2: "restart" — new instance hydrates from Redis.
+    st2 = TargetState(redis=redis)
+    await st2.hydrate()
+
+    # Deltas should be zero for the same targets.
+    assert st2.delta("BTC-USD", Decimal("5000")) == Decimal("0")
+    assert st2.delta("ETH-USD", Decimal("-2000")) == Decimal("0")
+    # Delta for a new target should be the difference.
+    assert st2.delta("BTC-USD", Decimal("8000")) == Decimal("3000")
+
+
+@pytest.mark.asyncio
+async def test_no_redis_behaves_as_in_memory() -> None:
+    """Without redis, TargetState should behave exactly as before."""
+    st = TargetState()
+    st.update("BTC-USD", Decimal("5000"))
+    assert st.delta("BTC-USD", Decimal("8000")) == Decimal("3000")
+    st.clear("BTC-USD")
+    assert st.delta("BTC-USD", Decimal("100")) == Decimal("100")

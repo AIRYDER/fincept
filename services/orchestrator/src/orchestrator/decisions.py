@@ -3,13 +3,22 @@ orchestrator.decisions - target rebalance -> (Decision, OrderIntent).
 
 Two pieces:
 
-  ``TargetState``               In-memory dict of last-emitted signed
+  ``TargetState``               Dict of last-emitted signed
                                 target notional per symbol.  The
                                 router asks for ``delta(symbol, new)``
                                 to get the rebalance amount; if it
                                 exceeds the deadband, the router emits
                                 an order and calls ``update`` to record
                                 the new high-water mark.
+
+                                When a Redis client is provided, the
+                                state is persisted to Redis key
+                                ``orchestrator:target_state`` (a hash
+                                with symbol -> target_str).  On
+                                construction, the state is hydrated
+                                from Redis so the orchestrator doesn't
+                                re-emit a burst of order intents after
+                                restart.
 
   ``build_decision_and_intent`` Pure function: given a delta in USD
                                 plus a reference price, builds the
@@ -36,8 +45,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
+
+from redis.asyncio import Redis
 
 from fincept_core.ids import new_id
+from fincept_core.logging import get_logger
 from fincept_core.schemas import (
     Decision,
     OrderIntent,
@@ -47,26 +60,128 @@ from fincept_core.schemas import (
     Venue,
 )
 
+log = get_logger(__name__)
+
 DEFAULT_QUANTITY_QUANTUM = Decimal("0.00000001")  # 1 satoshi-equivalent
+
+TARGET_STATE_KEY = "orchestrator:target_state"
 
 
 @dataclass
 class TargetState:
-    """In-memory last-emitted target notional per symbol."""
+    """Last-emitted target notional per symbol, optionally persisted to Redis.
+
+    When ``redis`` is provided:
+      - On construction, call ``hydrate()`` to load from Redis.
+      - On every ``update()`` and ``clear()``, the change is persisted.
+      - If Redis fails, the in-memory state is still correct.
+
+    When ``redis`` is None (e.g. in tests):
+      - Behaves as the old in-memory-only implementation.
+    """
 
     targets: dict[str, Decimal] = field(default_factory=dict)
+    redis: Redis[Any] | None = None
+
+    async def hydrate(self) -> None:
+        """Load targets from Redis.  Call once after construction.
+
+        If Redis fails, targets stays empty (same as old in-memory
+        behavior — the orchestrator will re-emit intents for all
+        symbols on the next prediction, which is the safe direction).
+        """
+        if self.redis is None:
+            return
+        try:
+            raw = await self.redis.hgetall(TARGET_STATE_KEY)
+            if not raw:
+                return
+            for symbol_bytes, target_str in raw.items():
+                symbol = (
+                    symbol_bytes.decode()
+                    if isinstance(symbol_bytes, bytes)
+                    else str(symbol_bytes)
+                )
+                if isinstance(target_str, bytes):
+                    target_str = target_str.decode()
+                try:
+                    self.targets[symbol] = Decimal(target_str)
+                except Exception:
+                    log.warning(
+                        "orchestrator.target_state.hydrate_skip",
+                        symbol=symbol,
+                        raw=target_str,
+                    )
+            if self.targets:
+                log.info(
+                    "orchestrator.target_state.hydrated",
+                    count=len(self.targets),
+                    symbols=list(self.targets),
+                )
+        except Exception as exc:
+            log.warning(
+                "orchestrator.target_state.hydrate_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def delta(self, symbol: str, new_target: Decimal) -> Decimal:
         return new_target - self.targets.get(symbol, Decimal(0))
 
     def update(self, symbol: str, new_target: Decimal) -> None:
         self.targets[symbol] = new_target
+        if self.redis is not None:
+            self._persist(symbol, str(new_target))
 
     def clear(self, symbol: str) -> None:
         self.targets.pop(symbol, None)
+        if self.redis is not None:
+            self._persist_delete(symbol)
 
     def known_symbols(self) -> set[str]:
         return set(self.targets)
+
+    def _persist(self, symbol: str, target_str: str) -> None:
+        """Best-effort async persist — fire and forget.
+
+        We create a task instead of awaiting because ``update`` is
+        sync.  If the task fails, a warning is logged.
+        """
+        import asyncio
+
+        async def _do_persist() -> None:
+            try:
+                await self.redis.hset(TARGET_STATE_KEY, symbol, target_str)  # type: ignore[union-attr]
+            except Exception as exc:
+                log.warning(
+                    "orchestrator.target_state.persist_failed",
+                    symbol=symbol,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_do_persist())
+        except RuntimeError:
+            pass  # No running loop (e.g. in tests) — skip persistence.
+
+    def _persist_delete(self, symbol: str) -> None:
+        import asyncio
+
+        async def _do_delete() -> None:
+            try:
+                await self.redis.hdel(TARGET_STATE_KEY, symbol)  # type: ignore[union-attr]
+            except Exception as exc:
+                log.warning(
+                    "orchestrator.target_state.delete_failed",
+                    symbol=symbol,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_do_delete())
+        except RuntimeError:
+            pass
 
 
 def build_decision_and_intent(

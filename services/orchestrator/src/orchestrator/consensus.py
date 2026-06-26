@@ -62,12 +62,18 @@ class ConsensusBuilder:
                      horizon.  Defaults to 5 minutes - generous enough
                      for 1m-cadence agents to survive a brief consumer
                      hiccup, tight enough to drop a crashed agent.
+
+    Eviction: stale predictions are filtered on read (in ``consensus()``)
+    but also periodically evicted from memory via ``evict_stale()`` to
+    prevent unbounded growth of the ``_latest`` dict when agents crash
+    or symbols are removed from the universe.
     """
 
     def __init__(self, *, max_age_ns: int = 5 * 60 * 1_000_000_000) -> None:
         self._max_age_ns = max_age_ns
         # symbol -> agent_id -> _Cached
         self._latest: dict[str, dict[str, _Cached]] = {}
+        self._evicted_count = 0
 
     def update(self, prediction: Prediction) -> None:
         """Record the latest prediction for (agent, symbol)."""
@@ -112,6 +118,49 @@ class ConsensusBuilder:
             horizon_ns=horizon_ns,
             contributing_agents=tuple(sorted(a for a, _ in fresh)),
         )
+
+    def evict_stale(self, *, now_ns: int) -> int:
+        """Remove all stale predictions from the in-memory cache.
+
+        Returns the number of entries evicted.  Call periodically
+        (e.g. once per consume loop iteration) to prevent unbounded
+        growth when agents crash or symbols leave the universe.
+
+        This is a cleanup operation — ``consensus()`` already filters
+        stale entries on read, so eviction only affects memory usage,
+        not correctness.
+        """
+        evicted = 0
+        empty_symbols: list[str] = []
+        for symbol, per_symbol in self._latest.items():
+            stale_agents: list[str] = []
+            for agent_id, cached in per_symbol.items():
+                if self._is_stale(cached, now_ns=now_ns):
+                    stale_agents.append(agent_id)
+            for agent_id in stale_agents:
+                del per_symbol[agent_id]
+                evicted += 1
+            if not per_symbol:
+                empty_symbols.append(symbol)
+        for symbol in empty_symbols:
+            del self._latest[symbol]
+        self._evicted_count += evicted
+        return evicted
+
+    @property
+    def total_evicted(self) -> int:
+        """Total entries evicted since construction (for monitoring)."""
+        return self._evicted_count
+
+    @property
+    def cached_symbols(self) -> int:
+        """Number of symbols currently in the cache."""
+        return len(self._latest)
+
+    @property
+    def cached_entries(self) -> int:
+        """Total cached predictions across all symbols."""
+        return sum(len(per) for per in self._latest.values())
 
     def _is_stale(self, cached: _Cached, *, now_ns: int) -> bool:
         # Positive horizons are the signal's explicit validity contract.

@@ -63,7 +63,7 @@ def _make_price_handler(prices: LivePrices) -> Any:
     return handler
 
 
-def _make_prediction_handler(router: OrchestratorRouter) -> Any:
+def _make_prediction_handler(router: OrchestratorRouter, *, consensus: ConsensusBuilder) -> Any:
     async def handler(event: Event) -> None:
         # Exact event-type match, like the OMS - guards against future
         # signal types accidentally landing on STREAM_SIG_PREDICT.
@@ -73,6 +73,8 @@ def _make_prediction_handler(router: OrchestratorRouter) -> Any:
         if not isinstance(payload, Prediction):
             return
         await router.on_prediction(payload)
+        # Evict stale predictions to prevent unbounded cache growth.
+        consensus.evict_stale(now_ns=payload.ts_event)
 
     return handler
 
@@ -180,7 +182,8 @@ async def run(stop: asyncio.Event) -> None:
     producer = Producer(redis)
     prices = LivePrices()
     consensus = ConsensusBuilder()
-    target_state = TargetState()
+    target_state = TargetState(redis=redis)
+    await target_state.hydrate()
     router = OrchestratorRouter(
         producer=producer,
         prices=prices,
@@ -212,7 +215,7 @@ async def run(stop: asyncio.Event) -> None:
             streams=[STREAM_SIG_PREDICT],
             group=CONSUMER_GROUP,
             consumer_name="orchestrator-predictions",
-            handler=_make_prediction_handler(router),
+            handler=_make_prediction_handler(router, consensus=consensus),
         )
     )
     sent_task = asyncio.create_task(
