@@ -86,6 +86,7 @@ from fincept_core.schemas import (
     Position,
 )
 from fincept_core.strategy_config import StrategyConfig
+from strategy_host.outstanding_store import OutstandingOrderStore
 from strategy_host.model_resolver import resolve_active_model_dir
 from strategy_host.runtime import LiveStrategyContext
 
@@ -129,6 +130,7 @@ async def _publish_pending(
     ctx: LiveStrategyContext,
     producer: Producer,
     outstanding: dict[str, OrderIntent],
+    outstanding_store: OutstandingOrderStore | None,
     bound_log: Any,
 ) -> None:
     """Drain ``ctx``'s submit queue and publish each intent.
@@ -137,12 +139,17 @@ async def _publish_pending(
     that ``order_id`` can be attributed back to this strategy.  We
     publish in submission order so partial-fill state machines
     (GBMStrategy._pending_buys) line up with the OMS's own ordering.
+
+    If ``outstanding_store`` is provided, each intent is also persisted
+    to Redis so the ledger survives restarts.
     """
     pending = ctx.drain_submits()
     if not pending:
         return
     for intent in pending:
         outstanding[intent.order_id] = intent
+        if outstanding_store is not None:
+            await outstanding_store.put(intent.order_id, intent)
         try:
             await producer.publish(
                 STREAM_OUTGOING_ORDERS,
@@ -181,6 +188,7 @@ def _make_event_handler(
     ctx: LiveStrategyContext,
     producer: Producer,
     outstanding: dict[str, OrderIntent],
+    outstanding_store: OutstandingOrderStore | None,
     bound_log: Any,
     symbols: set[str],
 ) -> Any:
@@ -202,7 +210,7 @@ def _make_event_handler(
                 strategy.on_bar(ctx, payload)
             except Exception as exc:
                 _hook_failed(bound_log, "on_bar", config.strategy_id, exc)
-            await _publish_pending(ctx, producer, outstanding, bound_log)
+            await _publish_pending(ctx, producer, outstanding, outstanding_store, bound_log)
             return
         if isinstance(payload, Position):
             # Filter to this strategy.  ``update_position`` also
@@ -224,7 +232,7 @@ def _make_event_handler(
                 _hook_failed(bound_log, "on_fill", config.strategy_id, exc)
             # The strategy may submit follow-up orders inside on_fill
             # (e.g., a stop-flat after a fill arrives); drain those.
-            await _publish_pending(ctx, producer, outstanding, bound_log)
+            await _publish_pending(ctx, producer, outstanding, outstanding_store, bound_log)
             # We deliberately leave the OrderIntent in ``outstanding``
             # because partial fills mean more Fill events for the
             # same ``order_id`` are still possible.  A future cleanup
@@ -407,7 +415,10 @@ async def run_strategy(
     ctx = LiveStrategyContext(strategy_id=config.strategy_id, log=bound_log)
     producer = Producer(redis)
     consumer = Consumer(redis)
-    outstanding: dict[str, OrderIntent] = {}
+    outstanding_store = OutstandingOrderStore(redis, config.strategy_id)
+    # Hydrate the outstanding-order ledger from Redis so fills for
+    # orders submitted before a restart are still attributed correctly.
+    outstanding = await outstanding_store.hydrate()
     symbols = set(config.symbols)
 
     # ---- on_start ----
@@ -424,6 +435,7 @@ async def run_strategy(
         ctx=ctx,
         producer=producer,
         outstanding=outstanding,
+        outstanding_store=outstanding_store,
         bound_log=bound_log,
         symbols=symbols,
     )
