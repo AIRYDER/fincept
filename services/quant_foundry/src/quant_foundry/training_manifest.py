@@ -60,6 +60,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from fincept_core.datasets.cv import (
+    derive_walk_forward_window as _canonical_derive_walk_forward_window,
+)
+
 # Try to import the alpha_genome allowlists (preferred). Fall back to a
 # small literal allowlist if the module is not yet importable (e.g. older
 # deployment where the lab is not enabled).
@@ -359,32 +363,29 @@ def derive_walk_forward_window(
 
     The label horizon acts as an embargo between consecutive windows so a
     training row's label does not overlap validation or test.
+
+    This is a thin wrapper around the canonical
+    ``fincept_core.datasets.cv.derive_walk_forward_window`` so the
+    quant_foundry manifest builder and the rest of the platform agree on
+    the walk-forward window math. The canonical result is re-wrapped into
+    the local :class:`WalkForwardWindow` dataclass to preserve the
+    public ``quant_foundry.training_manifest`` import surface.
     """
-    if label_horizon_ns <= 0:
-        raise ValueError("label_horizon_ns must be > 0")
-    if train_window_ns <= 0 or val_window_ns <= 0 or test_window_ns <= 0:
-        raise ValueError("all window lengths must be > 0")
-
-    test_end = as_of_ts
-    test_start = test_end - test_window_ns
-    val_end = test_start - label_horizon_ns
-    val_start = val_end - val_window_ns
-    train_end = val_start - label_horizon_ns
-    train_start = train_end - train_window_ns
-
-    if train_start < 0:
-        raise ValueError(
-            "train_window_ns is too long for the given as_of_ts; "
-            f"train_start would be {train_start} (< 0)"
-        )
-    return WalkForwardWindow(
-        train_start=train_start,
-        train_end=train_end,
-        val_start=val_start,
-        val_end=val_end,
-        test_start=test_start,
-        test_end=test_end,
+    canonical = _canonical_derive_walk_forward_window(
+        train_window_ns=train_window_ns,
+        val_window_ns=val_window_ns,
+        test_window_ns=test_window_ns,
         label_horizon_ns=label_horizon_ns,
+        as_of_ts=as_of_ts,
+    )
+    return WalkForwardWindow(
+        train_start=canonical.train_start,
+        train_end=canonical.train_end,
+        val_start=canonical.val_start,
+        val_end=canonical.val_end,
+        test_start=canonical.test_start,
+        test_end=canonical.test_end,
+        label_horizon_ns=canonical.label_horizon_ns,
     )
 
 
