@@ -224,7 +224,7 @@ def _make_sim_intent_handler(
 async def _run_sim(stop: asyncio.Event, redis: Redis[Any], producer: Producer) -> None:
     prices = LivePrices()
     filler = PaperFiller()
-    kill = KillSwitchState()
+    kill = KillSwitchState(redis=redis)
     store = PositionStore(redis)
     price_consumer = Consumer(redis)
     alert_consumer = Consumer(redis)
@@ -324,7 +324,7 @@ async def _run_alpaca(stop: asyncio.Event, redis: Redis[Any], producer: Producer
 
     pending: dict[str, PendingOrder] = {}
     prices = LivePrices()
-    kill = KillSwitchState()
+    kill = KillSwitchState(redis=redis)
     store = PositionStore(redis)
 
     async with httpx.AsyncClient(

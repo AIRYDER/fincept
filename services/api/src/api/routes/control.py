@@ -52,7 +52,7 @@ _FEATURE_SERVICES: dict[str, list[str]] = {
 _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 _SERVICE_FRESH_SEC = 15
 _FEATURE_LAST_CONTROL_TTL_SEC = 24 * 60 * 60
-_KILL_SWITCH_STATE_KEY = "control:kill_switch:state"
+from risk.state import KILL_SWITCH_STATE_KEY as _KILL_SWITCH_STATE_KEY  # noqa: E402
 
 
 def _script_path(name: str) -> Path:
