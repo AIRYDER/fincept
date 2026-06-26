@@ -73,11 +73,11 @@ variable "az_count" {
 
 variable "ecr_repositories" {
   type = list(object({
-    name                  = string
-    image_tag_mutability  = optional(string, "IMMUTABLE")
-    scan_on_push          = optional(bool, true)
-    keep_tagged_count     = optional(number, 10)
-    untagged_expire_days  = optional(number, 7)
+    name                 = string
+    image_tag_mutability = optional(string, "IMMUTABLE")
+    scan_on_push         = optional(bool, true)
+    keep_tagged_count    = optional(number, 10)
+    untagged_expire_days = optional(number, 7)
   }))
   description = "ECR repositories to provision for Fincept services."
   default = [
@@ -224,18 +224,18 @@ variable "elasticache_engine_version" {
 
 variable "s3_buckets" {
   type = list(object({
-    name_suffix        = string
-    purpose            = string
-    enable_object_lock = optional(bool, false)
-    lifecycle_to_glacier_days = optional(number, 0)  # 0 = no transition (audit buckets)
+    name_suffix               = string
+    purpose                   = string
+    enable_object_lock        = optional(bool, false)
+    lifecycle_to_glacier_days = optional(number, 0) # 0 = no transition (audit buckets)
   }))
   description = "S3 buckets for Fincept durable storage."
   default = [
-    { name_suffix = "receipts",   purpose = "verification receipts (JSONL, immutable)",  enable_object_lock = true,  lifecycle_to_glacier_days = 0 },
-    { name_suffix = "dossiers",   purpose = "model dossiers (JSONL, immutable)",          enable_object_lock = true,  lifecycle_to_glacier_days = 0 },
-    { name_suffix = "settlements", purpose = "settlement records (JSONL, immutable)",    enable_object_lock = true,  lifecycle_to_glacier_days = 0 },
-    { name_suffix = "artifacts",  purpose = "trained model artifacts (binary, hashed)",   enable_object_lock = false, lifecycle_to_glacier_days = 90 },
-    { name_suffix = "tfstate",    purpose = "Terraform remote state (locked)",           enable_object_lock = true,  lifecycle_to_glacier_days = 0 },
+    { name_suffix = "receipts", purpose = "verification receipts (JSONL, immutable)", enable_object_lock = true, lifecycle_to_glacier_days = 0 },
+    { name_suffix = "dossiers", purpose = "model dossiers (JSONL, immutable)", enable_object_lock = true, lifecycle_to_glacier_days = 0 },
+    { name_suffix = "settlements", purpose = "settlement records (JSONL, immutable)", enable_object_lock = true, lifecycle_to_glacier_days = 0 },
+    { name_suffix = "artifacts", purpose = "trained model artifacts (binary, hashed)", enable_object_lock = false, lifecycle_to_glacier_days = 90 },
+    { name_suffix = "tfstate", purpose = "Terraform remote state (locked)", enable_object_lock = true, lifecycle_to_glacier_days = 0 },
   ]
 }
 
@@ -243,18 +243,18 @@ variable "s3_buckets" {
 
 variable "secrets" {
   type = list(object({
-    name        = string
-    description = string
-    initial_value = optional(string, "")  # only used by operator at apply time via TF_VAR_* env; never committed
+    name          = string
+    description   = string
+    initial_value = optional(string, "") # only used by operator at apply time via TF_VAR_* env; never committed
   }))
   description = "Secrets to provision in AWS Secrets Manager (placeholders; values injected at apply time)."
   default = [
-    { name = "fincept/callback-secret",   description = "Quant Foundry HMAC callback secret" },
-    { name = "fincept/jwt-signing-key",   description = "API JWT signing key" },
-    { name = "fincept/runpod-api-key",    description = "RunPod serverless API key" },
-    { name = "fincept/db-password",       description = "RDS master password (initial)" },
-    { name = "fincept/redis-auth-token",  description = "ElastiCache auth token" },
-    { name = "fincept/openai-api-key",    description = "OpenAI API key (portfolio reports)" },
+    { name = "fincept/callback-secret", description = "Quant Foundry HMAC callback secret" },
+    { name = "fincept/jwt-signing-key", description = "API JWT signing key" },
+    { name = "fincept/runpod-api-key", description = "RunPod serverless API key" },
+    { name = "fincept/db-password", description = "RDS master password (initial)" },
+    { name = "fincept/redis-auth-token", description = "ElastiCache auth token" },
+    { name = "fincept/openai-api-key", description = "OpenAI API key (portfolio reports)" },
     { name = "fincept/anthropic-api-key", description = "Anthropic API key (portfolio reports)" },
   ]
   sensitive = true

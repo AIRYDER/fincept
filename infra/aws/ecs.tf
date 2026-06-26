@@ -43,10 +43,10 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 locals {
   ecs_task_secrets = [
     { name = "QUANT_FOUNDRY_CALLBACK_SECRET", valueFrom = aws_secretsmanager_secret.main["fincept/callback-secret"].arn },
-    { name = "JWT_SIGNING_KEY",              valueFrom = aws_secretsmanager_secret.main["fincept/jwt-signing-key"].arn },
-    { name = "RUNPOD_API_KEY",               valueFrom = aws_secretsmanager_secret.main["fincept/runpod-api-key"].arn },
-    { name = "DATABASE_URL",                 valueFrom = "${aws_secretsmanager_secret.main["fincept/db-password"].arn}::password::" },
-    { name = "REDIS_URL",                    valueFrom = aws_secretsmanager_secret.main["fincept/redis-auth-token"].arn },
+    { name = "JWT_SIGNING_KEY", valueFrom = aws_secretsmanager_secret.main["fincept/jwt-signing-key"].arn },
+    { name = "RUNPOD_API_KEY", valueFrom = aws_secretsmanager_secret.main["fincept/runpod-api-key"].arn },
+    { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.main["fincept/db-password"].arn}::password::" },
+    { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.main["fincept/redis-auth-token"].arn },
   ]
 }
 
@@ -77,7 +77,7 @@ resource "aws_ecs_task_definition" "api" {
 
       environment = [
         { name = "ENVIRONMENT", value = var.environment },
-        { name = "AWS_REGION",  value = var.aws_region },
+        { name = "AWS_REGION", value = var.aws_region },
       ]
 
       secrets = local.ecs_task_secrets
@@ -130,8 +130,8 @@ resource "aws_ecs_task_definition" "dashboard" {
       ]
 
       environment = [
-        { name = "ENVIRONMENT",          value = var.environment },
-        { name = "NEXT_PUBLIC_API_URL",  value = "https://${var.domain_name != "" ? var.domain_name : aws_lb.main.dns_name}/api" },
+        { name = "ENVIRONMENT", value = var.environment },
+        { name = "NEXT_PUBLIC_API_URL", value = "https://${var.domain_name != "" ? var.domain_name : aws_lb.main.dns_name}/api" },
       ]
 
       logConfiguration = {
@@ -183,7 +183,7 @@ resource "aws_ecs_task_definition" "orchestrator" {
 
       environment = [
         { name = "ENVIRONMENT", value = var.environment },
-        { name = "AWS_REGION",  value = var.aws_region },
+        { name = "AWS_REGION", value = var.aws_region },
       ]
 
       secrets = local.ecs_task_secrets

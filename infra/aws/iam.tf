@@ -95,9 +95,9 @@ data "aws_iam_policy_document" "ecs_task_s3" {
   }
 
   statement {
-    sid       = "ReceiptsObjectsReadWrite"
-    effect    = "Allow"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:GetObjectVersion"]
+    sid     = "ReceiptsObjectsReadWrite"
+    effect  = "Allow"
+    actions = ["s3:GetObject", "s3:PutObject", "s3:GetObjectVersion"]
     resources = [
       for b in keys(local.bucket_names) :
       "arn:aws:s3:::${local.bucket_names[b]}/*"

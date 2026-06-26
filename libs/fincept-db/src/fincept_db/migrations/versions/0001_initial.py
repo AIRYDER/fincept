@@ -121,12 +121,12 @@ def upgrade() -> None:
         "timescaledb.compress_segmentby = 'venue, symbol')"
     )
 
-    op.execute("SELECT add_compression_policy('trades', INTERVAL '7 days')")
-    op.execute("SELECT add_compression_policy('bars', INTERVAL '30 days')")
-    op.execute("SELECT add_compression_policy('book_deltas', INTERVAL '1 day')")
+    op.execute("SELECT add_compression_policy('trades', 604800000000000)")
+    op.execute("SELECT add_compression_policy('bars', 2592000000000000)")
+    op.execute("SELECT add_compression_policy('book_deltas', 86400000000000)")
 
-    op.execute("SELECT add_retention_policy('trades', INTERVAL '30 days')")
-    op.execute("SELECT add_retention_policy('book_deltas', INTERVAL '7 days')")
+    op.execute("SELECT add_retention_policy('trades', 2592000000000000)")
+    op.execute("SELECT add_retention_policy('book_deltas', 604800000000000)")
 
 
 def downgrade() -> None:

@@ -12,7 +12,7 @@ resource "aws_ecr_repository" "service" {
 
   name                 = "${local.name_prefix}-${each.value.name}"
   image_tag_mutability = each.value.image_tag_mutability
-  force_delete         = false  # production guardrail — refuse to delete repos with images
+  force_delete         = false # production guardrail — refuse to delete repos with images
 
   image_scanning_configuration {
     scan_on_push = each.value.scan_on_push

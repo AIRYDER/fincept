@@ -15,7 +15,7 @@ resource "aws_s3_bucket" "main" {
   for_each = { for b in var.s3_buckets : b.name_suffix => b }
 
   bucket        = local.bucket_names[each.key]
-  force_destroy = false  # production guardrail
+  force_destroy = false # production guardrail
 
   tags = merge(local.common_tags, {
     Name    = local.bucket_names[each.key]
@@ -38,14 +38,14 @@ resource "aws_s3_bucket_versioning" "main" {
 # --- Object lock (WORM) for audit buckets ---------------------------------
 
 resource "aws_s3_bucket_object_lock_configuration" "main" {
-  for_each = { for k, b in aws_s3_bucket.main : k => b if var.s3_buckets[index(var.s3_buckets.*.name_suffix, k)].enable_object_lock }
+  for_each = { for k, b in aws_s3_bucket.main : k => b if var.s3_buckets[index([for bucket in var.s3_buckets : bucket.name_suffix], k)].enable_object_lock }
 
   bucket = each.value.id
 
   rule {
     default_retention {
-      mode = "COMPLIANCE"  # cannot be overridden, even by root account
-      days = 365           # 1 year minimum retention for audit trail
+      mode = "COMPLIANCE" # cannot be overridden, even by root account
+      days = 365          # 1 year minimum retention for audit trail
     }
   }
 
@@ -114,13 +114,17 @@ resource "aws_s3_bucket_policy" "ssl_only" {
 # --- Lifecycle (artifacts → Glacier after 90 days) -----------------------
 
 resource "aws_s3_bucket_lifecycle_configuration" "main" {
-  for_each = { for k, b in var.s3_buckets : k => b if b.lifecycle_to_glacier_days > 0 }
+  for_each = { for b in var.s3_buckets : b.name_suffix => b if b.lifecycle_to_glacier_days > 0 }
 
   bucket = aws_s3_bucket.main[each.key].id
 
   rule {
     id     = "transition-to-glacier"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = each.value.lifecycle_to_glacier_days

@@ -103,7 +103,7 @@ output "ecs_service_names" {
 output "rds_endpoint" {
   description = "RDS endpoint (host:port)."
   value       = aws_db_instance.main.endpoint
-  sensitive   = false  # endpoint itself is not a secret; the password is
+  sensitive   = false # endpoint itself is not a secret; the password is
 }
 
 output "rds_database_name" {

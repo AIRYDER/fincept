@@ -20,12 +20,6 @@ locals {
     b.name_suffix => "${local.name_prefix}-${b.name_suffix}"
   }
 
-  # ECR repo names: lowercase + prefix.
-  ecr_repo_names = [
-    for r in var.ecr_repositories :
-    "${local.name_prefix}-${r.name}"
-  ]
-
   # AZ selection: take the first N AZs from the region.
   azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 
@@ -33,8 +27,8 @@ locals {
   #   /20 public  subnets (ALB only)
   #   /20 private subnets (ECS tasks)
   #   /20 isolated db subnets (RDS, ElastiCache) — no internet route
-  public_subnet_cidrs  = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, 0 + i)]
-  private_subnet_cidrs = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, 16 + i)]
+  public_subnet_cidrs   = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, 0 + i)]
+  private_subnet_cidrs  = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, 16 + i)]
   database_subnet_cidrs = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, 32 + i)]
 
   # Whether to manage Route53 + ACM for the domain.

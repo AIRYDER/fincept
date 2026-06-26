@@ -44,7 +44,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
 if ([string]::IsNullOrEmpty($OutDir)) {
-    $OutDir = Join-Path $RepoRoot "reports" "verification"
+    $OutDir = Join-Path (Join-Path $RepoRoot "reports") "verification"
 }
 if (-not (Test-Path $OutDir)) {
     New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
@@ -122,16 +122,16 @@ if ($SkipDashboard) {
 } else {
     Invoke-Check "dashboard:shadow-news-impact" `
         "npm run test:shadow-news-impact" `
-        { Set-Location (Join-Path $RepoRoot "apps" "dashboard"); npm run test:shadow-news-impact; Set-Location $RepoRoot }
+        { Set-Location (Join-Path (Join-Path $RepoRoot "apps") "dashboard"); npm run test:shadow-news-impact; Set-Location $RepoRoot }
     Invoke-Check "dashboard:source-health" `
         "npm run test:source-health" `
-        { Set-Location (Join-Path $RepoRoot "apps" "dashboard"); npm run test:source-health; Set-Location $RepoRoot }
+        { Set-Location (Join-Path (Join-Path $RepoRoot "apps") "dashboard"); npm run test:source-health; Set-Location $RepoRoot }
     Invoke-Check "dashboard:strategy-readiness" `
         "npm run test:strategy-readiness" `
-        { Set-Location (Join-Path $RepoRoot "apps" "dashboard"); npm run test:strategy-readiness; Set-Location $RepoRoot }
+        { Set-Location (Join-Path (Join-Path $RepoRoot "apps") "dashboard"); npm run test:strategy-readiness; Set-Location $RepoRoot }
     Invoke-Check "dashboard:tsc-noEmit" `
-        "pnpm --dir apps/dashboard exec tsc --noEmit --pretty false" `
-        { pnpm --dir apps/dashboard exec tsc --noEmit --pretty false }
+        "npm run typecheck" `
+        { Set-Location (Join-Path (Join-Path $RepoRoot "apps") "dashboard"); npm run typecheck; Set-Location $RepoRoot }
 }
 
 # --------------------------------------------------------------------------- #

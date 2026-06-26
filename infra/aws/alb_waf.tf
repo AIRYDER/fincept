@@ -279,7 +279,7 @@ resource "aws_wafv2_web_acl" "main" {
 
     statement {
       rate_based_statement {
-        limit              = 2000  # 100 req / 5 min normalized per the design doc
+        limit              = 2000 # 100 req / 5 min normalized per the design doc
         aggregate_key_type = "IP"
       }
     }

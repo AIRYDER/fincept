@@ -23,7 +23,7 @@ resource "aws_elasticache_replication_group" "main" {
   engine               = "valkey"
   engine_version       = var.elasticache_engine_version
   node_type            = var.elasticache_node_type
-  num_cache_clusters   = 2  # 1 primary + 1 replica (multi-AZ)
+  num_cache_clusters   = 2 # 1 primary + 1 replica (multi-AZ)
   port                 = 6379
 
   subnet_group_name          = aws_elasticache_subnet_group.main.name

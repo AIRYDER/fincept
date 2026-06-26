@@ -31,7 +31,7 @@ resource "aws_cloudwatch_log_group" "service" {
 # SNS topic for alarms (single operator email).
 resource "aws_sns_topic" "alarms" {
   name              = "${local.name_prefix}-alarms"
-  kms_master_key_id = aws_kms_key.secrets.id  # reuse secrets CMK; ops-only access
+  kms_master_key_id = aws_kms_key.secrets.id # reuse secrets CMK; ops-only access
 
   tags = local.common_tags
 }
@@ -44,10 +44,10 @@ resource "aws_cloudwatch_metric_alarm" "api_latency_p95" {
   alarm_description   = "API p95 latency > ${var.api_latency_p95_threshold_ms}ms"
   namespace           = "AWS/ECS"
   metric_name         = "TargetResponseTime"
-  statistic           = "p95"
+  extended_statistic  = "p95"
   period              = 300
   evaluation_periods  = 3
-  threshold           = var.api_latency_p95_threshold_ms / 1000.0  # metric is seconds
+  threshold           = var.api_latency_p95_threshold_ms / 1000.0 # metric is seconds
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
@@ -72,7 +72,7 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx_rate" {
   statistic           = "Sum"
   period              = 60
   evaluation_periods  = 5
-  threshold           = 10   # raw count; operators tune after first week of traffic
+  threshold           = 10 # raw count; operators tune after first week of traffic
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
@@ -100,7 +100,7 @@ resource "aws_cloudwatch_metric_alarm" "settlement_lag" {
   evaluation_periods  = 3
   threshold           = var.settlement_lag_seconds_threshold
   comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "breaching"  # missing metric means the orchestrator is down
+  treat_missing_data  = "breaching" # missing metric means the orchestrator is down
 
   alarm_actions = [aws_sns_topic.alarms.arn]
   ok_actions    = [aws_sns_topic.alarms.arn]
@@ -159,11 +159,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title  = "Settlement Lag (s)"
-          region = var.aws_region
+          title   = "Settlement Lag (s)"
+          region  = var.aws_region
           metrics = [["Fincept", "settlement_lag_seconds"]]
-          stat   = "Maximum"
-          period = 60
+          stat    = "Maximum"
+          period  = 60
         }
       },
       {
