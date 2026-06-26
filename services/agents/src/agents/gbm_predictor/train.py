@@ -52,6 +52,7 @@ import numpy as np
 import polars as pl
 
 from agents.gbm_predictor.features import FEATURES
+from fincept_core.datasets import make_folds
 
 
 def build_dataset(
@@ -176,15 +177,40 @@ def walk_forward_splits(
             f"insufficient rows for {n_folds} folds: need at least {n_folds + 1}, got {n_rows}"
         )
 
+    # Delegate the fold-position math to the shared CV utility
+    # (``fincept_core.datasets.cv.make_folds``).  We ask for ``n_folds``
+    # equal-size validation windows of ``fold_size`` bars with no
+    # inter-window purge or embargo -- the purge is applied per-fold
+    # between ``train_end`` and ``val_start`` during the translation
+    # below, and ``embargo_bars`` remains a no-op for the anchored
+    # expansion (training always starts at row 0).  Passing
+    # ``purge_bars=0`` / ``embargo_bars=0`` here keeps the canonical
+    # fold positions identical to the previous hand-rolled layout
+    # (contiguous validation windows at multiples of ``fold_size``).
+    folds = make_folds(
+        n_rows,
+        n_folds=n_folds,
+        train_min_bars=fold_size,
+        val_bars=fold_size,
+        purge_bars=0,
+        embargo_bars=0,
+    )
+
     splits: list[tuple[slice, slice]] = []
-    for i in range(n_folds):
-        val_start = (i + 1) * fold_size
-        val_end = val_start + fold_size if i < n_folds - 1 else n_rows
+    for fold in folds:
+        val_start = fold.val_start
+        # The last fold absorbs the remainder (n_rows % (n_folds + 1))
+        # exactly as the previous implementation did.
+        val_end = fold.val_end if fold.index < n_folds - 1 else n_rows
         train_end = val_start - purge_bars
         if train_end < min_train_rows or val_end <= val_start:
             continue
         # embargo_bars is reserved for sliding-window setups; for the
-        # anchored expansion we simply append.
+        # anchored expansion it has no effect on subsequent folds
+        # (training always starts at row 0).  The shared ``make_folds``
+        # accepts ``embargo_bars`` but we deliberately pass 0 above so
+        # the canonical fold positions are unaffected -- the trainer's
+        # local logic still ignores it (preserved behavior, not a bug).
         splits.append((slice(0, train_end), slice(val_start, val_end)))
     _ = embargo_bars  # silence "unused arg" lint; the contract keeps it.
     if not splits:
