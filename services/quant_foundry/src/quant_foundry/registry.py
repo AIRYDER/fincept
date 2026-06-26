@@ -167,3 +167,14 @@ class DossierRegistry:
         # content_hash unchanged (blocking_issues excluded from content hash) —
         # no need to update _by_hash.
         return updated
+
+    def update_status(self, model_id: str, status: DossierStatus) -> DossierRecord:
+        existing = self._records.get(model_id)
+        if existing is None:
+            raise KeyError(f"unknown model_id: {model_id}")
+
+        updated = existing.model_copy(update={"status": status})
+        self._append(updated)
+        self._records[model_id] = updated
+        self._by_hash[updated.content_hash] = model_id
+        return updated

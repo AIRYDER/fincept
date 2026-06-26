@@ -428,7 +428,7 @@ async def submit_promotion(
         )
     if result.get("error_code") == "invalid_target_level":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=result.get("detail", "invalid target level"),
         )
     return result
@@ -495,7 +495,7 @@ async def reject_promotion(
         )
     if result.get("error_code") == "invalid_rejection_reason":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=result.get("detail", "invalid rejection reason"),
         )
     return result

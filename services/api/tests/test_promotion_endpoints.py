@@ -78,11 +78,13 @@ def _write_settlements(base_dir: pathlib.Path, model_id: str, count: int) -> Non
     ledger_dir.mkdir(parents=True, exist_ok=True)
     path = ledger_dir / f"{model_id}.settlements.jsonl"
     now_ns = time.time_ns()
+    returns = [0.001 + i * 0.0001 for i in range(count)]
     with path.open("a", encoding="utf-8") as f:
         for i in range(count):
             rec = _settled_record(
                 prediction_id=f"{model_id}-pred-{i}",
                 model_id=model_id,
+                realized_net=returns[i % len(returns)],
                 settled_at_ns=now_ns - i * 1_000_000_000,
             )
             f.write(rec.to_json() + "\n")
@@ -197,7 +199,11 @@ async def test_submit_then_approve_flow(
     body = response.json()
     assert body["ok"] is True
     receipt = body["receipt"]
-    assert receipt["decision"] in ("approved", "rejected")
+    assert receipt["decision"] == "approved"
+    assert gw.dossier_registry().get("model-promo").status == DossierStatus.SHADOW_APPROVED
+    assert [d.model_id for d in gw.dossier_registry().list(
+        status=DossierStatus.SHADOW_APPROVED
+    )] == ["model-promo"]
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +391,9 @@ async def test_approve_with_insufficient_evidence_fails_closed(
     receipt = body["receipt"]
     assert receipt["decision"] == "rejected"
     assert receipt["rejection_reason"] == "insufficient_evidence"
+    assert gw.dossier_registry().get("model-few-evidence").status == (
+        DossierStatus.CANDIDATE
+    )
 
 
 # ---------------------------------------------------------------------------

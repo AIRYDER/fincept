@@ -792,6 +792,11 @@ class QuantFoundryGateway:
         gate = self.promotion_queue()._gate
         receipt = gate.evaluate(request=entry.request, evidence=entry.evidence)
         self.promotion_queue()._completed.append(receipt)
+        if receipt.decision.value == "approved":
+            self.dossier_registry().update_status(
+                entry.request.model_id,
+                entry.request.target_level,
+            )
         return receipt
 
     def _reject_specific_entry(

@@ -383,6 +383,32 @@ def test_registry_list_filters_by_status(tmp_path: pathlib.Path) -> None:
     assert len(rejected) == 1 and rejected[0].model_id == "gbm-v2"
 
 
+def test_registry_update_status_appends_new_version(tmp_path: pathlib.Path) -> None:
+    base = tmp_path / "qf-registry"
+    reg = DossierRegistry(base_dir=base)
+    artifact = ArtifactRecord(**_base_artifact_kwargs(tmp_path))
+    dossier = DossierRecord(**_base_dossier_kwargs(artifact))
+    registered = reg.register(dossier)
+
+    updated = reg.update_status(dossier.model_id, DossierStatus.SHADOW_APPROVED)
+
+    assert updated.model_id == dossier.model_id
+    assert updated.status == DossierStatus.SHADOW_APPROVED
+    assert updated.content_hash != registered.content_hash
+    assert reg.get(dossier.model_id).status == DossierStatus.SHADOW_APPROVED
+    shadow = reg.list(status=DossierStatus.SHADOW_APPROVED)
+    assert [d.model_id for d in shadow] == [dossier.model_id]
+
+    reloaded = DossierRegistry(base_dir=base)
+    assert reloaded.get(dossier.model_id).status == DossierStatus.SHADOW_APPROVED
+
+
+def test_registry_update_status_unknown_model(tmp_path: pathlib.Path) -> None:
+    reg = DossierRegistry(base_dir=tmp_path / "qf-registry")
+    with pytest.raises(KeyError, match=r"unknown|model_id"):
+        reg.update_status("nope", DossierStatus.SHADOW_APPROVED)
+
+
 def test_registry_get_by_hash(tmp_path: pathlib.Path) -> None:
     base = tmp_path / "qf-registry"
     reg = DossierRegistry(base_dir=base)
