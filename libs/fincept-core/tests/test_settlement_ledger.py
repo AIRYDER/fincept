@@ -504,6 +504,37 @@ def test_settled_is_terminal_rewrite_raises_duplicate(tmp_path: pathlib.Path) ->
     assert exc.value.code == "duplicate"
 
 
+def test_pending_then_settled_then_settled_raises_duplicate(
+    tmp_path: pathlib.Path,
+) -> None:
+    """(c2) pending_data -> settled -> settled raises duplicate.
+
+    Regression test for the ``_find`` first-match bug: when a
+    non-terminal row (pending_data) precedes a terminal row (settled)
+    for the same ``(prediction_id, cost_model_version)`` key, ``_find``
+    must return the **last** match (settled), not the first (pending).
+    Otherwise the terminal-row guard in ``append`` evaluates against
+    the pending row and a duplicate settled row is allowed through.
+    """
+    store = SettlementStore(root=tmp_path)
+    pending = _make_record(
+        prediction_id="pred-sm-c2",
+        status="pending_data",
+    )
+    store.append(pending, now_ns=NOW_NS)
+
+    settled = _make_record(
+        prediction_id="pred-sm-c2",
+        status="settled",
+        settled_at_ns=NOW_NS - 1,
+    )
+    store.append(settled, now_ns=NOW_NS)
+
+    with pytest.raises(SettlementError) as exc:
+        store.append(settled, now_ns=NOW_NS)
+    assert exc.value.code == "duplicate"
+
+
 def test_failed_is_terminal_same_cost_model_raises_duplicate(
     tmp_path: pathlib.Path,
 ) -> None:

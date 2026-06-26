@@ -366,14 +366,21 @@ class SettlementStore:
         prediction_id: str,
         cost_model_version: str,
     ) -> SettlementRecord | None:
-        """Return the existing record for the idempotency key, if any.
+        """Return the most recent record for the idempotency key, if any.
 
         Only scans the single agent file (the join key is scoped to the
         agent's own ledger) -- cheaper than the cross-file ``read``.
+
+        Returns the **last** matching record so that a terminal row
+        (settled/failed) that follows a non-terminal row (pending_data/
+        pending_time) is correctly detected by the duplicate guard in
+        :meth:`append`.  Returning the first match would miss the
+        terminal row and allow a duplicate settled row to be appended.
         """
         path = self._path(agent_id)
         if not path.is_file():
             return None
+        latest: SettlementRecord | None = None
         with path.open("r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -387,8 +394,8 @@ class SettlementStore:
                     rec.prediction_id == prediction_id
                     and rec.cost_model_version == cost_model_version
                 ):
-                    return rec
-        return None
+                    latest = rec
+        return latest
 
 
 __all__ = [
