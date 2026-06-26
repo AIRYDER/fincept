@@ -29,11 +29,17 @@ import pytest_asyncio
 from redis.asyncio import Redis
 
 from features.store import OnlineStore
+from fincept_core.datasets import FeatureSnapshotStore
 from fincept_core.prediction_log import PredictionLog
 from fincept_core.schemas import FeatureFrame, Prediction
 
 from agents.gbm_predictor import main as gbm_main
-from agents.gbm_predictor.features import FEATURES, FeatureHealth, load_live
+from agents.gbm_predictor.features import (
+    FEATURES,
+    FeatureHealth,
+    _compute_feature_schema_hash,
+    load_live,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -220,13 +226,26 @@ class _FakeAgent:
     """Stand-in for GBMPredictor that yields one Prediction then stops.
 
     Exposes ``last_feature_health`` (the attribute the publish loop
-    reads) so we can drive the sidecar write without a real model.
+    reads for the health sidecar) plus ``last_feature_vector``,
+    ``last_feature_frame_ts`` and ``_features`` (the attributes the
+    publish loop reads for the FeatureSnapshot sidecar) so we can drive
+    both sidecar writes without a real model.
     """
 
     agent_id = "gbm_predictor.v1"
 
-    def __init__(self, health: FeatureHealth) -> None:
+    def __init__(
+        self,
+        health: FeatureHealth,
+        *,
+        feature_vector: dict[str, float] | None = None,
+        feature_frame_ts: int | None = None,
+        feature_names: list[str] | None = None,
+    ) -> None:
         self.last_feature_health = health
+        self.last_feature_vector = feature_vector
+        self.last_feature_frame_ts = feature_frame_ts
+        self._features = feature_names if feature_names is not None else list(FEATURES)
 
     async def run(self) -> AsyncIterator[Prediction]:
         yield Prediction(
@@ -355,3 +374,178 @@ async def test_feature_health_write_failure_does_not_crash_inference(
     assert any(event == "feature_health_write_failed" for event, _ in warnings), (
         f"expected feature_health_write_failed warning, got: {warnings}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# FeatureSnapshot publish-loop integration                                     #
+# --------------------------------------------------------------------------- #
+
+
+def _fake_feature_vector() -> dict[str, float]:
+    """A simple feature vector keyed by the canonical feature names."""
+    return dict.fromkeys(FEATURES, 1.0)
+
+
+async def test_publish_loop_writes_feature_snapshot(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Happy path: one prediction -> one FeatureSnapshot on disk, joined
+    by prediction_id to the PredictionRow.  The snapshot's
+    ``decision_time_ns`` is the prediction's ``ts_event`` and the
+    feature row's ``ts`` is the frame's ``ts_event`` (which is <= the
+    prediction ts so the no-lookahead validator passes)."""
+    frame_ts = 1_699_999_000_000_000_000  # before the prediction ts
+    agent = _FakeAgent(
+        FeatureHealth(missing=[], defaulted=[], aliased=[]),
+        feature_vector=_fake_feature_vector(),
+        feature_frame_ts=frame_ts,
+    )
+    producer = _RecordingProducer()
+    prediction_log = PredictionLog(predictions_dir=tmp_path / "predictions")
+    snapshot_store = FeatureSnapshotStore(root=tmp_path / "feature_snapshots")
+
+    await gbm_main._publish_loop(
+        agent,  # type: ignore[arg-type]
+        producer,  # type: ignore[arg-type]
+        prediction_log=prediction_log,
+        feature_snapshot_store=snapshot_store,
+        model_name="gbm_predictor",
+    )
+
+    # Prediction was published + recorded.
+    assert len(producer.published) == 1
+    pred_rows = prediction_log.read(agent_id="gbm_predictor.v1")
+    assert len(pred_rows) == 1
+
+    # FeatureSnapshot was recorded and joins by prediction_id.
+    snapshots = snapshot_store.read_for_symbol(
+        "BTC-USD", agent_id="gbm_predictor.v1"
+    )
+    assert len(snapshots) == 1
+    snap = snapshots[0]
+    assert snap.decision_time_ns == 1_700_000_000_000_000_000
+    assert len(snap.rows) == 1
+    assert snap.rows[0].symbol == "BTC-USD"
+    assert snap.rows[0].ts == frame_ts
+    assert set(snap.rows[0].features.keys()) == set(FEATURES)
+    # feature_schema_hash is a 64-char hex SHA-256.
+    assert len(snap.feature_schema_hash) == 64
+    assert all(c in "0123456789abcdef" for c in snap.feature_schema_hash)
+
+
+async def test_publish_loop_skips_snapshot_when_no_feature_vector(
+    tmp_path: pathlib.Path,
+) -> None:
+    """If the agent exposes no last_feature_vector, no snapshot is
+    written but the prediction is still published + recorded."""
+    agent = _FakeAgent(
+        FeatureHealth(missing=[], defaulted=[], aliased=[]),
+        feature_vector=None,
+        feature_frame_ts=None,
+    )
+    producer = _RecordingProducer()
+    prediction_log = PredictionLog(predictions_dir=tmp_path / "predictions")
+    snapshot_store = FeatureSnapshotStore(root=tmp_path / "feature_snapshots")
+
+    await gbm_main._publish_loop(
+        agent,  # type: ignore[arg-type]
+        producer,  # type: ignore[arg-type]
+        prediction_log=prediction_log,
+        feature_snapshot_store=snapshot_store,
+        model_name="gbm_predictor",
+    )
+
+    assert len(producer.published) == 1
+    assert prediction_log.read(agent_id="gbm_predictor.v1")
+    assert snapshot_store.read_for_symbol("BTC-USD", agent_id="gbm_predictor.v1") == []
+
+
+async def test_feature_snapshot_write_failure_does_not_crash_inference(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failure path: when the snapshot store write raises, the publish
+    loop logs ``feature_snapshot_write_failed`` and still publishes +
+    records the prediction (inference is not broken)."""
+    agent = _FakeAgent(
+        FeatureHealth(missing=[], defaulted=[], aliased=[]),
+        feature_vector=_fake_feature_vector(),
+        feature_frame_ts=1_699_999_000_000_000_000,
+    )
+    producer = _RecordingProducer()
+    prediction_log = PredictionLog(predictions_dir=tmp_path / "predictions")
+
+    # Point the snapshot store at a path whose parent is a FILE, so the
+    # mkdir inside append_if_missing raises.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+    snapshot_store = FeatureSnapshotStore(root=blocker)
+
+    warnings: list[tuple[str, dict[str, Any]]] = []
+    orig_warning = gbm_main.log.warning
+
+    def fake_warning(event: str, **kw: Any) -> None:
+        warnings.append((event, kw))
+        orig_warning(event, **kw)
+
+    monkeypatch.setattr(gbm_main.log, "warning", fake_warning)
+
+    await gbm_main._publish_loop(
+        agent,  # type: ignore[arg-type]
+        producer,  # type: ignore[arg-type]
+        prediction_log=prediction_log,
+        feature_snapshot_store=snapshot_store,
+        model_name="gbm_predictor",
+    )
+
+    # Inference was NOT broken: prediction published + recorded.
+    assert len(producer.published) == 1
+    assert prediction_log.read(agent_id="gbm_predictor.v1")
+    # The failure was logged as feature_snapshot_write_failed.
+    assert any(
+        event == "feature_snapshot_write_failed" for event, _ in warnings
+    ), f"expected feature_snapshot_write_failed warning, got: {warnings}"
+
+
+def test_feature_schema_hash_is_deterministic() -> None:
+    """The same feature list (in any order) produces the same hash."""
+    hash_a = _compute_feature_schema_hash(list(FEATURES))
+    hash_b = _compute_feature_schema_hash(list(reversed(FEATURES)))
+    assert hash_a == hash_b
+    assert len(hash_a) == 64
+
+    # A different feature list produces a different hash.
+    different = list(FEATURES) + ["extra_feature"]
+    hash_c = _compute_feature_schema_hash(different)
+    assert hash_c != hash_a
+
+
+async def test_load_live_frame_ts_out_sink(store: OnlineStore) -> None:
+    """When ``frame_ts_out`` is provided, load_live appends the frame's
+    ts_event to the sink list so the caller can capture it without a
+    second Redis lookup."""
+    await store.put(_frame(**dict.fromkeys(FEATURES, 1.0)))
+
+    sink: list[int] = []
+    result = await load_live(
+        store,
+        "BTC-USD",
+        feature_names=FEATURES,
+        allow_compat_defaults=True,
+        frame_ts_out=sink,
+    )
+    assert result is not None
+    assert sink == [1_000]  # the _frame fixture uses ts_event=1_000
+
+
+async def test_load_live_frame_ts_out_untouched_on_miss(store: OnlineStore) -> None:
+    """When the frame is missing, the sink list is left untouched."""
+    sink: list[int] = []
+    result = await load_live(
+        store,
+        "BTC-USD",
+        feature_names=FEATURES,
+        frame_ts_out=sink,
+    )
+    assert result is None
+    assert sink == []

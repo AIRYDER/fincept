@@ -60,7 +60,10 @@ from fincept_core.tracing import configure_tracing
 
 from fincept_core.prediction_log import PredictionLog, PredictionRow, _validate_agent_id
 
+from fincept_core.datasets import FeatureRow, FeatureSnapshot, FeatureSnapshotStore
+
 from agents.gbm_predictor.infer import GBMPredictor
+from agents.gbm_predictor.features import _compute_feature_schema_hash
 
 log = get_logger(__name__)
 
@@ -371,6 +374,11 @@ async def run(
     # aliased.  Best-effort -- a write failure is logged and never
     # blocks the publish loop (see _publish_loop).
     feature_health_log = FeatureHealthLog()
+    # Feature-snapshot store: one FeatureSnapshot per emitted prediction
+    # recording the exact feature rows the agent saw at decision time
+    # (the evidence spine's "what the agent saw" leg).  Best-effort --
+    # a write failure is logged and never blocks the publish loop.
+    feature_snapshot_store = FeatureSnapshotStore()
 
     current_dir = _resolve_model_dir()
     log.info(
@@ -388,6 +396,7 @@ async def run(
             producer,
             prediction_log=prediction_log,
             feature_health_log=feature_health_log,
+            feature_snapshot_store=feature_snapshot_store,
             model_name=current_dir.name,
         )
     )
@@ -462,6 +471,7 @@ async def run(
                             producer,
                             prediction_log=prediction_log,
                             feature_health_log=feature_health_log,
+                            feature_snapshot_store=feature_snapshot_store,
                             model_name=current_dir.name,
                         )
                     )
@@ -547,6 +557,7 @@ async def _publish_loop(
     *,
     prediction_log: PredictionLog | None = None,
     feature_health_log: FeatureHealthLog | None = None,
+    feature_snapshot_store: FeatureSnapshotStore | None = None,
     model_name: str | None = None,
 ) -> None:
     """Publish predictions to Redis and (optionally) record to disk.
@@ -568,6 +579,16 @@ async def _publish_loop(
     recorded.  The health snapshot is read from
     ``agent.last_feature_health`` (set by ``GBMPredictor.run`` on every
     cycle right before the Prediction is yielded).
+
+    ``feature_snapshot_store`` (ml-dataset-evidence-spine, todo 4)
+    records a :class:`FeatureSnapshot` per emitted prediction -- the
+    "what the agent saw" leg of the evidence receipt.  Its write is
+    likewise best-effort: a failure is logged as
+    ``feature_snapshot_write_failed`` and swallowed.  The snapshot is
+    built from ``agent.last_feature_vector`` and
+    ``agent.last_feature_frame_ts`` (set by ``GBMPredictor.run`` on
+    every cycle) and is de-duplicated by prediction_id via
+    :meth:`FeatureSnapshotStore.append_if_missing`.
     """
     async for event_payload in agent.run():
         if not isinstance(event_payload, Prediction):
@@ -604,6 +625,42 @@ async def _publish_loop(
                     # stop predictions from being published/recorded.
                     log.warning(
                         "feature_health_write_failed",
+                        agent_id=event_payload.agent_id,
+                        symbol=event_payload.symbol,
+                        error=str(exc),
+                    )
+        if feature_snapshot_store is not None and pred_row is not None:
+            feature_vector = getattr(agent, "last_feature_vector", None)
+            frame_ts = getattr(agent, "last_feature_frame_ts", None)
+            feature_names = getattr(agent, "_features", None)
+            if (
+                feature_vector is not None
+                and frame_ts is not None
+                and feature_names is not None
+            ):
+                try:
+                    feature_row = FeatureRow(
+                        symbol=event_payload.symbol,
+                        ts=frame_ts,
+                        features=dict(feature_vector),
+                    )
+                    snapshot = FeatureSnapshot(
+                        decision_time_ns=event_payload.ts_event,
+                        rows=[feature_row],
+                        feature_schema_hash=_compute_feature_schema_hash(
+                            list(feature_names)
+                        ),
+                    )
+                    feature_snapshot_store.append_if_missing(
+                        pred_row.id,
+                        snapshot,
+                        agent_id=event_payload.agent_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # Best-effort: a broken snapshot store must never
+                    # stop predictions from being published/recorded.
+                    log.warning(
+                        "feature_snapshot_write_failed",
                         agent_id=event_payload.agent_id,
                         symbol=event_payload.symbol,
                         error=str(exc),

@@ -74,6 +74,14 @@ class GBMPredictor(Agent):
         # Public-read so the publish loop can introspect it; the agent
         # owns the write.
         self.last_feature_health: FeatureHealth | None = None
+        # The projected feature vector + frame timestamp from the most
+        # recent load_live call.  Set alongside last_feature_health so
+        # the publish loop can build a FeatureSnapshot (the evidence
+        # spine's "what the agent saw" leg) without a second Redis
+        # lookup.  ``last_feature_frame_ts`` is the FeatureFrame's
+        # ts_event -- the point-in-time timestamp of the input data.
+        self.last_feature_vector: dict[str, float] | None = None
+        self.last_feature_frame_ts: int | None = None
 
     async def setup(self) -> None:
         """Load model + meta; initialise the OnlineStore reader."""
@@ -104,17 +112,23 @@ class GBMPredictor(Agent):
         symbols = self._explicit_symbols or list(get_settings().UNIVERSE)
         while True:
             for symbol in symbols:
+                frame_ts_sink: list[int] = []
                 loaded = await load_live(
                     self._store,
                     symbol,
                     feature_names=self._features,
                     freq=self._freq,
                     allow_compat_defaults=True,
+                    frame_ts_out=frame_ts_sink,
                 )
                 if loaded is None:
                     continue
                 row, health = loaded
                 self.last_feature_health = health
+                self.last_feature_vector = row
+                self.last_feature_frame_ts = (
+                    frame_ts_sink[-1] if frame_ts_sink else None
+                )
                 prediction = self._predict(symbol, row)
                 yield prediction
             await asyncio.sleep(self._cadence_s)

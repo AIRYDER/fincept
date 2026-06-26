@@ -12,6 +12,8 @@ module only depends on the *names* and the OnlineStore wire format.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 
 from features.store import OnlineStore
 
@@ -62,6 +64,18 @@ DEFAULTABLE_FEATURES: set[str] = {
 }
 
 
+def _compute_feature_schema_hash(feature_names: list[str]) -> str:
+    """SHA-256 (64-char lowercase hex) of the sorted feature-name list.
+
+    Binds a :class:`FeatureSnapshot` to the feature schema that defines
+    the keys of each row's ``features`` dict.  Sorting makes the hash
+    order-independent so two agents with the same feature set (but
+    different training-time column order) produce the same hash.
+    """
+    payload = json.dumps(sorted(feature_names), separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 @dataclasses.dataclass(frozen=True)
 class FeatureHealth:
     """Per-cycle feature-availability diagnostics.
@@ -98,6 +112,7 @@ async def load_live(
     feature_names: list[str],
     freq: str = "1m",
     allow_compat_defaults: bool = False,
+    frame_ts_out: list[int] | None = None,
 ) -> tuple[dict[str, float], FeatureHealth] | None:
     """Read the latest FeatureFrame and project it onto ``feature_names``.
 
@@ -121,10 +136,18 @@ async def load_live(
     via an alias.  Callers that don't care about diagnostics can ignore
     it; the dict is always the first element so existing unpacking
     ``features, _ = await load_live(...)`` works.
+
+    If ``frame_ts_out`` is provided, the frame's ``ts_event`` is appended
+    to it on a successful read so the caller can capture the point-in-
+    time timestamp of the feature data without a second Redis lookup.
+    The list is left untouched when the frame is missing (``None``
+    return).
     """
     frame = await store.get_latest(symbol, freq=freq)
     if frame is None:
         return None
+    if frame_ts_out is not None:
+        frame_ts_out.append(frame.ts_event)
     out: dict[str, float] = {}
     missing: list[str] = []
     defaulted: list[str] = []
