@@ -38,6 +38,7 @@ from typing import Any
 from fincept_core.prediction_log import PredictionRow
 
 from .approved_roots import ApprovedRoots, ApprovedRootsError, default_approved_roots
+from .dossier import build_calibration_sidecar, build_dossier
 from .feature_snapshot import FeatureSnapshotStore
 from .schemas import (
     ArtifactManifest,
@@ -53,18 +54,25 @@ from .settlement import (
 )
 
 # --------------------------------------------------------------------------- #
-# Cross-validation utility (todo 17 -- not yet implemented)                   #
+# Cross-validation utility (todo 17)                                          #
 # --------------------------------------------------------------------------- #
-# ``cv.py`` is created by todo 17.  We attempt the import here so the
-# facade is stable from day one: if ``cv.py`` does not exist yet the
-# names are bound to ``None`` (still satisfies ``hasattr`` checks) and
-# todo 17 simply adds the module to make them real.  Callers should
-# guard against ``None`` until todo 17 lands, or wait for todo 17 to
-# remove this comment.
+# ``cv.py`` is implemented by todo 17.  We attempt the import here so
+# the facade is stable: if ``cv.py`` ever fails to import (e.g. a
+# transient Pydantic version mismatch) the names are bound to ``None``
+# rather than breaking the whole ``datasets`` package.  Under normal
+# operation the real symbols replace the ``None`` placeholders.
 try:
-    from .cv import Fold, fold_iter_to_dicts, make_folds
-except ImportError:  # pragma: no cover - cv.py lands in todo 17
+    from .cv import (
+        Fold,
+        WalkForwardWindow,
+        derive_walk_forward_window,
+        fold_iter_to_dicts,
+        make_folds,
+    )
+except ImportError:  # pragma: no cover - safety net for cv.py import errors
     Fold = None
+    WalkForwardWindow = None
+    derive_walk_forward_window = None
     fold_iter_to_dicts = None
     make_folds = None
 
@@ -142,8 +150,12 @@ __all__ = [
     "SettlementError",
     "SettlementRecord",
     "SettlementStore",
+    "WalkForwardWindow",
+    "build_calibration_sidecar",
+    "build_dossier",
     "build_evidence_receipt",
     "default_approved_roots",
+    "derive_walk_forward_window",
     "fold_iter_to_dicts",
     "make_folds",
 ]
