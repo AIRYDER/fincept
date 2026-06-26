@@ -21,6 +21,7 @@ dashboard or auditor can render to answer: "For prediction X, what features
 did the model see, what did it predict, and what was the realized outcome?"
 
 Before this work, the codebase had:
+
 - A prediction log (`fincept_core.prediction_log`) — working, production-wired
 - A settlement system (`quant_foundry.settlement`) — working, but keyed by
   `model_id`, with a cost model (`cm-v1` = 10/5/3 bps) that didn't match the
@@ -95,13 +96,13 @@ runtime import test that imports all three packages simultaneously.
 
 Two parallel settlement systems now coexist:
 
-| Aspect | New (`fincept_core.datasets`) | Old (`quant_foundry`) |
-|--------|-------------------------------|----------------------|
-| Store | `SettlementStore` (JSONL) | `SettlementLedger` (JSONL) |
-| Key | `agent_id` + `prediction_id` | `model_id` + `prediction_id` |
-| Cost model | `v1.default` (5/3/0 bps) | `cm-v1` (10/5/3 bps) |
-| Writer | `settlements.worker.tick` (poller) | `gateway.run_settlement_sweep` |
-| Reader | `GET /models/{name}/outcomes` | quant_foundry dashboard |
+| Aspect     | New (`fincept_core.datasets`)      | Old (`quant_foundry`)          |
+| ---------- | ---------------------------------- | ------------------------------ |
+| Store      | `SettlementStore` (JSONL)          | `SettlementLedger` (JSONL)     |
+| Key        | `agent_id` + `prediction_id`       | `model_id` + `prediction_id`   |
+| Cost model | `v1.default` (5/3/0 bps)           | `cm-v1` (10/5/3 bps)           |
+| Writer     | `settlements.worker.tick` (poller) | `gateway.run_settlement_sweep` |
+| Reader     | `GET /models/{name}/outcomes`      | quant_foundry dashboard        |
 
 Both run side-by-side: the new worker reads the same `data/predictions/`
 log but writes to a separate store. Full consolidation is deferred pending
@@ -119,16 +120,19 @@ input path must pass through `ApprovedRoots.resolve()` before it reaches
 the orchestrator.
 
 **What it rejects:**
+
 - Absolute paths not inside any approved root
 - `..` traversal anywhere in the candidate
 - Symlink escapes (symlinks are disallowed by default, even if they
   currently resolve inside a root, to block TOCTOU swaps)
 
 **Configuration:**
+
 - `FINCEPT_APPROVED_DATA_ROOTS` env var (comma-separated)
 - Default: `["data", "models"]` (fail-closed if empty)
 
 **API integration:**
+
 - `backtest.py`: `Depends(get_approved_roots)` → `approved_roots.resolve(body.bars_path)` → uses `resolved.path` downstream (closes TOCTOU)
 - `models.py`: `_get_approved_roots().resolve(body.input_path)` → uses `resolved.path` downstream (closes TOCTOU)
 - Shared exception handler in `api/approved_roots.py` renders uniform 422 body
@@ -139,6 +143,7 @@ the orchestrator.
 An append-only JSONL ledger at `data/settlements/<agent_id>.jsonl`.
 
 **SettlementRecord fields:**
+
 - `prediction_id`, `agent_id`, `model_name`, `symbol`
 - `ts_event`, `horizon_ns`
 - `decision_window_start_ns`, `decision_window_end_ns`
@@ -150,6 +155,7 @@ An append-only JSONL ledger at `data/settlements/<agent_id>.jsonl`.
 - `settled_at_ns`, `failure_reason`
 
 **Guards:**
+
 - **Look-ahead guard**: refuses any append where `decision_window_end_ns > now_ns`
 - **Terminal-row idempotency**: a `settled` or `failed` row for the same `(prediction_id, cost_model_version)` raises `SettlementError(code="duplicate")`
 - **Pending rows can be superseded**: a `pending_data` → `settled` transition is allowed (the pending row is retained as history)
@@ -160,6 +166,7 @@ An append-only JSONL ledger at `data/settlements/<agent_id>.jsonl`.
 An append-only JSONL ledger at `data/feature_snapshots/<agent_id>.jsonl`.
 
 **FeatureSnapshot fields:**
+
 - `schema_version` (1)
 - `decision_time_ns` — the as-of timestamp that gates which rows are eligible
 - `rows: list[FeatureRow]` — each row has `symbol`, `ts`, `features: dict[str, float]`
@@ -175,12 +182,14 @@ Shared walk-forward cross-validation math, extracted from the backtester
 and quant_foundry into the core library.
 
 **Exports:**
+
 - `make_folds(n_bars, *, n_folds, train_min_bars, val_bars, purge_bars, embargo_bars)` → `list[Fold]`
 - `derive_walk_forward_window(as_of_ts, *, train_window_ns, test_window_ns, label_horizon_ns)` → `WalkForwardWindow`
 - `Fold` / `WalkForwardWindow` — Pydantic frozen models
 - `fold_iter_to_dicts` — serializer
 
 **Convergence:** All three call sites now delegate to `fincept_core.datasets.cv`:
+
 1. `services/agents/gbm_predictor/train.py` — imports `make_folds` from the facade
 2. `services/backtester/walk_forward.py` — delegates via `_make_folds_local` → `_shared_make_folds`; public `make_folds` is a deprecated shim
 3. `services/quant_foundry/training_manifest.py` — delegates `derive_walk_forward_window` via a thin re-wrapper
@@ -188,6 +197,7 @@ and quant_foundry into the core library.
 ### 3.5 Dossier + calibration helpers (`dossier.py`)
 
 Pure functions for model evaluation:
+
 - `build_dossier(...)` — ECE (expected calibration error), Brier score, bucketed reliability
 - `build_calibration_sidecar(val_predictions, val_labels, n_buckets)` — calibration curve
 
@@ -197,6 +207,7 @@ but are not yet consumed by any service (forward-looking utilities).
 ### 3.6 Schemas (`schemas.py`)
 
 Pydantic v2 frozen models:
+
 - `DatasetManifest` — dataset metadata with hex-shape validators
 - `ArtifactManifest` — model artifact metadata
 - `FeatureRow` — a single point-in-time feature row
@@ -205,6 +216,7 @@ Pydantic v2 frozen models:
 ### 3.7 Facade (`__init__.py`)
 
 The `fincept_core.datasets` package facade:
+
 - Explicit re-exports (no star-imports), auditable `__all__`
 - `build_evidence_receipt(*, prediction, settlement, feature_snapshot, feature_health)` — the join function that produces the flat JSON dict consumed by `GET /models/{name}/outcomes`
 - `try/except ImportError` guard for `cv.py` (safety net — binds to `None` on import failure)
@@ -216,6 +228,7 @@ The `fincept_core.datasets` package facade:
 ### 4.1 Settlements worker (`services/settlements/`)
 
 **`worker.py`** — `tick(now_ns, *, predictions_dir, settlements_dir, market_data_source)`:
+
 1. Scans `<agent_id>.jsonl` files under `predictions_dir` for due predictions (`ts_event + horizon_ns <= now_ns`)
 2. Skips already-settled predictions (idempotent via `_existing_status` which returns the LAST match)
 3. Queries `market_data_source(symbol, ts_event, ts_event)` for entry price and `market_data_source(symbol, ts_event, ts_event + horizon_ns)` for exit price
@@ -223,6 +236,7 @@ The `fincept_core.datasets` package facade:
 5. Appends a `SettlementRecord` with `status="settled"` or `status="pending_data"` when prices are unavailable
 
 **`market_data_bridge.py`** — `make_async_market_data_source(bar_adapter)`:
+
 - Wraps the sync `quant_foundry.BarDataAdapter` into the worker's async `market_data_source` contract
 - Uses `asyncio.to_thread` for blocking DB/HTTP calls
 - Handles both `get_close` (single-bar lookup, used by tests) and `get_prices` (range lookup, used by production adapter)
@@ -230,6 +244,7 @@ The `fincept_core.datasets` package facade:
 ### 4.2 Settlements poller (`services/api/src/api/settlements_poller.py`)
 
 Periodic poller wired into the FastAPI lifespan:
+
 - `_poll_settlements_worker(interval)` — runs `tick` every `interval` seconds
 - Best-effort: failures logged as `settlements.worker_poll_failed` and swallowed
 - Configurable via `SETTLEMENTS_WORKER_POLL_S` env var (default 60s, 0 to disable)
@@ -239,16 +254,19 @@ Periodic poller wired into the FastAPI lifespan:
 ### 4.3 API routes
 
 **`GET /models/{name}/outcomes`** (`models.py`):
+
 - Left-joins predictions from `PredictionLog` with settlements from `SettlementStore` via `build_evidence_receipt`
 - Query params: `limit` (1..1000), `since_ns` (optional nanosecond cutoff)
 - Returns `{"count": N, "outcomes": [receipt, ...]}`
 
 **`POST /models/train`** (`models.py`):
+
 - Approved-roots gate on `input_path` (fail-closed, 422 on violation)
 - Uses `resolved.path` downstream (TOCTOU fix)
 - Error propagates to shared exception handler
 
 **`POST /backtest/run`** (`backtest.py`):
+
 - Approved-roots gate on `bars_path` (fail-closed, 422 on violation)
 - Uses `resolved.path` downstream (TOCTOU fix)
 - Error propagates to shared exception handler
@@ -279,16 +297,19 @@ return type (which would have broken existing unpacking patterns).
 ### 4.5 Callback security (`services/quant_foundry/`)
 
 **`gateway.py`** — removed `_compat_sign_callback`:
+
 - No remaining code path accepts unsigned callbacks
 - When `_extract_callback_fields()` returns `None` (unsigned/missing), the gateway fail-closes: records a `rejected` metric, marks the job `FAILED` with `error_code="missing_runpod_callback_fields"`
 - `sign_callback` is imported with `# noqa: F401` only so tests can monkey-patch it to assert the poller never calls it
 
 **`callback_metrics.py`** — durable `callback_rejection_rate` store:
+
 - Append-only JSONL at `data/callback_metrics/<source>.jsonl`
 - Records only `{ts_ns, event, reason_code}` — no secrets, no payloads, no signatures
 - `rejection_rate(source, *, window_s)` computes the rate over a sliding window
 
 **HMAC verification** (`signatures.py`):
+
 - `hmac.compare_digest` (constant-time comparison)
 - 5-minute skew window (`MAX_TS_SKEW_SECONDS = 300`)
 - Job_id binding (prevents cross-job replay)
@@ -297,6 +318,7 @@ return type (which would have broken existing unpacking patterns).
 ### 4.6 LogReg baseline (`services/agents/src/agents/baselines/`)
 
 A stdlib-only logistic regression baseline (no sklearn dependency):
+
 - `LogRegBaseline` — frozen dataclass holding weights, bias, n_features
 - `fit_logreg_baseline(X, y, *, max_iter, C)` — gradient descent with L2 regularization
 - `predict_proba(X)` — sigmoid decision function
@@ -305,6 +327,7 @@ A stdlib-only logistic regression baseline (no sklearn dependency):
 ### 4.7 Paper spine replay (`scripts/paper_spine_replay.py`)
 
 End-to-end proof script that:
+
 1. Runs a synthetic prediction through the paper trading spine
 2. Runs the settlement worker against the fixture predictions
 3. Verifies the evidence receipt values: `settlement_hit_rate=1.0`, `pending_count=0`, `brier=0.0`
@@ -320,29 +343,29 @@ The 21 implementation todos from the plan were executed in parallel batches
 using subagents. Each todo was committed individually with a precise commit
 message. The todos were:
 
-| # | Todo | Commit |
-|---|------|--------|
-| 1 | ApprovedRoots module | `a6d36cb` |
-| 2 | Manifest schemas | `571733a` |
-| 3 | Settlement schema + side-store | `5dd41ed` |
-| 4 | FeatureSnapshotStore | `248530c` |
-| 5 | datasets __init__ facade | `6b14d3f` |
-| 6 | Approved-root on TrainBody | `74ed884` |
-| 7 | Approved-root on backtest | `b4a3b20` |
-| 8 | /models/{name}/outcomes route | (bundled in `74ed884`) |
-| 9 | Feature-availability sidecar | `bd17e80` |
-| 10 | Dossier + calibration helpers | `902b7ef` |
-| 11 | Settlement worker MVP | `6fe5e1b` |
-| 12 | Settlement side-store tests | `4ebd318` |
-| 13 | Remove _compat_sign_callback | `65be033` |
-| 14 | Durable callback_rejection_rate | `52d99be` |
-| 15 | Scheduler polling health test | `4790795` |
-| 16 | LogReg baseline scaffold | `515ccae` |
-| 17 | Extract make_folds → cv.py | `77edc9a` |
-| 18 | Migrate gbm_predictor walk_forward | `38d8d9c` |
-| 19 | Migrate backtester make_folds | `3360709` |
-| 20 | Migrate quant_foundry window | `f038cc2` |
-| 21 | paper_spine_replay --with-settlement | `2a8b16b` |
+| #   | Todo                                 | Commit                 |
+| --- | ------------------------------------ | ---------------------- |
+| 1   | ApprovedRoots module                 | `a6d36cb`              |
+| 2   | Manifest schemas                     | `571733a`              |
+| 3   | Settlement schema + side-store       | `5dd41ed`              |
+| 4   | FeatureSnapshotStore                 | `248530c`              |
+| 5   | datasets __init__ facade             | `6b14d3f`              |
+| 6   | Approved-root on TrainBody           | `74ed884`              |
+| 7   | Approved-root on backtest            | `b4a3b20`              |
+| 8   | /models/{name}/outcomes route        | (bundled in `74ed884`) |
+| 9   | Feature-availability sidecar         | `bd17e80`              |
+| 10  | Dossier + calibration helpers        | `902b7ef`              |
+| 11  | Settlement worker MVP                | `6fe5e1b`              |
+| 12  | Settlement side-store tests          | `4ebd318`              |
+| 13  | Remove _compat_sign_callback         | `65be033`              |
+| 14  | Durable callback_rejection_rate      | `52d99be`              |
+| 15  | Scheduler polling health test        | `4790795`              |
+| 16  | LogReg baseline scaffold             | `515ccae`              |
+| 17  | Extract make_folds → cv.py           | `77edc9a`              |
+| 18  | Migrate gbm_predictor walk_forward   | `38d8d9c`              |
+| 19  | Migrate backtester make_folds        | `3360709`              |
+| 20  | Migrate quant_foundry window         | `f038cc2`              |
+| 21  | paper_spine_replay --with-settlement | `2a8b16b`              |
 
 ### Phase 2: Verification (F1-F4)
 
@@ -354,14 +377,14 @@ message. The todos were:
 
 6 specialized read-only subagents audited the work:
 
-| Specialty | Verdict | Key finding |
-|-----------|---------|-------------|
-| Security | STRONG, 1 HIGH | TOCTOU: API routes discard resolved path |
-| Architecture | 0 flaws, 4 concerns | Two parallel settlement systems diverge |
-| Data integrity | 1 BUG | `_find` returns first match, breaks idempotency |
-| Test quality | PASS | 2031 tests, 0 failures |
-| Code style | PASS | Near-perfect convention match, 6 mypy errors |
-| Scope fidelity | PASS | All 11 guardrails held |
+| Specialty      | Verdict             | Key finding                                     |
+| -------------- | ------------------- | ----------------------------------------------- |
+| Security       | STRONG, 1 HIGH      | TOCTOU: API routes discard resolved path        |
+| Architecture   | 0 flaws, 4 concerns | Two parallel settlement systems diverge         |
+| Data integrity | 1 BUG               | `_find` returns first match, breaks idempotency |
+| Test quality   | PASS                | 2031 tests, 0 failures                          |
+| Code style     | PASS                | Near-perfect convention match, 6 mypy errors    |
+| Scope fidelity | PASS                | All 11 guardrails held                          |
 
 Audit files: `.omo/evidence/audit-{security,architecture,data-integrity,test-quality,code-style,scope-fidelity}.md`
 Compiled review: `.omo/evidence/in-depth-review.md`
@@ -370,15 +393,15 @@ Compiled review: `.omo/evidence/in-depth-review.md`
 
 Issues found by the audit and fixed:
 
-| Commit | Severity | Fix |
-|--------|----------|-----|
-| `77edc9a` | CRITICAL | Commit untracked `cv.py` + `test_cv.py` (todo 17's deferred commit) |
-| `d536eda` | MEDIUM | Generate missing final receipts (callback-rejection + cv-convergence) |
-| `79bb738` | — | In-depth review document + 6 audit reports |
-| `2f9b923` | HIGH | **TOCTOU fix**: use `resolved.path` downstream in both API routes instead of re-parsing raw user input |
-| `6289e84` | MEDIUM | **`_find` first-match bug**: changed to return last match + added regression test for pending→settled→settled sequence |
-| `1e072b6` | LOW | 6 mypy `no-any-return` errors fixed (logreg.py, paper_spine_replay.py); `_can_symlink()` probe moved to `tempfile.gettempdir()`; `close_t2 == 0` guard added to settlement worker; `from __future__ import annotations` added to `baselines/__init__.py` |
-| `80acd4f` | LOW | Remove unused `pathlib` import after TOCTOU fix |
+| Commit    | Severity | Fix                                                                                                                                                                                                                                                      |
+| --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `77edc9a` | CRITICAL | Commit untracked `cv.py` + `test_cv.py` (todo 17's deferred commit)                                                                                                                                                                                      |
+| `d536eda` | MEDIUM   | Generate missing final receipts (callback-rejection + cv-convergence)                                                                                                                                                                                    |
+| `79bb738` | —        | In-depth review document + 6 audit reports                                                                                                                                                                                                               |
+| `2f9b923` | HIGH     | **TOCTOU fix**: use `resolved.path` downstream in both API routes instead of re-parsing raw user input                                                                                                                                                   |
+| `6289e84` | MEDIUM   | **`_find` first-match bug**: changed to return last match + added regression test for pending→settled→settled sequence                                                                                                                                   |
+| `1e072b6` | LOW      | 6 mypy `no-any-return` errors fixed (logreg.py, paper_spine_replay.py); `_can_symlink()` probe moved to `tempfile.gettempdir()`; `close_t2 == 0` guard added to settlement worker; `from __future__ import annotations` added to `baselines/__init__.py` |
+| `80acd4f` | LOW      | Remove unused `pathlib` import after TOCTOU fix                                                                                                                                                                                                          |
 
 ### Phase 5: Architectural wiring (3 tasks, 2 parallel subagents)
 
@@ -386,6 +409,7 @@ The audit identified 3 architectural concerns that were "incomplete wiring"
 rather than code bugs. These were addressed with 2 parallel subagents:
 
 **Task 2 — Wire FeatureSnapshotStore into publish loop** (commit `3d64917`):
+
 - `features.py`: Added `_compute_feature_schema_hash()` + `frame_ts_out` sink parameter to `load_live()`
 - `infer.py`: Added `last_feature_vector` + `last_feature_frame_ts` attributes on GBMPredictor
 - `main.py`: Added best-effort `FeatureSnapshot` write in `_publish_loop` using `append_if_missing`
@@ -393,6 +417,7 @@ rather than code bugs. These were addressed with 2 parallel subagents:
 - **Result**: `feature_schema_hash` leg of evidence receipt is now populated in production
 
 **Tasks 1+3 — Wire settlements.worker into production poller** (commit `e51b757`):
+
 - `market_data_bridge.py` (new): Wraps sync `BarDataAdapter` into async `market_data_source` contract
 - `settlements_poller.py` (new): Periodic poller with documented reconciliation strategy
 - `main.py`: Wired poller into lifespan (runs regardless of gateway mode, cancelled on shutdown)
@@ -524,33 +549,33 @@ RunPod callback → gateway.receive_callback(payload)
 
 ### 7.1 Test counts
 
-| Package | Tests | Status |
-|---------|-------|--------|
-| `libs/fincept-core` | 286 | 286 passed |
-| `services/api` | 475 | 475 passed |
-| `services/agents` | 147 | 147 passed |
-| `services/backtester` | 198 | 198 passed |
-| `services/quant_foundry` | 926 | 926 passed, 2 skipped (onnxruntime) |
-| `services/settlements` | 22 | 22 passed |
-| **TOTAL** | **2054** | **2052 passed, 2 skipped, 0 failed** |
+| Package                  | Tests    | Status                               |
+| ------------------------ | -------- | ------------------------------------ |
+| `libs/fincept-core`      | 286      | 286 passed                           |
+| `services/api`           | 475      | 475 passed                           |
+| `services/agents`        | 147      | 147 passed                           |
+| `services/backtester`    | 198      | 198 passed                           |
+| `services/quant_foundry` | 926      | 926 passed, 2 skipped (onnxruntime)  |
+| `services/settlements`   | 22       | 22 passed                            |
+| **TOTAL**                | **2054** | **2052 passed, 2 skipped, 0 failed** |
 
 ### 7.2 Key test files
 
-| File | Tests | What it covers |
-|------|-------|----------------|
-| `test_approved_roots.py` | 13 | Symlink, traversal, encoding, env-var, fail-closed |
-| `test_settlement_ledger.py` | 32 | Idempotency, look-ahead, pending→settled, duplicate detection |
-| `test_feature_snapshots.py` | 12 | Append, read, idempotency, malformed-line tolerance |
-| `test_cv.py` | 21 | Fold math, window derivation, invalid args, boundary conditions |
-| `test_worker.py` | 15 | Tick state machine, pending→settled, idempotent rerun, close_t2==0 |
-| `test_market_data_bridge.py` | 7 | get_close wrapping, get_prices fallback, None handling |
-| `test_settlements_poller.py` | 9 | Interval parsing, tick invocation, failure swallowing |
-| `test_gbm_feature_health.py` | 16 | FeatureHealth + FeatureSnapshot writes, best-effort failure |
-| `test_gateway_callbacks.py` | 5 | No-compat path, signed/unsigned, bad signature, ts skew |
-| `test_callback_metrics.py` | 10 | Happy path, persistence, malformed lines, no-secret-leak |
-| `test_models_outcomes.py` | 11 | Left-join, limit/since_ns, missing files, clock granularity |
-| `test_models_train.py` | 5 | Approved-roots gate, non-empty check |
-| `test_backtest.py` | 4 | Approved-roots gate on backtest |
+| File                         | Tests | What it covers                                                     |
+| ---------------------------- | ----- | ------------------------------------------------------------------ |
+| `test_approved_roots.py`     | 13    | Symlink, traversal, encoding, env-var, fail-closed                 |
+| `test_settlement_ledger.py`  | 32    | Idempotency, look-ahead, pending→settled, duplicate detection      |
+| `test_feature_snapshots.py`  | 12    | Append, read, idempotency, malformed-line tolerance                |
+| `test_cv.py`                 | 21    | Fold math, window derivation, invalid args, boundary conditions    |
+| `test_worker.py`             | 15    | Tick state machine, pending→settled, idempotent rerun, close_t2==0 |
+| `test_market_data_bridge.py` | 7     | get_close wrapping, get_prices fallback, None handling             |
+| `test_settlements_poller.py` | 9     | Interval parsing, tick invocation, failure swallowing              |
+| `test_gbm_feature_health.py` | 16    | FeatureHealth + FeatureSnapshot writes, best-effort failure        |
+| `test_gateway_callbacks.py`  | 5     | No-compat path, signed/unsigned, bad signature, ts skew            |
+| `test_callback_metrics.py`   | 10    | Happy path, persistence, malformed lines, no-secret-leak           |
+| `test_models_outcomes.py`    | 11    | Left-join, limit/since_ns, missing files, clock granularity        |
+| `test_models_train.py`       | 5     | Approved-roots gate, non-empty check                               |
+| `test_backtest.py`           | 4     | Approved-roots gate on backtest                                    |
 
 ---
 
@@ -558,21 +583,21 @@ RunPod callback → gateway.receive_callback(payload)
 
 ### 8.1 Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FINCEPT_APPROVED_DATA_ROOTS` | `data,models` | Comma-separated approved root paths |
-| `SETTLEMENTS_DIR` | `data/settlements` | Settlement store directory |
-| `PREDICTIONS_DIR` | `data/predictions` | Prediction log directory |
-| `FEATURE_HEALTH_DIR` | `data/feature_health` | Feature health sidecar directory |
-| `SETTLEMENTS_WORKER_POLL_S` | `60` | Settlements worker poll interval (0 to disable) |
-| `FINCEPT_REPLAY_DRY_RUN` | `1` | Paper spine replay dry-run mode |
+| Variable                      | Default               | Description                                     |
+| ----------------------------- | --------------------- | ----------------------------------------------- |
+| `FINCEPT_APPROVED_DATA_ROOTS` | `data,models`         | Comma-separated approved root paths             |
+| `SETTLEMENTS_DIR`             | `data/settlements`    | Settlement store directory                      |
+| `PREDICTIONS_DIR`             | `data/predictions`    | Prediction log directory                        |
+| `FEATURE_HEALTH_DIR`          | `data/feature_health` | Feature health sidecar directory                |
+| `SETTLEMENTS_WORKER_POLL_S`   | `60`                  | Settlements worker poll interval (0 to disable) |
+| `FINCEPT_REPLAY_DRY_RUN`      | `1`                   | Paper spine replay dry-run mode                 |
 
 ### 8.2 Cost models
 
-| Model | Fee bps | Spread bps | Slippage bps | Used by |
-|-------|---------|------------|--------------|---------|
-| `v1.default` | 5.0 | 3.0 | 0.0 | New `SettlementStore` |
-| `cm-v1` | 10.0 | 5.0 | 3.0 | Old `quant_foundry.SettlementLedger` |
+| Model        | Fee bps | Spread bps | Slippage bps | Used by                              |
+| ------------ | ------- | ---------- | ------------ | ------------------------------------ |
+| `v1.default` | 5.0     | 3.0        | 0.0          | New `SettlementStore`                |
+| `cm-v1`      | 10.0    | 5.0        | 3.0          | Old `quant_foundry.SettlementLedger` |
 
 ---
 

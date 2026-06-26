@@ -16,25 +16,26 @@ The `ml-dataset-evidence-spine` delivers a new shared `fincept_core.datasets` pa
 The implementation is architecturally sound, stylistically excellent, and security-conscious. All 2031 tests pass (2029 passed, 2 skipped for missing optional `onnxruntime`). All 11 "Must NOT have" guardrails held. The circular-import risk — the plan's #1 architectural concern — is fully mitigated.
 
 **Two issues were found and fixed during this review:**
+
 1. **CRITICAL (FIXED):** `cv.py` and `test_cv.py` were untracked — todo 17's commit was deferred to the parent agent but never executed. Committed as `77edc9a`. Without this, CI/fresh clones would break on `backtester.walk_forward` and `quant_foundry.training_manifest` imports.
 2. **MEDIUM (FIXED):** Two of three plan-specified final receipts were missing. Generated and committed as `d536eda`: `reports/quant-foundry/callback-rejection-receipt.json` and `reports/cv-convergence-receipt.json`.
 
 **Outstanding findings (not blocking, ordered by priority):**
 
-| # | Severity | Area | Finding |
-|---|----------|------|---------|
-| 1 | HIGH | Security | TOCTOU: API routes discard the resolved path and re-use raw user input downstream |
-| 2 | MEDIUM | Data Integrity | `SettlementStore._find` returns first match — breaks terminal-row idempotency after a pending row |
-| 3 | MEDIUM | Security | Settlement store idempotency check-then-append race (non-atomic) |
-| 4 | MEDIUM | Architecture | Two parallel settlement systems diverge (key, cost model, writer) — `/outcomes` reads from a store with no production writer |
-| 5 | MEDIUM | Architecture | `FeatureSnapshotStore` defined + tested but no production writer |
-| 6 | LOW | Security | `X-Approved-Roots-Code` header leaks rejection reason to callers |
-| 7 | LOW | Security | `paper_spine_replay.py` non-dry-run writes to production paths |
-| 8 | LOW | Code Style | 6 mypy errors in new services code (`logreg.py`, `paper_spine_replay.py`, `models.py`) |
-| 9 | LOW | Code Style | `models.py:post_train` catches `ApprovedRootsError` inline instead of using shared handler |
-| 10 | LOW | Test Quality | `_can_symlink()` probe writes to CWD instead of `tmp_path` |
-| 11 | LOW | Data Integrity | `close_t2 == 0` not guarded in settlement worker |
-| 12 | LOW | Scope | Todo 8 commit bundled into todo 6 (cannot retroactively split) |
+| #   | Severity | Area           | Finding                                                                                                                      |
+| --- | -------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1   | HIGH     | Security       | TOCTOU: API routes discard the resolved path and re-use raw user input downstream                                            |
+| 2   | MEDIUM   | Data Integrity | `SettlementStore._find` returns first match — breaks terminal-row idempotency after a pending row                            |
+| 3   | MEDIUM   | Security       | Settlement store idempotency check-then-append race (non-atomic)                                                             |
+| 4   | MEDIUM   | Architecture   | Two parallel settlement systems diverge (key, cost model, writer) — `/outcomes` reads from a store with no production writer |
+| 5   | MEDIUM   | Architecture   | `FeatureSnapshotStore` defined + tested but no production writer                                                             |
+| 6   | LOW      | Security       | `X-Approved-Roots-Code` header leaks rejection reason to callers                                                             |
+| 7   | LOW      | Security       | `paper_spine_replay.py` non-dry-run writes to production paths                                                               |
+| 8   | LOW      | Code Style     | 6 mypy errors in new services code (`logreg.py`, `paper_spine_replay.py`, `models.py`)                                       |
+| 9   | LOW      | Code Style     | `models.py:post_train` catches `ApprovedRootsError` inline instead of using shared handler                                   |
+| 10  | LOW      | Test Quality   | `_can_symlink()` probe writes to CWD instead of `tmp_path`                                                                   |
+| 11  | LOW      | Data Integrity | `close_t2 == 0` not guarded in settlement worker                                                                             |
+| 12  | LOW      | Scope          | Todo 8 commit bundled into todo 6 (cannot retroactively split)                                                               |
 
 ---
 
@@ -44,23 +45,25 @@ The implementation is architecturally sound, stylistically excellent, and securi
 
 **Verdict: STRONG posture, 1 HIGH finding**
 
-| Severity | Count | Summary |
-|----------|-------|---------|
-| CRITICAL | 0 | — |
-| HIGH | 1 | TOCTOU: API routes discard resolved path, re-use raw user input |
-| MEDIUM | 2 | Settlement idempotency race; env-var override can widen roots |
-| LOW | 2 | Rejection-code header leak; replay script non-dry-run writes |
-| PASS | 7 | Approved-roots core logic, compat-shim removal, callback metrics, HMAC, feature health sidecar, FeatureSnapshot schema guard, settlement look-ahead |
+| Severity | Count | Summary                                                                                                                                             |
+| -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CRITICAL | 0     | —                                                                                                                                                   |
+| HIGH     | 1     | TOCTOU: API routes discard resolved path, re-use raw user input                                                                                     |
+| MEDIUM   | 2     | Settlement idempotency race; env-var override can widen roots                                                                                       |
+| LOW      | 2     | Rejection-code header leak; replay script non-dry-run writes                                                                                        |
+| PASS     | 7     | Approved-roots core logic, compat-shim removal, callback metrics, HMAC, feature health sidecar, FeatureSnapshot schema guard, settlement look-ahead |
 
 **Key finding — HIGH TOCTOU:** Both `backtest.py:128-130` and `models.py:519-531` call `approved_roots.resolve()` but discard the returned `ResolvedPath` and re-parse the raw user-supplied string downstream. An attacker with concurrent filesystem access can swap a regular file to a symlink between check and use, escaping the approved root.
 
 **Fix:** Use `resolved.path` downstream instead of `body.bars_path`/`body.input_path`:
+
 ```python
 resolved = approved_roots.resolve(body.bars_path)
 bars_path = resolved.path  # use the validated, symlink-resolved path
 ```
 
 **Passes of note:**
+
 - `_compat_sign_callback` removal is complete — no remaining path accepts unsigned callbacks. Fail-closed on missing callback fields (marks job FAILED, records rejection metric).
 - HMAC verification is sound: constant-time `hmac.compare_digest`, 5-minute skew window, job_id binding, fail-closed on bad signature (no durable trace created).
 - Callback metrics store leaks no secrets — records only `{ts_ns, event, reason_code}`.
@@ -81,12 +84,12 @@ bars_path = resolved.path  # use the validated, symlink-resolved path
 
 **CONCERN — Parallel settlement systems:** Two divergent settlement ledgers exist:
 
-| Aspect | `fincept_core.datasets.settlement` (NEW) | `quant_foundry.settlement` (PRE-EXISTING) |
-|---|---|---|
-| Join key | `agent_id` + `prediction_id` | `model_id` + `prediction_id` |
-| Cost model | `v1.default` (5/3/0 bps) | `cm-v1` (10/5/3 bps) |
-| Writer | `settlements.worker.tick` (replay script + tests only) | `quant_foundry.settlement_sweep` (wired into gateway) |
-| Reader | `GET /models/{name}/outcomes` | `quant_foundry.gateway.settlement_status` |
+| Aspect     | `fincept_core.datasets.settlement` (NEW)               | `quant_foundry.settlement` (PRE-EXISTING)             |
+| ---------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| Join key   | `agent_id` + `prediction_id`                           | `model_id` + `prediction_id`                          |
+| Cost model | `v1.default` (5/3/0 bps)                               | `cm-v1` (10/5/3 bps)                                  |
+| Writer     | `settlements.worker.tick` (replay script + tests only) | `quant_foundry.settlement_sweep` (wired into gateway) |
+| Reader     | `GET /models/{name}/outcomes`                          | `quant_foundry.gateway.settlement_status`             |
 
 **Impact:** In production, `/outcomes` will return `pending_time` for every prediction because the production gateway sweep writes to the *other* ledger. The two cost models also disagree by ~10 bps per prediction.
 
@@ -113,6 +116,7 @@ bars_path = resolved.path  # use the validated, symlink-resolved path
 **PASS — PredictionRow schema preservation:** `git diff 7dc5fc1..HEAD -- prediction_log.py` → 0 lines changed. No settlement fields added. The settlement side-store carries its own `settlement_schema_version=1`, correctly isolated.
 
 **PASS — Worker calculations verified:**
+
 - `realized_return_gross = (close_t2 / close_t1) - 1.0` — correct
 - `realized_return_net = gross - 8e-4` (5 bps fee + 3 bps spread) — correct
 - `brier_component = (prob_up - actual_up) ** 2` — correct
@@ -131,17 +135,18 @@ bars_path = resolved.path  # use the validated, symlink-resolved path
 
 All 17 test files meet or exceed the plan's acceptance-criteria test counts. **194 tests collected in scope; all pass.** Full regression suite: **2031 tests across 6 packages, 0 failures** (2 skipped for missing optional `onnxruntime`).
 
-| Package | Tests | Result |
-|---|---|---|
-| `libs/fincept-core/tests/` | 285 | 285 passed |
-| `services/api/tests/` | 466 | 466 passed |
-| `services/agents/tests/` | 141 | 141 passed |
-| `services/backtester/tests/` | 198 | 198 passed |
-| `services/quant_foundry/tests/` | 926 | 926 passed, 2 skipped |
-| `services/settlements/tests/` | 15 | 15 passed |
-| **TOTAL** | **2031** | **2029 passed, 2 skipped, 0 failed** |
+| Package                         | Tests    | Result                               |
+| ------------------------------- | -------- | ------------------------------------ |
+| `libs/fincept-core/tests/`      | 285      | 285 passed                           |
+| `services/api/tests/`           | 466      | 466 passed                           |
+| `services/agents/tests/`        | 141      | 141 passed                           |
+| `services/backtester/tests/`    | 198      | 198 passed                           |
+| `services/quant_foundry/tests/` | 926      | 926 passed, 2 skipped                |
+| `services/settlements/tests/`   | 15       | 15 passed                            |
+| **TOTAL**                       | **2031** | **2029 passed, 2 skipped, 0 failed** |
 
 **Passes:**
+
 - Boundary conditions thoroughly tested (look-ahead boundary, zero-length window, spread_bps=100, invalid args parametrized, limit bounds)
 - Failure paths well covered (malformed JSONL, missing files, write failures, bad agent_id, security rejections)
 - Windows clock-granularity flakiness fix is correct (dynamic expected count instead of fixed assertion)
@@ -149,6 +154,7 @@ All 17 test files meet or exceed the plan's acceptance-criteria test counts. **1
 - Calibration tests use deterministic seeds (`random.Random(20240626)`) with generous tolerances
 
 **Advisories:**
+
 - **F-1 (Low):** `_can_symlink()` probe writes to `os.getcwd()` instead of `tmp_path` — cleaned up in `finally`, but could leave stale files if process is killed.
 - **F-2 (Low):** No test for concurrent/interleaved appends to JSONL stores (single-writer is the documented use case).
 
@@ -166,13 +172,14 @@ The new `fincept_core.datasets` package is a "near-perfect stylistic clone" of t
 
 **Mypy (new services code if checked): FAIL** — 6 errors:
 
-| File | Line | Error |
-|------|------|-------|
-| `logreg.py` | 22, 41, 119 | `no-any-return` (numpy operations returning `Any`) |
-| `paper_spine_replay.py` | 313, 497 | `no-any-return` (`to_jsonable()` returning `Any`) |
-| `models.py` | 521 | `return-value` (returning `JSONResponse` from `-> dict[str, Any]`) |
+| File                    | Line        | Error                                                              |
+| ----------------------- | ----------- | ------------------------------------------------------------------ |
+| `logreg.py`             | 22, 41, 119 | `no-any-return` (numpy operations returning `Any`)                 |
+| `paper_spine_replay.py` | 313, 497    | `no-any-return` (`to_jsonable()` returning `Any`)                  |
+| `models.py`             | 521         | `return-value` (returning `JSONResponse` from `-> dict[str, Any]`) |
 
 **Actionable items:**
+
 1. Fix `models.py:post_train` to let `ApprovedRootsError` propagate to shared handler (also resolves mypy `return-value` error)
 2. Fix 5 `no-any-return` mypy errors in `logreg.py` and `paper_spine_replay.py` with explicit casts
 3. Add `from __future__ import annotations` to `baselines/__init__.py`
@@ -188,21 +195,22 @@ The new `fincept_core.datasets` package is a "near-perfect stylistic clone" of t
 
 All 11 "Must NOT have" guardrails held:
 
-| # | Guardrail | Status |
-|---|-----------|--------|
-| 1 | No changes to `PredictionRow` schema | PASS (0 lines changed) |
-| 2 | No schema-version-2 unified prediction row | PASS |
-| 3 | No DuckDB/Parquet as first storage layer | PASS |
-| 4 | No live trading unlock / `paper_bridge` | PASS |
-| 5 | No full RunPod serverless deployment | PASS |
-| 6 | No Cloud spend | PASS |
-| 7 | No foundation-model/diffusion/debate/allocator | PASS |
-| 8 | No Optuna/Hyperband/triple-barrier/meta-labeling/conformal | PASS |
-| 9 | No touching dashboard receipts beyond `gateway.py` | PASS |
-| 10 | No vague "improve model" todos | PASS |
-| 11 | No forbidden imports (sklearn/optuna/hyperopt) | PASS |
+| #   | Guardrail                                                  | Status                 |
+| --- | ---------------------------------------------------------- | ---------------------- |
+| 1   | No changes to `PredictionRow` schema                       | PASS (0 lines changed) |
+| 2   | No schema-version-2 unified prediction row                 | PASS                   |
+| 3   | No DuckDB/Parquet as first storage layer                   | PASS                   |
+| 4   | No live trading unlock / `paper_bridge`                    | PASS                   |
+| 5   | No full RunPod serverless deployment                       | PASS                   |
+| 6   | No Cloud spend                                             | PASS                   |
+| 7   | No foundation-model/diffusion/debate/allocator             | PASS                   |
+| 8   | No Optuna/Hyperband/triple-barrier/meta-labeling/conformal | PASS                   |
+| 9   | No touching dashboard receipts beyond `gateway.py`         | PASS                   |
+| 10  | No vague "improve model" todos                             | PASS                   |
+| 11  | No forbidden imports (sklearn/optuna/hyperopt)             | PASS                   |
 
 **Deviations found and remediated:**
+
 1. **CRITICAL (FIXED):** Todo 17's commit was missing — `cv.py` and `test_cv.py` were untracked. **Committed as `77edc9a`** during this review.
 2. **MEDIUM (FIXED):** Two of three final receipts were missing. **Generated and committed as `d536eda`** during this review.
 3. **LOW (accepted):** Todo 8's commit was bundled into todo 6's commit — cannot retroactively split without history rewriting.
@@ -213,10 +221,10 @@ All 11 "Must NOT have" guardrails held:
 
 ## Remediation Actions Taken During This Review
 
-| Action | Commit | Description |
-|--------|--------|-------------|
-| Commit `cv.py` + `test_cv.py` | `77edc9a` | Fixed critical untracked-files issue from todo 17 |
-| Generate missing receipts | `d536eda` | `reports/quant-foundry/callback-rejection-receipt.json` + `reports/cv-convergence-receipt.json` |
+| Action                        | Commit    | Description                                                                                     |
+| ----------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| Commit `cv.py` + `test_cv.py` | `77edc9a` | Fixed critical untracked-files issue from todo 17                                               |
+| Generate missing receipts     | `d536eda` | `reports/quant-foundry/callback-rejection-receipt.json` + `reports/cv-convergence-receipt.json` |
 
 ---
 
@@ -242,15 +250,15 @@ Ordered by priority. None of these block merge — they are hardening items for 
 
 ## Audit File Index
 
-| Specialty | File |
-|----------|------|
-| Security | `.omo/evidence/audit-security.md` |
-| Architecture | `.omo/evidence/audit-architecture.md` |
-| Data Integrity | `.omo/evidence/audit-data-integrity.md` |
-| Test Quality | `.omo/evidence/audit-test-quality.md` |
-| Code Style | `.omo/evidence/audit-code-style.md` |
-| Scope Fidelity | `.omo/evidence/audit-scope-fidelity.md` |
-| **This document** | `.omo/evidence/in-depth-review.md` |
+| Specialty         | File                                    |
+| ----------------- | --------------------------------------- |
+| Security          | `.omo/evidence/audit-security.md`       |
+| Architecture      | `.omo/evidence/audit-architecture.md`   |
+| Data Integrity    | `.omo/evidence/audit-data-integrity.md` |
+| Test Quality      | `.omo/evidence/audit-test-quality.md`   |
+| Code Style        | `.omo/evidence/audit-code-style.md`     |
+| Scope Fidelity    | `.omo/evidence/audit-scope-fidelity.md` |
+| **This document** | `.omo/evidence/in-depth-review.md`      |
 
 ---
 
