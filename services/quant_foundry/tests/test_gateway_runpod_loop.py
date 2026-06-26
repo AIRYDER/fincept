@@ -323,3 +323,165 @@ def test_runpod_inference_poll_ingests_callback_into_durable_shadow_ledger(tmp_p
     assert health["prediction_count"] == 1
     assert health["models_running"] == 1
     assert health["feature_availability"] == 1.0
+
+
+# --------------------------------------------------------------------------- #
+# Todo 15: scheduler polling produces durable health state                    #
+# --------------------------------------------------------------------------- #
+
+
+_VALID_CIRCUIT_BREAKER_STATES = frozenset({"closed", "half_open", "open"})
+
+
+def _metrics_path(gateway: QuantFoundryGateway) -> Any:
+    """Return the callback_metrics.jsonl path the gateway writes to."""
+    return gateway.callback_metrics_store().metrics_dir / "callback_metrics.jsonl"
+
+
+def _settled_callback_job_ids(gateway: QuantFoundryGateway) -> set[str]:
+    """Job ids that have a settled (accepted or rejected) callback receipt.
+
+    A settled receipt is an event in ``callback_metrics.jsonl`` whose event
+    is ``accepted`` or ``rejected``. We map back to job ids via the outbox:
+    a job is "settled" if it is no longer RUNNING (i.e. COMPLETED or FAILED),
+    which is exactly the condition the poll loop enforces before recording
+    an accepted/rejected event.
+    """
+    store = gateway.callback_metrics_store()
+    # ``CallbackMetricsStore`` does not carry job_id, so "settled" is
+    # defined structurally: a job is settled if its outbox status is no
+    # longer RUNNING. The metrics file is the durable receipt that at
+    # least one accepted/rejected event was recorded for the poll batch.
+    settled: set[str] = set()
+    for rec in gateway.outbox.list():
+        if rec.status != JobStatus.RUNNING:
+            settled.add(rec.job_id)
+    # The metrics file must exist (durable receipt) for the batch to count.
+    if not store.has_any_events():
+        return set()
+    return settled
+
+
+def test_poll_records_durable_health(tmp_path) -> None:
+    """Happy path: poll with all-signed callbacks leaves durable health.
+
+    After ``poll_runpod_results``:
+      1. No RUNNING job lacks a settled callback receipt.
+      2. ``circuit_breaker_state`` is a non-None enum string.
+      3. ``callback_rejection_rate`` is numeric (0.0 — no rejections).
+    """
+    secret = "runpod-durable-health-secret"
+    training_client = RecordingRunPodClient(endpoint_id="train-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": training_client},
+    )
+
+    job_id = "qf:train:durable-health:1"
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="idem-durable-health",
+        request_payload=_training_payload(job_id),
+    )
+    runpod_job_id = training_client.dispatches[0]["runpod_job_id"]
+    training_client.statuses[runpod_job_id] = {
+        "status": "COMPLETED",
+        "output": _signed_training_output(job_id, secret=secret),
+    }
+
+    receipts = gateway.poll_runpod_results()
+
+    assert receipts[0]["result"] == "processed"
+    assert gateway.outbox.get(job_id).status == JobStatus.COMPLETED
+
+    # 1. No RUNNING job without a settled callback receipt.
+    running = gateway.outbox.list(status=JobStatus.RUNNING)
+    settled = _settled_callback_job_ids(gateway)
+    orphans = [rec.job_id for rec in running if rec.job_id not in settled]
+    assert orphans == [], f"RUNNING jobs without settled receipt: {orphans}"
+
+    # Durable receipt: the metrics JSONL file exists on disk.
+    assert _metrics_path(gateway).is_file()
+
+    # 2. circuit_breaker_state is a non-None member of the enum.
+    health = gateway.shadow_health()
+    assert health["circuit_breaker_state"] in _VALID_CIRCUIT_BREAKER_STATES
+    assert health["circuit_breaker_state"] is not None
+
+    # 3. callback_rejection_rate is numeric; happy path == 0.0.
+    rate = health["callback_rejection_rate"]
+    assert rate is not None
+    assert isinstance(rate, float | int)
+    assert rate == 0.0
+
+
+def test_poll_records_durable_health_with_rejection(tmp_path) -> None:
+    """Failure path: a bad-signature callback records a rejection.
+
+    After ``poll_runpod_results`` with one bad-signature callback:
+      1. ``callback_rejection_rate`` is numeric and > 0.
+      2. A subsequent poll still returns a numeric rate (no division by
+         zero, no crash) and a valid ``circuit_breaker_state``.
+    """
+    secret = "runpod-durable-health-reject-secret"
+    training_client = RecordingRunPodClient(endpoint_id="train-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": training_client},
+    )
+
+    job_id = "qf:train:durable-health-reject:1"
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="idem-durable-health-reject",
+        request_payload=_training_payload(job_id),
+    )
+    runpod_job_id = training_client.dispatches[0]["runpod_job_id"]
+
+    # Build a signed output then corrupt the signature -> bad_signature reject.
+    bad_output = _signed_training_output(job_id, secret=secret)
+    bad_output["callback_signature"] = "0" * 128
+    training_client.statuses[runpod_job_id] = {
+        "status": "COMPLETED",
+        "output": bad_output,
+    }
+
+    receipts = gateway.poll_runpod_results()
+
+    assert receipts[0]["ok"] is False
+    assert receipts[0]["error_code"] == "bad_signature"
+    # A bad-signature callback is fail-closed in ``receive_callback``: it
+    # records a ``rejected`` metric but does NOT transition the outbox
+    # (the job stays RUNNING so a future legitimate callback can still
+    # settle it). The durable trace lives in callback_metrics.jsonl.
+    assert gateway.outbox.get(job_id).status == JobStatus.RUNNING
+    assert _metrics_path(gateway).is_file()
+
+    health = gateway.shadow_health()
+    assert health["circuit_breaker_state"] in _VALID_CIRCUIT_BREAKER_STATES
+    rate = health["callback_rejection_rate"]
+    assert rate is not None
+    assert isinstance(rate, float | int)
+    assert rate > 0.0
+
+    # Subsequent poll (the job is still RUNNING, so the poller re-attempts
+    # and re-rejects) must not crash and must stay numeric — no division
+    # by zero, no exception.
+    second_receipts = gateway.poll_runpod_results()
+    assert all(r.get("error_code") == "bad_signature" for r in second_receipts)
+    health2 = gateway.shadow_health()
+    rate2 = health2["callback_rejection_rate"]
+    assert rate2 is not None
+    assert isinstance(rate2, float | int)
+    assert rate2 > 0.0
+    assert health2["circuit_breaker_state"] in _VALID_CIRCUIT_BREAKER_STATES
