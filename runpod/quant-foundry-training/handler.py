@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from quant_foundry.runpod_training import (
@@ -99,6 +100,20 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "error_summary": str(exc),
             "job_id": input_data.get("job_id"),
         }
+
+    # Support inline dataset for E2E testing: if the input includes
+    # ``inline_dataset_csv``, write it to a temp file and override the
+    # dataset_manifest_ref. This avoids needing a network volume or S3
+    # bucket for simple smoke tests. The field is NOT part of the
+    # RunPodTrainingRequest schema — it is a handler-level extension.
+    inline_csv = input_data.get("inline_dataset_csv")
+    if isinstance(inline_csv, str) and inline_csv.strip():
+        import tempfile
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="qf_dataset_"))
+        csv_path = tmp_dir / "inline_dataset.csv"
+        csv_path.write_text(inline_csv, encoding="utf-8")
+        req = req.model_copy(update={"dataset_manifest_ref": str(csv_path)})
 
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
