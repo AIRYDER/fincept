@@ -32,7 +32,6 @@ change when async lands.
 from __future__ import annotations
 
 import asyncio
-import pathlib
 from decimal import Decimal
 from typing import Any
 
