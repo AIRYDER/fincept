@@ -221,6 +221,7 @@ def deploy_endpoint(
     new_image: str,
     env_updates: dict[str, str],
     dry_run: bool = False,
+    force: bool = False,
 ) -> None:
     """Fetch endpoint template, update image + env, print summary."""
     print(f"\n{'=' * 60}")
@@ -239,7 +240,7 @@ def deploy_endpoint(
     print(f"  Current env keys: {sorted(current_env.keys())}")
 
     # 2. Check if update is needed.
-    if template["imageName"] == new_image and all(
+    if not force and template["imageName"] == new_image and all(
         current_env.get(k) == v for k, v in env_updates.items()
     ):
         print("  Already up-to-date — no changes needed.")
@@ -259,6 +260,7 @@ def deploy_endpoint(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy RunPod endpoint templates")
     parser.add_argument("--dry-run", action="store_true", help="Print changes without sending")
+    parser.add_argument("--force", action="store_true", help="Force template update even if image tag is unchanged")
     args = parser.parse_args()
 
     api_key = os.environ.get("RUNPOD_API_KEY", "")
@@ -272,16 +274,18 @@ def main() -> int:
     inference_image = os.environ.get("RUNPOD_INFERENCE_IMAGE", DEFAULT_INFERENCE_IMAGE)
 
     print("RunPod Endpoint Deployment")
-    print(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
+    print(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}{' (FORCED)' if args.force else ''}")
     print(f"Training endpoint: {training_endpoint} -> {training_image}")
     print(f"Inference endpoint: {inference_endpoint} -> {inference_image}")
 
     try:
         deploy_endpoint(
-            api_key, training_endpoint, training_image, TRAINING_ENV, dry_run=args.dry_run
+            api_key, training_endpoint, training_image, TRAINING_ENV,
+            dry_run=args.dry_run, force=args.force,
         )
         deploy_endpoint(
-            api_key, inference_endpoint, inference_image, INFERENCE_ENV, dry_run=args.dry_run
+            api_key, inference_endpoint, inference_image, INFERENCE_ENV,
+            dry_run=args.dry_run, force=args.force,
         )
     except Exception as exc:
         print(f"\nERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
