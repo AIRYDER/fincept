@@ -97,8 +97,8 @@ class TestScriptImports:
 
     def test_verify_script_endpoint_defaults(self, verify_module):
         """The verify script has the correct default endpoint IDs."""
-        assert verify_module.DEFAULT_TRAINING_ENDPOINT_ID == "8vol1uc9l75jgs"
-        assert verify_module.DEFAULT_INFERENCE_ENDPOINT_ID == "36mz2q30jdyvru"
+        assert verify_module.DEFAULT_TRAINING_ENDPOINT_ID == "h2blqodcicxqyy"
+        assert verify_module.DEFAULT_INFERENCE_ENDPOINT_ID == "t31u1z426jy1ub"
 
 
 # ---------------------------------------------------------------------------

@@ -79,8 +79,8 @@
 
 ## 8. RunPod Connectivity
 
-- [ ] `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` set: `8vol1uc9l75jgs`
-- [ ] `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` set: `36mz2q30jdyvru`
+- [ ] `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` set: `h2blqodcicxqyy`
+- [ ] `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` set: `t31u1z426jy1ub`
 - [ ] `QUANT_FOUNDRY_RUNPOD_API_KEY` set (SECRET — not in logs)
 - [ ] Test dispatch: a shadow inference job was accepted by RunPod
 - [ ] Callback endpoint reachable from RunPod (HMAC validated with

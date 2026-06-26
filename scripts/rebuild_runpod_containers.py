@@ -69,8 +69,8 @@ CONTAINERS: dict[str, tuple[str, str]] = {
 }
 
 # RunPod endpoint IDs (defaults; can be overridden via env vars).
-DEFAULT_TRAINING_ENDPOINT_ID = "8vol1uc9l75jgs"
-DEFAULT_INFERENCE_ENDPOINT_ID = "36mz2q30jdyvru"
+DEFAULT_TRAINING_ENDPOINT_ID = "h2blqodcicxqyy"
+DEFAULT_INFERENCE_ENDPOINT_ID = "t31u1z426jy1ub"
 
 # RunPod API base URL for endpoint refresh.
 RUNPOD_API_BASE = "https://api.runpod.ai/v2"

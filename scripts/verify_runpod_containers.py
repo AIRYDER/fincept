@@ -26,8 +26,8 @@ Usage (from repo root):
 
     # Override endpoint IDs
     python scripts/verify_runpod_containers.py \
-        --training-endpoint-id 8vol1uc9l75jgs \
-        --inference-endpoint-id 36mz2q30jdyvru
+        --training-endpoint-id h2blqodcicxqyy \
+        --inference-endpoint-id t31u1z426jy1ub
 
 Safety invariants:
 - No API keys are hardcoded. The RunPod API key comes from the
@@ -57,8 +57,8 @@ from typing import Any
 RUNPOD_API_BASE = "https://api.runpod.ai/v2"
 
 # Default endpoint IDs (can be overridden via CLI or env vars).
-DEFAULT_TRAINING_ENDPOINT_ID = "8vol1uc9l75jgs"
-DEFAULT_INFERENCE_ENDPOINT_ID = "36mz2q30jdyvru"
+DEFAULT_TRAINING_ENDPOINT_ID = "h2blqodcicxqyy"
+DEFAULT_INFERENCE_ENDPOINT_ID = "t31u1z426jy1ub"
 
 # Polling configuration for async RunPod jobs.
 POLL_INTERVAL_SECONDS = 10

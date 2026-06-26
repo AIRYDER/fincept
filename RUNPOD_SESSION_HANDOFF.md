@@ -87,7 +87,11 @@ E2E run (`scripts/e2e_runpod_real_ml.py`, receipt at
 
 ## Deployed RunPod state (live, prior-session evidence — not re-verified this session)
 
-| Endpoint | ID | Template ID | Network Volume |
+> **NOTE:** The IDs below are the **OLD (deleted)** endpoints from the
+> prior session. They were recreated this session — see the **NEW ID**
+> table at the top of this handoff for the current live endpoints.
+
+| Endpoint | OLD ID (deleted) | Template ID | Network Volume |
 |---|---|---|---|
 | Training | `8vol1uc9l75jgs` | `me58r5vdrp` | `rrsd005i3g` (10GB, US-NC-1) |
 | Inference | `36mz2q30jdyvru` | `wnasp3v5jn` | `rrsd005i3g` (10GB, US-NC-1) |

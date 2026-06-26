@@ -10,8 +10,8 @@
 
 | Endpoint | ID | Template ID | Network Volume |
 | --- | --- | --- | --- |
-| Training | `8vol1uc9l75jgs` | `me58r5vdrp` | `rrsd005i3g` (10GB, US-NC-1) |
-| Inference | `36mz2q30jdyvru` | `wnasp3v5jn` | `rrsd005i3g` (10GB, US-NC-1) |
+| Training | `h2blqodcicxqyy` | `me58r5vdrp` | `rrsd005i3g` (10GB, US-NC-1) |
+| Inference | `t31u1z426jy1ub` | `wnasp3v5jn` | `rrsd005i3g` (10GB, US-NC-1) |
 
 **Base image:** `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` (Python 3.11, CUDA 12.4)
 **Network volume mount:** `/runpod-volume` (serverless) / `/workspace` (pods)

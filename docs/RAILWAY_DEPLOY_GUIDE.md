@@ -156,8 +156,8 @@ Set these on the `api` service (non-secret — they are endpoint IDs, not keys):
 
 | Variable | Value | Source |
 |---|---|---|
-| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `8vol1uc9l75jgs` | RunPod serverless endpoint ID |
-| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `36mz2q30jdyvru` | RunPod serverless endpoint ID |
+| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `h2blqodcicxqyy` | RunPod serverless endpoint ID |
+| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `t31u1z426jy1ub` | RunPod serverless endpoint ID |
 | `QUANT_FOUNDRY_MODE` | `runpod_shadow` | Shadow dispatch (no sig.predict writes) |
 
 ### i. Set secrets
@@ -217,8 +217,8 @@ openssl rand -hex 32
 | `QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS` | `60` | Settlement sweep interval |
 | `QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS` | `300` | Tournament sweep interval |
 | `QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS` | `15` | RunPod result poll interval |
-| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `8vol1uc9l75jgs` | RunPod serverless endpoint ID |
-| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `36mz2q30jdyvru` | RunPod serverless endpoint ID |
+| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `h2blqodcicxqyy` | RunPod serverless endpoint ID |
+| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `t31u1z426jy1ub` | RunPod serverless endpoint ID |
 
 ### RunPod + Secrets (SECRET — set in dashboard, never in repo)
 

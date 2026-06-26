@@ -274,8 +274,8 @@ def main() -> int:
         print("ERROR: RUNPOD_API_KEY env var is required", file=sys.stderr)
         return 1
 
-    training_endpoint = os.environ.get("RUNPOD_ENDPOINT_ID", "8vol1uc9l75jgs")
-    inference_endpoint = os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "36mz2q30jdyvru")
+    training_endpoint = os.environ.get("RUNPOD_ENDPOINT_ID", "h2blqodcicxqyy")
+    inference_endpoint = os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "t31u1z426jy1ub")
     training_image = os.environ.get("RUNPOD_TRAINING_IMAGE", DEFAULT_TRAINING_IMAGE)
     inference_image = os.environ.get("RUNPOD_INFERENCE_IMAGE", DEFAULT_INFERENCE_IMAGE)
 
