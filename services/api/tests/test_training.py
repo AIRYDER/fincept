@@ -102,14 +102,20 @@ print("done")
 def patched_training(
     tmp_path: pathlib.Path,
     stub_trainer_cmd: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Reset the singleton store against tmp dirs + the stub trainer.
 
     Yields a dict of the fresh paths so tests can assert on what the
     trainer wrote.  No env mutation, no module reloads -- just plain
     constructor injection.
+
+    Also monkey-patches ``_get_approved_roots`` so the tmp directory is
+    an approved dev root -- the approved-root gate (todo 6) would
+    otherwise reject the tmp_path-based input files the tests create.
     """
     from api.training import reset_store
+    from fincept_core.datasets import ApprovedRoots
 
     runs_dir = tmp_path / "training_runs"
     models_dir = tmp_path / "models"
@@ -122,7 +128,13 @@ def patched_training(
         max_concurrent=1,
         trainer_cmd=stub_trainer_cmd,
     )
-    yield {"runs_dir": runs_dir, "models_dir": models_dir, "store": store}
+
+    # Admit the tmp_path as an extra dev root so test-created input
+    # files pass the approved-root gate.
+    approved = ApprovedRoots(roots=[], extra_dev_roots=[tmp_path])
+    monkeypatch.setattr("api.routes.models._get_approved_roots", lambda: approved)
+
+    yield {"runs_dir": runs_dir, "models_dir": models_dir, "store": store, "tmp_path": tmp_path}
 
 
 def _input_parquet(
@@ -461,12 +473,16 @@ class TestTrainRoute:
         auth_headers: dict[str, str],
         patched_training,
     ) -> None:
+        # Use a path inside the approved (tmp) root that doesn't exist
+        # as a file -- the approved-root gate passes, but the existing
+        # file-existence validator still rejects with 400 "not found".
+        bad_path = patched_training["tmp_path"] / "nonexistent.parquet"
         response = await client.post(
             "/models/train",
             headers=auth_headers,
             json={
                 "model_name": "m",
-                "input_path": "/definitely/not/here.parquet",
+                "input_path": str(bad_path),
             },
         )
         assert response.status_code == 400

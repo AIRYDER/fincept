@@ -27,8 +27,16 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from fincept_core.datasets import (
+    ApprovedRoots,
+    ApprovedRootsError,
+    SettlementStore,
+    build_evidence_receipt,
+    default_approved_roots,
+)
 from fincept_core.prediction_log import PredictionLog
 
 from api.auth import require_user
@@ -53,6 +61,27 @@ def _get_prediction_log() -> PredictionLog:
     directory.
     """
     return PredictionLog()
+
+
+def _get_approved_roots() -> ApprovedRoots:
+    """Return the process-default :class:`ApprovedRoots`.
+
+    Called fresh per request so an env-var change between requests is
+    honored without a reload.  Tests monkey-patch this function to
+    inject a fixture-approved-roots instance with extra dev roots.
+    """
+    return default_approved_roots()
+
+
+def _get_settlement_store() -> SettlementStore:
+    """Return a :class:`SettlementStore` rooted at ``$SETTLEMENTS_DIR``.
+
+    A fresh instance per request is fine -- the constructor is cheap
+    (just stores the directory path) and there is no in-memory state
+    to share.  Tests monkey-patch this function to inject a fixture
+    directory.
+    """
+    return SettlementStore()
 
 
 # Default agent_id when the dashboard hits /models/promote/* without
@@ -466,7 +495,37 @@ async def post_train(
     Validation errors come back as 400; concurrency-cap rejection comes
     back as 429 so a "Train" double-click on the dashboard surfaces a
     clear message rather than 500.
+
+    Approved-root enforcement (fail-closed): ``body.input_path`` is
+    validated via :meth:`ApprovedRoots.resolve` before the training
+    orchestrator sees it.  A violation returns 422 with
+    ``{"detail": ..., "code": "approved_roots_violation"}``.  The gate
+    cannot be disabled at runtime (no env-var bypass).
     """
+    # Layer 1: non-empty string check (the Pydantic ``str`` type accepts
+    # ``""``; we reject it explicitly here so the operator gets a clear
+    # 422 rather than a confusing "not found" downstream).
+    if not body.input_path:
+        raise HTTPException(
+            status_code=422,
+            detail="input_path must be a non-empty string",
+        )
+
+    # Layer 2: approved-root gate (fail-closed).  We resolve before
+    # constructing the TrainingRequest so the orchestrator never sees a
+    # path that hasn't passed the gate.  The resolved absolute path is
+    # NOT logged on success (per the plan's must-not-do).
+    try:
+        _get_approved_roots().resolve(body.input_path)
+    except ApprovedRootsError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": str(exc),
+                "code": "approved_roots_violation",
+            },
+        )
+
     req = TrainingRequest(
         model_name=body.model_name,
         input_path=body.input_path,
@@ -837,6 +896,99 @@ async def get_prediction_stats(
         "model": name,
         "agent_id": agent_id,
         "stats": stats.to_dict(),
+    }
+
+
+@router.get("/{name}/outcomes")
+async def get_outcomes(
+    name: str,
+    agent_id: str = _DEFAULT_AGENT_ID,
+    limit: int = 200,
+    since_ns: int | None = None,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Joined prediction + settlement outcomes for ``name``.
+
+    Reads the prediction log (filtered by ``agent_id`` + ``model_name``)
+    and left-joins each row with the settlement side-store by
+    ``prediction_id``.  Predictions whose horizon has not yet elapsed
+    (or whose settlement worker has not caught up) are returned with
+    ``settlement_status: "pending_time"`` -- they are NOT silently
+    dropped, so the dashboard can show "awaiting outcome" rows.
+
+    The join is computed per-request (no caching) so a freshly-written
+    settlement is visible on the next poll without a cache invalidation
+    signal.  Raw feature snapshots are intentionally excluded from the
+    response to keep the payload bounded.
+
+    Limits:
+      * ``limit``    -- 1..1000 (caps the prediction-log read).
+      * ``since_ns`` -- optional, drop predictions with ``ts_recorded``
+                        older than this nanosecond timestamp.
+
+    Response::
+
+        {
+          "model": "gbm_predictor",
+          "agent_id": "gbm_predictor.v1",
+          "count": 3,
+          "outcomes": [
+            {
+              "prediction_id": "...",
+              "agent_id": "...",
+              "model_name": "...",
+              "ts_event": 123,
+              "horizon_ns": 900000000000,
+              "symbol": "BTC-USD",
+              "direction": 0.5,
+              "confidence": 0.5,
+              "settlement_status": "settled",
+              "realized_return_gross": 0.01,
+              "realized_return_net": 0.0002,
+              "settled_at_ns": 456,
+              "brier_component": 0.25
+            },
+            ...
+          ]
+        }
+    """
+    if limit < 1 or limit > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 1000",
+        )
+
+    log = _get_prediction_log()
+    predictions = log.read(
+        agent_id=agent_id,
+        model_name=name,
+        limit=limit,
+        since_ns=since_ns,
+    )
+
+    # Load settlements for this agent and index by prediction_id.
+    # read_for_agent tolerates a missing file (returns []) and skips
+    # malformed JSONL lines, so a corrupt settlement log never takes
+    # the route down.
+    settlements = _get_settlement_store().read_for_agent(agent_id=agent_id)
+    settlement_by_pid: dict[str, Any] = {
+        s.prediction_id: s for s in settlements
+    }
+
+    outcomes = [
+        build_evidence_receipt(
+            prediction=pred,
+            settlement=settlement_by_pid.get(pred.id),
+            feature_snapshot=None,
+        )
+        for pred in predictions
+    ]
+
+    return {
+        "model": name,
+        "agent_id": agent_id,
+        "count": len(outcomes),
+        "outcomes": outcomes,
     }
 
 
