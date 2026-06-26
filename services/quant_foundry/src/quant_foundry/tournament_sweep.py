@@ -391,12 +391,24 @@ class TournamentSweep:
 
 
 def _bucket_confidence(bucket: str) -> float:
-    """Map a calibration bucket name to a representative confidence value."""
-    mapping = {
+    """Map a calibration bucket name to a representative confidence value.
+
+    Handles both named buckets (``very_low``, ``low``, etc.) and range
+    strings (``0.0-0.2``, ``0.2-0.4``, etc.) produced by
+    ``metrics.calibration_bucket()``. Returns the midpoint for range
+    strings, or a fixed mapping for named buckets, defaulting to 0.5.
+    """
+    named_mapping = {
         "very_low": 0.1,
         "low": 0.3,
         "medium": 0.5,
         "high": 0.7,
         "very_high": 0.9,
     }
-    return mapping.get(bucket, 0.5)
+    if bucket in named_mapping:
+        return named_mapping[bucket]
+    try:
+        lo_str, hi_str = bucket.split("-")
+        return (float(lo_str) + float(hi_str)) / 2.0
+    except (ValueError, AttributeError):
+        return named_mapping.get(bucket, 0.5)

@@ -1,6 +1,7 @@
 """Live RunPod end-to-end proof: training + inference loop.
 
-Runs against REAL RunPod endpoints using env vars.
+Runs against REAL RunPod endpoints using env vars. Uses real wall-clock
+timestamps so the settlement sweep can find actual bar data.
 """
 from __future__ import annotations
 
@@ -26,6 +27,8 @@ def main() -> None:
     print("\n=== RunPod Endpoint Health ===")
     print(json.dumps(runpod_health, indent=2, default=str))
 
+    now_ns = time.time_ns()
+
     # --- Training job ---
     print("\n=== Dispatching Training Job ===")
     train_job_id = f"qf:train:live:{uuid.uuid4().hex[:8]}"
@@ -46,24 +49,25 @@ def main() -> None:
     )
     print(json.dumps(result, indent=2, default=str))
 
-    # --- Inference job ---
+    # --- Inference job (real timestamps so settlement can find bars) ---
     print("\n=== Dispatching Inference Job ===")
     infer_job_id = f"qf:infer:live:{uuid.uuid4().hex[:8]}"
+    horizon_ns = 3_600_000_000_000  # 1 hour
     infer_payload = {
         "job_id": infer_job_id,
         "artifact_ref": "file:///mock-model.pkl",
         "symbols": ["AAPL"],
-        "horizons_ns": [3_600_000_000_000],
+        "horizons_ns": [horizon_ns],
         "feature_rows": [
             {
                 "symbol": "AAPL",
-                "event_ts": 1_000_000_000,
-                "decision_time": 1_000_000_000,
+                "event_ts": now_ns,
+                "decision_time": now_ns,
                 "features": [
-                    {"name": "rsi_14", "value": 55.0, "observed_at": 999_000_000},
-                    {"name": "volume_zscore", "value": 0.3, "observed_at": 999_000_000},
+                    {"name": "rsi_14", "value": 55.0, "observed_at": now_ns},
+                    {"name": "volume_zscore", "value": 0.3, "observed_at": now_ns},
                 ],
-                "label_horizon_ns": 86_400_000_000_000,
+                "label_horizon_ns": horizon_ns,
             }
         ],
         "model_id": "live-test-model-1",
@@ -115,6 +119,18 @@ def main() -> None:
     print("\n=== Jobs ===")
     for j in gateway.list_jobs():
         print(f"  {j['job_id']}: {j['status']} ({j['job_type']})")
+
+    print("\n=== Settlement Sweep ===")
+    settlement_receipt = gateway.run_settlement_sweep()
+    print(json.dumps(settlement_receipt, indent=2, default=str))
+
+    print("\n=== Tournament Sweep ===")
+    tournament_receipt = gateway.run_tournament_sweep()
+    print(json.dumps(tournament_receipt, indent=2, default=str))
+
+    print("\n=== Tournament Status ===")
+    tournament_status = gateway.tournament_status()
+    print(json.dumps(tournament_status, indent=2, default=str))
 
     print("\n=== Done ===")
 

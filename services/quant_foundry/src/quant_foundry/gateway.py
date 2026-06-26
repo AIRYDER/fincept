@@ -47,7 +47,7 @@ from quant_foundry.feature_lake import FeatureRow, FeatureValue
 from quant_foundry.feature_snapshot_export import export_feature_snapshot
 from quant_foundry.inbox import CallbackInbox
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
-from quant_foundry.market_data_adapter import BarDataAdapter
+from quant_foundry.market_data_adapter import BarDataAdapter, alpaca_reader_from_env
 from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.promotion import PromotionReviewQueue
@@ -897,11 +897,35 @@ class QuantFoundryGateway:
         The Alpha Genome Lab (TASK-1005) requires a gate for its
         evidence-backed registration — every candidate recipe must pass
         through this gate, no shortcut, no bypass.
+
+        The minimum settled-prediction count required for promotion is
+        configurable via the ``QUANT_FOUNDRY_PROMOTION_MIN_SETTLED`` env
+        var (default: 10). Setting this to 0 allows bootstrap promotion
+        of newly trained models into shadow inference without prior
+        settlement evidence — this is intended ONLY for the initial
+        bootstrap phase when no shadow predictions exist yet. Once real
+        settlements accumulate, raise this back to 10 to restore the
+        full evidence requirement.
+
+        System impact:
+        - Lowering this threshold weakens the evidence requirement for
+          ALL promotion levels (research_approved, shadow_approved,
+          paper_approved). The gate applies the same threshold
+          regardless of target level.
+        - A model promoted with a low threshold will still be
+          authority=SHADOW_ONLY and cannot reach live trading without
+          further human approval.
+        - The promotion receipt records the decision but does NOT
+          record the threshold value — operators should audit env vars
+          when reviewing promotion history.
         """
         if self._promotion_gate is None:
             from quant_foundry.promotion import PromotionGate
 
-            self._promotion_gate = PromotionGate()
+            min_settled = int(
+                os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10")
+            )
+            self._promotion_gate = PromotionGate(min_settled_count=min_settled)
         return self._promotion_gate
 
     # --- Alpha Genome Lab wiring (TASK-1005) ------------------------------
@@ -1078,7 +1102,9 @@ class QuantFoundryGateway:
             self._settlement_sweep = SettlementSweep(
                 shadow_ledger=self.shadow_ledger_real(),
                 settlement_ledger=self.settlement_ledger(),
-                market_data_adapter=BarDataAdapter(),
+                market_data_adapter=BarDataAdapter(
+                    alpaca_reader=alpaca_reader_from_env(),
+                ),
                 cost_model=default_cost_model(),
             )
         return cast(SettlementSweep, self._settlement_sweep)
