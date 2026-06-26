@@ -59,6 +59,12 @@ const config: Config = {
         warn: "hsl(var(--warn))",
         cyan: "hsl(var(--cyan))",
         info: "hsl(var(--info))",
+        // Brand accent + hairline (DESIGN.md cobalt).
+        cobalt: {
+          DEFAULT: "hsl(var(--cobalt))",
+          soft: "hsl(var(--cobalt-soft))",
+        },
+        hairline: "hsl(var(--hairline))",
       },
       borderRadius: {
         lg: "var(--radius)",

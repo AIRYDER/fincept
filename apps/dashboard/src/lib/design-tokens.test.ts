@@ -1,6 +1,10 @@
 import assert from "assert";
 
 import {
+  BRAND,
+  directionOf,
+  formatSignedPct,
+  formatSignedUsd,
   freshnessIntent,
   healthIntent,
   pnlIntent,
@@ -167,6 +171,89 @@ test("AI output is visually distinct from verified system state", () => {
   assert.notEqual(INTENT_TEXT.ai, INTENT_TEXT.verified);
   assert.notEqual(INTENT_DOT.ai, INTENT_DOT.verified);
   assert.notEqual(INTENT_BG.ai, INTENT_BG.verified);
+});
+
+// ---------------------------------------------------------------------------
+// Brand + signed-value formatting helpers
+// ---------------------------------------------------------------------------
+
+test("BRAND exposes a stable name and accent", () => {
+  assert.equal(typeof BRAND.name, "string");
+  assert.ok(BRAND.name.length > 0, "BRAND.name must not be empty");
+  assert.equal(BRAND.accent, "cobalt");
+});
+
+test("directionOf: positive → up", () => {
+  assert.equal(directionOf(1), "up");
+  assert.equal(directionOf(0.0001), "up");
+});
+
+test("directionOf: negative → down", () => {
+  assert.equal(directionOf(-1), "down");
+  assert.equal(directionOf(-0.0001), "down");
+});
+
+test("directionOf: exact zero → flat", () => {
+  assert.equal(directionOf(0), "flat");
+});
+
+test("directionOf: non-finite → flat (never throws)", () => {
+  assert.equal(directionOf(Number.NaN), "flat");
+  assert.equal(directionOf(Number.POSITIVE_INFINITY), "flat");
+  assert.equal(directionOf(Number.NEGATIVE_INFINITY), "flat");
+});
+
+test("formatSignedUsd: positive value gets + sign and two decimals", () => {
+  assert.equal(formatSignedUsd(1.234), "+$1.23");
+  assert.equal(formatSignedUsd(1000), "+$1,000.00");
+});
+
+test("formatSignedUsd: negative value gets - sign and absolute magnitude", () => {
+  assert.equal(formatSignedUsd(-1.234), "-$1.23");
+  assert.equal(formatSignedUsd(-1000), "-$1,000.00");
+});
+
+test("formatSignedUsd: zero has no sign (not +$0.00 or -$0.00)", () => {
+  assert.equal(formatSignedUsd(0), "$0.00");
+});
+
+test("formatSignedUsd: null / undefined / NaN render em dash", () => {
+  assert.equal(formatSignedUsd(null), "—");
+  assert.equal(formatSignedUsd(undefined), "—");
+  assert.equal(formatSignedUsd(Number.NaN), "—");
+  assert.equal(formatSignedUsd(Number.POSITIVE_INFINITY), "—");
+});
+
+test("formatSignedPct: positive value gets + sign and two decimals", () => {
+  assert.equal(formatSignedPct(1.234), "+1.23%");
+  assert.equal(formatSignedPct(0.5), "+0.50%");
+});
+
+test("formatSignedPct: negative value gets - sign and absolute magnitude", () => {
+  assert.equal(formatSignedPct(-1.234), "-1.23%");
+  assert.equal(formatSignedPct(-0.5), "-0.50%");
+});
+
+test("formatSignedPct: zero has no sign", () => {
+  assert.equal(formatSignedPct(0), "0.00%");
+});
+
+test("formatSignedPct: null / undefined / NaN render em dash", () => {
+  assert.equal(formatSignedPct(null), "—");
+  assert.equal(formatSignedPct(undefined), "—");
+  assert.equal(formatSignedPct(Number.NaN), "—");
+  assert.equal(formatSignedPct(Number.POSITIVE_INFINITY), "—");
+});
+
+test("signed formatters agree with directionOf on sign boundary", () => {
+  // For any non-zero finite value, the formatter's leading character
+  // must match the direction directionOf reports.
+  for (const v of [0.01, -0.01, 1234.5, -1234.5]) {
+    const formatted = formatSignedUsd(v);
+    const dir = directionOf(v);
+    if (dir === "up") assert.ok(formatted.startsWith("+"), `expected + for ${v}`);
+    else if (dir === "down") assert.ok(formatted.startsWith("-"), `expected - for ${v}`);
+  }
 });
 
 // ---------------------------------------------------------------------------

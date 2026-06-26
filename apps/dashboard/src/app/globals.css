@@ -39,6 +39,10 @@
     --warn: 42 100% 52%;
     --cyan: 185 100% 50%;
     --info: 210 100% 60%;
+    /* Brand accent + hairline (DESIGN.md cobalt #2F6BFF). */
+    --cobalt: 220 100% 60%;
+    --cobalt-soft: 220 55% 38%;
+    --hairline: 217 36% 10%;
   }
 
   * {
@@ -190,6 +194,9 @@
     --border: 0 0% 78%;
     --input: 0 0% 78%;
     --ring: 0 0% 0%;
+    --cobalt: 0 0% 0%;
+    --cobalt-soft: 0 0% 40%;
+    --hairline: 0 0% 78%;
   }
 
   html,

@@ -123,3 +123,39 @@ export function severityIntent(severity: "info" | "warning" | "critical" | "ok")
   if (severity === "warning") return "degraded";
   return "critical";
 }
+
+// ---------------------------------------------------------------------------
+// Brand + signed-value formatting helpers
+// ---------------------------------------------------------------------------
+//
+// These live with the design tokens so every surface that renders signed
+// PnL / change values uses the same sign conventions and brand identity.
+
+/** Terminal brand identity — used by watchlist + symbol surfaces. */
+export const BRAND = {
+  name: "Fincept Terminal",
+  accent: "cobalt",
+} as const;
+
+/** Direction of a signed numeric value. */
+export function directionOf(value: number): "up" | "down" | "flat" {
+  if (!Number.isFinite(value) || value === 0) return "flat";
+  return value > 0 ? "up" : "down";
+}
+
+/** Format a USD value with an explicit sign (e.g. "+$1.23" / "-$0.45"). */
+export function formatSignedUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/** Format a percentage value with an explicit sign (e.g. "+1.23%" / "-0.45%"). */
+export function formatSignedPct(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${Math.abs(value).toFixed(2)}%`;
+}
