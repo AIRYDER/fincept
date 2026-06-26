@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from fincept_core.config import get_settings
 
@@ -22,6 +24,14 @@ def get_engine() -> AsyncEngine:
         url = get_settings().DB_URL
         if not url:
             raise RuntimeError("FINCEPT_DB_URL is empty; set it to a postgresql+asyncpg:// URL")
+        if os.getenv("FINCEPT_DB_TEST_NULLPOOL") == "1":
+            _engine = create_async_engine(
+                url,
+                poolclass=NullPool,
+                pool_pre_ping=True,
+                future=True,
+            )
+            return _engine
         _engine = create_async_engine(
             url,
             pool_size=20,

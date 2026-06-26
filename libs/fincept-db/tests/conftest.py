@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 from fincept_core.config import Settings
 from fincept_db import engine as db_engine
@@ -35,7 +36,10 @@ async def _schema() -> AsyncIterator[None]:
     if not _postgres_reachable():
         pytest.skip("requires postgres+timescale at :5432")
 
-    admin = create_async_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
+    original_db_url = os.environ.get("FINCEPT_DB_URL")
+    original_test_nullpool = os.environ.get("FINCEPT_DB_TEST_NULLPOOL")
+
+    admin = create_async_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", poolclass=NullPool)
     try:
         async with admin.connect() as conn:
             await conn.execute(text(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}" WITH (FORCE)'))
@@ -46,6 +50,7 @@ async def _schema() -> AsyncIterator[None]:
     await admin.dispose()
 
     os.environ["FINCEPT_DB_URL"] = TEST_DB_URL
+    os.environ["FINCEPT_DB_TEST_NULLPOOL"] = "1"
     Settings.clear_cache()
     await db_engine.reset_engine()
 
@@ -58,12 +63,22 @@ async def _schema() -> AsyncIterator[None]:
 
     await db_engine.reset_engine()
 
-    admin = create_async_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
+    admin = create_async_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", poolclass=NullPool)
     try:
         async with admin.connect() as conn:
             await conn.execute(text(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}" WITH (FORCE)'))
     finally:
         await admin.dispose()
+        await db_engine.reset_engine()
+        if original_db_url is None:
+            os.environ.pop("FINCEPT_DB_URL", None)
+        else:
+            os.environ["FINCEPT_DB_URL"] = original_db_url
+        if original_test_nullpool is None:
+            os.environ.pop("FINCEPT_DB_TEST_NULLPOOL", None)
+        else:
+            os.environ["FINCEPT_DB_TEST_NULLPOOL"] = original_test_nullpool
+        Settings.clear_cache()
 
 
 @pytest_asyncio.fixture(autouse=True)
