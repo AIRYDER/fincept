@@ -34,7 +34,9 @@ stdin (or the RunPod event) and returns the callback envelope + predictions.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `QUANT_FOUNDRY_MODE` | — | Must be `runpod_shadow` to enable inference. |
-| `PYTHONPATH` | `/app/services/quant_foundry/src` | Path to the quant_foundry package. |
+| `QUANT_FOUNDRY_USE_REAL_INFERENCE` | `false` | Set to `true` to use `RealInferenceEngine` (loads ONNX/LightGBM model artifacts). `false` uses `ShadowInferenceEngine` (stub). |
+| `QUANT_FOUNDRY_CALLBACK_SECRET` | — | HMAC secret for signing callbacks. |
+| `PYTHONPATH` | `/app` | Path to the quant_foundry package. |
 
 ## Architecture
 

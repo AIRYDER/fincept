@@ -34,14 +34,14 @@ for _p in _quant_foundry_paths:
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
 
-from quant_foundry.schemas import RunPodInferenceRequest
-from quant_foundry.shadow_inference import (
+from quant_foundry.real_inference import RealInferenceEngine  # noqa: E402
+from quant_foundry.schemas import RunPodInferenceRequest  # noqa: E402
+from quant_foundry.shadow_inference import (  # noqa: E402
     FeatureSnapshot,
     InferenceDisabledError,
     ShadowInferenceEngine,
 )
-from quant_foundry.real_inference import RealInferenceEngine
-from quant_foundry.signatures import sign_callback
+from quant_foundry.signatures import sign_callback  # noqa: E402
 
 
 def _get_callback_secret() -> str:

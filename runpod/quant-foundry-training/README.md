@@ -86,6 +86,7 @@ echo '{"input": {"job_id": "qf:train:test:1", "dataset_manifest_ref": "ds-1", "m
 |----------|----------|---------|-------------|
 | `QUANT_FOUNDRY_CALLBACK_SECRET` | yes (prod) | `dev-callback-secret-DO-NOT-USE-IN-PROD` | HMAC secret for signing callbacks |
 | `QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS` | no | `600` | Max wall-clock seconds for training |
+| `QUANT_FOUNDRY_USE_REAL_TRAINER` | no | `false` | Set to `true` to use `RealLightGBMTrainer` (real LightGBM with walk-forward validation). `false` uses `LocalTrainer` (deterministic stub). |
 
 ## Tests
 

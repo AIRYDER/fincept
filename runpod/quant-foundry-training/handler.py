@@ -29,6 +29,7 @@ import os
 from typing import Any
 
 from quant_foundry.runpod_training import (
+    LocalTrainer,
     RunPodTrainingHandler,
     TrainingFailure,
 )
@@ -50,6 +51,24 @@ def _get_deadline_seconds() -> int:
         return int(raw)
     except ValueError:
         return 600
+
+
+def _build_trainer() -> Any:
+    """Select the trainer based on the QUANT_FOUNDRY_USE_REAL_TRAINER env var.
+
+    When ``QUANT_FOUNDRY_USE_REAL_TRAINER=true``, use ``RealLightGBMTrainer``
+    which trains a real LightGBM model with walk-forward validation and
+    produces real metrics (accuracy, logloss, brier, PBO, Sharpe, drawdown).
+
+    Otherwise, fall back to ``LocalTrainer`` (the deterministic stub) for
+    backward-compatible testing and contract proofs.
+    """
+    use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_TRAINER", "").lower() == "true"
+    if use_real:
+        from quant_foundry.real_trainer import RealLightGBMTrainer
+
+        return RealLightGBMTrainer()
+    return LocalTrainer()
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +102,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
+        trainer=_build_trainer(),
         deadline_seconds=_get_deadline_seconds(),
     )
 
@@ -114,12 +134,12 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
-        print(msg, flush=True)
+        print(msg, flush=True)  # noqa: T201 - CLI debug output
         for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
             try:
                 with open(path, "a") as f:
                     f.write(msg + "\n")
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort debug log
                 pass
 
     _log(f"=== Handler starting at {__file__} ===")

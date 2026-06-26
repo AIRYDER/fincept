@@ -44,6 +44,11 @@ ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA}
 
 # Set the entry point.
 ENV QUANT_FOUNDRY_MODE=runpod_shadow
+# Set QUANT_FOUNDRY_USE_REAL_INFERENCE=true to use RealInferenceEngine
+# (loads ONNX/LightGBM model artifacts and runs real predictions).
+# Default is false (ShadowInferenceEngine stub) for backward-compatible
+# contract proofs.
+ENV QUANT_FOUNDRY_USE_REAL_INFERENCE="false"
 ENV PYTHONPATH=/app
 
 ENTRYPOINT ["python", "-u", "/app/handler.py"]
