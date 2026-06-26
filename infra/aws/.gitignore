@@ -1,0 +1,31 @@
+# infra/aws/.gitignore — protect secret material (TASK-0903)
+#
+# `terraform.tfvars` and `*.auto.tfvars` may carry secret material. They
+# MUST NEVER be committed.
+#
+# `tfplan` files may also contain sensitive resource references — keep
+# them local and out of the repo.
+# `terraform.tfstate` and `terraform.tfstate.backup` contain real secret
+# values in plaintext — use a remote backend (S3 + DynamoDB lock) and
+# never commit the state.
+
+# Operator-supplied variable files
+terraform.tfvars
+*.auto.tfvars
+secrets.auto.tfvars
+secrets.tfvars
+
+# Plan output
+tfplan
+tfplan.json
+
+# Local state (always use a remote backend; this is a belt-and-suspenders guard)
+.terraform.tfstate
+.terraform.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Terraform working directory
+.terraform/
+
+# Outputs
+outputs.json

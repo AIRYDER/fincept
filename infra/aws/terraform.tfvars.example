@@ -1,0 +1,66 @@
+###############################################################################
+# terraform.tfvars.example — operator template (TASK-0903)
+#
+# Copy this file to `terraform.tfvars` (or pass via -var-file) and fill in
+# the values appropriate for your deployment. NEVER commit terraform.tfvars
+# to version control — it carries secret material.
+###############################################################################
+
+aws_region   = "us-east-1"
+environment  = "prod"
+owner_contact = "ops@example.com"
+cost_center   = "fincept-platform"
+
+# Public DNS served by the ALB. Leave blank to use the ALB-provided DNS name.
+domain_name = ""
+
+# Pre-issued ACM certificate ARN. Leave blank to issue one via DNS validation
+# (requires domain_name above and a Route53 hosted zone).
+acm_certificate_arn = ""
+
+vpc_cidr = "10.40.0.0/16"
+az_count = 2
+
+# --- RDS ---
+rds_instance_class         = "db.t4g.medium"
+rds_allocated_storage_gb   = 40
+rds_engine_version         = "16.3"
+rds_database_name          = "fincept"
+rds_master_username        = "fincept_admin"
+rds_backup_retention_days  = 35
+
+# --- ElastiCache (Valkey) ---
+elasticache_node_type      = "cache.t4g.small"
+elasticache_engine_version = "7.2"
+
+# --- ECS sizing (defaults match docs/AWS_PRODUCTION_CONTROL_PLANE.md) ---
+api_task_cpu               = 512
+api_task_memory            = 1024
+api_desired_count          = 2
+
+dashboard_task_cpu         = 512
+dashboard_task_memory      = 1024
+dashboard_desired_count    = 2
+
+orchestrator_task_cpu      = 512
+orchestrator_task_memory   = 1024
+orchestrator_desired_count = 1
+
+# --- CloudWatch thresholds ---
+api_latency_p95_threshold_ms = 1500
+api_error_rate_threshold_pct = 1.0
+settlement_lag_seconds_threshold = 600
+
+# SNS topic for BudgetGuard kill-switch (optional; leave blank to skip).
+budget_kill_switch_topic_arn = ""
+
+# --- Secrets ---
+# secrets = [
+#   { name = "fincept/callback-secret",   description = "Quant Foundry HMAC callback secret", initial_value = "REPLACE_ME" },
+#   { name = "fincept/jwt-signing-key",   description = "API JWT signing key",                initial_value = "REPLACE_ME" },
+#   { name = "fincept/runpod-api-key",    description = "RunPod serverless API key",          initial_value = "REPLACE_ME" },
+#   { name = "fincept/db-password",       description = "RDS master password (initial)",      initial_value = "REPLACE_ME" },
+#   { name = "fincept/redis-auth-token",  description = "ElastiCache auth token",             initial_value = "REPLACE_ME" },
+#   { name = "fincept/openai-api-key",    description = "OpenAI API key",                     initial_value = "REPLACE_ME" },
+#   { name = "fincept/anthropic-api-key", description = "Anthropic API key",                  initial_value = "REPLACE_ME" },
+# ]

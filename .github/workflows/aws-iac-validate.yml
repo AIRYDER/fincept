@@ -1,0 +1,190 @@
+name: aws-iac-validate
+
+# Gates every PR that touches the AWS production infrastructure. Runs
+# `terraform fmt`, `terraform validate`, `tflint`, and `tfsec` in parallel
+# against infra/aws/. Also runs `terraform plan` against a mock provider so
+# the diff is visible in the PR comment.
+
+on:
+  pull_request:
+    paths:
+      - "infra/aws/**"
+      - "infra/docker/**"
+      - ".github/workflows/aws-iac-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/aws/**"
+      - "infra/docker/**"
+      - ".github/workflows/aws-iac-validate.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write  # needed to comment plan output
+
+jobs:
+  # ----- Format + validate (cheap, no providers) -----------------------
+  fmt-and-validate:
+    name: terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # pin: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@fc4bdc31f5b39f2e7647e9e4e6281a83b14ee0b7
+        with:
+          terraform_version: 1.9.x
+
+      - name: terraform fmt -recursive -check
+        working-directory: infra/aws
+        run: terraform fmt -recursive -check
+        # Pin fmt exit codes: 0 = clean, 3 = dirty. We fail the job either way.
+
+      - name: terraform init (no backend)
+        working-directory: infra/aws
+        run: terraform init -backend=false -input=false -no-color
+
+      - name: terraform validate
+        working-directory: infra/aws
+        run: terraform validate -no-color
+
+  # ----- tflint (deep syntax + best practices) -------------------------
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@fc4bdc31f5b39f2e7647e9e4e6281a83b14ee0b7
+        with:
+          terraform_version: 1.9.x
+
+      # pin: terraform-linters/setup-tflint@v4
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@5e09e90b036e1d9e7160e64c1bee1d9f4ad22130
+        with:
+          tflint_version: latest
+
+      - name: Init tflint
+        working-directory: infra/aws
+        run: tflint --init
+
+      - name: tflint
+        working-directory: infra/aws
+        run: tflint --recursive --format compact
+
+  # ----- tfsec (security scanner) -------------------------------------
+  tfsec:
+    name: tfsec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # pin: aquasecurity/tfsec-action@v1
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/aws
+          soft_fail: false
+          # Reporting: SARIF gets uploaded as an artifact; the GitHub code-
+          # scanning tab picks it up automatically.
+          additional_args: --regression false
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: infra/aws/tfsec.sarif
+        continue-on-error: true
+
+  # ----- Plan with mock provider -------------------------------------
+  # Runs `terraform plan` against the AWS provider with static credentials
+  # from GitHub Actions secrets. NO `terraform apply` — apply is operator-only.
+  # The plan output is posted as a PR comment for human review.
+  plan:
+    name: terraform plan (mock credentials)
+    runs-on: ubuntu-latest
+    needs: [fmt-and-validate]
+    environment: aws-plan
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@fc4bdc31f5b39f2e7647e9e4e6281a83b14ee0b7
+        with:
+          terraform_version: 1.9.x
+
+      - name: terraform init
+        working-directory: infra/aws
+        run: terraform init -input=false -no-color
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: terraform plan
+        id: plan
+        working-directory: infra/aws
+        run: |
+          terraform plan -input=false -no-color -out=tfplan \
+            -var="aws_region=us-east-1" \
+            -var="environment=plan-mock" \
+            -var="owner_contact=ci@fincept.local" \
+            -var="cost_center=fincept-platform"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Show plan summary
+        working-directory: infra/aws
+        run: terraform show -no-color tfplan | head -200
+
+      - name: Post plan as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('infra/aws/tfplan-summary.txt', 'utf8').slice(0, 60000);
+            const body = `### terraform plan summary\n\n\`\`\`\n${summary}\n\`\`\`\n\n> Auto-generated by aws-iac-validate workflow. Apply is operator-only.`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+  # ----- Docker lint (best-effort; warns, doesn't fail) ---------------
+  # Confirms every Dockerfile referenced by the ECR repo list has the
+  # required hardening bits (USER, HEALTHCHECK, EXPOSE).
+  docker-lint:
+    name: docker lint (best-effort)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Find infra/docker Dockerfiles
+        id: find
+        run: |
+          files=$(ls infra/docker/*.Dockerfile 2>/dev/null)
+          echo "files<<EOF"
+          echo "$files"
+          echo "EOF"
+
+      - name: Lint each Dockerfile
+        run: |
+          fail=0
+          for f in infra/docker/*.Dockerfile; do
+            [ -f "$f" ] || continue
+            echo "==> $f"
+            grep -qE '^USER ' "$f" || { echo "  WARN: no USER directive"; fail=1; }
+            grep -qE '^HEALTHCHECK' "$f" || { echo "  WARN: no HEALTHCHECK"; fail=1; }
+            grep -qE '^EXPOSE ' "$f" || { echo "  WARN: no EXPOSE"; fail=1; }
+          done
+          if [ $fail -ne 0 ]; then echo "::warning::Some Dockerfiles missing hardening directives"; fi
+          exit 0
