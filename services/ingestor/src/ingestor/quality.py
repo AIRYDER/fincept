@@ -65,6 +65,13 @@ CLOCK_SKEW_BUDGET_NS = 1_000_000_000  # 1 s
 CROSS_SPREAD_THRESHOLD_BPS = Decimal(50)  # 0.5 %
 DEDUP_WINDOW_NS = 30_000_000_000  # 30 s
 STALENESS_LOOP_INTERVAL_S = 5.0
+# How long to keep per-(venue, symbol) state after the last event.
+# Entries older than this are evicted during staleness_check() to
+# prevent unbounded dict growth when symbols are removed from the
+# universe or venues go offline.  1 hour is generous — active symbols
+# update every few seconds, so anything older than 1h is genuinely
+# inactive and safe to drop (it will be re-added if activity resumes).
+STATE_RETENTION_NS = 3_600_000_000_000  # 1 hour
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +192,7 @@ class QualityMonitor:
         clock_skew_budget_ns: int = CLOCK_SKEW_BUDGET_NS,
         cross_spread_threshold_bps: Decimal = CROSS_SPREAD_THRESHOLD_BPS,
         dedup_window_ns: int = DEDUP_WINDOW_NS,
+        state_retention_ns: int = STATE_RETENTION_NS,
         clock: Callable[[], int] = now_ns,
         id_factory: Callable[[], str] = new_id,
     ) -> None:
@@ -193,8 +201,10 @@ class QualityMonitor:
         self._clock_skew_budget_ns = clock_skew_budget_ns
         self._cross_spread_threshold_bps = cross_spread_threshold_bps
         self._dedup_window_ns = dedup_window_ns
+        self._state_retention_ns = state_retention_ns
         self._clock = clock
         self._new_id = id_factory
+        self._evicted_count = 0
 
         # Last activity timestamp per (venue, symbol) — drives staleness.
         self._last_ts: dict[tuple[str, str], int] = {}
@@ -204,6 +214,16 @@ class QualityMonitor:
         self._last_top: dict[tuple[str, str], tuple[Decimal, Decimal]] = {}
         # Dedup table: alert key → emit-time-ns.  Pruned lazily on hit.
         self._recent_alerts: dict[tuple[str, frozenset[tuple[str, str]]], int] = {}
+
+    @property
+    def total_evicted(self) -> int:
+        """Total (venue, symbol) entries evicted since construction."""
+        return self._evicted_count
+
+    @property
+    def tracked_symbols(self) -> int:
+        """Number of (venue, symbol) pairs currently tracked."""
+        return len(self._last_ts)
 
     # ------------------------------------------------------------------
     # Public hooks
@@ -258,8 +278,15 @@ class QualityMonitor:
             await self._check_cross_venue(ev.symbol)
 
     async def staleness_check(self) -> None:
-        """One-shot staleness sweep — exposed for tests + the loop."""
+        """One-shot staleness sweep — exposed for tests + the loop.
+
+        Also evicts per-(venue, symbol) state entries that have been
+        inactive longer than ``state_retention_ns`` to prevent unbounded
+        dict growth.  Evicted entries are re-added if activity resumes.
+        """
         now = self._clock()
+        # Collect keys to evict (inactive beyond retention period).
+        evict_keys: list[tuple[str, str]] = []
         for (venue, symbol), ts in list(self._last_ts.items()):
             silent = now - ts
             if silent > self._staleness_budget_ns:
@@ -273,6 +300,21 @@ class QualityMonitor:
                         "silent_ns": str(silent),
                     },
                 )
+            # Evict entries inactive beyond the retention period.
+            if silent > self._state_retention_ns:
+                evict_keys.append((venue, symbol))
+        # Evict stale entries from all three state dicts.
+        for key in evict_keys:
+            self._last_ts.pop(key, None)
+            self._last_seq.pop(key, None)
+            self._last_top.pop(key, None)
+            self._evicted_count += 1
+        if evict_keys:
+            log.debug(
+                "quality.state_evicted",
+                count=len(evict_keys),
+                total_evicted=self._evicted_count,
+            )
 
     # ------------------------------------------------------------------
     # Internals

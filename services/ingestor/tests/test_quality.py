@@ -359,3 +359,166 @@ async def test_clock_skew_threshold_is_strict(delta: int, should_alert: bool) ->
     await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=delta))
     fired = bool([a for a in producer.alerts if a.code == "clock_skew"])
     assert fired is should_alert
+
+
+# ---------------------------------------------------------------------------
+# State eviction
+# ---------------------------------------------------------------------------
+
+
+async def test_eviction_removes_inactive_entries() -> None:
+    """Entries inactive beyond state_retention_ns should be evicted."""
+    # Use a small retention for testing: 1000 ns
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=1000,
+        staleness_budget_ns=10,  # Small so staleness alert fires too
+    )
+
+    # Record a trade — sets _last_ts, _last_seq.
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    assert monitor.tracked_symbols == 1
+
+    # Advance clock past retention period.
+    clk.advance(2000)  # 2000 ns > 1000 ns retention
+    await monitor.staleness_check()
+
+    # Entry should be evicted.
+    assert monitor.tracked_symbols == 0
+    assert monitor.total_evicted == 1
+    assert ("binance", "BTC-USDT") not in monitor._last_ts
+    assert ("binance", "BTC-USDT") not in monitor._last_seq
+
+
+async def test_eviction_preserves_active_entries() -> None:
+    """Entries within the retention period should not be evicted."""
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=10_000,
+        staleness_budget_ns=10,
+    )
+
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    clk.advance(5000)  # 5000 < 10000 retention
+    await monitor.staleness_check()
+
+    assert monitor.tracked_symbols == 1
+    assert monitor.total_evicted == 0
+
+
+async def test_eviction_cleans_all_three_dicts() -> None:
+    """Eviction should remove from _last_ts, _last_seq, and _last_top."""
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=1000,
+        staleness_budget_ns=10,
+    )
+
+    # Record a trade (sets _last_ts, _last_seq) and a snapshot (sets _last_top).
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    await monitor.on_book(
+        _snapshot(Venue.BINANCE, "BTC-USDT", bid="100", ask="101", ts_recv=0)
+    )
+
+    assert len(monitor._last_ts) == 1
+    assert len(monitor._last_seq) == 1
+    assert len(monitor._last_top) == 1
+
+    clk.advance(2000)
+    await monitor.staleness_check()
+
+    assert len(monitor._last_ts) == 0
+    assert len(monitor._last_seq) == 0
+    assert len(monitor._last_top) == 0
+
+
+async def test_eviction_accumulates_total_count() -> None:
+    """total_evicted should accumulate across multiple checks."""
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=1000,
+        staleness_budget_ns=10,
+    )
+
+    # Two symbols.
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    await monitor.on_trade(_trade(Venue.COINBASE, "BTC-USD", seq=1, ts_event=0, ts_recv=0))
+
+    clk.advance(2000)
+    await monitor.staleness_check()
+    assert monitor.total_evicted == 2
+
+    # Add another, evict again.
+    await monitor.on_trade(_trade(Venue.KRAKEN, "BTC-USD", seq=1, ts_event=2000, ts_recv=2000))
+    clk.advance(2000)  # Now at 4000, kraken entry at 2000, silent=2000 > 1000
+    await monitor.staleness_check()
+    assert monitor.total_evicted == 3
+
+
+async def test_evicted_symbol_re_added_on_activity() -> None:
+    """If a symbol becomes active again after eviction, it's re-added."""
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=1000,
+        staleness_budget_ns=10,
+    )
+
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    clk.advance(2000)
+    await monitor.staleness_check()
+    assert monitor.tracked_symbols == 0
+
+    # New activity re-adds the entry.
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=2, ts_event=2000, ts_recv=2000))
+    assert monitor.tracked_symbols == 1
+    assert ("binance", "BTC-USDT") in monitor._last_ts
+
+
+async def test_tracked_symbols_property() -> None:
+    """tracked_symbols should report the number of (venue, symbol) pairs."""
+    monitor, _, _ = _make_monitor()
+    assert monitor.tracked_symbols == 0
+
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    assert monitor.tracked_symbols == 1
+
+    await monitor.on_trade(_trade(Venue.COINBASE, "ETH-USD", seq=1, ts_event=0, ts_recv=0))
+    assert monitor.tracked_symbols == 2
+
+
+async def test_eviction_does_not_break_staleness_alert() -> None:
+    """Staleness alerts should still fire before eviction happens."""
+    producer = FakeProducer()
+    clk = FakeClock()
+    monitor = QualityMonitor(
+        producer,
+        clock=clk,
+        state_retention_ns=10_000,
+        staleness_budget_ns=10,
+    )
+
+    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    clk.advance(100)  # > staleness_budget (10) but < retention (10000)
+    await monitor.staleness_check()
+
+    # Staleness alert should have fired.
+    stale_alerts = [a for a in producer.alerts if a.code == "stale"]
+    assert len(stale_alerts) == 1
+    # Entry should NOT be evicted (within retention).
+    assert monitor.tracked_symbols == 1
+    assert monitor.total_evicted == 0
