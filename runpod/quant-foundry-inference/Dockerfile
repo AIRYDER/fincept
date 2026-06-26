@@ -36,13 +36,14 @@ COPY runpod/quant-foundry-inference/handler.py /app/handler.py
 
 # Install dependencies. `runpod` is the serverless worker SDK that
 # registers the handler with RunPod's control plane and polls for jobs.
+# Pin dependencies to compatible ranges for reproducible builds.
 RUN pip install --no-cache-dir \
-    "pydantic>=2.7" \
-    "httpx>=0.27" \
-    "runpod>=1.6" \
-    "onnxruntime>=1.17" \
-    "lightgbm>=4.3" \
-    "numpy>=1.26"
+    "pydantic>=2.7,<3" \
+    "httpx>=0.27,<1" \
+    "runpod>=1.6,<2" \
+    "onnxruntime>=1.17,<2" \
+    "lightgbm>=4.3,<5" \
+    "numpy>=1.26,<3"
 
 # Pin the code git SHA at build time (for reproducibility).
 ARG GIT_SHA=unknown

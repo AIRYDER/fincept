@@ -39,12 +39,15 @@ COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 # on RunPod serverless (the platform doesn't pipe jobs via stdin).
 # httpx is needed for the HTTP RunPod client (status/health checks).
 # pydantic is the core schema library.
+# Pin dependencies to compatible ranges for reproducible builds.
+# Lower bounds ensure feature availability; upper bounds prevent
+# breaking changes from unreleased major versions.
 RUN pip install --no-cache-dir \
-    "pydantic>=2.7" \
-    "httpx>=0.27" \
-    "runpod>=1.6" \
-    "lightgbm>=4.0" \
-    "pyarrow>=14.0"
+    "pydantic>=2.7,<3" \
+    "httpx>=0.27,<1" \
+    "runpod>=1.6,<2" \
+    "lightgbm>=4.0,<5" \
+    "pyarrow>=14.0,<20"
 
 # Pin the code git SHA at build time (for reproducibility).
 # Override with --build-arg GIT_SHA=$(git rev-parse HEAD)
