@@ -24,6 +24,7 @@ members = [
     "services/strategy_host",
     "services/quant_foundry",
     "services/settlements",
+    "experiments/news-impact-model",
 ]
 
 [tool.uv.sources]

@@ -20,7 +20,24 @@ def ns_to_iso(ns: int) -> str:
 
 
 def iso_to_ns(iso: str) -> int:
-    return int(_dt.datetime.fromisoformat(iso).timestamp() * 1_000_000_000)
+    """Convert an ISO-8601 string to integer nanoseconds.
+
+    Uses integer arithmetic throughout to avoid float precision loss.
+    ``datetime.timestamp()`` returns a float whose mantissa (~15-16 significant
+    digits) is too narrow for nanosecond timestamps (~19 digits), causing silent
+    truncation.  Instead we compute seconds * 1e9 + microseconds * 1e3 as ints.
+    """
+    dt = _dt.datetime.fromisoformat(iso)
+    # Normalize to UTC if naive (treat as UTC, matching timestamp() semantics
+    # for naive datetimes on most platforms).
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_dt.UTC)
+    # Epoch seconds as integer (fromtimestamp floor would lose sub-second
+    # precision, so we split into seconds + microseconds).
+    epoch = _dt.datetime(1970, 1, 1, tzinfo=_dt.UTC)
+    delta = dt - epoch
+    total_seconds = delta.days * 86_400 + delta.seconds
+    return total_seconds * 1_000_000_000 + delta.microseconds * 1_000
 
 
 class MonotonicClock(Clock):

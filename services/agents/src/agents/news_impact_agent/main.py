@@ -6,7 +6,6 @@ import contextlib
 import os
 from pathlib import Path
 import signal
-import sys
 from typing import Any, cast
 
 from redis.asyncio import Redis
@@ -24,9 +23,12 @@ from fincept_core.schemas import (
     NewsImpactSignal,
 )
 from fincept_core.tracing import configure_tracing
+from news_impact_model.analogs import HistoricalAnalogIndex
+from news_impact_model.data import load_historical_outcomes
+from news_impact_model.model import NewsImpactModel
+from news_impact_model.schema import MarketContext, NewsEvent
 
 ROOT = Path(__file__).resolve().parents[5]
-EXPERIMENT_SRC = ROOT / "experiments" / "news-impact-model" / "src"
 DEFAULT_HISTORY_PATH = (
     ROOT
     / "experiments"
@@ -34,13 +36,6 @@ DEFAULT_HISTORY_PATH = (
     / "sample_data"
     / "historical_outcomes.jsonl"
 )
-if str(EXPERIMENT_SRC) not in sys.path:
-    sys.path.insert(0, str(EXPERIMENT_SRC))
-
-from news_impact_model.analogs import HistoricalAnalogIndex  # noqa: E402
-from news_impact_model.data import load_historical_outcomes  # noqa: E402
-from news_impact_model.model import NewsImpactModel  # noqa: E402
-from news_impact_model.schema import MarketContext, NewsEvent  # noqa: E402
 
 log = get_logger(__name__)
 

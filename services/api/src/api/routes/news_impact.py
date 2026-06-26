@@ -13,7 +13,6 @@ graduate into the main news pipeline later.
 from __future__ import annotations
 
 from functools import lru_cache
-import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -21,17 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import require_user
+from news_impact_model.data import load_historical_outcomes
+from news_impact_model.workbench import WorkbenchState
 
 ROOT = Path(__file__).resolve().parents[5]
 EXPERIMENT_ROOT = ROOT / "experiments" / "news-impact-model"
-EXPERIMENT_SRC = EXPERIMENT_ROOT / "src"
 SAMPLE_DATA = EXPERIMENT_ROOT / "sample_data" / "historical_outcomes.jsonl"
-
-if str(EXPERIMENT_SRC) not in sys.path:
-    sys.path.insert(0, str(EXPERIMENT_SRC))
-
-from news_impact_model.data import load_historical_outcomes  # noqa: E402
-from news_impact_model.workbench import WorkbenchState  # noqa: E402
 
 router = APIRouter()
 

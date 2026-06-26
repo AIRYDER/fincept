@@ -59,13 +59,12 @@ API_VERSION = "0.1.0"
 
 log = get_logger(__name__)
 
-# Fail closed on dev JWT secret in non-dev envs (audit R4/P3).
-assert_safe_for_runtime()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the shared Redis client + tracing at startup."""
+    # Fail closed on dev JWT secret in non-dev envs (audit R4/P3).
+    assert_safe_for_runtime()
     configure_logging()
     configure_tracing("api")
     settings = get_settings()
