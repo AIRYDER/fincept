@@ -168,6 +168,7 @@ def update_template(
     template: dict[str, Any],
     new_image: str,
     env_updates: dict[str, str],
+    docker_cmd: str,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Update a template's imageName and env vars via saveTemplate mutation."""
@@ -183,11 +184,15 @@ def update_template(
         "volumeInGb": template.get("volumeInGb", 0),
         "isServerless": template.get("isServerless", True),
         "env": merged_env,
+        # Set dockerArgs to the explicit command. An empty string ("")
+        # was causing RunPod to override the Dockerfile's ENTRYPOINT with
+        # an empty command, preventing the handler from starting.
+        # The JSON format matches RunPod's expected dockerArgs schema.
+        "dockerArgs": json.dumps({"cmd": ["python", "-u", docker_cmd]}),
     }
 
     # Preserve optional fields if they exist.
     for field in [
-        "dockerArgs",
         "volumeMountPath",
         "config",
         "category",
@@ -220,6 +225,7 @@ def deploy_endpoint(
     endpoint_id: str,
     new_image: str,
     env_updates: dict[str, str],
+    docker_cmd: str,
     dry_run: bool = False,
     force: bool = False,
 ) -> None:
@@ -251,7 +257,7 @@ def deploy_endpoint(
 
     # 3. Update the template.
     print("  Updating template...")
-    result = update_template(api_key, template, new_image, env_updates, dry_run=dry_run)
+    result = update_template(api_key, template, new_image, env_updates, docker_cmd, dry_run=dry_run)
     print(f"  Result: id={result.get('id')}, image={result.get('imageName')}")
     if not dry_run:
         print("  [OK] Template updated. RunPod will roll out the new image to workers.")
@@ -281,10 +287,12 @@ def main() -> int:
     try:
         deploy_endpoint(
             api_key, training_endpoint, training_image, TRAINING_ENV,
+            docker_cmd="/worker/handler.py",
             dry_run=args.dry_run, force=args.force,
         )
         deploy_endpoint(
             api_key, inference_endpoint, inference_image, INFERENCE_ENV,
+            docker_cmd="/app/handler.py",
             dry_run=args.dry_run, force=args.force,
         )
     except Exception as exc:

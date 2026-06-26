@@ -31,19 +31,16 @@ COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 
-# Install dependencies.
-# NOTE: `runpod` SDK is intentionally NOT installed here. RunPod serverless
-# sends job events via stdin when the SDK is absent (the handler falls back
-# to stdin mode). When the SDK IS installed, it calls runpod.serverless.start()
-# which requires RUNPOD_WEBHOOK_GET_JOB to enter serverless polling mode —
-# if that env var is missing, the SDK starts a local FastAPI test server on
-# port 8000 and never picks up real jobs. The inference endpoint uses the
-# same stdin-mode approach and works correctly.
+# Install dependencies. `runpod` is the serverless worker SDK that
+# registers the handler with RunPod's control plane and polls for jobs.
+# Without it, the handler falls back to stdin mode which doesn't work
+# on RunPod serverless (the platform doesn't pipe jobs via stdin).
 # httpx is needed for the HTTP RunPod client (status/health checks).
 # pydantic is the core schema library.
 RUN pip install --no-cache-dir \
     "pydantic>=2.7" \
     "httpx>=0.27" \
+    "runpod>=1.6" \
     "lightgbm>=4.0" \
     "pyarrow>=14.0"
 
