@@ -168,6 +168,19 @@ if __name__ == "__main__":  # pragma: no cover
     try:
         import runpod
         _log(f"runpod SDK imported, version: {getattr(runpod, '__version__', 'unknown')}")
+
+        # Dump RUNPOD_* env vars to diagnose serverless vs local mode.
+        # The SDK checks for RUNPOD_WEBHOOK_GET_JOB to decide whether to
+        # poll the real job queue (serverless) or start a local FastAPI
+        # test server on :8000 (local mode). If this var is missing,
+        # jobs will stay IN_QUEUE forever while the worker looks "ready".
+        runpod_env = {k: v for k, v in os.environ.items() if k.startswith("RUNPOD_")}
+        _log(f"RUNPOD_* env vars: {json.dumps(runpod_env, indent=2)}")
+        if not runpod_env:
+            _log("WARNING: No RUNPOD_* env vars found! SDK will likely enter local/test mode.")
+            _log("  This means the worker will NOT poll the real job queue.")
+            _log("  Jobs will stay IN_QUEUE indefinitely while the worker shows 'ready'.")
+
         _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
     except ImportError as e:
