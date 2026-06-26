@@ -145,8 +145,9 @@ def verify_training_result(output: dict) -> None:
     callback_payload_str = output.get("callback_payload", "{}")
     callback = json.loads(callback_payload_str) if isinstance(callback_payload_str, str) else callback_payload_str
 
-    # The callback envelope contains the dossier.
-    dossier = callback.get("dossier", callback)
+    # The callback envelope nests the dossier under payload.dossier.
+    payload = callback.get("payload", callback)
+    dossier = payload.get("dossier", callback.get("dossier", callback))
     metrics = dossier.get("training_metrics", {})
 
     print(f"  model_id: {dossier.get('model_id', 'unknown')}")
@@ -169,10 +170,11 @@ def verify_training_result(output: dict) -> None:
         )
         print(f"  [OK] accuracy {accuracy} != stub {stub_accuracy} (real model)")
 
-    assert dossier.get("authority") == "shadow_only", (
-        f"authority must be shadow_only, got {dossier.get('authority')}"
+    authority = dossier.get("authority")
+    assert authority in ("shadow_only", "shadow-only"), (
+        f"authority must be shadow-only, got {authority}"
     )
-    print("  [OK] authority=shadow_only")
+    print(f"  [OK] authority={authority}")
     print("  [OK] all metric checks passed")
 
     # Return model_id and artifact info for inference.

@@ -215,6 +215,10 @@ class RealLightGBMTrainer:
         (backward compat).
         """
         parsed = urlparse(ref)
+        # A single-letter scheme is a Windows drive letter (e.g. "C:\\path"),
+        # not a real URI scheme. Treat it as a bare local path.
+        if len(parsed.scheme) == 1:
+            return Path(ref)
         if parsed.scheme == "file":
             path = unquote(parsed.path)
             if os.name == "nt" and len(path) > 2 and path[0] == "/" and path[2] == ":":

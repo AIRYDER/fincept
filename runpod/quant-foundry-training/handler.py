@@ -92,6 +92,15 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "job_id": None,
         }
 
+    # Support inline dataset for E2E testing: if the input includes
+    # ``inline_dataset_csv``, write it to a temp file and override the
+    # dataset_manifest_ref. This avoids needing a network volume or S3
+    # bucket for simple smoke tests. The field is NOT part of the
+    # RunPodTrainingRequest schema — it is a handler-level extension, so
+    # we must pop it from the input BEFORE schema validation (the schema
+    # forbids extra fields).
+    inline_csv = input_data.pop("inline_dataset_csv", None)
+
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
     except Exception as exc:
@@ -101,12 +110,6 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "job_id": input_data.get("job_id"),
         }
 
-    # Support inline dataset for E2E testing: if the input includes
-    # ``inline_dataset_csv``, write it to a temp file and override the
-    # dataset_manifest_ref. This avoids needing a network volume or S3
-    # bucket for simple smoke tests. The field is NOT part of the
-    # RunPodTrainingRequest schema — it is a handler-level extension.
-    inline_csv = input_data.get("inline_dataset_csv")
     if isinstance(inline_csv, str) and inline_csv.strip():
         import tempfile
 
