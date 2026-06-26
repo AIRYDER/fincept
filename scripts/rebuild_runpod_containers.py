@@ -68,9 +68,12 @@ CONTAINERS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# RunPod endpoint IDs (defaults; can be overridden via env vars).
-DEFAULT_TRAINING_ENDPOINT_ID = "h2blqodcicxqyy"
-DEFAULT_INFERENCE_ENDPOINT_ID = "t31u1z426jy1ub"
+# RunPod endpoint IDs — import from shared config (single source of truth).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import (  # noqa: E402
+    INFERENCE_ENDPOINT_ID as DEFAULT_INFERENCE_ENDPOINT_ID,
+    TRAINING_ENDPOINT_ID as DEFAULT_TRAINING_ENDPOINT_ID,
+)
 
 # RunPod API base URL for endpoint refresh.
 RUNPOD_API_BASE = "https://api.runpod.ai/v2"

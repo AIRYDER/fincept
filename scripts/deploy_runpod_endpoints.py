@@ -30,6 +30,12 @@ import os
 import sys
 from typing import Any
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import (  # noqa: E402
+    INFERENCE_ENDPOINT_ID,
+    TRAINING_ENDPOINT_ID,
+)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -274,8 +280,8 @@ def main() -> int:
         print("ERROR: RUNPOD_API_KEY env var is required", file=sys.stderr)
         return 1
 
-    training_endpoint = os.environ.get("RUNPOD_ENDPOINT_ID", "h2blqodcicxqyy")
-    inference_endpoint = os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "t31u1z426jy1ub")
+    training_endpoint = os.environ.get("RUNPOD_ENDPOINT_ID", TRAINING_ENDPOINT_ID)
+    inference_endpoint = os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", INFERENCE_ENDPOINT_ID)
     training_image = os.environ.get("RUNPOD_TRAINING_IMAGE", DEFAULT_TRAINING_IMAGE)
     inference_image = os.environ.get("RUNPOD_INFERENCE_IMAGE", DEFAULT_INFERENCE_IMAGE)
 

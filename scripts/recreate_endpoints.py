@@ -12,16 +12,16 @@ import os
 import time
 import sys
 
-# Template IDs (from previous queries)
-TRAINING_TEMPLATE_ID = "me58r5vdrp"
-INFERENCE_TEMPLATE_ID = "wnasp3v5jn"
-
-# Endpoint names
-TRAINING_NAME = "fincept-qf-training"
-INFERENCE_NAME = "fincept-qf-inference"
-
-# GPU type
-GPU_TYPE = "NVIDIA GeForce RTX 4090"
+# Import shared RunPod resource IDs from the single source of truth.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import (  # noqa: E402
+    GPU_TYPE,
+    INFERENCE_NAME,
+    INFERENCE_TEMPLATE_ID,
+    NETWORK_VOLUME_ID,
+    TRAINING_NAME,
+    TRAINING_TEMPLATE_ID,
+)
 
 
 def graphql(api_key, query, variables=None):
@@ -96,7 +96,7 @@ mutation($input: EndpointInput!) {
             "scalerValue": 4,
             "idleTimeout": 300,
             "flashBoot": True,
-            "networkVolumeId": "rrsd005i3g",
+            "networkVolumeId": NETWORK_VOLUME_ID,
             "volumeMountPath": "/workspace",
             "containerDiskInGb": 20,
         }
@@ -119,7 +119,7 @@ mutation($input: EndpointInput!) {
                 "scalerValue": 4,
                 "idleTimeout": 300,
                 "flashboot": True,
-                "networkVolumeId": "rrsd005i3g",
+                "networkVolumeId": NETWORK_VOLUME_ID,
             }
             r = httpx.post(
                 "https://rest.runpod.io/v1/endpoints",

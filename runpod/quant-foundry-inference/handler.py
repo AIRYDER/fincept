@@ -65,14 +65,53 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     - ``event``: the RunPod event dict containing the job input.
 
     Returns:
-    - A dict with the callback envelope and predictions.
+    - On success: dict with callback envelope, predictions, latency_ms.
+    - On failure: dict with error_code, error_summary, job_id.
     """
-    # Parse the inference request from the event.
-    input_data = event.get("input", {})
-    request = RunPodInferenceRequest(**input_data["request"])
+    # --- Input validation (matches training handler pattern) ---
+    input_data = event.get("input") if isinstance(event, dict) else None
+    if not isinstance(input_data, dict):
+        return {
+            "error_code": "bad_request",
+            "error_summary": "event['input'] must be a dict with 'request' and 'snapshot' keys",
+            "job_id": None,
+        }
 
-    # Parse the feature snapshot.
-    snapshot = FeatureSnapshot(**input_data["snapshot"])
+    # Validate the request sub-dict.
+    request_raw = input_data.get("request")
+    if not isinstance(request_raw, dict):
+        return {
+            "error_code": "bad_request",
+            "error_summary": "event['input']['request'] must be a dict matching RunPodInferenceRequest",
+            "job_id": input_data.get("job_id"),
+        }
+
+    try:
+        request = RunPodInferenceRequest.model_validate(request_raw)
+    except Exception as exc:
+        return {
+            "error_code": "schema_validation_failed",
+            "error_summary": str(exc),
+            "job_id": input_data.get("job_id"),
+        }
+
+    # Validate the snapshot sub-dict.
+    snapshot_raw = input_data.get("snapshot")
+    if not isinstance(snapshot_raw, dict):
+        return {
+            "error_code": "bad_request",
+            "error_summary": "event['input']['snapshot'] must be a dict matching FeatureSnapshot",
+            "job_id": input_data.get("job_id") or request.job_id,
+        }
+
+    try:
+        snapshot = FeatureSnapshot.model_validate(snapshot_raw)
+    except Exception as exc:
+        return {
+            "error_code": "schema_validation_failed",
+            "error_summary": str(exc),
+            "job_id": input_data.get("job_id") or request.job_id,
+        }
 
     # Get the model_id.
     model_id = input_data.get("model_id", "unknown")
@@ -114,8 +153,19 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         }
     except InferenceDisabledError as e:
         return {
-            "error": "inference_disabled",
-            "message": str(e),
+            "error_code": "inference_disabled",
+            "error_summary": str(e),
+            "job_id": request.job_id,
+            "callback": None,
+            "predictions": [],
+        }
+    except Exception as exc:
+        # Catch-all: any unhandled exception returns a structured error
+        # envelope instead of crashing the RunPod worker.
+        return {
+            "error_code": "inference_failed",
+            "error_summary": str(exc),
+            "job_id": request.job_id,
             "callback": None,
             "predictions": [],
         }

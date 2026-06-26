@@ -61,6 +61,17 @@ ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="600"
 ENV QUANT_FOUNDRY_USE_REAL_TRAINER="false"
 ENV PYTHONPATH=/worker
 
+# Create a non-root user for defense-in-depth. RunPod serverless workers
+# don't need root — the handler only reads job input and writes callbacks.
+RUN groupadd --system --gid 1001 qfworker \
+    && useradd --system --uid 1001 --gid qfworker --home-dir /worker qfworker
+USER qfworker
+
+# Healthcheck: verify the Python runtime + handler module can load.
+# RunPod polls this to decide whether to send jobs to the worker.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('ok')" || exit 1
+
 # RunPod's serverless loader calls handler(event).
 # Use ENTRYPOINT (not CMD) so RunPod's dockerArgs field can't override it.
 ENTRYPOINT ["python", "-u", "/worker/handler.py"]

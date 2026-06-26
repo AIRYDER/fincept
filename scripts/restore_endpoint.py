@@ -1,7 +1,10 @@
 """Restore training endpoint config to match working inference endpoint."""
 import httpx
 import os
-import time
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import NETWORK_VOLUME_ID  # noqa: E402
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = os.environ["RUNPOD_ENDPOINT_ID"]
@@ -13,7 +16,7 @@ r = httpx.post(
     json={
         "workersMax": 0,
         "flashboot": True,
-        "networkVolumeId": "rrsd005i3g",
+        "networkVolumeId": NETWORK_VOLUME_ID,
         "idleTimeout": 300,
     },
     timeout=30.0,

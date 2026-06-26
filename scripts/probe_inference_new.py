@@ -2,10 +2,14 @@
 import httpx
 import json
 import os
+import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import INFERENCE_ENDPOINT_ID  # noqa: E402
+
 api_key = os.environ["RUNPOD_API_KEY"]
-eid = "t31u1z426jy1ub"  # new inference endpoint
+eid = INFERENCE_ENDPOINT_ID
 H = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 symbols = ["SYM_A", "SYM_B", "SYM_C"]

@@ -96,9 +96,13 @@ class TestScriptImports:
         assert "quant-foundry-inference" in infer_dockerfile
 
     def test_verify_script_endpoint_defaults(self, verify_module):
-        """The verify script has the correct default endpoint IDs."""
-        assert verify_module.DEFAULT_TRAINING_ENDPOINT_ID == "h2blqodcicxqyy"
-        assert verify_module.DEFAULT_INFERENCE_ENDPOINT_ID == "t31u1z426jy1ub"
+        """The verify script imports endpoint IDs from the shared config."""
+        # The defaults should come from runpod_config, which reads env vars
+        # with hardcoded fallbacks.  We just verify they're non-empty strings.
+        assert verify_module.DEFAULT_TRAINING_ENDPOINT_ID
+        assert isinstance(verify_module.DEFAULT_TRAINING_ENDPOINT_ID, str)
+        assert verify_module.DEFAULT_INFERENCE_ENDPOINT_ID
+        assert isinstance(verify_module.DEFAULT_INFERENCE_ENDPOINT_ID, str)
 
 
 # ---------------------------------------------------------------------------

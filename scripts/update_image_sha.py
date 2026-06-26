@@ -4,6 +4,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID  # noqa: E402
+
 api_key = os.environ["RUNPOD_API_KEY"]
 sha = sys.argv[1] if len(sys.argv) > 1 else "8a74c133380ecebfa7b685f7a7a22e6cba23f644"
 
@@ -33,8 +36,8 @@ query($id: String!) {
 """
 
 for name, eid, suffix in [
-    ("training", "h2blqodcicxqyy", "quant-foundry-training"),
-    ("inference", "t31u1z426jy1ub", "quant-foundry-inference"),
+    ("training", TRAINING_ENDPOINT_ID, "quant-foundry-training"),
+    ("inference", INFERENCE_ENDPOINT_ID, "quant-foundry-inference"),
 ]:
     print(f"\n=== Updating {name} ({eid}) ===")
 

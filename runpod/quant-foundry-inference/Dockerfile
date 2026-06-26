@@ -57,4 +57,13 @@ ENV QUANT_FOUNDRY_MODE=runpod_shadow
 ENV QUANT_FOUNDRY_USE_REAL_INFERENCE="false"
 ENV PYTHONPATH=/app
 
+# Create a non-root user for defense-in-depth.
+RUN groupadd --system --gid 1001 qfworker \
+    && useradd --system --uid 1001 --gid qfworker --home-dir /app qfworker
+USER qfworker
+
+# Healthcheck: verify the Python runtime + handler module can load.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD python -c "import sys; sys.path.insert(0, '/app'); import handler; print('ok')" || exit 1
+
 ENTRYPOINT ["python", "-u", "/app/handler.py"]

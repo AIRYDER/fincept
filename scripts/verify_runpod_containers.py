@@ -56,9 +56,12 @@ from typing import Any
 # RunPod API base URL.
 RUNPOD_API_BASE = "https://api.runpod.ai/v2"
 
-# Default endpoint IDs (can be overridden via CLI or env vars).
-DEFAULT_TRAINING_ENDPOINT_ID = "h2blqodcicxqyy"
-DEFAULT_INFERENCE_ENDPOINT_ID = "t31u1z426jy1ub"
+# Default endpoint IDs — import from shared config (single source of truth).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import (  # noqa: E402
+    INFERENCE_ENDPOINT_ID as DEFAULT_INFERENCE_ENDPOINT_ID,
+    TRAINING_ENDPOINT_ID as DEFAULT_TRAINING_ENDPOINT_ID,
+)
 
 # Polling configuration for async RunPod jobs.
 POLL_INTERVAL_SECONDS = 10

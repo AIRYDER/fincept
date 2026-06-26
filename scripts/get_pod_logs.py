@@ -4,8 +4,11 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import TRAINING_ENDPOINT_ID  # noqa: E402
+
 api_key = os.environ["RUNPOD_API_KEY"]
-eid = sys.argv[1] if len(sys.argv) > 1 else "h2blqodcicxqyy"
+eid = sys.argv[1] if len(sys.argv) > 1 else TRAINING_ENDPOINT_ID
 
 # Get pods for the endpoint
 GET_PODS = """

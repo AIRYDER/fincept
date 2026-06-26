@@ -13,6 +13,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID  # noqa: E402
+
 api_key = os.environ["RUNPOD_API_KEY"]
 
 # Default to ghcr.io-fincept; override via argv[1]
@@ -44,8 +47,8 @@ query($id: String!) {
 """
 
 for name, eid in [
-    ("training", "h2blqodcicxqyy"),
-    ("inference", "t31u1z426jy1ub"),
+    ("training", TRAINING_ENDPOINT_ID),
+    ("inference", INFERENCE_ENDPOINT_ID),
 ]:
     print(f"\n=== Linking registry auth for {name} ({eid}) ===")
 
