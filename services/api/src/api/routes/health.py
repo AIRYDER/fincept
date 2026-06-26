@@ -34,7 +34,10 @@ router = APIRouter()
 def _safe_detail(text: str) -> str:
     """Strip anything that could contain secrets or traces."""
     lowered = text.lower()
-    if any(bad in lowered for bad in ("secret", "token", "password", "key", "traceback", "exception")):
+    if any(
+        bad in lowered
+        for bad in ("secret", "token", "password", "key", "traceback", "exception")
+    ):
         return "Details redacted for security."
     return text
 
@@ -71,17 +74,23 @@ async def readiness(
         redis_detail = "Redis reachable via shared client."
     except Exception as exc:  # never leak stack
         redis_detail = _safe_detail(f"Redis unreachable: {type(exc).__name__}")
-    checks.append({"id": "redis", "label": "Redis", "state": redis_state, "detail": redis_detail})
+    checks.append(
+        {"id": "redis", "label": "Redis", "state": redis_state, "detail": redis_detail}
+    )
 
     # --- Timescale / Postgres (via fincept_db bar coverage probe) ---
     ts_state = "skipped"
     ts_detail = "Timescale status not yet probed (light probe only; wire in Phase 4)."
     try:
-        from fincept_db.bars import read_bar_coverage  # type: ignore
+        from fincept_db.bars import read_bar_coverage
 
-        # Light read (small lookback). If it returns without hard error we treat as ok.
-        # The function is expected to be cheap or cached.
-        cov = read_bar_coverage(freq="1m", lookback_ns=60_000_000_000)  # ~1min
+        end_ns = int(time.time() * 1_000_000_000)
+        cov = await read_bar_coverage(
+            ["BTC-USD"],
+            freq="1m",
+            start_ns=end_ns - 60_000_000_000,
+            end_ns=end_ns,
+        )
         if cov is not None:
             ts_state = "pass"
             ts_detail = "Timescale bars coverage query succeeded."
@@ -89,10 +98,17 @@ async def readiness(
             ts_state = "warn"
             ts_detail = "Timescale returned empty coverage (data may be loading)."
     except Exception as exc:
-        ts_detail = _safe_detail(f"Timescale probe issue: {type(exc).__name__} (may be expected if no bars ingested yet)")
+        ts_detail = _safe_detail(
+            f"Timescale probe issue: {type(exc).__name__} (may be expected if no bars ingested yet)"
+        )
         ts_state = "warn"
     checks.append(
-        {"id": "timescale", "label": "Timescale/Postgres", "state": ts_state, "detail": ts_detail}
+        {
+            "id": "timescale",
+            "label": "Timescale/Postgres",
+            "state": ts_state,
+            "detail": ts_detail,
+        }
     )
 
     # --- Verification receipt (link to catalog; server reports presence) ---
@@ -112,15 +128,25 @@ async def readiness(
     provider_detail = "Provider freshness reported via /services and /data/sources on dashboard (Phase 4)."
     try:
         beats = await read_all(redis)
-        provider_like = [b for b in beats if "provider" in b.get("name", "").lower() or "ingestor" in b.get("name", "").lower()]
+        provider_like = [
+            name
+            for name in beats
+            if "provider" in name.lower() or "ingestor" in name.lower()
+        ]
         if provider_like:
-            fresh = any(b.get("status") == "up" for b in provider_like)
-            provider_state = "pass" if fresh else "stale"
-            provider_detail = f"{len(provider_like)} provider-related heartbeats observed."
+            provider_state = "pass"
+            provider_detail = (
+                f"{len(provider_like)} provider-related heartbeats observed."
+            )
     except Exception:
         provider_detail = "Provider probe via Redis unavailable."
     checks.append(
-        {"id": "provider_freshness", "label": "Provider freshness", "state": provider_state, "detail": provider_detail}
+        {
+            "id": "provider_freshness",
+            "label": "Provider freshness",
+            "state": provider_state,
+            "detail": provider_detail,
+        }
     )
 
     # --- News-impact shadow lane ---
@@ -129,16 +155,19 @@ async def readiness(
     ni_detail = "News-impact shadow lane will be wired in later phase. Current status from /news-impact (Phase 4)."
     try:
         beats = await read_all(redis)
-        ni_beats = [b for b in beats if "news" in b.get("name", "").lower()]
-        if any(b.get("status") == "up" for b in ni_beats):
+        ni_beats = [name for name in beats if "news" in name.lower()]
+        if ni_beats:
             ni_state = "pass"
             ni_detail = "News related heartbeats present."
-        elif ni_beats:
-            ni_state = "stale"
     except Exception:
-        pass
+        ni_detail = "News heartbeat probe via Redis unavailable."
     checks.append(
-        {"id": "news_impact", "label": "News-impact shadow lane", "state": ni_state, "detail": ni_detail}
+        {
+            "id": "news_impact",
+            "label": "News-impact shadow lane",
+            "state": ni_state,
+            "detail": ni_detail,
+        }
     )
 
     # --- Dashboard tests (client side) ---
@@ -170,7 +199,14 @@ async def readiness(
     )
 
     # Overall rollup (pass > warn > stale > review > fail)
-    state_order = {"pass": 5, "warn": 4, "stale": 3, "fail": 1, "skipped": 5, "disabled": 5}
+    state_order = {
+        "pass": 5,
+        "warn": 4,
+        "stale": 3,
+        "fail": 1,
+        "skipped": 5,
+        "disabled": 5,
+    }
     worst = min((state_order.get(c["state"], 2) for c in checks), default=5)
     overall = next((k for k, v in state_order.items() if v == worst), "warn")
 

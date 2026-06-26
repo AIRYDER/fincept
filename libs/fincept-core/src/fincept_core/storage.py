@@ -27,15 +27,15 @@ Design invariants (mirroring ``quant_foundry.artifacts``):
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 from abc import ABC, abstractmethod
-from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from typing import Any, cast
+from urllib.parse import unquote, urlparse
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -80,9 +80,7 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     """
     parsed = urlparse(uri)
     if (parsed.scheme or "").lower() != "s3":
-        raise UnsupportedUriError(
-            f"expected s3:// uri, got scheme {parsed.scheme!r}: {uri!r}"
-        )
+        raise UnsupportedUriError(f"expected s3:// uri, got scheme {parsed.scheme!r}: {uri!r}")
     bucket = parsed.netloc or ""
     if not bucket:
         raise UnsupportedUriError(f"s3 uri has empty bucket: {uri!r}")
@@ -111,12 +109,7 @@ def parse_file_uri(uri: str) -> pathlib.Path:
     # Windows drive-letter bare paths: urlparse treats "C:\..." as scheme="c".
     # Detect a single-letter scheme followed by a path separator and treat
     # the whole string as a bare path.
-    if (
-        len(uri) >= 3
-        and uri[1] == ":"
-        and uri[0].isalpha()
-        and (uri[2] in ("\\", "/"))
-    ):
+    if len(uri) >= 3 and uri[1] == ":" and uri[0].isalpha() and (uri[2] in ("\\", "/")):
         raw_path = uri
         raw_path = _strip_windows_drive_leading_slash(raw_path)
         _reject_traversal(pathlib.PurePath(raw_path).parts, uri)
@@ -189,10 +182,8 @@ class StorageBackend(ABC):
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
             raise
         return tmp_path
 
@@ -299,7 +290,7 @@ class S3StorageBackend(StorageBackend):
         if self._client is not None:
             return self._client
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3
         except ImportError as exc:  # pragma: no cover - exercised via tests
             raise StorageError(
                 "boto3 is required for S3 storage backend but is not installed"
@@ -321,9 +312,7 @@ class S3StorageBackend(StorageBackend):
             return parse_s3_uri(uri)
         # Bare key — use default bucket.
         if self.bucket is None:
-            raise StorageConfigError(
-                f"no bucket in uri and no default bucket configured: {uri!r}"
-            )
+            raise StorageConfigError(f"no bucket in uri and no default bucket configured: {uri!r}")
         key = uri.lstrip("/")
         _reject_traversal(pathlib.PurePosixPath(key).parts, uri)
         return self.bucket, key
@@ -340,7 +329,7 @@ class S3StorageBackend(StorageBackend):
         except Exception as exc:
             raise StorageError(f"s3 read failed for {uri!r}: {exc}") from exc
         body = resp["Body"].read() if hasattr(resp, "__getitem__") else resp.read()
-        return body
+        return cast(bytes, body)
 
     def write_bytes(self, uri: str, data: bytes) -> str:
         bucket, key = self._resolve_bucket(uri)
@@ -464,17 +453,13 @@ def resolve_uri(
                 path = (backend.base_dir / path).resolve()
             return "file://" + path.as_posix()
         if scheme == "s3":
-            raise UnsupportedUriError(
-                "s3:// uri passed to LocalStorageBackend.resolve_uri"
-            )
+            raise UnsupportedUriError("s3:// uri passed to LocalStorageBackend.resolve_uri")
         raise UnsupportedUriError(f"unsupported uri scheme {scheme!r}: {uri!r}")
     if isinstance(backend, S3StorageBackend):
         if scheme == "s3":
             bucket, key = parse_s3_uri(uri)
             return backend._canonical(bucket, key)
-        raise UnsupportedUriError(
-            f"S3StorageBackend requires s3:// uri, got {scheme!r}: {uri!r}"
-        )
+        raise UnsupportedUriError(f"S3StorageBackend requires s3:// uri, got {scheme!r}: {uri!r}")
     if scheme == "file" or scheme == "":
         return uri
     if scheme == "s3":

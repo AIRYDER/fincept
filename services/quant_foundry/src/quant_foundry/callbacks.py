@@ -50,13 +50,11 @@ from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
 
 
 class ShadowLedgerSink(Protocol):
-    def store(self, predictions: list[dict[str, Any]]) -> None:
-        ...
+    def store(self, predictions: list[dict[str, Any]]) -> None: ...
 
 
 class DossierStoreSink(Protocol):
-    def store(self, training_result: dict[str, Any]) -> None:
-        ...
+    def store(self, training_result: dict[str, Any]) -> None: ...
 
 
 class ShadowLedgerStub:
@@ -229,24 +227,32 @@ class CallbackProcessor:
         # Fail closed: bad signature -> reject, fail job, no domain effect.
         if not in_rec.signature_valid:
             self.inbox.mark_processed(
-                job_id, status=CallbackStatus.REJECTED,
+                job_id,
+                status=CallbackStatus.REJECTED,
                 error_code="bad_signature",
                 error_summary="callback signature verification failed",
             )
-            self._fail_job(job_id, error_code="bad_signature",
-                           error_summary="callback signature verification failed")
+            self._fail_job(
+                job_id,
+                error_code="bad_signature",
+                error_summary="callback signature verification failed",
+            )
             return self._receipt(job_id, CallbackStatus.REJECTED, "rejected_bad_signature")
 
         # Tamper check: read payload bytes from payload_ref and verify hash.
         payload_bytes = self._read_payload(in_rec.payload_ref, in_rec.payload_hash)
         if payload_bytes is None:
             self.inbox.mark_processed(
-                job_id, status=CallbackStatus.REJECTED,
+                job_id,
+                status=CallbackStatus.REJECTED,
                 error_code="payload_tamper",
                 error_summary="payload hash mismatch (tamper detected)",
             )
-            self._fail_job(job_id, error_code="payload_tamper",
-                           error_summary="payload hash mismatch (tamper detected)")
+            self._fail_job(
+                job_id,
+                error_code="payload_tamper",
+                error_summary="payload hash mismatch (tamper detected)",
+            )
             return self._receipt(job_id, CallbackStatus.REJECTED, "rejected_payload_tamper")
 
         # Schema validation against the real contract.
@@ -254,23 +260,29 @@ class CallbackProcessor:
             envelope = RunPodCallbackEnvelope.model_validate(json.loads(payload_bytes))
         except (ValidationError, ValueError) as exc:
             self.inbox.mark_processed(
-                job_id, status=CallbackStatus.REJECTED,
+                job_id,
+                status=CallbackStatus.REJECTED,
                 error_code="invalid_schema",
                 error_summary=f"callback payload failed schema validation: {exc}",
             )
-            self._fail_job(job_id, error_code="invalid_schema",
-                           error_summary="callback payload failed schema validation")
+            self._fail_job(
+                job_id,
+                error_code="invalid_schema",
+                error_summary="callback payload failed schema validation",
+            )
             return self._receipt(job_id, CallbackStatus.REJECTED, "rejected_invalid_schema")
 
         # Bind envelope.job_id to the inbox job_id (cross-job replay guard).
         if envelope.job_id != job_id:
             self.inbox.mark_processed(
-                job_id, status=CallbackStatus.REJECTED,
+                job_id,
+                status=CallbackStatus.REJECTED,
                 error_code="job_id_mismatch",
                 error_summary="callback job_id does not match inbox job_id",
             )
-            self._fail_job(job_id, error_code="job_id_mismatch",
-                           error_summary="callback job_id mismatch")
+            self._fail_job(
+                job_id, error_code="job_id_mismatch", error_summary="callback job_id mismatch"
+            )
             return self._receipt(job_id, CallbackStatus.REJECTED, "rejected_job_id_mismatch")
 
         # Apply domain effect by result_type.
@@ -285,17 +297,22 @@ class CallbackProcessor:
                 raise ValueError(f"unknown result_type: {result_type}")
         except (ValidationError, ValueError, KeyError) as exc:
             self.inbox.mark_processed(
-                job_id, status=CallbackStatus.REJECTED,
+                job_id,
+                status=CallbackStatus.REJECTED,
                 error_code="domain_effect_failed",
                 error_summary=f"applying domain effect failed: {exc}",
             )
-            self._fail_job(job_id, error_code="domain_effect_failed",
-                           error_summary=f"applying domain effect failed: {exc}")
+            self._fail_job(
+                job_id,
+                error_code="domain_effect_failed",
+                error_summary=f"applying domain effect failed: {exc}",
+            )
             return self._receipt(job_id, CallbackStatus.REJECTED, "rejected_domain_effect")
 
         # Success.
         self.inbox.mark_processed(
-            job_id, status=CallbackStatus.PROCESSED,
+            job_id,
+            status=CallbackStatus.PROCESSED,
             note=f"processed result_type={result_type}",
         )
         self.outbox.update_status(job_id, JobStatus.VALIDATING)
@@ -304,9 +321,7 @@ class CallbackProcessor:
 
     # --- internals ---
 
-    def _read_payload(
-        self, payload_ref: str | None, expected_hash: str
-    ) -> bytes | None:
+    def _read_payload(self, payload_ref: str | None, expected_hash: str) -> bytes | None:
         """Read payload bytes from payload_ref and verify hash. None on tamper."""
         if payload_ref is None:
             return None
@@ -325,13 +340,13 @@ class CallbackProcessor:
         if rec.status == JobStatus.FAILED:
             return
         self.outbox.update_status(
-            job_id, JobStatus.FAILED,
-            error_code=error_code, error_summary=error_summary,
+            job_id,
+            JobStatus.FAILED,
+            error_code=error_code,
+            error_summary=error_summary,
         )
 
-    def _receipt(
-        self, job_id: str, inbox_status: CallbackStatus, result: str
-    ) -> dict[str, Any]:
+    def _receipt(self, job_id: str, inbox_status: CallbackStatus, result: str) -> dict[str, Any]:
         rec = self.outbox.get(job_id)
         return {
             "job_id": job_id,

@@ -225,7 +225,11 @@ class TestInvalidFeatureSnapshot:
     def test_empty_snapshot_fails_safely(self) -> None:
         """An empty feature snapshot produces no predictions (abstain)."""
         snap = FeatureSnapshot(
-            symbols=[], features={}, availability={}, ts_event=1000, freshness_ns=500,
+            symbols=[],
+            features={},
+            availability={},
+            ts_event=1000,
+            freshness_ns=500,
         )
         req = _make_inference_request()
         engine = ShadowInferenceEngine(enabled=True)
@@ -267,8 +271,16 @@ class TestNoOrderFields:
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
             d = pred.model_dump()
-            order_keys = {"order", "signal", "trade", "position", "allocation",
-                          "quantity", "price", "side"}
+            order_keys = {
+                "order",
+                "signal",
+                "trade",
+                "position",
+                "allocation",
+                "quantity",
+                "price",
+                "side",
+            }
             assert not any(k in d for k in order_keys)
 
     def test_result_to_dict_has_no_order_fields(self) -> None:
@@ -278,8 +290,16 @@ class TestNoOrderFields:
         engine = ShadowInferenceEngine(enabled=True)
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         d = result.to_dict()
-        order_keys = {"order", "signal", "trade", "position", "allocation",
-                      "quantity", "price", "side"}
+        order_keys = {
+            "order",
+            "signal",
+            "trade",
+            "position",
+            "allocation",
+            "quantity",
+            "price",
+            "side",
+        }
         assert not any(k in d for k in order_keys)
 
     def test_authority_is_always_shadow_only(self) -> None:
@@ -362,7 +382,10 @@ class TestRunShadowInference:
         snap = _make_feature_snapshot()
         req = _make_inference_request()
         result = run_shadow_inference(
-            request=req, snapshot=snap, model_id="m1", enabled=True,
+            request=req,
+            snapshot=snap,
+            model_id="m1",
+            enabled=True,
         )
         assert isinstance(result, ShadowInferenceResult)
         assert len(result.predictions) > 0
@@ -373,7 +396,10 @@ class TestRunShadowInference:
         req = _make_inference_request()
         with pytest.raises(InferenceDisabledError):
             run_shadow_inference(
-                request=req, snapshot=snap, model_id="m1", enabled=False,
+                request=req,
+                snapshot=snap,
+                model_id="m1",
+                enabled=False,
             )
 
 
@@ -408,9 +434,17 @@ class TestResultSerialization:
 class TestNoSecretsInInferenceOutput:
     """Inference output must not leak secrets."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_feature_snapshot_has_no_secret_fields(self, secret_field: str) -> None:
         """FeatureSnapshot must not have any secret-named field."""
         fields = set(FeatureSnapshot.model_fields.keys())
@@ -437,6 +471,5 @@ class TestNoSecretsInInferenceOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

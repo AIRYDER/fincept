@@ -116,9 +116,7 @@ def test_realized_return_uses_only_post_decision_prices() -> None:
         PriceTick(ts=t, price=100.0),  # entry print at decision time
         PriceTick(ts=t + h, price=105.0),  # exit print at horizon
     ]
-    ret = realized_return(
-        prices=prices, decision_ts=t, horizon_ns=h, direction=1.0
-    )
+    ret = realized_return(prices=prices, decision_ts=t, horizon_ns=h, direction=1.0)
     assert ret == pytest.approx((105.0 - 100.0) / 100.0)
 
 
@@ -130,9 +128,7 @@ def test_realized_return_short_direction_flips_sign() -> None:
         PriceTick(ts=t, price=100.0),
         PriceTick(ts=t + h, price=95.0),  # price fell -> short profits
     ]
-    ret = realized_return(
-        prices=prices, decision_ts=t, horizon_ns=h, direction=-1.0
-    )
+    ret = realized_return(prices=prices, decision_ts=t, horizon_ns=h, direction=-1.0)
     assert ret == pytest.approx((100.0 - 95.0) / 100.0)
 
 
@@ -141,9 +137,7 @@ def test_realized_return_returns_none_when_no_exit_price_in_window() -> None:
     t = 1_000_000_000_000_000_000
     h = 60_000_000_000
     prices = [PriceTick(ts=t, price=100.0)]  # entry only, no exit
-    ret = realized_return(
-        prices=prices, decision_ts=t, horizon_ns=h, direction=1.0
-    )
+    ret = realized_return(prices=prices, decision_ts=t, horizon_ns=h, direction=1.0)
     assert ret is None
 
 
@@ -152,9 +146,7 @@ def test_realized_return_returns_none_when_no_entry_price() -> None:
     t = 1_000_000_000_000_000_000
     h = 60_000_000_000
     prices = [PriceTick(ts=t - 5_000_000_000, price=100.0)]  # only pre-decision
-    ret = realized_return(
-        prices=prices, decision_ts=t, horizon_ns=h, direction=1.0
-    )
+    ret = realized_return(prices=prices, decision_ts=t, horizon_ns=h, direction=1.0)
     assert ret is None
 
 
@@ -395,12 +387,18 @@ def test_reruns_are_idempotent_same_inputs_same_record(
     ledger = SettlementLedger(root=tmp_path)
     pred = _prediction(prediction_id="pred-1", ts_event=t, horizon_ns=h)
     rec1 = ledger.settle(
-        prediction=pred, prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(), now_ns=t + h + 1,
+        prediction=pred,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(),
+        now_ns=t + h + 1,
     )
     rec2 = ledger.settle(
-        prediction=pred, prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(), now_ns=t + h + 1,
+        prediction=pred,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(),
+        now_ns=t + h + 1,
     )
     assert rec1 == rec2
     # Only one record persisted for this prediction_id
@@ -418,12 +416,18 @@ def test_rerun_with_different_cost_model_version_produces_new_record(
     ledger = SettlementLedger(root=tmp_path)
     pred = _prediction(prediction_id="pred-1", ts_event=t, horizon_ns=h)
     rec1 = ledger.settle(
-        prediction=pred, prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(version="cost-v1"), now_ns=t + h + 1,
+        prediction=pred,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(version="cost-v1"),
+        now_ns=t + h + 1,
     )
     rec2 = ledger.settle(
-        prediction=pred, prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(version="cost-v2"), now_ns=t + h + 1,
+        prediction=pred,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(version="cost-v2"),
+        now_ns=t + h + 1,
     )
     assert rec1.cost_model_version == "cost-v1"
     assert rec2.cost_model_version == "cost-v2"
@@ -443,13 +447,20 @@ def test_settlement_output_can_feed_tournament(tmp_path: pathlib.Path) -> None:
     ledger = SettlementLedger(root=tmp_path)
     rec = ledger.settle(
         prediction=_prediction(model_id="gbm-1", ts_event=t, horizon_ns=h, p_up=0.8),
-        prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(), now_ns=t + h + 1,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(),
+        now_ns=t + h + 1,
     )
     # Tournament-relevant fields all present
     for field in (
-        "prediction_id", "model_id", "realized_return_net",
-        "brier", "calibration_bucket", "abnormal_return", "cost_model_version",
+        "prediction_id",
+        "model_id",
+        "realized_return_net",
+        "brier",
+        "calibration_bucket",
+        "abnormal_return",
+        "cost_model_version",
     ):
         assert hasattr(rec, field), f"missing tournament field: {field}"
     assert rec.status == SettlementStatus.SETTLED
@@ -463,8 +474,10 @@ def test_settlement_persists_across_restart(tmp_path: pathlib.Path) -> None:
     ledger1 = SettlementLedger(root=tmp_path)
     ledger1.settle(
         prediction=_prediction(prediction_id="pred-1", ts_event=t, horizon_ns=h),
-        prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(), now_ns=t + h + 1,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(),
+        now_ns=t + h + 1,
     )
     # Simulate restart: new instance, same root
     ledger2 = SettlementLedger(root=tmp_path)
@@ -487,8 +500,10 @@ def test_settlement_uses_strict_post_decision_window_no_lookahead(
     ledger = SettlementLedger(root=tmp_path)
     rec = ledger.settle(
         prediction=_prediction(ts_event=t, horizon_ns=h, direction=1.0),
-        prices=prices, benchmark_prices=None,
-        cost_model=_cost_model(), now_ns=t + h + 1,
+        prices=prices,
+        benchmark_prices=None,
+        cost_model=_cost_model(),
+        now_ns=t + h + 1,
     )
     # If the pre-decision price leaked, return would be (105-50)/50 = 1.1.
     # Correct value is (105-100)/100 = 0.05.
@@ -498,13 +513,21 @@ def test_settlement_uses_strict_post_decision_window_no_lookahead(
 def test_settlement_record_is_immutable(tmp_path: pathlib.Path) -> None:
     """SettlementRecord is frozen — no mutation after creation (audit integrity)."""
     rec = SettlementRecord(
-        prediction_id="p", model_id="m", symbol="S",
-        ts_event=1, horizon_ns=1,
-        status=SettlementStatus.SETTLED, settled_at_ns=2,
-        realized_return_gross=0.01, realized_return_net=0.009,
-        abnormal_return=None, brier=0.1, calibration_bucket="0.4-0.6",
+        prediction_id="p",
+        model_id="m",
+        symbol="S",
+        ts_event=1,
+        horizon_ns=1,
+        status=SettlementStatus.SETTLED,
+        settled_at_ns=2,
+        realized_return_gross=0.01,
+        realized_return_net=0.009,
+        abnormal_return=None,
+        brier=0.1,
+        calibration_bucket="0.4-0.6",
         cost_model_version="cost-v1",
-        decision_window_start=1, decision_window_end=2,
+        decision_window_start=1,
+        decision_window_end=2,
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         rec.realized_return_gross = 0.99  # type: ignore[misc]

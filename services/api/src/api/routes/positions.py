@@ -77,8 +77,6 @@ async def list_strategy_positions(
     """Return positions for a single ``strategy_id``."""
     positions = await store.get_all(strategy_id)
     collected = [
-        pos
-        for pos in positions.values()
-        if include_flat or pos.quantity != Decimal(0)
+        pos for pos in positions.values() if include_flat or pos.quantity != Decimal(0)
     ]
     return await _enrich_with_marks(redis, collected)

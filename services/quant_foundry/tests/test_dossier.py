@@ -54,6 +54,7 @@ from quant_foundry.registry import DossierRegistry
 
 # --- helpers -----------------------------------------------------------------
 
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -104,6 +105,7 @@ def _base_dossier_kwargs(artifact: ArtifactRecord) -> dict:
 
 # --- module / public API -----------------------------------------------------
 
+
 def test_modules_import_and_types() -> None:
     """Modules and public API must be importable."""
     assert callable(DossierRegistry)
@@ -116,6 +118,7 @@ def test_modules_import_and_types() -> None:
 
 
 # --- artifact hash verification ---------------------------------------------
+
 
 def test_verify_artifact_hash_matches() -> None:
     data = _fixture_artifact_bytes()
@@ -136,6 +139,7 @@ def test_verify_artifact_hash_rejects_malformed_hash() -> None:
 
 
 # --- artifact import (pull-based, URI allowlist) -----------------------------
+
 
 def test_import_artifact_file_scheme_succeeds(tmp_path: pathlib.Path) -> None:
     data = _fixture_artifact_bytes()
@@ -215,6 +219,7 @@ def test_import_artifact_rejects_path_traversal(tmp_path: pathlib.Path) -> None:
 
 # --- ArtifactRecord contract -------------------------------------------------
 
+
 def test_artifact_record_is_frozen_and_forbids_extra(tmp_path: pathlib.Path) -> None:
     rec = ArtifactRecord(**_base_artifact_kwargs(tmp_path))
     assert rec.model_config.get("frozen") is True
@@ -224,6 +229,7 @@ def test_artifact_record_is_frozen_and_forbids_extra(tmp_path: pathlib.Path) -> 
 
 
 # --- DossierRecord reproducibility set ---------------------------------------
+
 
 def test_dossier_record_carries_full_reproducibility_set(tmp_path: pathlib.Path) -> None:
     artifact = ArtifactRecord(**_base_artifact_kwargs(tmp_path))
@@ -263,6 +269,7 @@ def test_dossier_status_enum_has_promotion_lifecycle() -> None:
 
 
 # --- DossierBuilder ----------------------------------------------------------
+
 
 def test_dossier_builder_assembles_dossier(tmp_path: pathlib.Path) -> None:
     artifact = ArtifactRecord(**_base_artifact_kwargs(tmp_path))
@@ -307,6 +314,7 @@ def test_dossier_builder_rejects_empty_model_id(tmp_path: pathlib.Path) -> None:
 
 
 # --- DossierRegistry: register + idempotency + immutability ------------------
+
 
 def test_registry_register_and_get(tmp_path: pathlib.Path) -> None:
     base = tmp_path / "qf-registry"
@@ -422,6 +430,7 @@ def test_registry_get_by_hash(tmp_path: pathlib.Path) -> None:
 
 # --- blocking_issues (sentinel + tournament write into) ----------------------
 
+
 def test_registry_add_blocking_issue(tmp_path: pathlib.Path) -> None:
     """A blocking issue can be appended to a dossier; it is visible and append-only."""
     base = tmp_path / "qf-registry"
@@ -430,7 +439,9 @@ def test_registry_add_blocking_issue(tmp_path: pathlib.Path) -> None:
     d = DossierRecord(**_base_dossier_kwargs(artifact))
     reg.register(d)
 
-    updated = reg.add_blocking_issue(d.model_id, source="sentinel", code="leakage_detected", note="future-leak feature")
+    updated = reg.add_blocking_issue(
+        d.model_id, source="sentinel", code="leakage_detected", note="future-leak feature"
+    )
     assert len(updated.blocking_issues) == 1
     issue = updated.blocking_issues[0]
     assert issue["source"] == "sentinel"
@@ -439,7 +450,9 @@ def test_registry_add_blocking_issue(tmp_path: pathlib.Path) -> None:
     assert issue["ts_ns"] > 0
 
     # Append a second issue (append-only)
-    updated2 = reg.add_blocking_issue(d.model_id, source="tournament", code="stale_evidence", note=">30d")
+    updated2 = reg.add_blocking_issue(
+        d.model_id, source="tournament", code="stale_evidence", note=">30d"
+    )
     assert len(updated2.blocking_issues) == 2
 
 
@@ -452,6 +465,7 @@ def test_registry_add_blocking_issue_unknown_model(tmp_path: pathlib.Path) -> No
 
 # --- no secrets --------------------------------------------------------------
 
+
 def test_dossier_records_contain_no_secret_fields(tmp_path: pathlib.Path) -> None:
     base = tmp_path / "qf-registry"
     reg = DossierRegistry(base_dir=base)
@@ -461,18 +475,35 @@ def test_dossier_records_contain_no_secret_fields(tmp_path: pathlib.Path) -> Non
     got = reg.get(d.model_id)
     assert got is not None
     dumped = json.dumps(got.model_dump(), sort_keys=True)
-    for forbidden in ("token", "api_key", "apikey", "secret", "password", "broker_account", "credential"):
+    for forbidden in (
+        "token",
+        "api_key",
+        "apikey",
+        "secret",
+        "password",
+        "broker_account",
+        "credential",
+    ):
         assert forbidden not in dumped.lower(), f"dossier leaks secret-like field: {forbidden}"
 
 
 def test_artifact_records_contain_no_secret_fields(tmp_path: pathlib.Path) -> None:
     rec = ArtifactRecord(**_base_artifact_kwargs(tmp_path))
     dumped = json.dumps(rec.model_dump(), sort_keys=True)
-    for forbidden in ("token", "api_key", "apikey", "secret", "password", "broker_account", "credential"):
+    for forbidden in (
+        "token",
+        "api_key",
+        "apikey",
+        "secret",
+        "password",
+        "broker_account",
+        "credential",
+    ):
         assert forbidden not in dumped.lower(), f"artifact leaks secret-like field: {forbidden}"
 
 
 # --- end-to-end: existing local model gets a dossier -------------------------
+
 
 def test_end_to_end_local_model_gets_dossier(tmp_path: pathlib.Path) -> None:
     """Acceptance: existing local model can get a dossier (fixture-backed)."""

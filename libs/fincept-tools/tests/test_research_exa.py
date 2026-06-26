@@ -12,14 +12,18 @@ from fincept_tools.registry import REGISTRY
 
 
 @pytest.mark.asyncio
-async def test_exa_market_research_posts_structured_deep_search(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_exa_market_research_posts_structured_deep_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from fincept_tools.research.exa import ExaMarketResearchInput, ExaMarketResearchTool
 
     monkeypatch.setenv("EXA_API_KEY", "test-key")
     monkeypatch.setattr("fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: None)
     calls: list[dict[str, object]] = []
 
-    async def fake_post_json(url: str, headers: dict[str, str], body: dict[str, object]) -> dict[str, object]:
+    async def fake_post_json(
+        url: str, headers: dict[str, str], body: dict[str, object]
+    ) -> dict[str, object]:
         calls.append({"url": url, "headers": headers, "body": body})
         return {
             "requestId": "req_123",
@@ -88,10 +92,14 @@ async def test_exa_market_research_prefers_dotenv_over_stale_environment(
     from fincept_tools.research.exa import ExaMarketResearchInput, ExaMarketResearchTool
 
     monkeypatch.setenv("EXA_API_KEY", "stale-env-key")
-    monkeypatch.setattr("fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: "fresh-dotenv-key")
+    monkeypatch.setattr(
+        "fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: "fresh-dotenv-key"
+    )
     seen_headers: dict[str, str] = {}
 
-    async def fake_post_json(_url: str, headers: dict[str, str], _body: dict[str, object]) -> dict[str, object]:
+    async def fake_post_json(
+        _url: str, headers: dict[str, str], _body: dict[str, object]
+    ) -> dict[str, object]:
         seen_headers.update(headers)
         return {
             "output": {
@@ -123,7 +131,9 @@ async def test_exa_market_research_requires_api_key(monkeypatch: pytest.MonkeyPa
     monkeypatch.delenv("EXA_API_KEY", raising=False)
     monkeypatch.setattr("fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: None)
 
-    tool = ExaMarketResearchTool(post_json=lambda *_args, **_kwargs: pytest.fail("should not call Exa"))
+    tool = ExaMarketResearchTool(
+        post_json=lambda *_args, **_kwargs: pytest.fail("should not call Exa")
+    )
     result = await tool(ExaMarketResearchInput(query="AAPL earnings risk"))
 
     assert result.ok is False
@@ -135,10 +145,14 @@ async def test_exa_market_research_uses_dotenv_fallback(monkeypatch: pytest.Monk
     from fincept_tools.research.exa import ExaMarketResearchInput, ExaMarketResearchTool
 
     monkeypatch.delenv("EXA_API_KEY", raising=False)
-    monkeypatch.setattr("fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: "dotenv-key")
+    monkeypatch.setattr(
+        "fincept_tools.research.exa._read_exa_api_key_from_dotenv", lambda: "dotenv-key"
+    )
     seen_headers: dict[str, str] = {}
 
-    async def fake_post_json(_url: str, headers: dict[str, str], _body: dict[str, object]) -> dict[str, object]:
+    async def fake_post_json(
+        _url: str, headers: dict[str, str], _body: dict[str, object]
+    ) -> dict[str, object]:
         seen_headers.update(headers)
         return {
             "output": {

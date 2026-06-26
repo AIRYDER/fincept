@@ -47,9 +47,7 @@ SYMBOL = "SHORT-TEST"
 ONE_BAR_NS = 24 * 60 * 60 * 1_000_000_000  # 1 day in nanoseconds
 
 
-def _decimal_close(
-    a: Decimal, b: Decimal, *, tol: Decimal = Decimal("1e-20")
-) -> bool:
+def _decimal_close(a: Decimal, b: Decimal, *, tol: Decimal = Decimal("1e-20")) -> bool:
     """Compare two Decimals up to a small absolute tolerance.
 
     The engine's equity formula combines large operands ($100k cash) with
@@ -91,22 +89,16 @@ def test_accrue_borrow_zero_on_flat_position() -> None:
 def test_accrue_borrow_zero_on_zero_elapsed() -> None:
     """elapsed_seconds <= 0 returns 0 even for shorts (no time to charge)."""
     model = CostModel(default_borrow_bps_annual=Decimal("100"))
-    assert (
-        model.accrue_borrow(
-            quantity=Decimal("-10"),
-            mark_price=Decimal("100"),
-            elapsed_seconds=Decimal(0),
-        )
-        == Decimal(0)
-    )
-    assert (
-        model.accrue_borrow(
-            quantity=Decimal("-10"),
-            mark_price=Decimal("100"),
-            elapsed_seconds=Decimal("-5"),
-        )
-        == Decimal(0)
-    )
+    assert model.accrue_borrow(
+        quantity=Decimal("-10"),
+        mark_price=Decimal("100"),
+        elapsed_seconds=Decimal(0),
+    ) == Decimal(0)
+    assert model.accrue_borrow(
+        quantity=Decimal("-10"),
+        mark_price=Decimal("100"),
+        elapsed_seconds=Decimal("-5"),
+    ) == Decimal(0)
 
 
 def test_accrue_borrow_zero_on_zero_default_rate() -> None:
@@ -123,14 +115,11 @@ def test_accrue_borrow_zero_on_zero_default_rate() -> None:
 def test_accrue_borrow_zero_on_zero_mark() -> None:
     """A non-positive mark price (warmup edge case) returns 0."""
     model = CostModel(default_borrow_bps_annual=Decimal("100"))
-    assert (
-        model.accrue_borrow(
-            quantity=Decimal("-10"),
-            mark_price=Decimal(0),
-            elapsed_seconds=Decimal("3600"),
-        )
-        == Decimal(0)
-    )
+    assert model.accrue_borrow(
+        quantity=Decimal("-10"),
+        mark_price=Decimal(0),
+        elapsed_seconds=Decimal("3600"),
+    ) == Decimal(0)
 
 
 def test_accrue_borrow_basic_short_charge() -> None:
@@ -142,7 +131,9 @@ def test_accrue_borrow_basic_short_charge() -> None:
         mark_price=Decimal("100"),  # @ $100 each = $10000 notional
         elapsed_seconds=one_day_seconds,
     )
-    expected = Decimal("10000") * Decimal("100") / Decimal(10000) * one_day_seconds / SECONDS_PER_YEAR
+    expected = (
+        Decimal("10000") * Decimal("100") / Decimal(10000) * one_day_seconds / SECONDS_PER_YEAR
+    )
     assert charge == expected
     # Sanity-check expected matches the layperson formula 1% / 365 of $10k
     # ≈ $0.27397/day.
@@ -452,9 +443,7 @@ async def test_engine_borrow_reduces_final_equity_by_exact_amount() -> None:
     engine_borrow = BacktestEngine(
         strategy=_OpenShortOnceStrategy(quantity=Decimal("100")),
         datasource=_datasource(bars),
-        broker=SimBroker(
-            cost_model=CostModel(default_borrow_bps_annual=Decimal("365"))
-        ),
+        broker=SimBroker(cost_model=CostModel(default_borrow_bps_annual=Decimal("365"))),
         blotter=blotter_borrow,
     )
     await engine_borrow.run()

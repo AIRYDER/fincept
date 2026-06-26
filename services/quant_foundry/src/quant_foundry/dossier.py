@@ -32,6 +32,7 @@ File-disjoint from all active builders (see BUILDER3.md).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
@@ -122,7 +123,9 @@ class DossierRecord(BaseModel):
         ch = _compute_content_hash(self)
         object.__setattr__(self, "content_hash", ch)
 
-    def model_copy(self, *, update: dict[str, Any] | None = None, deep: bool = False) -> DossierRecord:  # type: ignore[override]
+    def model_copy(
+        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
+    ) -> DossierRecord:
         """Override to recompute ``content_hash`` after a copy.
 
         Pydantic v2's ``model_copy`` does NOT re-run ``model_post_init``, so without

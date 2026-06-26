@@ -61,9 +61,7 @@ def _bar(ts_ns: int, close: float) -> BarEvent:
         ("mom_z_60d", ("mom_z", 86400)),
     ],
 )
-def test_parse_feature_name_supported(
-    name: str, expected: tuple[str, int]
-) -> None:
+def test_parse_feature_name_supported(name: str, expected: tuple[str, int]) -> None:
     assert parse_feature_name(name) == expected
 
 
@@ -101,16 +99,9 @@ def test_require_supported_aggregates_all_failures() -> None:
 
 def test_required_window_bars_takes_max() -> None:
     # 1m bars: max requested is 60m -> 60 bars + 1 buffer = 61
-    assert (
-        required_window_bars(
-            ["ret_5m", "rv_30m", "mom_z_60m"], bar_minutes=1
-        )
-        == 61
-    )
+    assert required_window_bars(["ret_5m", "rv_30m", "mom_z_60m"], bar_minutes=1) == 61
     # 5m bars: 60m / 5 = 12 bars + 1 = 13
-    assert (
-        required_window_bars(["ret_5m", "mom_z_60m"], bar_minutes=5) == 13
-    )
+    assert required_window_bars(["ret_5m", "mom_z_60m"], bar_minutes=5) == 13
     # daily bars: 60m / (60*24) -> ceil(1/1440) = 1 + 1 = 2
     assert required_window_bars(["ret_60m"], bar_minutes=60 * 24) == 2
 
@@ -122,12 +113,7 @@ def test_required_window_bars_day_suffix_on_daily_bars() -> None:
     assert required_window_bars(["ret_5d"], bar_minutes=60 * 24) == 6
     assert required_window_bars(["mom_z_20d"], bar_minutes=60 * 24) == 21
     # Mixed bag on daily bars: max should be the 20d feature
-    assert (
-        required_window_bars(
-            ["ret_1d", "rv_5d", "mom_z_20d"], bar_minutes=60 * 24
-        )
-        == 21
-    )
+    assert required_window_bars(["ret_1d", "rv_5d", "mom_z_20d"], bar_minutes=60 * 24) == 21
 
 
 def test_required_window_bars_hour_suffix_on_minute_bars() -> None:
@@ -142,14 +128,14 @@ def test_required_window_bars_unit_equivalence() -> None:
     # any drift would mean parse_feature_name's normalisation is
     # inconsistent.
     for bar_minutes in (1, 5, 15, 60):
-        assert required_window_bars(
-            ["ret_60m"], bar_minutes=bar_minutes
-        ) == required_window_bars(["ret_1h"], bar_minutes=bar_minutes)
+        assert required_window_bars(["ret_60m"], bar_minutes=bar_minutes) == required_window_bars(
+            ["ret_1h"], bar_minutes=bar_minutes
+        )
     # And ``ret_1440m`` should equal ``ret_1d``
     for bar_minutes in (1, 60, 60 * 24):
-        assert required_window_bars(
-            ["ret_1440m"], bar_minutes=bar_minutes
-        ) == required_window_bars(["ret_1d"], bar_minutes=bar_minutes)
+        assert required_window_bars(["ret_1440m"], bar_minutes=bar_minutes) == required_window_bars(
+            ["ret_1d"], bar_minutes=bar_minutes
+        )
 
 
 def test_required_window_bars_rejects_bad_bar_minutes() -> None:
@@ -163,40 +149,27 @@ def test_required_window_bars_rejects_bad_bar_minutes() -> None:
 
 
 def test_compute_features_returns_none_for_empty_window() -> None:
-    assert (
-        compute_features([], feature_names=["ret_1m"], bar_minutes=1) is None
-    )
+    assert compute_features([], feature_names=["ret_1m"], bar_minutes=1) is None
 
 
 def test_compute_features_returns_none_when_too_short() -> None:
     # Need 2 closes for ret_1m on 1m bars; supply 1.
     window = [_bar(0, 100.0)]
-    assert (
-        compute_features(
-            window, feature_names=["ret_1m"], bar_minutes=1
-        )
-        is None
-    )
+    assert compute_features(window, feature_names=["ret_1m"], bar_minutes=1) is None
 
 
 def test_compute_features_ret_is_log_return() -> None:
     # close 100 -> 110 over 1 bar; ret_1m = log(1.1)
     window = [_bar(0, 100.0), _bar(60_000_000_000, 110.0)]
-    feats = compute_features(
-        window, feature_names=["ret_1m"], bar_minutes=1
-    )
+    feats = compute_features(window, feature_names=["ret_1m"], bar_minutes=1)
     assert feats is not None
     assert feats["ret_1m"] == pytest.approx(math.log(1.1), rel=1e-12)
 
 
 def test_compute_features_ret_5m_on_1m_bars_uses_5_bars_back() -> None:
     closes = [100.0, 101.0, 102.0, 103.0, 104.0, 110.0]
-    window = [
-        _bar(i * 60_000_000_000, c) for i, c in enumerate(closes)
-    ]
-    feats = compute_features(
-        window, feature_names=["ret_5m"], bar_minutes=1
-    )
+    window = [_bar(i * 60_000_000_000, c) for i, c in enumerate(closes)]
+    feats = compute_features(window, feature_names=["ret_5m"], bar_minutes=1)
     assert feats is not None
     # 5 bars back from index 5 (close=110) is index 0 (close=100).
     assert feats["ret_5m"] == pytest.approx(math.log(110 / 100), rel=1e-12)
@@ -205,12 +178,8 @@ def test_compute_features_ret_5m_on_1m_bars_uses_5_bars_back() -> None:
 def test_compute_features_rv_is_population_stdev_of_log_returns() -> None:
     # Three log returns: log(101/100), log(102/101), log(103/102).
     closes = [100.0, 101.0, 102.0, 103.0]
-    window = [
-        _bar(i * 60_000_000_000, c) for i, c in enumerate(closes)
-    ]
-    feats = compute_features(
-        window, feature_names=["rv_3m"], bar_minutes=1
-    )
+    window = [_bar(i * 60_000_000_000, c) for i, c in enumerate(closes)]
+    feats = compute_features(window, feature_names=["rv_3m"], bar_minutes=1)
     assert feats is not None
     rets = [
         math.log(101 / 100),
@@ -225,9 +194,7 @@ def test_compute_features_rv_is_population_stdev_of_log_returns() -> None:
 def test_compute_features_mom_z_zero_when_constant() -> None:
     # Constant close => zero log returns => stdev=0 => mom_z forced to 0.0
     window = [_bar(i * 60_000_000_000, 100.0) for i in range(5)]
-    feats = compute_features(
-        window, feature_names=["mom_z_4m"], bar_minutes=1
-    )
+    feats = compute_features(window, feature_names=["mom_z_4m"], bar_minutes=1)
     assert feats is not None
     assert feats["mom_z_4m"] == 0.0
 
@@ -235,21 +202,15 @@ def test_compute_features_mom_z_zero_when_constant() -> None:
 def test_compute_features_mom_z_positive_for_uptrend() -> None:
     # Strict uptrend => mom_z > 0
     closes = [100.0, 101.0, 102.0, 103.0, 104.0]
-    window = [
-        _bar(i * 60_000_000_000, c) for i, c in enumerate(closes)
-    ]
-    feats = compute_features(
-        window, feature_names=["mom_z_4m"], bar_minutes=1
-    )
+    window = [_bar(i * 60_000_000_000, c) for i, c in enumerate(closes)]
+    feats = compute_features(window, feature_names=["mom_z_4m"], bar_minutes=1)
     assert feats is not None
     assert feats["mom_z_4m"] > 0
 
 
 def test_compute_features_handles_multiple_features() -> None:
     closes = [100.0, 99.0, 101.0, 100.0, 102.0]
-    window = [
-        _bar(i * 60_000_000_000, c) for i, c in enumerate(closes)
-    ]
+    window = [_bar(i * 60_000_000_000, c) for i, c in enumerate(closes)]
     feats = compute_features(
         window,
         feature_names=["ret_1m", "ret_4m", "rv_4m", "mom_z_4m"],
@@ -263,18 +224,13 @@ def test_compute_features_handles_multiple_features() -> None:
 
 def test_compute_features_returns_none_on_non_positive_close() -> None:
     window = [_bar(0, 100.0), _bar(60_000_000_000, 0.0)]
-    assert (
-        compute_features(window, feature_names=["ret_1m"], bar_minutes=1)
-        is None
-    )
+    assert compute_features(window, feature_names=["ret_1m"], bar_minutes=1) is None
 
 
 def test_compute_features_rejects_unsupported_feature() -> None:
     window = [_bar(0, 100.0), _bar(60_000_000_000, 101.0)]
     with pytest.raises(ValueError):
-        compute_features(
-            window, feature_names=["book_imbalance_1"], bar_minutes=1
-        )
+        compute_features(window, feature_names=["book_imbalance_1"], bar_minutes=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -325,9 +281,7 @@ def test_compute_features_rv_3d_on_daily_bars() -> None:
     # rv_3d on daily bars = stdev of the most recent 3 daily log returns.
     closes = [100.0, 101.0, 102.5, 103.0]
     window = [_daily_bar(i, c) for i, c in enumerate(closes)]
-    feats = compute_features(
-        window, feature_names=["rv_3d"], bar_minutes=DAILY_BAR_MINUTES
-    )
+    feats = compute_features(window, feature_names=["rv_3d"], bar_minutes=DAILY_BAR_MINUTES)
     assert feats is not None
     rets = [
         math.log(101 / 100),
@@ -370,14 +324,8 @@ def test_compute_features_unit_equivalence_on_minute_bars() -> None:
     # given the same window of minute bars.  Any drift would imply
     # the unit normalisation leaks into compute_features's bar-count math.
     closes = [100.0 + i * 0.1 for i in range(150)]
-    window = [
-        _bar(i * 60_000_000_000, c) for i, c in enumerate(closes)
-    ]
-    feats_h = compute_features(
-        window, feature_names=["ret_2h"], bar_minutes=1
-    )
-    feats_m = compute_features(
-        window, feature_names=["ret_120m"], bar_minutes=1
-    )
+    window = [_bar(i * 60_000_000_000, c) for i, c in enumerate(closes)]
+    feats_h = compute_features(window, feature_names=["ret_2h"], bar_minutes=1)
+    feats_m = compute_features(window, feature_names=["ret_120m"], bar_minutes=1)
     assert feats_h is not None and feats_m is not None
     assert feats_h["ret_2h"] == pytest.approx(feats_m["ret_120m"], rel=1e-15)

@@ -46,7 +46,7 @@ from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_INFO_ENRICHED, STREAM_SIG_SENT
 from fincept_core.clock import now_ns
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -78,11 +78,15 @@ def _info_seen_key(event: InformationEvent, symbol: str) -> str:
     return f"{INFO_DEDUP_KEY_PREFIX}{base}:{symbol}"
 
 
-async def _already_seen_info(redis: Redis[Any], event: InformationEvent, symbol: str) -> bool:
+async def _already_seen_info(
+    redis: Redis[Any], event: InformationEvent, symbol: str
+) -> bool:
     return await redis.exists(_info_seen_key(event, symbol)) > 0
 
 
-async def _mark_seen_info(redis: Redis[Any], event: InformationEvent, symbol: str) -> None:
+async def _mark_seen_info(
+    redis: Redis[Any], event: InformationEvent, symbol: str
+) -> None:
     await redis.set(_info_seen_key(event, symbol), "1", ex=DEDUP_TTL_SEC)
 
 
@@ -266,6 +270,7 @@ async def run_loop(
     stop: asyncio.Event,
 ) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     providers = pick_providers(
         anthropic_key=settings.ANTHROPIC_API_KEY,
         openai_key=settings.OPENAI_API_KEY,
@@ -287,8 +292,11 @@ async def run_loop(
 
     try:
         async with httpx.AsyncClient() as http:
+
             async def info_handler(event: Event) -> None:
-                if event.type != "information" or not isinstance(event.payload, InformationEvent):
+                if event.type != "information" or not isinstance(
+                    event.payload, InformationEvent
+                ):
                     return
                 emitted = await _process_information_event(
                     info=event.payload,

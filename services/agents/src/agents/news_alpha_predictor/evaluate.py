@@ -72,12 +72,16 @@ def _int_meta(meta: dict[str, Any] | None, key: str) -> int | None:
 
 def _model_name_for(candidate_dir: pathlib.Path, models_dir: pathlib.Path) -> str:
     try:
-        return str(candidate_dir.resolve().relative_to(models_dir.resolve())).replace("\\", "/")
+        return str(candidate_dir.resolve().relative_to(models_dir.resolve())).replace(
+            "\\", "/"
+        )
     except ValueError:
         return candidate_dir.name
 
 
-def _active_dir(models_dir: pathlib.Path, active_dir: pathlib.Path | None) -> pathlib.Path:
+def _active_dir(
+    models_dir: pathlib.Path, active_dir: pathlib.Path | None
+) -> pathlib.Path:
     return active_dir or (models_dir / "active")
 
 
@@ -130,7 +134,9 @@ def evaluate_candidate(
     if candidate_auc is None:
         reasons.append("best_auc missing")
     elif candidate_auc < policy.min_auc:
-        reasons.append(f"best_auc {candidate_auc:.6f} below minimum {policy.min_auc:.6f}")
+        reasons.append(
+            f"best_auc {candidate_auc:.6f} below minimum {policy.min_auc:.6f}"
+        )
 
     trained_at = _float_meta(meta, "trained_at")
     now = time.time()
@@ -180,7 +186,9 @@ def write_report(report: CandidateGateReport, path: pathlib.Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="news_alpha_predictor.evaluate")
-    parser.add_argument("--candidate-dir", default="models/news_alpha_predictor_candidate")
+    parser.add_argument(
+        "--candidate-dir", default="models/news_alpha_predictor_candidate"
+    )
     parser.add_argument("--models-dir", default="models")
     parser.add_argument("--active-dir", default=None)
     parser.add_argument("--report", default=DEFAULT_REPORT_PATH)

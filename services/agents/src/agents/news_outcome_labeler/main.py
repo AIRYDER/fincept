@@ -13,7 +13,7 @@ from agents.news_outcome_labeler.store import NewsOutcomeStore
 from fincept_bus.consumer import Consumer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE, STREAM_MD_TRADES
 from fincept_core.clock import now_ns
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -31,7 +31,9 @@ def mark_key(symbol: str) -> str:
 
 
 async def write_mark(redis: Redis[Any], symbol: str, price: Decimal) -> None:
-    await redis.hset(mark_key(symbol), mapping={"px": str(price), "ts_ns": str(now_ns())})
+    await redis.hset(
+        mark_key(symbol), mapping={"px": str(price), "ts_ns": str(now_ns())}
+    )
 
 
 async def read_mark(redis: Redis[Any], symbol: str) -> Decimal | None:
@@ -94,7 +96,7 @@ async def label_loop(
     stop: asyncio.Event,
     interval_sec: float = DEFAULT_LABEL_INTERVAL_SEC,
 ) -> None:
-    async def price_lookup(symbol: str, _ts_event: int):
+    async def price_lookup(symbol: str, _ts_event: int) -> Decimal | None:
         return await read_mark_at_or_after(redis, symbol, _ts_event)
 
     while not stop.is_set():
@@ -109,6 +111,7 @@ async def label_loop(
 
 async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     consumer = Consumer(redis)
     store = NewsOutcomeStore(redis)
@@ -121,7 +124,9 @@ async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
 
     try:
         log.info("news_outcome.start", consumer_name=consumer_name)
-        label_task = asyncio.create_task(label_loop(redis=redis, store=store, stop=stop))
+        label_task = asyncio.create_task(
+            label_loop(redis=redis, store=store, stop=stop)
+        )
         consume_task = asyncio.create_task(
             consumer.consume(
                 [STREAM_FEATURES_ONLINE, STREAM_MD_TRADES],

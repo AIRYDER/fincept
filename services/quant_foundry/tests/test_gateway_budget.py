@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import pathlib
 
-import pytest
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.gateway import QuantFoundryGateway
 

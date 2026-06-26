@@ -110,16 +110,23 @@ def test_mock_training_job_completes_through_real_contract(tmp_path: pathlib.Pat
     shadow = ShadowLedgerStub()
     dossier = DossierStub()
     proc = CallbackProcessor(
-        outbox=ob, inbox=ib, callback_secret=secret,
-        shadow_ledger=shadow, dossier_store=dossier,
+        outbox=ob,
+        inbox=ib,
+        callback_secret=secret,
+        shadow_ledger=shadow,
+        dossier_store=dossier,
     )
 
     job_id = "qf:train:ds1:gbm:h1:1"
     idem = make_idempotency_key("training", "ds1", "gbm", "h1", "1")
     req = _training_request(job_id)
     ob.enqueue(
-        job_id=job_id, job_type="training", idempotency_key=idem,
-        request_payload=req, priority=1, budget_cents=100,
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=idem,
+        request_payload=req,
+        priority=1,
+        budget_cents=100,
     )
 
     disp_receipt = disp.dispatch(job_id, request_payload=req)
@@ -156,15 +163,20 @@ def test_mock_inference_stores_shadow_predictions_in_stub(tmp_path: pathlib.Path
     shadow = ShadowLedgerStub()
     dossier = DossierStub()
     proc = CallbackProcessor(
-        outbox=ob, inbox=ib, callback_secret=secret,
-        shadow_ledger=shadow, dossier_store=dossier,
+        outbox=ob,
+        inbox=ib,
+        callback_secret=secret,
+        shadow_ledger=shadow,
+        dossier_store=dossier,
     )
 
     job_id = "qf:infer:ds1:gbm:h1:1"
     idem = make_idempotency_key("inference", "ds1", "gbm", "h1", "1")
     req = _inference_request(job_id)
     ob.enqueue(
-        job_id=job_id, job_type="inference", idempotency_key=idem,
+        job_id=job_id,
+        job_type="inference",
+        idempotency_key=idem,
         request_payload=req,
     )
 
@@ -193,19 +205,26 @@ def test_bad_signature_callback_fails_closed(tmp_path: pathlib.Path) -> None:
     shadow = ShadowLedgerStub()
     dossier = DossierStub()
     proc = CallbackProcessor(
-        outbox=ob, inbox=ib, callback_secret=secret,
-        shadow_ledger=shadow, dossier_store=dossier,
+        outbox=ob,
+        inbox=ib,
+        callback_secret=secret,
+        shadow_ledger=shadow,
+        dossier_store=dossier,
     )
 
     job_id = "qf:train:bad-sig:1"
     ob.enqueue(
-        job_id=job_id, job_type="training",
-        idempotency_key="k-bad-sig", request_payload=b"{}",
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="k-bad-sig",
+        request_payload=b"{}",
     )
     # Simulate a callback arriving with an INVALID signature verdict.
     ib.receive(
-        job_id=job_id, idempotency_key="k-bad-sig",
-        signature_valid=False, payload=b'{"job_id": "x"}',
+        job_id=job_id,
+        idempotency_key="k-bad-sig",
+        signature_valid=False,
+        payload=b'{"job_id": "x"}',
     )
 
     receipt = proc.process(job_id)
@@ -226,14 +245,19 @@ def test_invalid_schema_callback_rejected(tmp_path: pathlib.Path) -> None:
     shadow = ShadowLedgerStub()
     dossier = DossierStub()
     proc = CallbackProcessor(
-        outbox=ob, inbox=ib, callback_secret=secret,
-        shadow_ledger=shadow, dossier_store=dossier,
+        outbox=ob,
+        inbox=ib,
+        callback_secret=secret,
+        shadow_ledger=shadow,
+        dossier_store=dossier,
     )
 
     job_id = "qf:train:bad-schema:1"
     ob.enqueue(
-        job_id=job_id, job_type="training",
-        idempotency_key="k-schema", request_payload=b"{}",
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="k-schema",
+        request_payload=b"{}",
     )
     # Write a payload that is valid JSON but NOT a valid RunPodCallbackEnvelope
     # (missing required fields: worker_id, result_type, payload).
@@ -243,8 +267,11 @@ def test_invalid_schema_callback_rejected(tmp_path: pathlib.Path) -> None:
     payload_path.parent.mkdir(parents=True, exist_ok=True)
     payload_path.write_bytes(bad_payload)
     ib.receive(
-        job_id=job_id, idempotency_key="k-schema",
-        signature_valid=True, payload=bad_payload, payload_ref=str(payload_path),
+        job_id=job_id,
+        idempotency_key="k-schema",
+        signature_valid=True,
+        payload=bad_payload,
+        payload_ref=str(payload_path),
     )
 
     receipt = proc.process(job_id)
@@ -264,15 +291,20 @@ def test_duplicate_callback_is_idempotent(tmp_path: pathlib.Path) -> None:
     shadow = ShadowLedgerStub()
     dossier = DossierStub()
     proc = CallbackProcessor(
-        outbox=ob, inbox=ib, callback_secret=secret,
-        shadow_ledger=shadow, dossier_store=dossier,
+        outbox=ob,
+        inbox=ib,
+        callback_secret=secret,
+        shadow_ledger=shadow,
+        dossier_store=dossier,
     )
 
     job_id = "qf:infer:dup:1"
     req = _inference_request(job_id)
     ob.enqueue(
-        job_id=job_id, job_type="inference",
-        idempotency_key="k-dup", request_payload=req,
+        job_id=job_id,
+        job_type="inference",
+        idempotency_key="k-dup",
+        request_payload=req,
     )
     disp.dispatch(job_id, request_payload=req)
     proc.process(job_id)
@@ -295,13 +327,17 @@ def test_terminal_job_failure_records_error(tmp_path: pathlib.Path) -> None:
 
     job_id = "qf:train:fail:1"
     ob.enqueue(
-        job_id=job_id, job_type="training",
-        idempotency_key="k-fail", request_payload=b"{}",
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="k-fail",
+        request_payload=b"{}",
     )
     # Advance to RUNNING first so failure is a mid-flight transition.
     ob.update_status(job_id, JobStatus.RUNNING)
     receipt = disp.dispatch_failure(
-        job_id, error_code="OOM", error_summary="worker ran out of memory",
+        job_id,
+        error_code="OOM",
+        error_summary="worker ran out of memory",
     )
     assert receipt["status"] == JobStatus.FAILED.value
     rec = ob.get(job_id)
@@ -324,8 +360,10 @@ def test_dispatch_rejects_tampered_request_payload(tmp_path: pathlib.Path) -> No
     job_id = "qf:train:tamper:1"
     req = _training_request(job_id)
     ob.enqueue(
-        job_id=job_id, job_type="training",
-        idempotency_key="k-tamper", request_payload=req,
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="k-tamper",
+        request_payload=req,
     )
     # Tamper: pass a different payload to dispatch than what was enqueued.
     tampered = dict(req)

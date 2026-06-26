@@ -164,9 +164,7 @@ def active_dir(models_root: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture(autouse=True)
-def _patch_env(
-    monkeypatch: pytest.MonkeyPatch, models_root: pathlib.Path
-) -> None:
+def _patch_env(monkeypatch: pytest.MonkeyPatch, models_root: pathlib.Path) -> None:
     monkeypatch.setenv("MODELS_DIR", str(models_root))
     monkeypatch.setenv("ACTIVE_MODELS_DIR", str(models_root / "active"))
     monkeypatch.delenv("GBM_MODEL_DIR", raising=False)
@@ -267,9 +265,7 @@ async def test_shadow_spawns_when_pointer_appears(
         assert builds == [models_root / "alpha"]
 
         _write_shadow_pointer(active_dir, "shadow_a")
-        await _wait_for(
-            lambda: any(b == models_root / "shadow_a" for b in builds)
-        )
+        await _wait_for(lambda: any(b == models_root / "shadow_a" for b in builds))
         assert models_root / "shadow_a" in builds
     finally:
         stop.set()
@@ -368,9 +364,7 @@ async def test_shadow_swaps_when_pointer_changes(
 
         # Swap shadow_a -> shadow_b.
         _write_shadow_pointer(active_dir, "shadow_b")
-        await _wait_for(
-            lambda: any(p == models_root / "shadow_b" for p, _ in builds)
-        )
+        await _wait_for(lambda: any(p == models_root / "shadow_b" for p, _ in builds))
         await _wait_for(lambda: shadow_a_stub.teardown_count >= 1)
         assert shadow_a_stub.teardown_count == 1
     finally:

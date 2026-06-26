@@ -143,8 +143,10 @@ class TestPBO:
             oos_returns.append(oos_ret)
 
         result = probability_of_backtest_overfitting(
-            is_returns=is_returns, oos_returns=oos_returns,
-            n_partitions=16, seed=42,
+            is_returns=is_returns,
+            oos_returns=oos_returns,
+            n_partitions=16,
+            seed=42,
         )
         # Low PBO means low probability of overfitting.
         assert result.pbo < 0.5
@@ -165,8 +167,10 @@ class TestPBO:
             oos_returns.append(oos_ret)
 
         result = probability_of_backtest_overfitting(
-            is_returns=is_returns, oos_returns=oos_returns,
-            n_partitions=16, seed=42,
+            is_returns=is_returns,
+            oos_returns=oos_returns,
+            n_partitions=16,
+            seed=42,
         )
         # High PBO means high probability of overfitting.
         assert result.pbo > 0.3
@@ -178,10 +182,16 @@ class TestPBO:
         is_ret = [[rng.gauss(0.0, 0.01) for _ in range(50)] for _ in range(10)]
         oos_ret = [[rng.gauss(0.0, 0.01) for _ in range(50)] for _ in range(10)]
         r1 = probability_of_backtest_overfitting(
-            is_returns=is_ret, oos_returns=oos_ret, n_partitions=16, seed=7,
+            is_returns=is_ret,
+            oos_returns=oos_ret,
+            n_partitions=16,
+            seed=7,
         )
         r2 = probability_of_backtest_overfitting(
-            is_returns=is_ret, oos_returns=oos_ret, n_partitions=16, seed=7,
+            is_returns=is_ret,
+            oos_returns=oos_ret,
+            n_partitions=16,
+            seed=7,
         )
         assert r1.pbo == r2.pbo
 
@@ -193,8 +203,11 @@ class TestPBO:
         is_ret = [[rng.gauss(0.0, 0.01) for _ in range(50)] for _ in range(50)]
         oos_ret = [[rng.gauss(0.0, 0.01) for _ in range(50)] for _ in range(50)]
         result = probability_of_backtest_overfitting(
-            is_returns=is_ret, oos_returns=oos_ret,
-            n_partitions=16, seed=42, threshold=0.1,
+            is_returns=is_ret,
+            oos_returns=oos_ret,
+            n_partitions=16,
+            seed=42,
+            threshold=0.1,
         )
         assert hasattr(result, "flagged")
         assert isinstance(result.flagged, bool)
@@ -297,7 +310,10 @@ class TestPurgedFoldVerifier:
             FoldSpec(fold_id=1, train_start=50, train_end=150, val_start=150, val_end=200),
         ]
         receipt = sentinel.verify_purged_folds(
-            model_id="m1", folds=folds, purge_gap=5, embargo_gap=3,
+            model_id="m1",
+            folds=folds,
+            purge_gap=5,
+            embargo_gap=3,
         )
         assert receipt.passed is False
         assert any(i.code == "missing_purge_gap" for i in receipt.issues)
@@ -313,7 +329,10 @@ class TestPurgedFoldVerifier:
             FoldSpec(fold_id=1, train_start=155, train_end=200, val_start=205, val_end=250),
         ]
         receipt = sentinel.verify_purged_folds(
-            model_id="m1", folds=folds, purge_gap=5, embargo_gap=3,
+            model_id="m1",
+            folds=folds,
+            purge_gap=5,
+            embargo_gap=3,
         )
         assert receipt.passed is True
         assert len(receipt.issues) == 0
@@ -326,12 +345,13 @@ class TestPurgedFoldVerifier:
             FoldSpec(fold_id=0, train_start=0, train_end=105, val_start=100, val_end=150),
         ]
         receipt = sentinel.verify_purged_folds(
-            model_id="m1", folds=folds, purge_gap=5, embargo_gap=3,
+            model_id="m1",
+            folds=folds,
+            purge_gap=5,
+            embargo_gap=3,
         )
         assert receipt.passed is False
-        assert any(
-            i.code in ("train_val_overlap", "missing_purge_gap") for i in receipt.issues
-        )
+        assert any(i.code in ("train_val_overlap", "missing_purge_gap") for i in receipt.issues)
 
 
 # ---------------------------------------------------------------------------
@@ -451,15 +471,16 @@ class TestSentinelFullRun:
                     {"decision_time": 100, "observed_at": 200, "feature": "f1"},
                 ],
                 folds=[
-                    FoldSpec(fold_id=0, train_start=0, train_end=100,
-                             val_start=100, val_end=150),
+                    FoldSpec(fold_id=0, train_start=0, train_end=100, val_start=100, val_end=150),
                 ],
                 purge_gap=5,
                 embargo_gap=3,
                 train_live_gap=TrainLiveGapInput(
                     model_id="m1",
-                    in_sample_edge=0.05, live_edge=0.001,
-                    in_sample_brier=0.15, live_brier=0.35,
+                    in_sample_edge=0.05,
+                    live_edge=0.001,
+                    in_sample_brier=0.15,
+                    live_brier=0.35,
                     n_live_settled=50,
                 ),
                 feature_stability=FeatureStabilityInput(
@@ -566,17 +587,23 @@ class TestLeakyFeatureError:
         """A feature observation with observed_at > decision_time raises."""
         with pytest.raises(LeakyFeatureError):
             LeakageSentinel.assert_point_in_time(
-                decision_time=100, observed_at=200, feature="f1",
+                decision_time=100,
+                observed_at=200,
+                feature="f1",
             )
 
     def test_clean_feature_does_not_raise(self) -> None:
         """A feature observation with observed_at <= decision_time is clean."""
         # Should NOT raise.
         LeakageSentinel.assert_point_in_time(
-            decision_time=200, observed_at=100, feature="f1",
+            decision_time=200,
+            observed_at=100,
+            feature="f1",
         )
         LeakageSentinel.assert_point_in_time(
-            decision_time=100, observed_at=100, feature="f1",  # equal is OK
+            decision_time=100,
+            observed_at=100,
+            feature="f1",  # equal is OK
         )
 
 
@@ -588,9 +615,17 @@ class TestLeakyFeatureError:
 class TestNoSecretsInSentinelOutput:
     """Sentinel output must not leak secrets."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_sentinel_input_has_no_secret_fields(self, secret_field: str) -> None:
         """SentinelInput must not have any secret-named field."""
         si_fields = set(SentinelInput.model_fields.keys())
@@ -623,6 +658,5 @@ class TestNoSecretsInSentinelOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

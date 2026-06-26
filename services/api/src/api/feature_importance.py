@@ -58,7 +58,7 @@ def parse_split_counts(model_text: str) -> dict[int, int]:
     for line in model_text.splitlines():
         if not line.startswith(_SPLIT_FEATURE_PREFIX):
             continue
-        payload = line[len(_SPLIT_FEATURE_PREFIX):].strip()
+        payload = line[len(_SPLIT_FEATURE_PREFIX) :].strip()
         if not payload:
             continue
         for token in payload.split():
@@ -138,13 +138,13 @@ def compute_feature_importance(
                 {
                     "feature": feat,
                     "split_count": int(split_map.get(feat, 0)),
-                    "gain": (
-                        float(gain_map[feat]) if feat in gain_map else None
-                    ),
+                    "gain": (float(gain_map[feat]) if feat in gain_map else None),
                 }
             )
         importance_type = (
-            "gain_and_split" if any(r["gain"] is not None for r in rows) else "split_count"
+            "gain_and_split"
+            if any(r["gain"] is not None for r in rows)
+            else "split_count"
         )
         sort_key = "gain" if importance_type == "gain_and_split" else "split_count"
         rows.sort(

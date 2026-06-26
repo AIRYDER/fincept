@@ -64,15 +64,10 @@ def _make_entry(
     return ExpandedLeaderboardEntry(
         model_id=model_id,
         total_score=total_score,
-        horizon_slices=[
-            HorizonSlice(horizon=h, score=s) for h, s in horizon_scores.items()
-        ],
-        regime_slices=[
-            RegimeSlice(regime=r, score=s) for r, s in regime_scores.items()
-        ],
+        horizon_slices=[HorizonSlice(horizon=h, score=s) for h, s in horizon_scores.items()],
+        regime_slices=[RegimeSlice(regime=r, score=s) for r, s in regime_scores.items()],
         symbol_cluster_slices=[
-            SymbolClusterSlice(cluster=c, score=s)
-            for c, s in symbol_cluster_scores.items()
+            SymbolClusterSlice(cluster=c, score=s) for c, s in symbol_cluster_scores.items()
         ],
         baseline_delta=BaselineDelta(
             baseline_model_id="baseline",
@@ -199,7 +194,9 @@ class TestDecayIndicator:
     def test_stale_model_is_flagged(self) -> None:
         """A stale model is flagged."""
         di = DecayIndicator(
-            decay_score=0.0, is_stale=True, is_decayed=False,
+            decay_score=0.0,
+            is_stale=True,
+            is_decayed=False,
             days_since_last_settlement=60,
         )
         assert di.is_stale is True
@@ -207,7 +204,9 @@ class TestDecayIndicator:
     def test_decayed_model_is_flagged(self) -> None:
         """A decayed model is flagged."""
         di = DecayIndicator(
-            decay_score=0.5, is_stale=False, is_decayed=True,
+            decay_score=0.5,
+            is_stale=False,
+            is_decayed=True,
             days_since_last_settlement=5,
         )
         assert di.is_decayed is True
@@ -514,6 +513,5 @@ class TestNoSecretsInExpandedLeaderboard:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

@@ -149,7 +149,9 @@ async def _run_feature_script(script: Path, feature_id: str) -> dict[str, Any]:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=20)
     except TimeoutError as exc:
         process.kill()
-        raise HTTPException(status_code=504, detail="feature control timed out") from exc
+        raise HTTPException(
+            status_code=504, detail="feature control timed out"
+        ) from exc
     output = stdout.decode(errors="replace").strip()
     error = stderr.decode(errors="replace").strip()
     if process.returncode != 0:
@@ -277,7 +279,9 @@ async def _read_kill_switch_state(redis: Redis[Any]) -> dict[str, Any]:
         "engaged": bool(loaded.get("engaged")),
         "actor": loaded.get("actor") if loaded.get("actor") is not None else None,
         "reason": loaded.get("reason") if loaded.get("reason") is not None else None,
-        "alert_id": loaded.get("alert_id") if loaded.get("alert_id") is not None else None,
+        "alert_id": loaded.get("alert_id")
+        if loaded.get("alert_id") is not None
+        else None,
         "ts_unix": loaded.get("ts_unix") if loaded.get("ts_unix") is not None else None,
     }
 

@@ -82,9 +82,7 @@ async def sync_positions_and_marks(
     can sanity-check the sync visually.
     """
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
-        client = AlpacaClient(
-            http=http, api_key=api_key, api_secret=api_secret
-        )
+        client = AlpacaClient(http=http, api_key=api_key, api_secret=api_secret)
         account = await client.get_account()
         positions_raw = await client.list_positions()
 

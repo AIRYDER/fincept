@@ -21,14 +21,14 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
+from strategy_host.supervisor import (
+    Supervisor,
+    _runtime_signature,
+)
 
 from fincept_core.strategy_config import (
     StrategyConfig,
     StrategyConfigStore,
-)
-from strategy_host.supervisor import (
-    Supervisor,
-    _runtime_signature,
 )
 
 # --------------------------------------------------------------------------- #
@@ -93,9 +93,7 @@ class RecordingRunner:
             if config.strategy_id in self._crash_ids:
                 if self._crash_after > 0:
                     await asyncio.sleep(self._crash_after)
-                raise RuntimeError(
-                    f"intentional crash for {config.strategy_id}"
-                )
+                raise RuntimeError(f"intentional crash for {config.strategy_id}")
             await stop.wait()
         finally:
             self.stops.append(config.strategy_id)
@@ -341,9 +339,7 @@ class TestRestartOnChange:
         store.upsert(_cfg("alpha", model_binding=None, enabled=True))
         await supervisor.tick()
         await _yield()
-        store.upsert(
-            _cfg("alpha", model_binding="gbm_predictor.v1", enabled=True)
-        )
+        store.upsert(_cfg("alpha", model_binding="gbm_predictor.v1", enabled=True))
         await supervisor.tick()
         await _yield()
         assert len(runner.starts) == 2
@@ -373,7 +369,7 @@ class TestCrashRecovery:
         # After reaping, the desired state (enabled=True) is unmet,
         # so a fresh runner spawns.  Disable the crash trigger so
         # the second start runs successfully.
-        runner._crash_ids.clear()  # noqa: SLF001
+        runner._crash_ids.clear()
         await supervisor.tick()
         await _yield()
         assert len(runner.starts) == 2
@@ -441,9 +437,7 @@ class TestShutdown:
         # If list_all() raises (transient FS error, etc.), the run
         # loop must log and continue.  We simulate by patching the
         # store to throw once, then succeed on the next tick.
-        sup = Supervisor(
-            store=store, redis=fake_redis, runner=runner, poll_interval_sec=0.02
-        )
+        sup = Supervisor(store=store, redis=fake_redis, runner=runner, poll_interval_sec=0.02)
 
         original_list = store.list_all
         calls = {"count": 0}

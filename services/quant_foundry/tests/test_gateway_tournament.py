@@ -14,8 +14,6 @@ from __future__ import annotations
 import pathlib
 import time
 
-import pytest
-
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outcomes import SettlementRecord, SettlementStatus

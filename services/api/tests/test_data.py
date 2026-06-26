@@ -44,7 +44,9 @@ async def test_data_sources_returns_control_registry(
     assert exa["safety"] == "read_only"
     assert exa["return_format"] == "structured_brief_with_grounding"
 
-    bars = next(source for source in payload["sources"] if source["id"] == "timescale_bars")
+    bars = next(
+        source for source in payload["sources"] if source["id"] == "timescale_bars"
+    )
     assert "GET /data/coverage" in bars["call_surfaces"]
     assert "ohlcv_bars" in bars["data"]
 
@@ -243,7 +245,9 @@ async def test_alpaca_demo_returns_news_and_bar_sample(
                 "next_page_token": None,
             }
 
-        async def list_bars(self, symbols: list[str], **kwargs: object) -> dict[str, object]:
+        async def list_bars(
+            self, symbols: list[str], **kwargs: object
+        ) -> dict[str, object]:
             calls["bars"] = {"symbols": symbols, **kwargs}
             return {
                 "bars": {
@@ -366,13 +370,32 @@ async def test_coverage_reports_fresh_stale_and_empty_symbols(
     monkeypatch,
 ) -> None:
     universe = [
-        {"symbol": "FRESH", "asset_class": "equity", "venue_default": "sim", "active": True},
-        {"symbol": "STALE", "asset_class": "equity", "venue_default": "sim", "active": True},
-        {"symbol": "EMPTY", "asset_class": "crypto_spot", "venue_default": "binance", "active": True},
+        {
+            "symbol": "FRESH",
+            "asset_class": "equity",
+            "venue_default": "sim",
+            "active": True,
+        },
+        {
+            "symbol": "STALE",
+            "asset_class": "equity",
+            "venue_default": "sim",
+            "active": True,
+        },
+        {
+            "symbol": "EMPTY",
+            "asset_class": "crypto_spot",
+            "venue_default": "binance",
+            "active": True,
+        },
     ]
 
     async def fake_read_universe(*, asset_class=None, active_only=True):
-        return [row for row in universe if asset_class is None or row["asset_class"] == asset_class]
+        return [
+            row
+            for row in universe
+            if asset_class is None or row["asset_class"] == asset_class
+        ]
 
     async def fake_read_bar_coverage(
         symbols: list[str],
@@ -533,8 +556,18 @@ async def test_coverage_returns_public_error_rows_when_bar_reader_unavailable(
 ) -> None:
     async def fake_read_universe(*, asset_class=None, active_only=True):
         return [
-            {"symbol": "AAPL", "asset_class": "equity", "venue_default": "nasdaq", "active": True},
-            {"symbol": "MSFT", "asset_class": "equity", "venue_default": "nasdaq", "active": True},
+            {
+                "symbol": "AAPL",
+                "asset_class": "equity",
+                "venue_default": "nasdaq",
+                "active": True,
+            },
+            {
+                "symbol": "MSFT",
+                "asset_class": "equity",
+                "venue_default": "nasdaq",
+                "active": True,
+            },
         ]
 
     async def broken_read_bar_coverage(

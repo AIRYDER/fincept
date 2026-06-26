@@ -245,9 +245,7 @@ def test_read_filters_by_since_ns(store: PredictionLog) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_read_skips_malformed_lines(
-    store: PredictionLog, tmp_path: pathlib.Path
-) -> None:
+def test_read_skips_malformed_lines(store: PredictionLog, tmp_path: pathlib.Path) -> None:
     """A corrupt line in the middle of the JSONL must not break the read."""
     good = store.append(
         agent_id="gbm.v1",

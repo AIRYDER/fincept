@@ -154,7 +154,9 @@ class ExpandedLeaderboardEntry(BaseModel):
             "regime_slices": [s.model_dump() for s in self.regime_slices],
             "symbol_cluster_slices": [s.model_dump() for s in self.symbol_cluster_slices],
             "baseline_delta": self.baseline_delta.model_dump() if self.baseline_delta else None,
-            "calibration_summary": self.calibration_summary.model_dump() if self.calibration_summary else None,
+            "calibration_summary": self.calibration_summary.model_dump()
+            if self.calibration_summary
+            else None,
             "decay_indicator": self.decay_indicator.model_dump() if self.decay_indicator else None,
         }
 
@@ -297,14 +299,14 @@ class ExpandedLeaderboard:
     def stale_models(self) -> list[ExpandedLeaderboardEntry]:
         """Return all stale models."""
         return [
-            e for e in self._entries
-            if e.decay_indicator is not None and e.decay_indicator.is_stale
+            e for e in self._entries if e.decay_indicator is not None and e.decay_indicator.is_stale
         ]
 
     def decayed_models(self) -> list[ExpandedLeaderboardEntry]:
         """Return all decayed models."""
         return [
-            e for e in self._entries
+            e
+            for e in self._entries
             if e.decay_indicator is not None and e.decay_indicator.is_decayed
         ]
 
@@ -323,24 +325,12 @@ class ExpandedLeaderboard:
                     total_score=entry.total_score,
                     baseline_delta=entry.baseline_delta,
                     decay_indicator=entry.decay_indicator,
-                    horizon_scores={
-                        s.horizon: s.score for s in entry.horizon_slices
-                    },
-                    regime_scores={
-                        s.regime: s.score for s in entry.regime_slices
-                    },
-                    symbol_cluster_scores={
-                        s.cluster: s.score for s in entry.symbol_cluster_slices
-                    },
-                    is_stale=(
-                        entry.decay_indicator.is_stale
-                        if entry.decay_indicator
-                        else False
-                    ),
+                    horizon_scores={s.horizon: s.score for s in entry.horizon_slices},
+                    regime_scores={s.regime: s.score for s in entry.regime_slices},
+                    symbol_cluster_scores={s.cluster: s.score for s in entry.symbol_cluster_slices},
+                    is_stale=(entry.decay_indicator.is_stale if entry.decay_indicator else False),
                     is_decayed=(
-                        entry.decay_indicator.is_decayed
-                        if entry.decay_indicator
-                        else False
+                        entry.decay_indicator.is_decayed if entry.decay_indicator else False
                     ),
                 )
         raise KeyError(f"model {model_id!r} not found in leaderboard")

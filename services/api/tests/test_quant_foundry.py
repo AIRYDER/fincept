@@ -53,6 +53,7 @@ async def qf_client(
 ) -> AsyncClient:
     """ASGI client with an enabled Quant Foundry gateway on app.state."""
     from api.main import app
+
     app.state.quant_foundry_gateway = qf_enabled_gateway
     return client
 
@@ -63,6 +64,7 @@ async def qf_disabled_client(
     qf_disabled_gateway: QuantFoundryGateway,
 ) -> AsyncClient:
     from api.main import app
+
     app.state.quant_foundry_gateway = qf_disabled_gateway
     return client
 
@@ -100,7 +102,11 @@ async def test_create_job_disabled_returns_disabled(
 
 async def test_jobs_endpoints_require_auth(qf_client: AsyncClient) -> None:
     """All operator endpoints require bearer auth."""
-    for path in ("/quant-foundry/jobs", "/quant-foundry/health", "/quant-foundry/heartbeats"):
+    for path in (
+        "/quant-foundry/jobs",
+        "/quant-foundry/health",
+        "/quant-foundry/heartbeats",
+    ):
         r = await qf_client.get(path)
         assert r.status_code == 401, f"{path} should require auth"
 
@@ -150,11 +156,17 @@ async def test_get_job_detail(
         "/quant-foundry/jobs",
         headers=auth_headers,
         json={
-            "job_id": job_id, "job_type": "training", "idempotency_key": idem,
+            "job_id": job_id,
+            "job_type": "training",
+            "idempotency_key": idem,
             "request_payload": {
-                "schema_version": 1, "job_id": job_id,
-                "dataset_manifest_ref": "ds-1", "model_family": "gbm",
-                "search_space": {}, "random_seed": 1, "hardware_class": "m",
+                "schema_version": 1,
+                "job_id": job_id,
+                "dataset_manifest_ref": "ds-1",
+                "model_family": "gbm",
+                "search_space": {},
+                "random_seed": 1,
+                "hardware_class": "m",
                 "extra_constraints": {},
             },
         },
@@ -173,20 +185,24 @@ async def test_get_unknown_job_returns_404(
     assert r.status_code == 404
 
 
-async def test_list_jobs(
-    qf_client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_list_jobs(qf_client: AsyncClient, auth_headers: dict[str, str]) -> None:
     job_id = "qf:train:list:1"
     idem = make_idempotency_key("training", "list", "gbm", "h1", "1")
     await qf_client.post(
         "/quant-foundry/jobs",
         headers=auth_headers,
         json={
-            "job_id": job_id, "job_type": "training", "idempotency_key": idem,
+            "job_id": job_id,
+            "job_type": "training",
+            "idempotency_key": idem,
             "request_payload": {
-                "schema_version": 1, "job_id": job_id,
-                "dataset_manifest_ref": "ds-1", "model_family": "gbm",
-                "search_space": {}, "random_seed": 1, "hardware_class": "m",
+                "schema_version": 1,
+                "job_id": job_id,
+                "dataset_manifest_ref": "ds-1",
+                "model_family": "gbm",
+                "search_space": {},
+                "random_seed": 1,
+                "hardware_class": "m",
                 "extra_constraints": {},
             },
         },
@@ -211,11 +227,17 @@ async def test_callback_rejects_bad_signature(
         "/quant-foundry/jobs",
         headers=auth_headers,
         json={
-            "job_id": job_id, "job_type": "training", "idempotency_key": idem,
+            "job_id": job_id,
+            "job_type": "training",
+            "idempotency_key": idem,
             "request_payload": {
-                "schema_version": 1, "job_id": job_id,
-                "dataset_manifest_ref": "ds-1", "model_family": "gbm",
-                "search_space": {}, "random_seed": 1, "hardware_class": "m",
+                "schema_version": 1,
+                "job_id": job_id,
+                "dataset_manifest_ref": "ds-1",
+                "model_family": "gbm",
+                "search_space": {},
+                "random_seed": 1,
+                "hardware_class": "m",
                 "extra_constraints": {},
             },
         },
@@ -246,11 +268,17 @@ async def test_callback_rejects_missing_signature_headers(
         "/quant-foundry/jobs",
         headers=auth_headers,
         json={
-            "job_id": job_id, "job_type": "training", "idempotency_key": idem,
+            "job_id": job_id,
+            "job_type": "training",
+            "idempotency_key": idem,
             "request_payload": {
-                "schema_version": 1, "job_id": job_id,
-                "dataset_manifest_ref": "ds-1", "model_family": "gbm",
-                "search_space": {}, "random_seed": 1, "hardware_class": "m",
+                "schema_version": 1,
+                "job_id": job_id,
+                "dataset_manifest_ref": "ds-1",
+                "model_family": "gbm",
+                "search_space": {},
+                "random_seed": 1,
+                "hardware_class": "m",
                 "extra_constraints": {},
             },
         },
@@ -282,7 +310,8 @@ async def test_callback_unknown_job_rejected(
 
 
 async def test_duplicate_callback_idempotent(
-    qf_client: AsyncClient, auth_headers: dict[str, str],
+    qf_client: AsyncClient,
+    auth_headers: dict[str, str],
     qf_enabled_gateway: QuantFoundryGateway,
 ) -> None:
     # Create + complete a job (local_mock processes immediately).
@@ -292,10 +321,14 @@ async def test_duplicate_callback_idempotent(
         "/quant-foundry/jobs",
         headers=auth_headers,
         json={
-            "job_id": job_id, "job_type": "inference", "idempotency_key": idem,
+            "job_id": job_id,
+            "job_type": "inference",
+            "idempotency_key": idem,
             "request_payload": {
-                "schema_version": 1, "job_id": job_id,
-                "artifact_ref": "a-1", "symbols": ["AAPL"],
+                "schema_version": 1,
+                "job_id": job_id,
+                "artifact_ref": "a-1",
+                "symbols": ["AAPL"],
                 "horizons_ns": [3600000000000],
             },
         },
@@ -307,6 +340,7 @@ async def test_duplicate_callback_idempotent(
     # (In local_mock the job is already COMPLETED, so the duplicate external
     # callback is an idempotent no-op.)
     import time as _time
+
     payload = b'{"job_id": "qf:infer:dupcb:1"}'
     ts = int(_time.time())
     sig = sign_callback(payload, secret="test-cb-secret", ts=ts, job_id=job_id)

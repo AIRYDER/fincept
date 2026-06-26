@@ -34,7 +34,7 @@ from redis.asyncio import Redis
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FILLS, STREAM_POSITIONS
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -93,6 +93,7 @@ def _make_fill_handler(
 
 async def run(stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     consumer = Consumer(redis)

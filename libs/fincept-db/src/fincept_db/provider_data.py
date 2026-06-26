@@ -49,8 +49,12 @@ def build_exa_record(
     clean_request = _json_safe(request)
     clean_response = _json_safe(response)
     brief = clean_response.get("brief") if isinstance(clean_response.get("brief"), dict) else {}
-    sources = clean_response.get("sources") if isinstance(clean_response.get("sources"), list) else []
-    grounding = clean_response.get("grounding") if isinstance(clean_response.get("grounding"), list) else []
+    sources = (
+        clean_response.get("sources") if isinstance(clean_response.get("sources"), list) else []
+    )
+    grounding = (
+        clean_response.get("grounding") if isinstance(clean_response.get("grounding"), list) else []
+    )
     symbol = _clean_symbol(clean_request.get("symbol"))
     normalized = {
         "schema_version": SCHEMA_VERSION,
@@ -174,7 +178,9 @@ def build_alpaca_news_record(
     clean_request = _json_safe(request)
     clean_response = _json_safe(response)
     articles = clean_response.get("news") if isinstance(clean_response.get("news"), list) else []
-    symbol = _clean_symbol((clean_request.get("symbols") or [""])[0] if clean_request.get("symbols") else None)
+    symbol = _clean_symbol(
+        (clean_request.get("symbols") or [""])[0] if clean_request.get("symbols") else None
+    )
     normalized = {
         "schema_version": SCHEMA_VERSION,
         "kind": "news_articles",
@@ -296,7 +302,9 @@ def _make_record(
 ) -> ProviderDataRecord:
     event_ns = ts_event if ts_event is not None else time.time_ns()
     # Hash on pre-redaction content for stable request identity/dedup
-    request_hash = _hash_json({"provider": provider, "source": source, "dataset": dataset, "request": request})
+    request_hash = _hash_json(
+        {"provider": provider, "source": source, "dataset": dataset, "request": request}
+    )
     payload_hash = _hash_json({"normalized": normalized, "raw": raw})
     record_id = _hash_json(
         {
@@ -446,35 +454,41 @@ def _redact_sensitive(value: Any) -> Any:
         return value
     s = value
     # Standalone secret-like values (prefixes or long opaque tokens) - case insen
-    if re.match(r'^(sk[-_]|pk[-_]|xoxb-|eyJ[A-Za-z0-9_-]{10,}|Bearer\s|ACCT-|acct-)', s, re.IGNORECASE):
+    if re.match(
+        r"^(sk[-_]|pk[-_]|xoxb-|eyJ[A-Za-z0-9_-]{10,}|Bearer\s|ACCT-|acct-)", s, re.IGNORECASE
+    ):
         return "[REDACTED]"
-    if len(s) >= 16 and re.search(r'[A-Za-z0-9_\-]{12,}', s) and any(p in s.lower() for p in ("secret", "key", "token", "pass", "auth")):
+    if (
+        len(s) >= 16
+        and re.search(r"[A-Za-z0-9_\-]{12,}", s)
+        and any(p in s.lower() for p in ("secret", "key", "token", "pass", "auth"))
+    ):
         return "[REDACTED]"
     # Common secret key/token patterns embedded (use IGNORECASE flag)
     s = re.sub(
         r'(api[_-]?key|token|secret|password|bearer|authorization|private_key|access_key)["\'\s:=]+[\w\-.]{6,}',
-        r'\1=[REDACTED]',
+        r"\1=[REDACTED]",
         s,
         flags=re.IGNORECASE,
     )
     # URL embedded credentials user:pass@
     s = re.sub(
-        r'(https?://|postgres://|mysql://|redis://)[^:@/ \s]+:[^@ \s]+@',
-        r'\1[REDACTED]@',
+        r"(https?://|postgres://|mysql://|redis://)[^:@/ \s]+:[^@ \s]+@",
+        r"\1[REDACTED]@",
         s,
         flags=re.IGNORECASE,
     )
     # Account identifiers
     s = re.sub(
         r'(account[_-]?id|acct|account)["\'\s:=]+[\w\-]{6,}',
-        r'\1=[REDACTED]',
+        r"\1=[REDACTED]",
         s,
         flags=re.IGNORECASE,
     )
     # Conn string private host
     s = re.sub(
-        r'([a-z]+://)[^@ \s]+@',
-        r'\1[REDACTED]@',
+        r"([a-z]+://)[^@ \s]+@",
+        r"\1[REDACTED]@",
         s,
         flags=re.IGNORECASE,
     )

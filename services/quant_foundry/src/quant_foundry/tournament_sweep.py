@@ -36,14 +36,13 @@ from quant_foundry.leaderboard_expanded import (
     ExpandedLeaderboardEntry,
 )
 from quant_foundry.outcomes import SettlementRecord, SettlementStatus
-from quant_foundry.retirement import RetirementFlagger, RetirementFlag
+from quant_foundry.retirement import RetirementFlagger
 from quant_foundry.tournament import (
     ScoringInput,
     Tournament,
     TournamentResult,
     TournamentStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sweep receipt
@@ -173,8 +172,10 @@ class TournamentSweep:
            e. Add to ExpandedLeaderboard.
         4. Return receipt with scored/blocked/stale lists.
         """
-        current_ns = now_ns if now_ns is not None else (
-            self._now_ns if self._now_ns is not None else time.time_ns()
+        current_ns = (
+            now_ns
+            if now_ns is not None
+            else (self._now_ns if self._now_ns is not None else time.time_ns())
         )
 
         records = self.settlement_ledger.read_all()
@@ -189,39 +190,41 @@ class TournamentSweep:
 
         for model_id, model_records in by_model.items():
             settled_records = [
-                r for r in model_records
-                if r.status == SettlementStatus.SETTLED
-                and r.realized_return_net is not None
+                r
+                for r in model_records
+                if r.status == SettlementStatus.SETTLED and r.realized_return_net is not None
             ]
 
             if len(settled_records) < self.min_settled_samples:
-                blocked.append(BlockedModel(
-                    model_id=model_id,
-                    status=TournamentStatus.INSUFFICIENT_EVIDENCE.value,
-                    settled_count=len(settled_records),
-                    reason=(
-                        f"settled_count={len(settled_records)} < "
-                        f"min_settled_samples={self.min_settled_samples}"
-                    ),
-                ))
+                blocked.append(
+                    BlockedModel(
+                        model_id=model_id,
+                        status=TournamentStatus.INSUFFICIENT_EVIDENCE.value,
+                        settled_count=len(settled_records),
+                        reason=(
+                            f"settled_count={len(settled_records)} < "
+                            f"min_settled_samples={self.min_settled_samples}"
+                        ),
+                    )
+                )
                 continue
 
-            last_settled_ns = max(
-                (r.settled_at_ns or 0) for r in settled_records
-            )
+            last_settled_ns = max((r.settled_at_ns or 0) for r in settled_records)
             age_ns = current_ns - last_settled_ns
             is_stale = age_ns > self.stale_threshold_ns
 
             if is_stale:
-                stale.append(StaleModel(
-                    model_id=model_id,
-                    last_settled_at_ns=last_settled_ns,
-                    age_ns=age_ns,
-                    reason=(
-                        f"last_settled_at_ns={last_settled_ns} is "
-                        f"{age_ns}ns old (> threshold {self.stale_threshold_ns}ns)"
-                    ),
-                ))
+                stale.append(
+                    StaleModel(
+                        model_id=model_id,
+                        last_settled_at_ns=last_settled_ns,
+                        age_ns=age_ns,
+                        reason=(
+                            f"last_settled_at_ns={last_settled_ns} is "
+                            f"{age_ns}ns old (> threshold {self.stale_threshold_ns}ns)"
+                        ),
+                    )
+                )
 
             scoring_input = self._build_scoring_input(
                 model_id=model_id,
@@ -249,11 +252,13 @@ class TournamentSweep:
             if flag is not None:
                 retirement_flag_dict = flag.to_dict()
 
-            scored.append(ScoredModel(
-                model_id=model_id,
-                tournament_result=result.to_dict(),
-                retirement_flag=retirement_flag_dict,
-            ))
+            scored.append(
+                ScoredModel(
+                    model_id=model_id,
+                    tournament_result=result.to_dict(),
+                    retirement_flag=retirement_flag_dict,
+                )
+            )
 
         return TournamentSweepReceipt(
             scored_models=scored,
@@ -297,23 +302,25 @@ class TournamentSweep:
         """
         oos_net = [r.realized_return_net or 0.0 for r in records]
         oos_gross = [
-            r.realized_return_gross if r.realized_return_gross is not None
+            r.realized_return_gross
+            if r.realized_return_gross is not None
             else (r.realized_return_net or 0.0)
             for r in records
         ]
         oos_baseline = [0.0] * len(records)
 
         brier_values = [r.brier for r in records if r.brier is not None]
-        mean_brier = (
-            sum(brier_values) / len(brier_values) if brier_values else None
-        )
+        mean_brier = sum(brier_values) / len(brier_values) if brier_values else None
 
         confidence_buckets: list[tuple[str, float, float]] = []
         for r in records:
             if r.calibration_bucket is not None and r.realized_return_net is not None:
                 confidence_buckets.append(
-                    (r.calibration_bucket, _bucket_confidence(r.calibration_bucket),
-                     r.realized_return_net)
+                    (
+                        r.calibration_bucket,
+                        _bucket_confidence(r.calibration_bucket),
+                        r.realized_return_net,
+                    )
                 )
 
         trial_count = 1
@@ -363,7 +370,8 @@ class TournamentSweep:
             calibration_summary = CalibrationSummary(
                 brier_score=mean_brier,
                 reliability=reliability,
-                n_bins=len(set(r.calibration_bucket for r in records if r.calibration_bucket)) or 10,
+                n_bins=len(set(r.calibration_bucket for r in records if r.calibration_bucket))
+                or 10,
             )
 
         decay_indicator = DecayIndicator(

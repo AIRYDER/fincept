@@ -136,9 +136,7 @@ async def read_bar_coverage(
         return {
             str(row.symbol): BarCoverage(
                 bar_count=int(row.bar_count or 0),
-                last_ts_event=int(row.last_ts_event)
-                if row.last_ts_event is not None
-                else None,
+                last_ts_event=int(row.last_ts_event) if row.last_ts_event is not None else None,
             )
             for row in rows
         }

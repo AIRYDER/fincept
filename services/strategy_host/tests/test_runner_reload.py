@@ -29,13 +29,11 @@ from typing import Any, ClassVar
 
 import pytest
 import pytest_asyncio
+from strategy_host.runner import run_strategy
 
 from fincept_core.schemas import BarEvent, Fill
 from fincept_core.strategy_config import StrategyConfig
 from fincept_sdk import Strategy, StrategyContext
-
-from strategy_host.runner import run_strategy
-
 
 # --------------------------------------------------------------------------- #
 # Stub strategy with reload_from_dir                                          #
@@ -127,16 +125,12 @@ async def fake_redis() -> Any:
 def patch_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     from backtester.strategies import STRATEGY_REGISTRY
 
-    monkeypatch.setitem(
-        STRATEGY_REGISTRY, "reloading", ReloadingStrategy
-    )
+    monkeypatch.setitem(STRATEGY_REGISTRY, "reloading", ReloadingStrategy)
     ReloadingStrategy.instances.clear()
 
 
 @pytest.fixture
-def models_tree(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> pathlib.Path:
+def models_tree(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """Isolated models/active tree under tmp_path, env-overridden."""
     models = tmp_path / "models"
     active = models / "active"
@@ -146,13 +140,9 @@ def models_tree(
     return models
 
 
-def _write_pointer(
-    models: pathlib.Path, binding: str, model_name: str
-) -> None:
+def _write_pointer(models: pathlib.Path, binding: str, model_name: str) -> None:
     active = models / "active"
-    (active / f"{binding}.json").write_text(
-        json.dumps({"model_name": model_name})
-    )
+    (active / f"{binding}.json").write_text(json.dumps({"model_name": model_name}))
 
 
 def _config(
@@ -174,10 +164,8 @@ def _config(
     )
 
 
-async def _wait_for(
-    predicate: Any, *, timeout: float = 3.0, interval: float = 0.02
-) -> bool:
-    deadline = time.monotonic() + timeout
+async def _wait_for(predicate: Any, *, timeout_s: float = 3.0, interval: float = 0.02) -> bool:
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if predicate():
             return True
@@ -201,19 +189,14 @@ class TestInitialResolution:
         config = _config()
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=10.0
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=10.0)
         )
         # Wait for the strategy to be constructed -- this signals
         # that the binding was resolved + injected.
         ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
         assert ok
         try:
-            assert (
-                ReloadingStrategy.instances[-1]._model_dir  # noqa: SLF001
-                == models_tree / "model_v1"
-            )
+            assert ReloadingStrategy.instances[-1]._model_dir == models_tree / "model_v1"
         finally:
             stop.set()
             await asyncio.wait_for(task, timeout=2.0)
@@ -248,14 +231,10 @@ class TestInitialResolution:
         # explicit model_dir param) is misconfiguring.
         # We use the reloading strategy here with explicit
         # model_dir in params; the runner should pass it through.
-        config = _config(
-            binding=None, params={"model_dir": str(models_tree / "x")}
-        )
+        config = _config(binding=None, params={"model_dir": str(models_tree / "x")})
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=10.0
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=10.0)
         )
         ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
         assert ok
@@ -289,9 +268,7 @@ class TestPointerChange:
         # plenty of margin against asyncio scheduling jitter without
         # being so tight it busy-loops.
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=0.05
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=0.05)
         )
         try:
             ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
@@ -301,16 +278,12 @@ class TestPointerChange:
             assert strategy.reloads == []
             # Promote model_v2.
             _write_pointer(models_tree, "test_binding", "model_v2")
-            ok = await _wait_for(
-                lambda: len(strategy.reloads) >= 1, timeout=3.0
-            )
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
             assert ok
             assert strategy.reloads[0] == models_tree / "model_v2"
             # Promote again.
             _write_pointer(models_tree, "test_binding", "model_v3")
-            ok = await _wait_for(
-                lambda: len(strategy.reloads) >= 2, timeout=3.0
-            )
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 2, timeout=3.0)
             assert ok
             assert strategy.reloads[1] == models_tree / "model_v3"
         finally:
@@ -330,9 +303,7 @@ class TestPointerChange:
         config = _config()
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=0.05
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=0.05)
         )
         try:
             ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
@@ -355,9 +326,7 @@ class TestPointerChange:
         config = _config()
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=0.05
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=0.05)
         )
         try:
             ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
@@ -366,9 +335,7 @@ class TestPointerChange:
             # Corrupt the pointer.  Resolver returns None; watcher
             # logs a warning and skips -- the previous model stays
             # loaded.  The runner must NOT crash.
-            (models_tree / "active" / "test_binding.json").write_text(
-                "not-json{{{"
-            )
+            (models_tree / "active" / "test_binding.json").write_text("not-json{{{")
             await asyncio.sleep(0.2)
             # No reloads triggered, runner still alive.
             assert strategy.reloads == []
@@ -377,9 +344,7 @@ class TestPointerChange:
             # verify the watcher picks it up despite the prior
             # malformed read.
             _write_pointer(models_tree, "test_binding", "model_v2")
-            ok = await _wait_for(
-                lambda: len(strategy.reloads) >= 1, timeout=3.0
-            )
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
             assert ok
         finally:
             stop.set()
@@ -405,9 +370,7 @@ class TestReloadFailure:
         config = _config(params={"reload_should_fail": True})
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=0.05
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=0.05)
         )
         try:
             ok = await _wait_for(lambda: bool(ReloadingStrategy.instances))
@@ -424,9 +387,7 @@ class TestReloadFailure:
             # flag and trigger another pointer change.
             strategy.reload_should_fail = False
             _write_pointer(models_tree, "test_binding", "model_v3")
-            ok = await _wait_for(
-                lambda: len(strategy.reloads) >= 1, timeout=3.0
-            )
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
             assert ok
             assert strategy.reloads[0] == models_tree / "model_v3"
         finally:
@@ -486,22 +447,16 @@ class TestStrategyWithoutReload:
     ) -> None:
         from backtester.strategies import STRATEGY_REGISTRY
 
-        monkeypatch.setitem(
-            STRATEGY_REGISTRY, "noreload", _NoReloadStrategy
-        )
+        monkeypatch.setitem(STRATEGY_REGISTRY, "noreload", _NoReloadStrategy)
         _NoReloadStrategy.instances.clear()
         _write_pointer(models_tree, "test_binding", "model_v1")
         config = _config(class_name="noreload")
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_strategy(
-                config, fake_redis, stop, reload_poll_interval_s=0.05
-            )
+            run_strategy(config, fake_redis, stop, reload_poll_interval_s=0.05)
         )
         try:
-            ok = await _wait_for(
-                lambda: bool(_NoReloadStrategy.instances)
-            )
+            ok = await _wait_for(lambda: bool(_NoReloadStrategy.instances))
             assert ok
             # Promote a new model.  Without the watcher, nothing
             # happens.  We can verify this by promoting and waiting
@@ -512,10 +467,7 @@ class TestStrategyWithoutReload:
             assert not task.done()
             # The strategy is still pinned to its initial model_dir
             # because no reload was possible.
-            assert (
-                _NoReloadStrategy.instances[-1]._model_dir  # noqa: SLF001
-                == models_tree / "model_v1"
-            )
+            assert _NoReloadStrategy.instances[-1]._model_dir == models_tree / "model_v1"
         finally:
             stop.set()
             await asyncio.wait_for(task, timeout=2.0)

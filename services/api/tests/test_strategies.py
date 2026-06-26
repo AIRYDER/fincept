@@ -400,9 +400,7 @@ class TestListAndReadRoutes:
         auth_headers: dict[str, str],
         patched_strategy_store: StrategyConfigStore,
     ) -> None:
-        r = await client.get(
-            "/strategies/configs", headers=auth_headers
-        )
+        r = await client.get("/strategies/configs", headers=auth_headers)
         assert r.status_code == 200
         assert r.json() == []
 
@@ -423,9 +421,7 @@ class TestListAndReadRoutes:
             headers=auth_headers,
             json=_create_body(strategy_id="aaa"),
         )
-        r = await client.get(
-            "/strategies/configs", headers=auth_headers
-        )
+        r = await client.get("/strategies/configs", headers=auth_headers)
         assert r.status_code == 200
         ids = [c["strategy_id"] for c in r.json()]
         assert ids == ["aaa", "zzz"]
@@ -440,12 +436,13 @@ class TestListAndReadRoutes:
         await client.post(
             "/strategies/configs",
             headers=auth_headers,
-            json=_create_body(strategy_id="gbm_btc", class_name="gbm",
-                              model_binding="gbm_predictor.v1"),
+            json=_create_body(
+                strategy_id="gbm_btc",
+                class_name="gbm",
+                model_binding="gbm_predictor.v1",
+            ),
         )
-        r = await client.get(
-            "/strategies/configs/gbm_btc", headers=auth_headers
-        )
+        r = await client.get("/strategies/configs/gbm_btc", headers=auth_headers)
         assert r.status_code == 200
         body = r.json()
         assert body["strategy_id"] == "gbm_btc"
@@ -459,9 +456,7 @@ class TestListAndReadRoutes:
         auth_headers: dict[str, str],
         patched_strategy_store: StrategyConfigStore,
     ) -> None:
-        r = await client.get(
-            "/strategies/configs/nope", headers=auth_headers
-        )
+        r = await client.get("/strategies/configs/nope", headers=auth_headers)
         assert r.status_code == 404
 
     @pytest.mark.asyncio
@@ -473,9 +468,7 @@ class TestListAndReadRoutes:
     ) -> None:
         # The router uses a path param, but an unsafe id reaches the
         # store which raises StrategyConfigError -> 400.
-        r = await client.get(
-            "/strategies/configs/.hidden", headers=auth_headers
-        )
+        r = await client.get("/strategies/configs/.hidden", headers=auth_headers)
         assert r.status_code == 400
 
 
@@ -625,9 +618,7 @@ class TestDeleteRoute:
             headers=auth_headers,
             json=_create_body(),
         )
-        r = await client.delete(
-            "/strategies/configs/btc_ma_main", headers=auth_headers
-        )
+        r = await client.delete("/strategies/configs/btc_ma_main", headers=auth_headers)
         assert r.status_code == 204
         assert patched_strategy_store.get("btc_ma_main") is None
         # History is retained (tombstone + original).
@@ -641,9 +632,7 @@ class TestDeleteRoute:
         auth_headers: dict[str, str],
         patched_strategy_store: StrategyConfigStore,
     ) -> None:
-        r = await client.delete(
-            "/strategies/configs/never", headers=auth_headers
-        )
+        r = await client.delete("/strategies/configs/never", headers=auth_headers)
         assert r.status_code == 404
 
     @pytest.mark.asyncio
@@ -656,9 +645,7 @@ class TestDeleteRoute:
         # Using ``.hidden`` (leading dot) rather than ``..`` because
         # httpx normalises ``..`` to parent, which would hit a
         # different route and return 405 instead.
-        r = await client.delete(
-            "/strategies/configs/.hidden", headers=auth_headers
-        )
+        r = await client.delete("/strategies/configs/.hidden", headers=auth_headers)
         assert r.status_code == 400
 
 

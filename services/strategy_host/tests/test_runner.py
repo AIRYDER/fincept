@@ -41,6 +41,7 @@ from typing import Any, ClassVar
 
 import pytest
 import pytest_asyncio
+from strategy_host.runner import STREAM_OUTGOING_ORDERS, run_strategy
 
 from fincept_bus.producer import Producer
 from fincept_bus.streams import (
@@ -67,9 +68,6 @@ from oms.prices import LivePrices
 from oms.processor import process_intent
 from portfolio.state import PortfolioState, apply_fill
 from portfolio.store import PositionStore
-
-from strategy_host.runner import STREAM_OUTGOING_ORDERS, run_strategy
-
 
 # --------------------------------------------------------------------------- #
 # Recording strategy: captures every hook call for assertion                 #
@@ -264,16 +262,14 @@ def _config(
     )
 
 
-async def _wait_for(
-    predicate: Any, *, timeout: float = 3.0, interval: float = 0.05
-) -> bool:
+async def _wait_for(predicate: Any, *, timeout_s: float = 3.0, interval: float = 0.05) -> bool:
     """Poll ``predicate`` until truthy or timeout.  Returns whether
     the predicate eventually became truthy.
 
     Used because the runner is a background task and we can't
     deterministically know when it has consumed an event.  Timeouts
     are generous (3s) so a slow CI machine doesn't flake."""
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if predicate():
             return True
@@ -291,10 +287,12 @@ async def _start_runner(
     # publishes an event might see the message land before the
     # group exists, in which case it's never delivered.
     await _wait_for(
-        lambda: bool(RecordingStrategy.instances)
-        and (
-            len(RecordingStrategy.instances[-1].calls) >= 1
-            or RecordingStrategy.instances[-1]._fail_on_start  # noqa: SLF001
+        lambda: (
+            bool(RecordingStrategy.instances)
+            and (
+                len(RecordingStrategy.instances[-1].calls) >= 1
+                or RecordingStrategy.instances[-1]._fail_on_start
+            )
         ),
         timeout=2.0,
     )
@@ -305,13 +303,11 @@ async def _start_runner(
     return task, stop
 
 
-async def _stop_runner(
-    task: asyncio.Task[None], stop: asyncio.Event
-) -> None:
+async def _stop_runner(task: asyncio.Task[None], stop: asyncio.Event) -> None:
     stop.set()
     try:
         await asyncio.wait_for(task, timeout=2.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         task.cancel()
         with pytest.raises((asyncio.CancelledError, Exception)):
             await task
@@ -348,13 +344,9 @@ class TestBarDispatch:
         producer = Producer(fake_redis)
         task, stop = await _start_runner(config, fake_redis)
         try:
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
-                lambda: any(
-                    c[0] == "on_bar" for c in RecordingStrategy.instances[-1].calls
-                ),
+                lambda: any(c[0] == "on_bar" for c in RecordingStrategy.instances[-1].calls),
                 timeout=3.0,
             )
             assert ok, "on_bar was never called for matching symbol"
@@ -390,11 +382,9 @@ class TestBarDispatch:
         producer = Producer(fake_redis)
         task, stop = await _start_runner(config, fake_redis)
         # Set the strategy to submit an intent on its first bar.
-        RecordingStrategy.instances[-1]._submit_on_bar = intent  # noqa: SLF001
+        RecordingStrategy.instances[-1]._submit_on_bar = intent
         try:
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
 
             async def order_appears() -> bool:
                 orders = await _read_orders(fake_redis)
@@ -447,9 +437,7 @@ class TestPositionDispatch:
             # dispatched first and the snapshot would still be
             # empty.
             await asyncio.sleep(0.2)
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
                 lambda: bool(RecordingStrategy.instances[-1].position_snapshots),
                 timeout=3.0,
@@ -476,9 +464,7 @@ class TestPositionDispatch:
                 ),
             )
             await asyncio.sleep(0.2)
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
                 lambda: bool(RecordingStrategy.instances[-1].position_snapshots),
                 timeout=3.0,
@@ -508,11 +494,9 @@ class TestFillDispatch:
         task, stop = await _start_runner(config, fake_redis)
         # Strategy submits an intent on its first bar so the runner
         # registers the order_id in its outstanding ledger.
-        RecordingStrategy.instances[-1]._submit_on_bar = intent  # noqa: SLF001
+        RecordingStrategy.instances[-1]._submit_on_bar = intent
         try:
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             # Wait until the intent is on STREAM_ORDERS so we know
             # the runner has the order_id in its outstanding ledger.
             ok = await _wait_for(
@@ -531,18 +515,11 @@ class TestFillDispatch:
                 Event(type="fill", payload=_fill(order_id="my-order")),
             )
             ok = await _wait_for(
-                lambda: any(
-                    c[0] == "on_fill"
-                    for c in RecordingStrategy.instances[-1].calls
-                ),
+                lambda: any(c[0] == "on_fill" for c in RecordingStrategy.instances[-1].calls),
                 timeout=3.0,
             )
             assert ok, "on_fill was never called for matching outstanding order"
-            on_fill_calls = [
-                c
-                for c in RecordingStrategy.instances[-1].calls
-                if c[0] == "on_fill"
-            ]
+            on_fill_calls = [c for c in RecordingStrategy.instances[-1].calls if c[0] == "on_fill"]
             assert on_fill_calls[0][1] == "my-order"
         finally:
             await _stop_runner(task, stop)
@@ -560,11 +537,7 @@ class TestFillDispatch:
             )
             # Give the runner ample time to (incorrectly) dispatch.
             await asyncio.sleep(0.5)
-            on_fill_calls = [
-                c
-                for c in RecordingStrategy.instances[-1].calls
-                if c[0] == "on_fill"
-            ]
+            on_fill_calls = [c for c in RecordingStrategy.instances[-1].calls if c[0] == "on_fill"]
             assert on_fill_calls == []
         finally:
             await _stop_runner(task, stop)
@@ -587,7 +560,7 @@ class TestPaperSpineReplay:
         config = _config(strategy_id="enabled_spine", symbols=["BTC-USD"])
         producer = Producer(fake_redis)
         task, stop = await _start_runner(config, fake_redis)
-        RecordingStrategy.instances[-1]._submit_on_bar = intent  # noqa: SLF001
+        RecordingStrategy.instances[-1]._submit_on_bar = intent
         try:
             await producer.publish(
                 STREAM_MD_BARS_1M,
@@ -677,9 +650,7 @@ class TestLifecycle:
         assert RecordingStrategy.instances
         assert ("on_start",) not in RecordingStrategy.instances[-1].calls
 
-    async def test_on_stop_runs_on_cancel(
-        self, fake_redis: Any, patch_registry: None
-    ) -> None:
+    async def test_on_stop_runs_on_cancel(self, fake_redis: Any, patch_registry: None) -> None:
         config = _config(symbols=["BTC-USD"])
         task, stop = await _start_runner(config, fake_redis)
         # Confirm on_start ran first.
@@ -695,16 +666,11 @@ class TestLifecycle:
         task, stop = await _start_runner(config, fake_redis)
         try:
             # First bar: on_bar raises but is caught by the runner.
-            await producer.publish(
-                STREAM_MD_BARS_1M, Event(type="bar", payload=_bar())
-            )
+            await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             # Wait until the (failed) call lands so we know the
             # runner is still alive after the crash.
             ok = await _wait_for(
-                lambda: any(
-                    c[0] == "on_bar"
-                    for c in RecordingStrategy.instances[-1].calls
-                ),
+                lambda: any(c[0] == "on_bar" for c in RecordingStrategy.instances[-1].calls),
                 timeout=3.0,
             )
             assert ok
@@ -716,14 +682,9 @@ class TestLifecycle:
                 Event(type="bar", payload=_bar(ts_event=2_000_000_000)),
             )
             ok = await _wait_for(
-                lambda: len(
-                    [
-                        c
-                        for c in RecordingStrategy.instances[-1].calls
-                        if c[0] == "on_bar"
-                    ]
-                )
-                >= 2,
+                lambda: (
+                    len([c for c in RecordingStrategy.instances[-1].calls if c[0] == "on_bar"]) >= 2
+                ),
                 timeout=3.0,
             )
             assert ok

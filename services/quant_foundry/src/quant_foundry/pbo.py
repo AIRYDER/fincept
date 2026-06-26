@@ -115,14 +115,16 @@ def probability_of_backtest_overfitting(
     """
     n_candidates = len(is_returns)
     if n_candidates == 0 or len(oos_returns) != n_candidates:
-        raise ValueError(
-            "is_returns and oos_returns must be non-empty and equal length"
-        )
+        raise ValueError("is_returns and oos_returns must be non-empty and equal length")
     if n_candidates == 1:
         # A single candidate cannot be overfit by definition.
         return PBOResult(
-            pbo=0.0, logit=-float("inf"), n_candidates=1,
-            n_combinations=0, threshold=threshold, flagged=False,
+            pbo=0.0,
+            logit=-float("inf"),
+            n_candidates=1,
+            n_combinations=0,
+            threshold=threshold,
+            flagged=False,
         )
 
     # Concatenate IS + OOS for each candidate.
@@ -209,9 +211,7 @@ def _n_choose_k(n: int, k: int) -> int:
     return result
 
 
-def _sample_combinations(
-    n: int, k: int, count: int, rng: random.Random
-) -> list[tuple[int, ...]]:
+def _sample_combinations(n: int, k: int, count: int, rng: random.Random) -> list[tuple[int, ...]]:
     """Sample ``count`` distinct k-subsets of {0, ..., n-1} deterministically."""
     total = _n_choose_k(n, k)
     if count >= total:

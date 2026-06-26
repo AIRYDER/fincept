@@ -119,9 +119,13 @@ def deflated_sharpe_ratio(
     n = len(oos_returns)
     if n == 0:
         return DeflatedSharpeResult(
-            raw_sharpe=0.0, deflated_sharpe=0.0, trial_count=trial_count,
-            skew=0.0, kurtosis=3.0,
-            multiple_trials_penalty=0.0, non_normality_penalty=0.0,
+            raw_sharpe=0.0,
+            deflated_sharpe=0.0,
+            trial_count=trial_count,
+            skew=0.0,
+            kurtosis=3.0,
+            multiple_trials_penalty=0.0,
+            non_normality_penalty=0.0,
         )
     mean = statistics.fmean(oos_returns)
     if n >= 2:
@@ -253,9 +257,7 @@ def stationary_bootstrap_pvalue(
     """
     n = len(model_returns)
     if n == 0 or len(baseline_returns) != n:
-        raise ValueError(
-            "model_returns and baseline_returns must be non-empty and equal length"
-        )
+        raise ValueError("model_returns and baseline_returns must be non-empty and equal length")
     if n_bootstrap <= 0:
         raise ValueError("n_bootstrap must be positive")
 

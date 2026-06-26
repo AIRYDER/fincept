@@ -67,7 +67,7 @@ def _make_synthetic_dataset(
     n: int = 300,
     seed: int = 42,
     n_features: int = 4,
-) -> tuple[Path, "Any", "Any"]:
+) -> tuple[Path, Any, Any]:
     """Create a synthetic CSV dataset with real signal for LightGBM training.
 
     Layout: timestamp, f1, f2, ..., f{n_features}, label (binary).
@@ -83,12 +83,12 @@ def _make_synthetic_dataset(
     features = [rng.randn(n) for _ in range(n_features)]
     # Signal: positive weight on f1, f2; negative on f3; rest is noise.
     weights = [0.8, 0.5, -0.6] + [0.0] * max(0, n_features - 3)
-    logit = sum(w * f for w, f in zip(weights, features)) + 0.05 * rng.randn(n)
+    logit = sum(w * f for w, f in zip(weights, features, strict=False)) + 0.05 * rng.randn(n)
     label = (logit > 0).astype(float)
-    data = np.column_stack([timestamps] + features + [label])
+    data = np.column_stack([timestamps, *features, label])
     path = tmp_path / "synthetic_data.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = ",".join(["timestamp"] + [f"f{i+1}" for i in range(n_features)] + ["label"])
+    header = ",".join(["timestamp"] + [f"f{i + 1}" for i in range(n_features)] + ["label"])
     np.savetxt(str(path), data, delimiter=",", header=header, comments="")
     return path, np.column_stack(features), label
 
@@ -97,7 +97,7 @@ def _make_training_request(
     job_id: str,
     dataset_ref: str,
     seed: int = 42,
-) -> "Any":
+) -> Any:
     """Build a RunPodTrainingRequest pointing at a dataset file."""
     from quant_foundry.schemas import RunPodTrainingRequest
 
@@ -114,10 +114,10 @@ def _make_training_request(
 
 def _make_feature_snapshot(
     symbols: list[str],
-    feature_matrix: "Any",
+    feature_matrix: Any,
     row_indices: list[int] | None = None,
     ts_event: int = 10_000,
-) -> "Any":
+) -> Any:
     """Build a FeatureSnapshot from a feature matrix (one row per symbol).
 
     ``row_indices`` selects which rows of ``feature_matrix`` to use as feature
@@ -176,8 +176,8 @@ class TestRealTrainerInferenceE2E:
 
         Steps 1-15 from the task specification.
         """
-        from quant_foundry.real_trainer import RealLightGBMTrainer
         from quant_foundry.real_inference import ModelLoader, RealInferenceEngine
+        from quant_foundry.real_trainer import RealLightGBMTrainer
         from quant_foundry.schemas import (
             ArtifactManifest,
             Authority,
@@ -294,8 +294,6 @@ class TestRealTrainerInferenceE2E:
 
         for pred in result.predictions:
             # Real predictions: direction comes from model output, not stub formula.
-            feat = snapshot.features[pred.symbol]
-            stub_dir = _stub_linear_direction(feat)
             # At least one prediction must differ from the stub formula.
             # (We check the aggregate below; here just sanity-check range.)
             assert -1.0 <= pred.direction <= 1.0
@@ -306,12 +304,11 @@ class TestRealTrainerInferenceE2E:
         # Verify that NOT ALL predictions match the stub linear formula.
         # (A real model should produce different outputs than mean(features)*2.)
         stub_directions = [
-            _stub_linear_direction(snapshot.features[p.symbol])
-            for p in result.predictions
+            _stub_linear_direction(snapshot.features[p.symbol]) for p in result.predictions
         ]
         real_directions = [p.direction for p in result.predictions]
         n_matching_stub = sum(
-            1 for r, s in zip(real_directions, stub_directions) if abs(r - s) < 1e-9
+            1 for r, s in zip(real_directions, stub_directions, strict=False) if abs(r - s) < 1e-9
         )
         assert n_matching_stub < len(result.predictions), (
             f"all {len(result.predictions)} predictions match the stub linear "
@@ -376,7 +373,7 @@ class TestDeterminism:
         req = _make_training_request("qf:det:pred:1", data_path.as_uri(), seed=42)
         trainer = RealLightGBMTrainer()
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
-        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
         # Save model.
         seed = req.random_seed if req.random_seed is not None else 0
@@ -414,9 +411,7 @@ class TestDeterminism:
 
         # Two datasets with different seeds -> different signal.
         data_path_a, X_a, y_a = _make_synthetic_dataset(tmp_path, n=300, seed=42)
-        data_path_b, X_b, y_b = _make_synthetic_dataset(
-            tmp_path / "alt", n=300, seed=99
-        )
+        data_path_b, X_b, y_b = _make_synthetic_dataset(tmp_path / "alt", n=300, seed=99)
 
         req_a = _make_training_request("qf:diff:1", data_path_a.as_uri(), seed=42)
         req_b = _make_training_request("qf:diff:2", data_path_b.as_uri(), seed=99)
@@ -474,12 +469,8 @@ class TestDeterminism:
         from quant_foundry.schemas import RunPodInferenceRequest
 
         # Two identical datasets in separate dirs.
-        data_path_1, X_1, y_1 = _make_synthetic_dataset(
-            tmp_path / "run1", n=300, seed=42
-        )
-        data_path_2, X_2, y_2 = _make_synthetic_dataset(
-            tmp_path / "run2", n=300, seed=42
-        )
+        data_path_1, X_1, y_1 = _make_synthetic_dataset(tmp_path / "run1", n=300, seed=42)
+        data_path_2, X_2, y_2 = _make_synthetic_dataset(tmp_path / "run2", n=300, seed=42)
 
         req_1 = _make_training_request("qf:repro:1", data_path_1.as_uri(), seed=42)
         req_2 = _make_training_request("qf:repro:2", data_path_2.as_uri(), seed=42)
@@ -490,9 +481,7 @@ class TestDeterminism:
         art_2, dossier_2 = trainer.train(req_2, deadline_ns=deadline_ns)
 
         # Same seed + same data -> same artifact hash.
-        assert art_1.sha256 == art_2.sha256, (
-            "same seed + same data must produce same artifact hash"
-        )
+        assert art_1.sha256 == art_2.sha256, "same seed + same data must produce same artifact hash"
         # Same metrics.
         assert dossier_1.training_metrics == dossier_2.training_metrics
 
@@ -517,9 +506,7 @@ class TestDeterminism:
         )
         engine = RealInferenceEngine(enabled=True)
 
-        result_1 = engine.run(
-            request=infer_req, snapshot=snapshot, model_id=dossier_1.model_id
-        )
+        result_1 = engine.run(request=infer_req, snapshot=snapshot, model_id=dossier_1.model_id)
         result_2 = engine.run(
             request=infer_req.model_copy(update={"artifact_ref": str(path_2)}),
             snapshot=snapshot,
@@ -562,7 +549,7 @@ class TestAuthorityEnforcement:
         req = _make_training_request("qf:auth:pred:1", data_path.as_uri(), seed=42)
         trainer = RealLightGBMTrainer()
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
-        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
         seed = req.random_seed if req.random_seed is not None else 0
         model = trainer._train_final_model(X, y, seed, req)
@@ -578,9 +565,7 @@ class TestAuthorityEnforcement:
             horizons_ns=[3_600_000_000_000],
         )
         engine = RealInferenceEngine(enabled=True)
-        result = engine.run(
-            request=infer_req, snapshot=snapshot, model_id=dossier.model_id
-        )
+        result = engine.run(request=infer_req, snapshot=snapshot, model_id=dossier.model_id)
 
         for pred in result.predictions:
             assert pred.authority == Authority.SHADOW_ONLY
@@ -596,7 +581,7 @@ class TestAuthorityEnforcement:
         req = _make_training_request("qf:auth:ledger:1", data_path.as_uri(), seed=42)
         trainer = RealLightGBMTrainer()
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
-        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
         seed = req.random_seed if req.random_seed is not None else 0
         model = trainer._train_final_model(X, y, seed, req)
@@ -612,9 +597,7 @@ class TestAuthorityEnforcement:
             horizons_ns=[3_600_000_000_000],
         )
         engine = RealInferenceEngine(enabled=True)
-        result = engine.run(
-            request=infer_req, snapshot=snapshot, model_id=dossier.model_id
-        )
+        result = engine.run(request=infer_req, snapshot=snapshot, model_id=dossier.model_id)
 
         pred_dicts = [p.model_dump() for p in result.predictions]
         batch_hash = compute_batch_hash(pred_dicts)
@@ -635,7 +618,7 @@ class TestAuthorityEnforcement:
         req = _make_training_request("qf:auth:cb:1", data_path.as_uri(), seed=42)
         trainer = RealLightGBMTrainer()
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
-        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
         seed = req.random_seed if req.random_seed is not None else 0
         model = trainer._train_final_model(X, y, seed, req)
@@ -651,9 +634,7 @@ class TestAuthorityEnforcement:
             horizons_ns=[3_600_000_000_000],
         )
         engine = RealInferenceEngine(enabled=True)
-        result = engine.run(
-            request=infer_req, snapshot=snapshot, model_id=dossier.model_id
-        )
+        result = engine.run(request=infer_req, snapshot=snapshot, model_id=dossier.model_id)
 
         # Check the callback payload predictions for order fields.
         callback_preds = result.callback.payload.get("predictions", [])

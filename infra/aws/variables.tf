@@ -91,20 +91,77 @@ variable "ecr_repositories" {
 
 # ---- ECS service sizing --------------------------------------------------
 
-variable "api_task_cpu"            { type = number, default = 512,  description = "API Fargate task CPU units." }
-variable "api_task_memory"         { type = number, default = 1024, description = "API Fargate task memory (MiB)." }
-variable "api_desired_count"       { type = number, default = 2,    description = "API desired task count." }
-variable "api_container_port"      { type = number, default = 8000, description = "API container port." }
+variable "api_task_cpu" {
+  type        = number
+  description = "API Fargate task CPU units."
+  default     = 512
+}
 
-variable "dashboard_task_cpu"      { type = number, default = 512,  description = "Dashboard Fargate task CPU units." }
-variable "dashboard_task_memory"   { type = number, default = 1024, description = "Dashboard Fargate task memory (MiB)." }
-variable "dashboard_desired_count" { type = number, default = 2,    description = "Dashboard desired task count." }
-variable "dashboard_container_port" { type = number, default = 3000, description = "Dashboard container port." }
+variable "api_task_memory" {
+  type        = number
+  description = "API Fargate task memory (MiB)."
+  default     = 1024
+}
 
-variable "orchestrator_task_cpu"   { type = number, default = 512,  description = "Orchestrator Fargate task CPU units." }
-variable "orchestrator_task_memory" { type = number, default = 1024, description = "Orchestrator Fargate task memory (MiB)." }
-variable "orchestrator_desired_count" { type = number, default = 1, description = "Orchestrator desired task count." }
-variable "orchestrator_container_port" { type = number, default = 8000, description = "Orchestrator container port." }
+variable "api_desired_count" {
+  type        = number
+  description = "API desired task count."
+  default     = 2
+}
+
+variable "api_container_port" {
+  type        = number
+  description = "API container port."
+  default     = 8000
+}
+
+variable "dashboard_task_cpu" {
+  type        = number
+  description = "Dashboard Fargate task CPU units."
+  default     = 512
+}
+
+variable "dashboard_task_memory" {
+  type        = number
+  description = "Dashboard Fargate task memory (MiB)."
+  default     = 1024
+}
+
+variable "dashboard_desired_count" {
+  type        = number
+  description = "Dashboard desired task count."
+  default     = 2
+}
+
+variable "dashboard_container_port" {
+  type        = number
+  description = "Dashboard container port."
+  default     = 3000
+}
+
+variable "orchestrator_task_cpu" {
+  type        = number
+  description = "Orchestrator Fargate task CPU units."
+  default     = 512
+}
+
+variable "orchestrator_task_memory" {
+  type        = number
+  description = "Orchestrator Fargate task memory (MiB)."
+  default     = 1024
+}
+
+variable "orchestrator_desired_count" {
+  type        = number
+  description = "Orchestrator desired task count."
+  default     = 1
+}
+
+variable "orchestrator_container_port" {
+  type        = number
+  description = "Orchestrator container port."
+  default     = 8000
+}
 
 # ---- Database (RDS + TimescaleDB) ----------------------------------------
 

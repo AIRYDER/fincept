@@ -86,7 +86,6 @@ from fincept_core.schemas import (
     Position,
 )
 from fincept_core.strategy_config import StrategyConfig
-
 from strategy_host.model_resolver import resolve_active_model_dir
 from strategy_host.runtime import LiveStrategyContext
 
@@ -111,9 +110,7 @@ DEFAULT_RELOAD_POLL_S = 30.0
 # --------------------------------------------------------------------------- #
 
 
-def _hook_failed(
-    ctx_log: Any, hook: str, strategy_id: str, exc: BaseException
-) -> None:
+def _hook_failed(ctx_log: Any, hook: str, strategy_id: str, exc: BaseException) -> None:
     """Log a hook failure without taking the runner down.
 
     A buggy strategy must not stop the host from running other
@@ -276,12 +273,8 @@ async def _watch_model_binding(
     """
     current_dir = initial_dir
     while not stop.is_set():
-        try:
-            await asyncio.wait_for(
-                stop.wait(), timeout=poll_interval_s
-            )
-        except (asyncio.TimeoutError, TimeoutError):
-            pass
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=poll_interval_s)
         if stop.is_set():
             return
         new_dir = resolve_active_model_dir(binding)
@@ -361,9 +354,7 @@ async def run_strategy(
 
     if reload_poll_interval_s is None:
         reload_poll_interval_s = float(
-            os.environ.get(
-                "STRATEGY_HOST_RELOAD_POLL_S", DEFAULT_RELOAD_POLL_S
-            )
+            os.environ.get("STRATEGY_HOST_RELOAD_POLL_S", DEFAULT_RELOAD_POLL_S)
         )
 
     # ---- resolve model binding (if any) and inject into params ----
@@ -413,9 +404,7 @@ async def run_strategy(
         bound_log.error("strategy.build_failed", error=repr(exc))
         return
 
-    ctx = LiveStrategyContext(
-        strategy_id=config.strategy_id, log=bound_log
-    )
+    ctx = LiveStrategyContext(strategy_id=config.strategy_id, log=bound_log)
     producer = Producer(redis)
     consumer = Consumer(redis)
     outstanding: dict[str, OrderIntent] = {}
@@ -488,7 +477,5 @@ async def run_strategy(
         try:
             strategy.on_stop(ctx)
         except Exception as exc:
-            bound_log.warning(
-                "strategy.on_stop_failed", error=repr(exc)
-            )
+            bound_log.warning("strategy.on_stop_failed", error=repr(exc))
         bound_log.info("strategy.stop")

@@ -23,7 +23,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.strategy_config import get_strategy_config_store
@@ -45,6 +45,7 @@ async def run(stop: asyncio.Event) -> None:
     flips DOWN without waiting for TTL expiry.
     """
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     store = get_strategy_config_store()
     supervisor = Supervisor(store=store, redis=redis, runner=run_strategy)
@@ -55,9 +56,7 @@ async def run(stop: asyncio.Event) -> None:
         configured=len(store.list_all()),
     )
 
-    supervisor_task = asyncio.create_task(
-        supervisor.run(stop), name="strategy_host:supervisor"
-    )
+    supervisor_task = asyncio.create_task(supervisor.run(stop), name="strategy_host:supervisor")
     heartbeat_task = asyncio.create_task(
         beat_periodically(redis, SERVICE_NAME),
         name="strategy_host:heartbeat",

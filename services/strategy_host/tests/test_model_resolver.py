@@ -17,7 +17,6 @@ import json
 import pathlib
 
 import pytest
-
 from strategy_host.model_resolver import (
     pointer_path,
     resolve_active_model_dir,
@@ -29,9 +28,7 @@ from strategy_host.model_resolver import (
 
 
 @pytest.fixture
-def models_tree(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> pathlib.Path:
+def models_tree(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """Set up an isolated ``models/`` tree under ``tmp_path``.
 
     Yields the models root.  Caller writes pointer files into
@@ -85,13 +82,9 @@ class TestPointerPath:
 
 
 class TestResolveHappy:
-    def test_resolves_to_models_root_subdir(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_resolves_to_models_root_subdir(self, models_tree: pathlib.Path) -> None:
         active = models_tree / "active"
-        _write_pointer(
-            active, "gbm_predictor", {"model_name": "gbm_2026_04_15"}
-        )
+        _write_pointer(active, "gbm_predictor", {"model_name": "gbm_2026_04_15"})
         # Note: the resolver is purely lexical -- it does NOT
         # require the resolved directory to actually exist.  That
         # check is the strategy's responsibility at on_start.
@@ -105,37 +98,27 @@ class TestResolveHappy:
 
 
 class TestResolveFailures:
-    def test_missing_pointer_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_missing_pointer_returns_none(self, models_tree: pathlib.Path) -> None:
         # Different from the agent which falls back to env / default;
         # the host is conservative and returns None.
         assert resolve_active_model_dir("not_promoted") is None
 
-    def test_invalid_json_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_invalid_json_returns_none(self, models_tree: pathlib.Path) -> None:
         active = models_tree / "active"
         (active / "broken.json").write_text("not-json{{{")
         assert resolve_active_model_dir("broken") is None
 
-    def test_missing_model_name_key_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_missing_model_name_key_returns_none(self, models_tree: pathlib.Path) -> None:
         active = models_tree / "active"
         _write_pointer(active, "no_name", {"some_other_key": "value"})
         assert resolve_active_model_dir("no_name") is None
 
-    def test_empty_model_name_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_empty_model_name_returns_none(self, models_tree: pathlib.Path) -> None:
         active = models_tree / "active"
         _write_pointer(active, "empty", {"model_name": ""})
         assert resolve_active_model_dir("empty") is None
 
-    def test_non_string_model_name_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_non_string_model_name_returns_none(self, models_tree: pathlib.Path) -> None:
         # Defensive: someone could write {"model_name": 42} from a
         # buggy promotion script.  The resolver rejects anything
         # that isn't a non-empty string.
@@ -143,9 +126,7 @@ class TestResolveFailures:
         _write_pointer(active, "numeric", {"model_name": 42})
         assert resolve_active_model_dir("numeric") is None
 
-    def test_top_level_array_returns_none(
-        self, models_tree: pathlib.Path
-    ) -> None:
+    def test_top_level_array_returns_none(self, models_tree: pathlib.Path) -> None:
         # ``json.loads`` succeeds; ``data.get("model_name")`` raises
         # AttributeError on a list.  The resolver guards isinstance.
         active = models_tree / "active"

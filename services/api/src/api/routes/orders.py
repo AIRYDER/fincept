@@ -211,7 +211,9 @@ async def place_order(
 
     try:
         producer = Producer(redis)
-        await producer.publish(STREAM_ORDERS, Event(type="order_intent", payload=intent))
+        await producer.publish(
+            STREAM_ORDERS, Event(type="order_intent", payload=intent)
+        )
     except Exception as exc:  # pragma: no cover -- network-level failures
         log.warning(
             "api.orders.publish_failed",

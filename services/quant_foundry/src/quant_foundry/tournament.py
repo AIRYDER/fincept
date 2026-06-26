@@ -142,13 +142,9 @@ class ScoringInput(BaseModel):
     def _series_lengths_match(self) -> ScoringInput:
         n = len(self.oos_returns_net)
         if len(self.oos_returns_gross) != n:
-            raise ValueError(
-                "oos_returns_gross must have the same length as oos_returns_net"
-            )
+            raise ValueError("oos_returns_gross must have the same length as oos_returns_net")
         if len(self.oos_returns_baseline) != n:
-            raise ValueError(
-                "oos_returns_baseline must have the same length as oos_returns_net"
-            )
+            raise ValueError("oos_returns_baseline must have the same length as oos_returns_net")
         return self
 
 
@@ -308,9 +304,7 @@ class Tournament:
 
     # -- baselines ----------------------------------------------------------
 
-    def compute_baseline(
-        self, model_returns: list[float], kind: BaselineKind
-    ) -> list[float]:
+    def compute_baseline(self, model_returns: list[float], kind: BaselineKind) -> list[float]:
         """Compute a deterministic baseline return series for a model.
 
         All baselines have the same length as ``model_returns`` so the
@@ -352,13 +346,15 @@ class Tournament:
                 p_value=None,
                 deflated_sharpe=None,
                 raw_sharpe=None,
-                blocking_issues=[{
-                    "code": "insufficient_evidence",
-                    "message": (
-                        f"settled_count={si.settled_count} < "
-                        f"min_settled_samples={si.min_settled_samples}"
-                    ),
-                }],
+                blocking_issues=[
+                    {
+                        "code": "insufficient_evidence",
+                        "message": (
+                            f"settled_count={si.settled_count} < "
+                            f"min_settled_samples={si.min_settled_samples}"
+                        ),
+                    }
+                ],
                 recommendation=PromotionRecommendation.HOLD,
                 status=TournamentStatus.INSUFFICIENT_EVIDENCE,
                 trial_count=si.trial_count,
@@ -370,13 +366,15 @@ class Tournament:
         if si.last_settled_at_ns is not None:
             age = si.now_ns - si.last_settled_at_ns
             if age > si.stale_threshold_ns:
-                blocking_issues.append({
-                    "code": "stale_evidence",
-                    "message": (
-                        f"last_settled_at_ns={si.last_settled_at_ns} is "
-                        f"{age}ns old (> threshold {si.stale_threshold_ns}ns)"
-                    ),
-                })
+                blocking_issues.append(
+                    {
+                        "code": "stale_evidence",
+                        "message": (
+                            f"last_settled_at_ns={si.last_settled_at_ns} is "
+                            f"{age}ns old (> threshold {si.stale_threshold_ns}ns)"
+                        ),
+                    }
+                )
 
         # -- Significance: DSR + bootstrap p-value vs. zero-skill baseline
         dsr_result = deflated_sharpe_ratio(si.oos_returns_net, si.trial_count)
@@ -392,18 +390,24 @@ class Tournament:
         # -- Component 1: net edge (rigor §4: net, not gross) -------------
         net_edge = statistics.fmean(si.oos_returns_net) if si.oos_returns_net else 0.0
         w_net = self.weights["net_edge"]
-        components.append(ScoreComponent(
-            name="net_edge", value=net_edge, weight=w_net,
-            contribution=net_edge * w_net,
-        ))
+        components.append(
+            ScoreComponent(
+                name="net_edge",
+                value=net_edge,
+                weight=w_net,
+                contribution=net_edge * w_net,
+            )
+        )
         if net_edge <= 0.0:
-            blocking_issues.append({
-                "code": "net_edge_nonpositive",
-                "message": (
-                    f"net edge (mean oos_returns_net) = {net_edge:.6f} <= 0; "
-                    "model does not beat zero-skill net-of-cost"
-                ),
-            })
+            blocking_issues.append(
+                {
+                    "code": "net_edge_nonpositive",
+                    "message": (
+                        f"net edge (mean oos_returns_net) = {net_edge:.6f} <= 0; "
+                        "model does not beat zero-skill net-of-cost"
+                    ),
+                }
+            )
 
         # -- Component 2: Deflated Sharpe (rigor §2) ----------------------
         w_dsr = self.weights["deflated_sharpe"]
@@ -411,91 +415,123 @@ class Tournament:
         # unitless and can be negative; a DSR of ~1.0 per period is very
         # strong). We use a tanh-like squash so very large DSRs don't dominate.
         dsr_norm = _squash(dsr_result.deflated_sharpe)
-        components.append(ScoreComponent(
-            name="deflated_sharpe",
-            value=dsr_result.deflated_sharpe,
-            weight=w_dsr,
-            contribution=dsr_norm * w_dsr,
-        ))
+        components.append(
+            ScoreComponent(
+                name="deflated_sharpe",
+                value=dsr_result.deflated_sharpe,
+                weight=w_dsr,
+                contribution=dsr_norm * w_dsr,
+            )
+        )
         if dsr_result.deflated_sharpe <= self.dsr_threshold:
-            blocking_issues.append({
-                "code": "dsr_nonpositive",
-                "message": (
-                    f"deflated_sharpe = {dsr_result.deflated_sharpe:.6f} <= "
-                    f"threshold {self.dsr_threshold}; raw_sharpe="
-                    f"{dsr_result.raw_sharpe:.6f}, trial_count={si.trial_count}"
-                ),
-            })
+            blocking_issues.append(
+                {
+                    "code": "dsr_nonpositive",
+                    "message": (
+                        f"deflated_sharpe = {dsr_result.deflated_sharpe:.6f} <= "
+                        f"threshold {self.dsr_threshold}; raw_sharpe="
+                        f"{dsr_result.raw_sharpe:.6f}, trial_count={si.trial_count}"
+                    ),
+                }
+            )
 
         # -- Component 3: calibration (Brier + monotonicity) --------------
         calib_score = self._calibration_score(si)
         w_cal = self.weights["calibration"]
-        components.append(ScoreComponent(
-            name="calibration", value=calib_score, weight=w_cal,
-            contribution=calib_score * w_cal,
-        ))
+        components.append(
+            ScoreComponent(
+                name="calibration",
+                value=calib_score,
+                weight=w_cal,
+                contribution=calib_score * w_cal,
+            )
+        )
         # Monotonicity red flag: confidence buckets should be monotonic in
         # realized return (higher confidence => higher realized return).
         if si.confidence_buckets and not _is_monotonic_confidence(si.confidence_buckets):
-            blocking_issues.append({
-                "code": "calibration_non_monotonic",
-                "message": "realized return is not monotonic in confidence",
-            })
+            blocking_issues.append(
+                {
+                    "code": "calibration_non_monotonic",
+                    "message": "realized return is not monotonic in confidence",
+                }
+            )
 
         # -- Penalties (subtracted) ---------------------------------------
         dd_penalty = min(max(si.max_drawdown, 0.0), 1.0)
         w_dd = self.weights["drawdown_penalty"]
-        components.append(ScoreComponent(
-            name="drawdown_penalty", value=dd_penalty, weight=w_dd,
-            contribution=-(dd_penalty * w_dd),
-        ))
+        components.append(
+            ScoreComponent(
+                name="drawdown_penalty",
+                value=dd_penalty,
+                weight=w_dd,
+                contribution=-(dd_penalty * w_dd),
+            )
+        )
 
         turnover_penalty = 0.0
         if si.turnover is not None:
             turnover_penalty = min(max(si.turnover, 0.0), 1.0)
         w_to = self.weights["turnover_penalty"]
-        components.append(ScoreComponent(
-            name="turnover_penalty", value=turnover_penalty, weight=w_to,
-            contribution=-(turnover_penalty * w_to),
-        ))
+        components.append(
+            ScoreComponent(
+                name="turnover_penalty",
+                value=turnover_penalty,
+                weight=w_to,
+                contribution=-(turnover_penalty * w_to),
+            )
+        )
 
         fa_penalty = 1.0 - si.feature_availability_ratio
         w_fa = self.weights["feature_availability_penalty"]
-        components.append(ScoreComponent(
-            name="feature_availability_penalty", value=fa_penalty, weight=w_fa,
-            contribution=-(fa_penalty * w_fa),
-        ))
+        components.append(
+            ScoreComponent(
+                name="feature_availability_penalty",
+                value=fa_penalty,
+                weight=w_fa,
+                contribution=-(fa_penalty * w_fa),
+            )
+        )
 
         latency_penalty = 0.0
         if si.latency_ms is not None:
             # Squash latency (ms) to [0, 1] — 1000ms -> ~0.63, 5000ms -> ~0.99.
             latency_penalty = 1.0 - (1.0 / (1.0 + (si.latency_ms / 1000.0)))
         w_lat = self.weights["latency_penalty"]
-        components.append(ScoreComponent(
-            name="latency_penalty", value=latency_penalty, weight=w_lat,
-            contribution=-(latency_penalty * w_lat),
-        ))
+        components.append(
+            ScoreComponent(
+                name="latency_penalty",
+                value=latency_penalty,
+                weight=w_lat,
+                contribution=-(latency_penalty * w_lat),
+            )
+        )
 
         cd_penalty = min(max(si.capacity_decay_penalty, 0.0), 1.0)
         w_cd = self.weights["capacity_decay_penalty"]
-        components.append(ScoreComponent(
-            name="capacity_decay_penalty", value=cd_penalty, weight=w_cd,
-            contribution=-(cd_penalty * w_cd),
-        ))
+        components.append(
+            ScoreComponent(
+                name="capacity_decay_penalty",
+                value=cd_penalty,
+                weight=w_cd,
+                contribution=-(cd_penalty * w_cd),
+            )
+        )
 
         # -- Total score --------------------------------------------------
         total_score = sum(c.contribution for c in components)
 
         # -- Gate 3: p-value vs. baseline --------------------------------
         if boot_result.p_value > self.p_value_threshold:
-            blocking_issues.append({
-                "code": "not_significant_vs_baseline",
-                "message": (
-                    f"bootstrap p-value = {boot_result.p_value:.4f} > "
-                    f"threshold {self.p_value_threshold}; model does not "
-                    "significantly beat zero-skill baseline"
-                ),
-            })
+            blocking_issues.append(
+                {
+                    "code": "not_significant_vs_baseline",
+                    "message": (
+                        f"bootstrap p-value = {boot_result.p_value:.4f} > "
+                        f"threshold {self.p_value_threshold}; model does not "
+                        "significantly beat zero-skill baseline"
+                    ),
+                }
+            )
 
         # -- Determine status + recommendation ---------------------------
         stale = any(b.get("code") == "stale_evidence" for b in blocking_issues)
@@ -509,8 +545,8 @@ class Tournament:
         if status == TournamentStatus.ELIGIBLE and not blocking_issues:
             recommendation = PromotionRecommendation.PROMOTE
         elif status == TournamentStatus.BLOCKED and any(
-            b.get("code") in ("net_edge_nonpositive", "dsr_nonpositive",
-                              "not_significant_vs_baseline")
+            b.get("code")
+            in ("net_edge_nonpositive", "dsr_nonpositive", "not_significant_vs_baseline")
             for b in blocking_issues
         ):
             recommendation = PromotionRecommendation.REJECT

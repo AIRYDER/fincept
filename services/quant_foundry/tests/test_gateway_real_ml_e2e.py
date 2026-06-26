@@ -23,7 +23,6 @@ Safety invariants verified:
 
 from __future__ import annotations
 
-import pickle
 import re
 import time
 from pathlib import Path
@@ -70,12 +69,12 @@ def _make_synthetic_dataset(
     timestamps = np.arange(n, dtype=np.int64)
     features = [rng.randn(n) for _ in range(n_features)]
     weights = [0.8, 0.5, -0.6] + [0.0] * max(0, n_features - 3)
-    logit = sum(w * f for w, f in zip(weights, features)) + 0.05 * rng.randn(n)
+    logit = sum(w * f for w, f in zip(weights, features, strict=False)) + 0.05 * rng.randn(n)
     label = (logit > 0).astype(float)
-    data = np.column_stack([timestamps] + features + [label])
+    data = np.column_stack([timestamps, *features, label])
     path = tmp_path / "synthetic_data.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = ",".join(["timestamp"] + [f"f{i+1}" for i in range(n_features)] + ["label"])
+    header = ",".join(["timestamp"] + [f"f{i + 1}" for i in range(n_features)] + ["label"])
     np.savetxt(str(path), data, delimiter=",", header=header, comments="")
     return path, np.column_stack(features), label
 
@@ -123,9 +122,7 @@ def _signed_training_output(
     ts = int(time.time())
     return {
         "callback_payload": payload.decode("utf-8"),
-        "callback_signature": sign_callback(
-            payload, secret=secret, ts=ts, job_id=job_id
-        ),
+        "callback_signature": sign_callback(payload, secret=secret, ts=ts, job_id=job_id),
         "callback_ts": ts,
     }
 
@@ -191,21 +188,18 @@ def _assert_no_order_fields(d: dict[str, Any], context: str = "") -> None:
 class TestGatewayRealMLE2E:
     """Gateway-level E2E: real trainer → gateway → dossier → shadow dispatch."""
 
-    def test_training_job_completes_with_real_artifact(
-        self, tmp_path: Path
-    ) -> None:
+    def test_training_job_completes_with_real_artifact(self, tmp_path: Path) -> None:
         """A training job dispatched through the gateway completes with a
         real artifact (ingested via RunPod polling) and the dossier has
         real metrics (not the stub pattern).
         """
-        from quant_foundry.dossier import DossierStatus
         from quant_foundry.gateway import QuantFoundryGateway
         from quant_foundry.outbox import JobStatus
         from quant_foundry.real_trainer import RealLightGBMTrainer
         from quant_foundry.schemas import Authority, RunPodTrainingRequest
 
         # --- Step 1: Train a real model with RealLightGBMTrainer ---
-        data_path, X, y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path, _X, _y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
         train_req = RunPodTrainingRequest(
             job_id="qf:gw:real:train:1",
             dataset_manifest_ref=data_path.as_uri(),
@@ -254,9 +248,7 @@ class TestGatewayRealMLE2E:
             job_id=job_id,
             job_type="training",
             idempotency_key="idem-gw-real-train",
-            request_payload=_make_training_request_dict(
-                job_id, data_path.as_uri(), seed=42
-            ),
+            request_payload=_make_training_request_dict(job_id, data_path.as_uri(), seed=42),
         )
 
         # Verify the job was dispatched to the training endpoint.
@@ -298,23 +290,19 @@ class TestGatewayRealMLE2E:
             f"registered dossier accuracy {reg_accuracy} matches stub pattern"
         )
         # Verify authority is shadow-only.
-        assert registered.get("authority") == "shadow-only" or (
-            "authority" not in registered
-        )
+        assert registered.get("authority") == "shadow-only" or ("authority" not in registered)
 
-    def test_dispatch_shadow_inference_batch_with_real_model(
-        self, tmp_path: Path
-    ) -> None:
+    def test_dispatch_shadow_inference_batch_with_real_model(self, tmp_path: Path) -> None:
         """dispatch_shadow_inference_batch() dispatches inference jobs for
         a SHADOW_APPROVED model trained with the real trainer.
         """
         from quant_foundry.dossier import DossierRecord, DossierStatus
         from quant_foundry.gateway import QuantFoundryGateway
         from quant_foundry.real_trainer import RealLightGBMTrainer
-        from quant_foundry.schemas import Authority, RunPodTrainingRequest
+        from quant_foundry.schemas import RunPodTrainingRequest
 
         # --- Train a real model ---
-        data_path, X, y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path, _X, _y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
         train_req = RunPodTrainingRequest(
             job_id="qf:gw:dispatch:train:1",
             dataset_manifest_ref=data_path.as_uri(),
@@ -391,9 +379,7 @@ class TestGatewayRealMLE2E:
         # Verify no order-like fields in the receipt.
         _assert_no_order_fields(receipt, context="dispatch receipt")
 
-    def test_full_gateway_pipeline_train_then_dispatch(
-        self, tmp_path: Path
-    ) -> None:
+    def test_full_gateway_pipeline_train_then_dispatch(self, tmp_path: Path) -> None:
         """Full pipeline: train via gateway polling, register SHADOW_APPROVED,
         then dispatch shadow inference.
         """
@@ -401,10 +387,10 @@ class TestGatewayRealMLE2E:
         from quant_foundry.gateway import QuantFoundryGateway
         from quant_foundry.outbox import JobStatus
         from quant_foundry.real_trainer import RealLightGBMTrainer
-        from quant_foundry.schemas import Authority, RunPodTrainingRequest
+        from quant_foundry.schemas import RunPodTrainingRequest
 
         # --- Train a real model ---
-        data_path, X, y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path, _X, _y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
         train_req = RunPodTrainingRequest(
             job_id="qf:gw:full:train:1",
             dataset_manifest_ref=data_path.as_uri(),
@@ -440,9 +426,7 @@ class TestGatewayRealMLE2E:
             job_id=job_id,
             job_type="training",
             idempotency_key="idem-gw-full-train",
-            request_payload=_make_training_request_dict(
-                job_id, data_path.as_uri(), seed=42
-            ),
+            request_payload=_make_training_request_dict(job_id, data_path.as_uri(), seed=42),
         )
 
         # --- Step 2: Simulate RunPod completion with real artifact ---
@@ -470,9 +454,7 @@ class TestGatewayRealMLE2E:
         reg_pbo = reg["training_metrics"].get("pbo")
         assert reg_pbo is not None
         stub_acc = 0.5 + (reg_pbo / 2.0)
-        assert abs(reg_accuracy - stub_acc) > 1e-6, (
-            "registered dossier has stub metrics, not real"
-        )
+        assert abs(reg_accuracy - stub_acc) > 1e-6, "registered dossier has stub metrics, not real"
         assert reg["artifact_sha256"] == artifact.sha256
         assert reg["artifact_sha256"] != "a" * 64
 

@@ -41,9 +41,7 @@ class TestRegimeFanOut:
 
     def test_all_predictions_share_direction_and_confidence(self) -> None:
         signal = _make_signal(regime="risk_on", confidence=0.6)
-        preds = _regime_to_predictions(
-            signal, universe=["BTC-USD", "ETH-USD"]
-        )
+        preds = _regime_to_predictions(signal, universe=["BTC-USD", "ETH-USD"])
         assert len({p.direction for p in preds}) == 1
         assert len({p.confidence for p in preds}) == 1
         # confidence passes through verbatim

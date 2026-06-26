@@ -25,8 +25,10 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol, cast
 
+from fincept_core.logging import get_logger
 from quant_foundry.schemas import (
     Authority,
     RunPodCallbackEnvelope,
@@ -43,7 +45,9 @@ try:
     from fincept_core.storage import StorageBackend, get_storage_backend
 except ImportError:  # pragma: no cover - fincept-core always present in-workspace
     StorageBackend = None  # type: ignore[assignment,misc]
-    get_storage_backend = None  # type: ignore[assignment,misc]
+    get_storage_backend = None  # type: ignore[assignment]
+
+log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +98,7 @@ class ModelLoader:
             return self._load_onnx(path)
         if ext in (".pkl", ".txt"):
             return self._load_lightgbm(path)
-        raise RuntimeError(
-            f"unsupported model artifact extension: {ext!r} (uri={uri!r})"
-        )
+        raise RuntimeError(f"unsupported model artifact extension: {ext!r} (uri={uri!r})")
 
     def _resolve_uri(self, uri: str) -> str:
         """Resolve a URI to a local filesystem path.
@@ -110,23 +112,21 @@ class ModelLoader:
             return uri[len("file://") :]
         if uri.startswith("s3://"):
             if self.storage_backend is not None:
-                return self.storage_backend.download_to_temp(uri)
+                return str(self.storage_backend.download_to_temp(uri))
             if get_storage_backend is not None:
                 try:
                     backend = get_storage_backend()
                 except Exception as exc:
                     raise RuntimeError(
                         f"no storage backend available for s3 model artifact: {exc}"
-                    )
+                    ) from exc
                 try:
                     return backend.download_to_temp(uri)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("model_artifact.s3_download_failed", error=str(exc))
             if self.fetcher is not None:
                 return self.fetcher(uri)
-            raise RuntimeError(
-                "s3:// URIs require an injected storage_backend or fetcher callable"
-            )
+            raise RuntimeError("s3:// URIs require an injected storage_backend or fetcher callable")
         # Treat bare paths as local filesystem paths.
         return uri
 
@@ -162,7 +162,8 @@ class ModelLoader:
             import pickle
 
             with open(path, "rb") as fh:
-                booster = pickle.load(fh)
+                # The trainer produces this trusted model artifact; never load user bytes here.
+                booster = pickle.load(fh)  # noqa: S301
             if not isinstance(booster, lgb.Booster):
                 raise RuntimeError(
                     f"pickle did not contain a lightgbm.Booster (got {type(booster)!r})"
@@ -195,7 +196,7 @@ def _default_model_loader(storage_backend: Any = None) -> ModelLoader:
 
 
 def _sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + (2.718281828 ** (-x)))
+    return float(1.0 / (1.0 + (2.718281828 ** (-x))))
 
 
 class RealInferenceEngine:
@@ -341,7 +342,7 @@ def _coerce_score(raw: Any) -> float:
     if isinstance(raw, (int, float)):
         return float(raw)
     try:
-        seq = list(raw)  # type: ignore[arg-type]
+        seq = list(cast(Any, raw))
     except TypeError:
         return 0.0
     if not seq:

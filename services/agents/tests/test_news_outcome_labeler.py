@@ -5,7 +5,11 @@ from decimal import Decimal
 import fakeredis.aioredis
 import pytest
 
-from agents.news_outcome_labeler.main import handle_event, read_mark, read_mark_at_or_after
+from agents.news_outcome_labeler.main import (
+    handle_event,
+    read_mark,
+    read_mark_at_or_after,
+)
 from agents.news_outcome_labeler.store import NewsOutcomeStore
 from fincept_core.events import Event
 from fincept_core.schemas import AssetClass, FeatureFrame, TradeEvent, Venue
@@ -25,7 +29,9 @@ def _frame(**overrides: object) -> FeatureFrame:
     return FeatureFrame.model_validate(payload)
 
 
-def _trade(*, ts_event: int = 100 * NS_PER_MIN, price: Decimal = Decimal("100")) -> TradeEvent:
+def _trade(
+    *, ts_event: int = 100 * NS_PER_MIN, price: Decimal = Decimal("100")
+) -> TradeEvent:
     return TradeEvent(
         venue=Venue.ALPACA,
         symbol="NVDA",

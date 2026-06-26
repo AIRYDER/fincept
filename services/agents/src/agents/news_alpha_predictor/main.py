@@ -15,7 +15,7 @@ from agents.news_alpha_predictor.infer import NewsAlphaPredictor
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE, STREAM_SIG_PREDICT
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -30,7 +30,9 @@ DEFAULT_MODEL_DIR = "models/news_alpha_predictor"
 
 def resolve_model_dir() -> pathlib.Path:
     models_root = pathlib.Path(os.environ.get("MODELS_DIR", "models"))
-    active_dir = pathlib.Path(os.environ.get("ACTIVE_MODELS_DIR", str(models_root / "active")))
+    active_dir = pathlib.Path(
+        os.environ.get("ACTIVE_MODELS_DIR", str(models_root / "active"))
+    )
     pointer = active_dir / "news_alpha_predictor.v1.json"
     if pointer.is_file():
         try:
@@ -56,7 +58,9 @@ async def handle_feature_event(
     prediction = predictor.predict_frame(event.payload)
     if prediction is None:
         return
-    await producer.publish(STREAM_SIG_PREDICT, Event(type="prediction", payload=prediction))
+    await producer.publish(
+        STREAM_SIG_PREDICT, Event(type="prediction", payload=prediction)
+    )
     log.info(
         "news_alpha.pred",
         symbol=prediction.symbol,
@@ -67,6 +71,7 @@ async def handle_feature_event(
 
 async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     consumer = Consumer(redis)
@@ -82,7 +87,9 @@ async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
         async def handler(event: Event) -> None:
             await handle_feature_event(event, predictor=predictor, producer=producer)
 
-        log.info("news_alpha.start", consumer_name=consumer_name, model_dir=str(model_dir))
+        log.info(
+            "news_alpha.start", consumer_name=consumer_name, model_dir=str(model_dir)
+        )
         consume_task = asyncio.create_task(
             consumer.consume(
                 [STREAM_FEATURES_ONLINE],

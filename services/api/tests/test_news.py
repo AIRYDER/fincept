@@ -123,9 +123,7 @@ def test_score_decay_halves_at_half_life() -> None:
     """Score at age=half_life is base × 0.5 (within float epsilon)."""
     base = Decimal("1000")
     fresh = _score(base_abs_impact=base, age_hours=0.0, is_adverse=False)
-    aged = _score(
-        base_abs_impact=base, age_hours=RECENCY_HALF_LIFE_H, is_adverse=False
-    )
+    aged = _score(base_abs_impact=base, age_hours=RECENCY_HALF_LIFE_H, is_adverse=False)
     ratio = float(aged) / float(fresh)
     assert math.isclose(ratio, 0.5, rel_tol=1e-3), ratio
 
@@ -354,8 +352,11 @@ async def test_news_alert_lane_sorted_by_score_desc(
         article_id="adverse_fresh",
         headline="AAPL whistleblower lawsuit",
         symbols=["AAPL"],
-        snapshots={"AAPL": _snap(price_at_publish="100",
-                                  bars=[[1, "100"], [2, "95"], [3, "90"]])},
+        snapshots={
+            "AAPL": _snap(
+                price_at_publish="100", bars=[[1, "100"], [2, "95"], [3, "90"]]
+            )
+        },
         ts_event_ns=NS_PER_HOUR,  # 1h ago
     )
     # Article B: published $80, mark $90 → favourable, older.
@@ -367,8 +368,9 @@ async def test_news_alert_lane_sorted_by_score_desc(
         article_id="favourable_old",
         headline="AAPL old earnings beat",
         symbols=["AAPL"],
-        snapshots={"AAPL": _snap(price_at_publish="80",
-                                  bars=[[1, "80"], [2, "85"], [3, "90"]])},
+        snapshots={
+            "AAPL": _snap(price_at_publish="80", bars=[[1, "80"], [2, "85"], [3, "90"]])
+        },
         ts_event_ns=NS_PER_HOUR * 24,  # 24h ago
     )
 
@@ -395,8 +397,7 @@ async def test_news_marks_adverse_direction_for_long_position(
         article_id="bad",
         headline="AAPL guidance cut",
         symbols=["AAPL"],
-        snapshots={"AAPL": _snap(price_at_publish="100",
-                                  bars=[[1, "100"], [2, "90"]])},
+        snapshots={"AAPL": _snap(price_at_publish="100", bars=[[1, "100"], [2, "90"]])},
         ts_event_ns=NS_PER_HOUR,
     )
     response = await client.get("/news", headers=auth_headers)
@@ -456,9 +457,9 @@ async def test_news_handles_story_without_bars_gracefully(
         article_id="no_bars",
         headline="AAPL holds press conference",
         symbols=["AAPL"],
-        snapshots={"AAPL": _snap(
-            price_at_publish="100", bars=[], bars_available=False
-        )},
+        snapshots={
+            "AAPL": _snap(price_at_publish="100", bars=[], bars_available=False)
+        },
         ts_event_ns=NS_PER_HOUR,
     )
     response = await client.get("/news", headers=auth_headers)

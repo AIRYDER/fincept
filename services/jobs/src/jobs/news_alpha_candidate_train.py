@@ -127,7 +127,9 @@ async def run_daily(
         "NEWS_ALPHA_CANDIDATE_REPORT",
         DEFAULT_REPORT_PATH,
     )
-    resolved_min_rows = min_rows or int(os.environ.get("NEWS_ALPHA_TRAIN_MIN_ROWS", str(DEFAULT_MIN_ROWS)))
+    resolved_min_rows = min_rows or int(
+        os.environ.get("NEWS_ALPHA_TRAIN_MIN_ROWS", str(DEFAULT_MIN_ROWS))
+    )
     resolved_min_auc = min_auc or float(os.environ.get("NEWS_ALPHA_MIN_AUC", str(DEFAULT_MIN_AUC)))
     resolved_min_val_rows = min_val_rows or int(
         os.environ.get("NEWS_ALPHA_MIN_VAL_ROWS", str(DEFAULT_MIN_VAL_ROWS))

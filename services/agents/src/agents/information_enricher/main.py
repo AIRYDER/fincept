@@ -12,7 +12,7 @@ from agents.information_enricher.enrich import enrich_information_event
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_INFO_ENRICHED, STREAM_INFO_RAW
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -44,6 +44,7 @@ async def handle_information_event(event: Event, *, producer: Producer) -> None:
 
 async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     consumer = Consumer(redis)

@@ -53,9 +53,7 @@ async def _read_snapshot(redis: Redis[Any]) -> dict[str, Any] | None:
     return {str(k): v for k, v in parsed.items()}
 
 
-async def _read_history(
-    redis: Redis[Any], *, count: int
-) -> list[dict[str, Any]]:
+async def _read_history(redis: Redis[Any], *, count: int) -> list[dict[str, Any]]:
     """Return the last ``count`` regime stream events, newest first.
 
     Uses XREVRANGE so even on a stream with thousands of entries we

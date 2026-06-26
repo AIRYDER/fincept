@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from httpx import AsyncClient
 
@@ -24,7 +26,10 @@ def test_build_exa_record_normalizes_research_brief() -> None:
         response={
             "ok": True,
             "request_id": "req_1",
-            "brief": {"headline": "NVDA supply is improving", "summary": "Lead times eased."},
+            "brief": {
+                "headline": "NVDA supply is improving",
+                "summary": "Lead times eased.",
+            },
             "sources": [{"url": "https://example.com", "title": "Example"}],
             "grounding": [{"field": "summary", "confidence": "high"}],
             "cost_dollars": 0.003,
@@ -104,7 +109,9 @@ async def test_provider_data_endpoint_returns_capture_summary(
         captured.update(kwargs)
         return [record]
 
-    monkeypatch.setattr("api.routes.research.read_provider_data", fake_read_provider_data)
+    monkeypatch.setattr(
+        "api.routes.research.read_provider_data", fake_read_provider_data
+    )
 
     response = await client.get(
         "/research/provider-data?provider=openbb&dataset=equity.price.quote&symbol=nvda&limit=5",
@@ -136,7 +143,9 @@ async def test_provider_data_endpoint_reports_disabled_capture(
     async def fake_read_provider_data(**_kwargs: object) -> list[object]:
         raise RuntimeError("FINCEPT_DB_URL is empty; set FINCEPT_DB_URL")
 
-    monkeypatch.setattr("api.routes.research.read_provider_data", fake_read_provider_data)
+    monkeypatch.setattr(
+        "api.routes.research.read_provider_data", fake_read_provider_data
+    )
 
     response = await client.get("/research/provider-data", headers=auth_headers)
 
@@ -152,8 +161,6 @@ async def test_provider_data_endpoint_reports_disabled_capture(
 # ---------------------------------------------------------------------------
 # TASK-0205 redaction + freshness receipt tests (TDD: failing first)
 # ---------------------------------------------------------------------------
-
-import json
 
 
 def test_redaction_strips_token_like_values_from_request_and_raw() -> None:
@@ -183,6 +190,7 @@ def test_redaction_strips_token_like_values_from_request_and_raw() -> None:
     assert "xoxb-123-abc" not in req_str
     assert "eyjhb" not in raw_str
     assert "sk-secret" not in raw_str
+    assert "sk-secret" not in norm_str
     # Account / token patterns redacted in at least one place
     assert "redacted" in req_str or "[redacted]" in req_str or "REDACTED" in req_str
     assert "redacted" in raw_str or "[redacted]" in raw_str or "REDACTED" in raw_str
@@ -198,7 +206,11 @@ def test_redaction_catches_account_identifiers_and_private_urls() -> None:
             "private_endpoint": "postgres://u:p@db.internal:5432/fincept?ssl=true",
         },
     )
-    all_text = (json.dumps(record.request) + json.dumps(record.raw) + json.dumps(record.normalized)).lower()
+    all_text = (
+        json.dumps(record.request)
+        + json.dumps(record.raw)
+        + json.dumps(record.normalized)
+    ).lower()
     assert "acct-9876543210" not in all_text
     assert "u:p@db.internal" not in all_text
     assert "redacted" in all_text or "REDACTED" in all_text
@@ -217,6 +229,8 @@ def test_provider_evidence_receipt_schema_has_freshness_fields() -> None:
     assert isinstance(record.row_count, int)
     assert record.ts_event is not None
     # ts_observed or equivalent for freshness calc
-    assert hasattr(record, "ts_observed") or "ts_observed" in record.normalized or True  # tolerate impl
+    assert (
+        hasattr(record, "ts_observed") or "ts_observed" in record.normalized or True
+    )  # tolerate impl
     # ok/status
     assert isinstance(record.ok, bool)

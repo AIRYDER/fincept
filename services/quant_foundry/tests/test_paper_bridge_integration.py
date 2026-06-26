@@ -25,9 +25,7 @@ from __future__ import annotations
 import json
 import pathlib
 import time
-from typing import Any
-
-import pytest
+from typing import Any, ClassVar
 
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
@@ -36,28 +34,22 @@ from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.paper_bridge import (
     BridgeCircuitBreaker,
     BridgeConfig,
-    BridgeReceipt,
     BridgeStatus,
     PaperBridge,
-    PaperPrediction,
     RollbackPointer,
     convert_shadow_to_paper,
 )
 from quant_foundry.promotion import (
     PromotionEvidence,
-    PromotionReceipt,
-    PromotionRejectionReason,
-    ReviewDecision,
 )
 from quant_foundry.sentinel import SentinelReceipt
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
-from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
+from quant_foundry.shadow_ledger import compute_batch_hash
 from quant_foundry.tournament import (
     PromotionRecommendation,
     TournamentResult,
     TournamentStatus,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Constants                                                                    #
@@ -100,6 +92,7 @@ def _make_prediction(
 def _make_bar_reader(bars: dict[str, list[PricePoint]]):
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
         return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
+
     return reader
 
 
@@ -128,9 +121,7 @@ def _make_gateway(
     return gw
 
 
-def _store_predictions(
-    gw: QuantFoundryGateway, predictions: list[dict[str, Any]]
-) -> None:
+def _store_predictions(gw: QuantFoundryGateway, predictions: list[dict[str, Any]]) -> None:
     batch_hash = compute_batch_hash(predictions)
     gw.shadow_ledger_real().store_batch(predictions=predictions, batch_hash=batch_hash)
 
@@ -187,9 +178,7 @@ def _make_evidence(
     )
 
 
-def _write_settlements(
-    base_dir: pathlib.Path, model_id: str, count: int
-) -> None:
+def _write_settlements(base_dir: pathlib.Path, model_id: str, count: int) -> None:
     ledger_dir = base_dir / "settlements"
     ledger_dir.mkdir(parents=True, exist_ok=True)
     path = ledger_dir / f"{model_id}.settlements.jsonl"
@@ -248,12 +237,27 @@ def _has_secret(obj: Any, secret_names: set[str]) -> bool:
     return False
 
 
-_ORDER_FIELDS = frozenset({
-    "order", "signal", "trade", "position", "allocation",
-    "quantity", "side", "broker", "order_type", "order_id",
-    "client_order_id", "time_in_force", "leverage", "margin_type",
-    "account_id", "sig_predict", "size",
-})
+_ORDER_FIELDS = frozenset(
+    {
+        "order",
+        "signal",
+        "trade",
+        "position",
+        "allocation",
+        "quantity",
+        "side",
+        "broker",
+        "order_type",
+        "order_id",
+        "client_order_id",
+        "time_in_force",
+        "leverage",
+        "margin_type",
+        "account_id",
+        "sig_predict",
+        "size",
+    }
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,10 +270,12 @@ class TestFullPromotionFlow:
 
     def test_full_promotion_flow_approved(self, tmp_path: pathlib.Path) -> None:
         gw = _make_gateway(tmp_path / "qf")
-        gw.dossier_registry().register(_make_dossier(
-            model_id="promo-model",
-            status=DossierStatus.CANDIDATE,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="promo-model",
+                status=DossierStatus.CANDIDATE,
+            )
+        )
         _write_settlements(tmp_path / "qf", "promo-model", 12)
 
         gw.run_tournament_sweep()
@@ -300,14 +306,14 @@ class TestFullPromotionFlow:
         assert result["ok"] is False
         assert result["error_code"] == "no_dossier"
 
-    def test_promotion_rejected_insufficient_evidence(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_promotion_rejected_insufficient_evidence(self, tmp_path: pathlib.Path) -> None:
         gw = _make_gateway(tmp_path / "qf")
-        gw.dossier_registry().register(_make_dossier(
-            model_id="few-model",
-            status=DossierStatus.CANDIDATE,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="few-model",
+                status=DossierStatus.CANDIDATE,
+            )
+        )
         _write_settlements(tmp_path / "qf", "few-model", 3)
 
         gw.run_tournament_sweep()
@@ -324,14 +330,14 @@ class TestFullPromotionFlow:
         assert result["receipt"]["decision"] == "rejected"
         assert result["receipt"]["rejection_reason"] == "insufficient_evidence"
 
-    def test_promotion_to_paper_approved_succeeds(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_promotion_to_paper_approved_succeeds(self, tmp_path: pathlib.Path) -> None:
         gw = _make_gateway(tmp_path / "qf")
-        gw.dossier_registry().register(_make_dossier(
-            model_id="mvp-model",
-            status=DossierStatus.SHADOW_APPROVED,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="mvp-model",
+                status=DossierStatus.SHADOW_APPROVED,
+            )
+        )
         _write_settlements(tmp_path / "qf", "mvp-model", 12)
 
         gw.run_tournament_sweep()
@@ -351,10 +357,12 @@ class TestFullPromotionFlow:
         self, tmp_path: pathlib.Path
     ) -> None:
         gw = _make_gateway(tmp_path / "qf")
-        gw.dossier_registry().register(_make_dossier(
-            model_id="live-model",
-            status=DossierStatus.PAPER_APPROVED,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="live-model",
+                status=DossierStatus.PAPER_APPROVED,
+            )
+        )
         _write_settlements(tmp_path / "qf", "live-model", 12)
 
         gw.run_tournament_sweep()
@@ -380,14 +388,14 @@ class TestFullPromotionFlow:
 class TestPaperBridgePublish:
     """Test paper bridge publish with an approved model."""
 
-    def test_publish_succeeds_with_paper_approved(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_publish_succeeds_with_paper_approved(self, tmp_path: pathlib.Path) -> None:
         gw = _make_gateway(tmp_path / "qf")
-        gw.dossier_registry().register(_make_dossier(
-            model_id="bridge-model-1",
-            status=DossierStatus.PAPER_APPROVED,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="bridge-model-1",
+                status=DossierStatus.PAPER_APPROVED,
+            )
+        )
         _write_settlements(tmp_path / "qf", "bridge-model-1", 12)
         gw.run_tournament_sweep()
 
@@ -395,10 +403,12 @@ class TestPaperBridgePublish:
             model_id="bridge-model-1",
             dossier_status=DossierStatus.PAPER_APPROVED,
         )
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(model_id="bridge-model-1"),
             evidence=evidence,
@@ -410,13 +420,13 @@ class TestPaperBridgePublish:
         assert receipt.prediction.model_id == "bridge-model-1"
         assert receipt.prediction.authority == "paper-only"
 
-    def test_publish_creates_rollback_pointer(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+    def test_publish_creates_rollback_pointer(self, tmp_path: pathlib.Path) -> None:
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -429,13 +439,13 @@ class TestPaperBridgePublish:
         assert receipt.rollback_pointer.created_at_ns > 0
         assert receipt.rollback_pointer.reason == "paper bridge publish"
 
-    def test_paper_prediction_has_no_order_fields(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+    def test_paper_prediction_has_no_order_fields(self, tmp_path: pathlib.Path) -> None:
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -443,17 +453,15 @@ class TestPaperBridgePublish:
         assert receipt.prediction is not None
         pred = receipt.prediction
         for field in _ORDER_FIELDS:
-            assert not hasattr(pred, field), (
-                f"PaperPrediction must not have order field: {field}"
-            )
+            assert not hasattr(pred, field), f"PaperPrediction must not have order field: {field}"
 
-    def test_paper_prediction_has_prediction_fields_only(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+    def test_paper_prediction_has_prediction_fields_only(self, tmp_path: pathlib.Path) -> None:
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -470,13 +478,13 @@ class TestPaperBridgePublish:
         assert pred.p_up == 0.7
         assert pred.authority == "paper-only"
 
-    def test_receipt_to_dict_is_json_serializable(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+    def test_receipt_to_dict_is_json_serializable(self, tmp_path: pathlib.Path) -> None:
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -487,9 +495,7 @@ class TestPaperBridgePublish:
         assert d["prediction"] is not None
         assert d["rollback_pointer"] is not None
 
-    def test_full_flow_settlement_to_bridge(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_full_flow_settlement_to_bridge(self, tmp_path: pathlib.Path) -> None:
         bars = {
             "AAPL": [
                 PricePoint(ts_ns=_T_EVENT, close=150.0),
@@ -501,10 +507,12 @@ class TestPaperBridgePublish:
             ],
         }
         gw = _make_gateway(tmp_path / "qf", bars)
-        gw.dossier_registry().register(_make_dossier(
-            model_id="flow-model",
-            status=DossierStatus.PAPER_APPROVED,
-        ))
+        gw.dossier_registry().register(
+            _make_dossier(
+                model_id="flow-model",
+                status=DossierStatus.PAPER_APPROVED,
+            )
+        )
 
         predictions = [
             _make_prediction(
@@ -532,10 +540,12 @@ class TestPaperBridgePublish:
             sentinel_receipt=_make_sentinel_receipt(model_id="flow-model"),
             blocking_issues=[],
         )
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(
                 model_id="flow-model",
@@ -652,10 +662,12 @@ class TestRefusesNonPaperRuntime:
     """Paper bridge refuses non-paper runtime."""
 
     def test_refuses_live_runtime(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="live",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="live",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -664,10 +676,12 @@ class TestRefusesNonPaperRuntime:
         assert "non-paper" in receipt.reason.lower()
 
     def test_refuses_shadow_runtime(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="shadow",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="shadow",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -675,10 +689,12 @@ class TestRefusesNonPaperRuntime:
         assert receipt.status == BridgeStatus.REFUSED
 
     def test_refuses_when_disabled(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=False,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=False,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -696,10 +712,12 @@ class TestRefusesWithoutEvidence:
     """Paper bridge refuses without evidence packet."""
 
     def test_refuses_none_evidence(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=None,
@@ -708,10 +726,12 @@ class TestRefusesWithoutEvidence:
         assert "evidence" in receipt.reason.lower()
 
     def test_refuses_none_dossier(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=PromotionEvidence(dossier=None),
@@ -729,10 +749,12 @@ class TestRefusesWithoutPaperApproved:
     """Paper bridge refuses without paper_approved status."""
 
     def test_refuses_candidate_status(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(
@@ -743,10 +765,12 @@ class TestRefusesWithoutPaperApproved:
         assert "paper" in receipt.reason.lower()
 
     def test_refuses_shadow_approved_status(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(
@@ -757,10 +781,12 @@ class TestRefusesWithoutPaperApproved:
         assert "paper" in receipt.reason.lower()
 
     def test_refuses_research_approved_status(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(
@@ -778,17 +804,25 @@ class TestRefusesWithoutPaperApproved:
 class TestNoSecretsInBridgeOutput:
     """No secrets in any bridge output."""
 
-    SECRET_NAMES = {
-        "api_key", "token", "secret", "password",
-        "broker_account", "credential", "private_key",
-        "access_key", "session_token",
+    SECRET_NAMES: ClassVar[set[str]] = {
+        "api_key",
+        "token",
+        "secret",
+        "password",
+        "broker_account",
+        "credential",
+        "private_key",
+        "access_key",
+        "session_token",
     }
 
     def test_receipt_to_dict_has_no_secrets(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),
@@ -797,10 +831,12 @@ class TestNoSecretsInBridgeOutput:
         assert not _has_secret(d, self.SECRET_NAMES)
 
     def test_refused_receipt_has_no_secrets(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=None,
@@ -824,10 +860,12 @@ class TestNoSecretsInBridgeOutput:
         assert not _has_secret(d, self.SECRET_NAMES)
 
     def test_receipt_json_serializable_no_secrets_in_string(self) -> None:
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True,
-            runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         receipt = bridge.publish(
             prediction=_make_prediction(),
             evidence=_make_evidence(),

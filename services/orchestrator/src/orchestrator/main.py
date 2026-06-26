@@ -36,7 +36,7 @@ from fincept_bus.streams import (
     STREAM_SIG_REGIME,
     STREAM_SIG_SENT,
 )
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -160,9 +160,7 @@ def _regime_to_predictions(
     ]
 
 
-def _make_regime_handler(
-    router: OrchestratorRouter, *, universe: list[str]
-) -> Any:
+def _make_regime_handler(router: OrchestratorRouter, *, universe: list[str]) -> Any:
     async def handler(event: Event) -> None:
         if event.type != "regime":
             return
@@ -177,6 +175,7 @@ def _make_regime_handler(
 
 async def run(stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     prices = LivePrices()

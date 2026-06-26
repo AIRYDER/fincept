@@ -117,7 +117,12 @@ class TestRedactDict:
         assert result.redaction_count >= 1
 
     def test_non_sensitive_dict_is_unchanged(self):
-        d = {"provider": "binance", "dataset": "bars", "symbol": "BTCUSDT", "row_count": 100}
+        d = {
+            "provider": "binance",
+            "dataset": "bars",
+            "symbol": "BTCUSDT",
+            "row_count": 100,
+        }
         result = redact_dict(d)
         assert result.redacted == d
         assert result.redaction_count == 0

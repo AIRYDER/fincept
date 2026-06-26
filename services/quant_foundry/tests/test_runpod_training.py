@@ -46,9 +46,18 @@ def test_handler_has_no_broker_credentials() -> None:
     """Hard invariant: the handler MUST NOT have any broker/Redis/stream
     attributes. It runs in an isolated container with no trading access."""
     handler = RunPodTrainingHandler(callback_secret="s")
-    for attr in ("redis", "broker", "bus", "producer", "stream",
-                 "sig_predict_writer", "order_writer", "trading_stream",
-                 "FINCEPT_JWT_SECRET", "ALPACA_API_KEY"):
+    for attr in (
+        "redis",
+        "broker",
+        "bus",
+        "producer",
+        "stream",
+        "sig_predict_writer",
+        "order_writer",
+        "trading_stream",
+        "FINCEPT_JWT_SECRET",
+        "ALPACA_API_KEY",
+    ):
         assert not hasattr(handler, attr), f"handler must not have {attr}"
 
 
@@ -90,8 +99,11 @@ def test_handler_trains_and_returns_signed_callback() -> None:
 
     # Signature verifies.
     assert verify_callback(
-        result.callback_payload, result.callback_signature,
-        secret=secret, ts=result.callback_ts, job_id=job_id,
+        result.callback_payload,
+        result.callback_signature,
+        secret=secret,
+        ts=result.callback_ts,
+        job_id=job_id,
     )
 
     # Authority is shadow-only (hard invariant).
@@ -178,6 +190,9 @@ def test_callback_envelope_same_schema_as_mock_dispatcher() -> None:
 
     # The signature must verify with the same sign_callback/verify_callback.
     assert verify_callback(
-        result.callback_payload, result.callback_signature,
-        secret=secret, ts=result.callback_ts, job_id="qf:train:same:1",
+        result.callback_payload,
+        result.callback_signature,
+        secret=secret,
+        ts=result.callback_ts,
+        job_id="qf:train:same:1",
     )

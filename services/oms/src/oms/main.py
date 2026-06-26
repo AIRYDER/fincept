@@ -50,7 +50,7 @@ from fincept_bus.streams import (
     STREAM_ORDERS,
 )
 from fincept_core.clock import now_ns
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -410,6 +410,7 @@ async def _run_alpaca(stop: asyncio.Event, redis: Redis[Any], producer: Producer
 
 async def run(stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     if settings.TRADING_MODE != "paper":
         raise RuntimeError(
             f"OMS started with TRADING_MODE={settings.TRADING_MODE!r}; v1 is paper-only"

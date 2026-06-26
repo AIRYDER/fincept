@@ -19,9 +19,8 @@ from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.market_data_adapter import BarDataAdapter, PricePoint
 from quant_foundry.outcomes import SettlementStatus
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
-from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
+from quant_foundry.shadow_ledger import compute_batch_hash
 from quant_foundry.tournament import ScoringInput, Tournament
-
 
 # --------------------------------------------------------------------------- #
 # Constants                                                                    #
@@ -59,6 +58,7 @@ def _make_prediction(
 def _make_bar_reader(bars: dict[str, list[PricePoint]]):
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
         return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
+
     return reader
 
 

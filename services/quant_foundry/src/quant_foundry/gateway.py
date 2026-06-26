@@ -33,7 +33,7 @@ import dataclasses
 import os
 import pathlib
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.budget import from_env as budget_from_env
@@ -134,8 +134,7 @@ class QuantFoundryGateway:
 
         if runpod_clients is not None:
             self._runpod_clients = {
-                _normalize_job_type(job_type): client
-                for job_type, client in runpod_clients.items()
+                _normalize_job_type(job_type): client for job_type, client in runpod_clients.items()
             }
         elif runpod_client is not None:
             self._runpod_clients = {
@@ -149,9 +148,7 @@ class QuantFoundryGateway:
         if self._is_runpod_mode():
             dispatch_budget = DispatchBudgetGuard(
                 monthly_budget_cents=(
-                    budget_guard.monthly_budget_cents
-                    if budget_guard is not None
-                    else 0
+                    budget_guard.monthly_budget_cents if budget_guard is not None else 0
                 ),
             )
             for job_type, client in self._runpod_clients.items():
@@ -196,12 +193,10 @@ class QuantFoundryGateway:
             api_key = os.environ.get("RUNPOD_API_KEY", "")
             legacy_endpoint_id = os.environ.get("RUNPOD_ENDPOINT_ID", "")
             training_endpoint_id = (
-                os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", "")
-                or legacy_endpoint_id
+                os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", "") or legacy_endpoint_id
             )
             inference_endpoint_id = (
-                os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "")
-                or legacy_endpoint_id
+                os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "") or legacy_endpoint_id
             )
             base_url = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
             timeout_str = os.environ.get("RUNPOD_TIMEOUT_SECONDS", "30")
@@ -335,9 +330,7 @@ class QuantFoundryGateway:
             )
             if not decision.allowed:
                 error_code = (
-                    "budget_kill_switch"
-                    if "kill switch" in decision.reason
-                    else "budget_exceeded"
+                    "budget_kill_switch" if "kill switch" in decision.reason else "budget_exceeded"
                 )
                 return {
                     "enabled": True,
@@ -391,31 +384,37 @@ class QuantFoundryGateway:
                 continue
             client = self._runpod_clients.get(_normalize_job_type(rec.job_type))
             if client is None:
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": False,
-                    "error_code": "runpod_endpoint_not_configured",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": False,
+                        "error_code": "runpod_endpoint_not_configured",
+                    }
+                )
                 continue
             try:
                 status = client.check_status(rec.runpod_job_id)
             except Exception as exc:
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": False,
-                    "error_code": "runpod_status_error",
-                    "detail": f"{type(exc).__name__}: {exc}",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": False,
+                        "error_code": "runpod_status_error",
+                        "detail": f"{type(exc).__name__}: {exc}",
+                    }
+                )
                 continue
 
             status_value = _runpod_status_value(status)
             if status_value in {"IN_PROGRESS", "IN_QUEUE", "RUNNING", "PENDING"}:
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": True,
-                    "status": status_value.lower(),
-                    "result": "still_running",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": True,
+                        "status": status_value.lower(),
+                        "result": "still_running",
+                    }
+                )
                 continue
 
             if status_value in {"FAILED", "CANCELLED", "CANCELED", "TIMED_OUT", "ERROR"}:
@@ -425,21 +424,25 @@ class QuantFoundryGateway:
                     error_code="runpod_job_failed",
                     error_summary=str(status.get("error") or status.get("message") or status_value),
                 )
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": False,
-                    "status": status_value.lower(),
-                    "result": "failed",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": False,
+                        "status": status_value.lower(),
+                        "result": "failed",
+                    }
+                )
                 continue
 
             if status_value not in {"COMPLETED", "SUCCEEDED", "SUCCESS"}:
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": False,
-                    "status": status_value.lower(),
-                    "error_code": "unknown_runpod_status",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": False,
+                        "status": status_value.lower(),
+                        "error_code": "unknown_runpod_status",
+                    }
+                )
                 continue
 
             output = status.get("output")
@@ -459,11 +462,13 @@ class QuantFoundryGateway:
                     error_code="missing_runpod_callback_fields",
                     error_summary="RunPod completed without callback_payload/signature/ts output",
                 )
-                receipts.append({
-                    "job_id": rec.job_id,
-                    "ok": False,
-                    "error_code": "missing_runpod_callback_fields",
-                })
+                receipts.append(
+                    {
+                        "job_id": rec.job_id,
+                        "ok": False,
+                        "error_code": "missing_runpod_callback_fields",
+                    }
+                )
                 continue
 
             payload_text, signature, callback_ts = callback_fields
@@ -703,9 +708,7 @@ class QuantFoundryGateway:
         tournament_result = self._find_tournament_result(model_id)
         sentinel_receipt = self._find_sentinel_receipt(model_id)
 
-        blocking_issues = self._build_blocking_issues(
-            dossier, tournament_result, sentinel_receipt
-        )
+        blocking_issues = self._build_blocking_issues(dossier, tournament_result, sentinel_receipt)
 
         evidence = PromotionEvidence(
             dossier=dossier,
@@ -777,9 +780,7 @@ class QuantFoundryGateway:
                         "error_code": "invalid_rejection_reason",
                         "detail": f"invalid rejection_reason: {rejection_reason}",
                     }
-            receipt = self._reject_specific_entry(
-                target_entry, rejection_reason_enum, review_note
-            )
+            receipt = self._reject_specific_entry(target_entry, rejection_reason_enum, review_note)
 
         return {"enabled": True, "ok": True, "receipt": receipt.to_dict()}
 
@@ -799,9 +800,7 @@ class QuantFoundryGateway:
             )
         return receipt
 
-    def _reject_specific_entry(
-        self, entry: Any, rejection_reason: Any, review_note: str
-    ) -> Any:
+    def _reject_specific_entry(self, entry: Any, rejection_reason: Any, review_note: str) -> Any:
         """Reject a specific pending entry directly."""
         from quant_foundry.promotion import PromotionReceipt, ReviewDecision
 
@@ -826,16 +825,14 @@ class QuantFoundryGateway:
         sweep = self.tournament_sweep()
         records = sweep.settlement_ledger.read_all()
         by_model = {
-            r.model_id: r for r in records
-            if r.model_id == model_id and r.status.value == "settled"
+            r.model_id: r for r in records if r.model_id == model_id and r.status.value == "settled"
         }
         if not by_model:
             return None
         from quant_foundry.outcomes import SettlementStatus
 
         model_records = [
-            r for r in records
-            if r.model_id == model_id and r.status == SettlementStatus.SETTLED
+            r for r in records if r.model_id == model_id and r.status == SettlementStatus.SETTLED
         ]
         if len(model_records) < sweep.min_settled_samples:
             return None
@@ -863,27 +860,33 @@ class QuantFoundryGateway:
 
         if dossier is not None:
             for bi in dossier.blocking_issues:
-                issues.append(BlockingIssue(
-                    code=str(bi.get("code", "unknown")),
-                    severity=SentinelSeverity.BLOCKING,
-                    message=str(bi.get("note") or bi.get("code", "blocking issue")),
-                ))
+                issues.append(
+                    BlockingIssue(
+                        code=str(bi.get("code", "unknown")),
+                        severity=SentinelSeverity.BLOCKING,
+                        message=str(bi.get("note") or bi.get("code", "blocking issue")),
+                    )
+                )
 
         if tournament_result is not None:
             for bi in tournament_result.blocking_issues:
-                issues.append(BlockingIssue(
-                    code=str(bi.get("code", "unknown")),
-                    severity=SentinelSeverity.BLOCKING,
-                    message=str(bi.get("message", "tournament blocking issue")),
-                ))
+                issues.append(
+                    BlockingIssue(
+                        code=str(bi.get("code", "unknown")),
+                        severity=SentinelSeverity.BLOCKING,
+                        message=str(bi.get("message", "tournament blocking issue")),
+                    )
+                )
 
         if sentinel_receipt is not None:
             for issue in sentinel_receipt.issues:
-                issues.append(BlockingIssue(
-                    code=str(issue.code),
-                    severity=issue.severity,
-                    message=str(issue.message),
-                ))
+                issues.append(
+                    BlockingIssue(
+                        code=str(issue.code),
+                        severity=issue.severity,
+                        message=str(issue.message),
+                    )
+                )
 
         return issues
 
@@ -1078,7 +1081,7 @@ class QuantFoundryGateway:
                 market_data_adapter=BarDataAdapter(),
                 cost_model=default_cost_model(),
             )
-        return self._settlement_sweep
+        return cast(SettlementSweep, self._settlement_sweep)
 
     def run_settlement_sweep(self, now_ns: int | None = None) -> dict[str, Any]:
         """Run one settlement sweep and return the receipt dict.
@@ -1107,15 +1110,9 @@ class QuantFoundryGateway:
                 "total": 0,
             }
         records = self.settlement_ledger().read_all()
-        settled_count = sum(
-            1 for r in records if r.status.value == "settled"
-        )
-        pending_time_count = sum(
-            1 for r in records if r.status.value == "pending_time"
-        )
-        pending_data_count = sum(
-            1 for r in records if r.status.value == "pending_data"
-        )
+        settled_count = sum(1 for r in records if r.status.value == "settled")
+        pending_time_count = sum(1 for r in records if r.status.value == "pending_time")
+        pending_data_count = sum(1 for r in records if r.status.value == "pending_data")
         return {
             "enabled": True,
             "settled_count": settled_count,
@@ -1168,9 +1165,7 @@ class QuantFoundryGateway:
         prediction_count = len(records)
         models_running = len({r.model_id for r in records})
 
-        latencies = sorted(
-            float(r.latency_ms) for r in records if r.latency_ms is not None
-        )
+        latencies = sorted(float(r.latency_ms) for r in records if r.latency_ms is not None)
         latency_p50_ms: float | None = _percentile(latencies, 0.5) if latencies else None
         latency_p95_ms: float | None = _percentile(latencies, 0.95) if latencies else None
 
@@ -1191,16 +1186,12 @@ class QuantFoundryGateway:
         # Read real settled_count and settlement_lag_seconds from the
         # settlement ledger.
         settlement_records = self.settlement_ledger().read_all()
-        settled_records = [
-            r for r in settlement_records if r.status.value == "settled"
-        ]
+        settled_records = [r for r in settlement_records if r.status.value == "settled"]
         settled_count = len(settled_records)
         if settled_records and settled_records[0].settled_at_ns is not None:
             import time as _time
 
-            settlement_lag_seconds = (
-                _time.time_ns() - settled_records[0].settled_at_ns
-            ) / 1e9
+            settlement_lag_seconds = (_time.time_ns() - settled_records[0].settled_at_ns) / 1e9
         else:
             settlement_lag_seconds = None
 
@@ -1266,9 +1257,7 @@ class QuantFoundryGateway:
                 idempotency_key = f"shadow-dispatch-{model_id}-{_time.time_ns()}"
                 request_payload: dict[str, Any] = {
                     "job_id": job_id,
-                    "artifact_ref": str(
-                        dossier.get("artifact_manifest_id") or model_id
-                    ),
+                    "artifact_ref": str(dossier.get("artifact_manifest_id") or model_id),
                     "symbols": [],
                     "horizons_ns": [86_400_000_000_000],
                     "snapshot": snapshot_payload,
@@ -1281,29 +1270,35 @@ class QuantFoundryGateway:
                     request_payload=request_payload,
                 )
                 if receipt.get("ok") is False:
-                    errors.append({
-                        "model_id": model_id,
-                        "error_code": str(receipt.get("error_code") or "unknown"),
-                        "detail": str(receipt.get("detail") or ""),
-                    })
+                    errors.append(
+                        {
+                            "model_id": model_id,
+                            "error_code": str(receipt.get("error_code") or "unknown"),
+                            "detail": str(receipt.get("detail") or ""),
+                        }
+                    )
                     skipped += 1
                     continue
                 if receipt.get("status") == "failed":
-                    errors.append({
-                        "model_id": model_id,
-                        "error_code": "job_failed",
-                        "detail": str(receipt.get("detail") or "job status is failed"),
-                    })
+                    errors.append(
+                        {
+                            "model_id": model_id,
+                            "error_code": "job_failed",
+                            "detail": str(receipt.get("detail") or "job status is failed"),
+                        }
+                    )
                     skipped += 1
                     continue
                 job_ids.append(job_id)
                 dispatched += 1
             except Exception as exc:
-                errors.append({
-                    "model_id": model_id,
-                    "error_code": type(exc).__name__,
-                    "detail": str(exc),
-                })
+                errors.append(
+                    {
+                        "model_id": model_id,
+                        "error_code": type(exc).__name__,
+                        "detail": str(exc),
+                    }
+                )
                 skipped += 1
 
         self._shadow_dispatch_count += dispatched
@@ -1401,15 +1396,22 @@ class QuantFoundryGateway:
         # The job must exist in the outbox (callback for unknown job = reject).
         ob_rec = self.outbox.get(job_id)
         if ob_rec is None:
-            return {"enabled": True, "ok": False, "error_code": "unknown_job",
-                    "detail": f"no outbox record for job_id {job_id}"}
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "unknown_job",
+                "detail": f"no outbox record for job_id {job_id}",
+            }
 
         # HMAC verify FIRST (constant-time, skew-checked) via TASK-0303.
         # We verify before touching the inbox so a bad signature never
         # creates a durable record (fail-closed, no side effect).
         signature_valid = verify_callback(
-            payload, signature,
-            secret=self.callback_secret, ts=ts, job_id=job_id,
+            payload,
+            signature,
+            secret=self.callback_secret,
+            ts=ts,
+            job_id=job_id,
         )
 
         if not signature_valid:
@@ -1538,17 +1540,19 @@ def _sweep_receipt_to_dict(receipt: Any) -> dict[str, Any]:
     """
     trials: list[dict[str, Any]] = []
     for tr in receipt.trial_receipts:
-        trials.append({
-            "recipe_id": tr.recipe_id,
-            "parent_recipe_id": tr.parent_recipe_id,
-            "status": tr.status.value,
-            "reason": tr.reason,
-            "model_id": tr.model_id,
-            "cost_cents": tr.cost_cents,
-            "duration_seconds": tr.duration_seconds,
-            "promotion_decision": tr.promotion_decision,
-            "sweep_id": tr.sweep_id,
-        })
+        trials.append(
+            {
+                "recipe_id": tr.recipe_id,
+                "parent_recipe_id": tr.parent_recipe_id,
+                "status": tr.status.value,
+                "reason": tr.reason,
+                "model_id": tr.model_id,
+                "cost_cents": tr.cost_cents,
+                "duration_seconds": tr.duration_seconds,
+                "promotion_decision": tr.promotion_decision,
+                "sweep_id": tr.sweep_id,
+            }
+        )
     return {
         "sweep_id": receipt.sweep_id,
         "seed_recipe_id": receipt.seed_recipe_id,
@@ -1643,6 +1647,8 @@ def _extract_callback_fields(output: Any) -> tuple[str, str, int] | None:
     ts = output.get("callback_ts")
     if not isinstance(payload, str) or not isinstance(signature, str):
         return None
+    if not isinstance(ts, (int, str)):
+        return None
     try:
         callback_ts = int(ts)
     except (TypeError, ValueError):
@@ -1670,6 +1676,7 @@ def _compat_sign_callback(
         return None
     import json as _json
     import time as _time
+
     payload_text = _json.dumps(callback_dict, separators=(",", ":"), sort_keys=True)
     callback_ts = int(_time.time())
     signature = sign_callback(

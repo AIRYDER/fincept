@@ -23,6 +23,7 @@ indefinitely.  Consumers should treat a missing mark as
 
 from __future__ import annotations
 
+import contextlib
 from decimal import Decimal
 from typing import Any
 
@@ -47,7 +48,7 @@ async def write_mark(redis: Redis[Any], symbol: str, price: Decimal) -> None:
     The TTL bounds how long a stale mark survives a process restart or
     upstream outage.  Default 5 min; configurable via Settings.
     """
-    ttl = get_settings().MARK_TTL_SEC or MARK_TTL_SEC
+    ttl = getattr(get_settings(), "MARK_TTL_SEC", MARK_TTL_SEC) or MARK_TTL_SEC
     key = mark_key(symbol)
     ts = now_ns()
     async with redis.pipeline(transaction=True) as pipe:
@@ -55,11 +56,9 @@ async def write_mark(redis: Redis[Any], symbol: str, price: Decimal) -> None:
         pipe.expire(key, ttl)
         await pipe.execute()
     # Provider evidence for freshness receipts (TASK-0205). Best-effort.
-    try:
+    with contextlib.suppress(Exception):
         rec = build_alpaca_mark_record(symbol=symbol, price=price, ts_ns=ts)
         await write_provider_data([rec])
-    except Exception:
-        pass
 
 
 async def read_mark(redis: Redis[Any], symbol: str) -> Decimal | None:
@@ -70,9 +69,7 @@ async def read_mark(redis: Redis[Any], symbol: str) -> Decimal | None:
     return Decimal(raw.decode() if isinstance(raw, bytes) else raw)
 
 
-async def read_marks(
-    redis: Redis[Any], symbols: list[str]
-) -> dict[str, Decimal]:
+async def read_marks(redis: Redis[Any], symbols: list[str]) -> dict[str, Decimal]:
     """Bulk read.  Pipeline keeps the round-trip to a single call."""
     if not symbols:
         return {}

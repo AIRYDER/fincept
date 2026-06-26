@@ -227,7 +227,7 @@ def test_synthetic_feature_rows_pit_correct(tmp_path: pathlib.Path) -> None:
         sym = bsd._symbol_for_index(i)
         bars[sym] = bsd.generate_synthetic_bars(sym, n_days=300, seed=42 + i * 1000)
 
-    manifest, availability, feature_rows, data_rows = bdm.build_dataset_manifest(
+    manifest, _availability, feature_rows, _data_rows = bdm.build_dataset_manifest(
         bars,
         label_horizon_days=5,
         n_folds=3,

@@ -262,7 +262,9 @@ class JobOutbox:
                 "updated_at_ns": now,
                 "runpod_endpoint_id": runpod_endpoint_id or existing.runpod_endpoint_id,
                 "runpod_job_id": runpod_job_id or existing.runpod_job_id,
-                "attempt_count": attempt_count if attempt_count is not None else existing.attempt_count,
+                "attempt_count": attempt_count
+                if attempt_count is not None
+                else existing.attempt_count,
                 "next_retry_at_ns": next_retry_at_ns,
                 "error_code": error_code,
                 "error_summary": error_summary,

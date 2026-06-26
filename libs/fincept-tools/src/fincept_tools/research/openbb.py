@@ -72,9 +72,7 @@ def _to_plain_dict(item: Any) -> dict[str, object]:
             return {str(key): value for key, value in dumped.items()}
     if hasattr(item, "__dict__"):
         return {
-            str(key): value
-            for key, value in vars(item).items()
-            if not str(key).startswith("_")
+            str(key): value for key, value in vars(item).items() if not str(key).startswith("_")
         }
     raise ToolBackendError("OpenBB quote returned an unsupported row shape")
 
@@ -182,9 +180,7 @@ def _resolve_openbb_url() -> str:
     Trailing slashes are stripped so callers can append paths cleanly.
     """
     return (
-        os.getenv("OPENBB_API_URL")
-        or _read_openbb_api_url_from_dotenv()
-        or OPENBB_API_URL
+        os.getenv("OPENBB_API_URL") or _read_openbb_api_url_from_dotenv() or OPENBB_API_URL
     ).rstrip("/")
 
 
@@ -228,9 +224,7 @@ class OpenBBQuoteTool(BaseTool):
                 try:
                     rows = await _load_openbb_quote(symbol, provider)
                 except OpenBBUnavailable as package_exc:
-                    raise OpenBBUnavailable(
-                        f"{api_exc} Also, {package_exc}"
-                    ) from package_exc
+                    raise OpenBBUnavailable(f"{api_exc} Also, {package_exc}") from package_exc
         return OpenBBQuoteOutput(provider=provider, results=rows)
 
 

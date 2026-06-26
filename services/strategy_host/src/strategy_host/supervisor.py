@@ -54,7 +54,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from redis.asyncio import Redis
@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 # the type stays the same so the supervisor never has to change.
 RunnerFn = Callable[
     [StrategyConfig, "Redis[Any]", asyncio.Event],
-    Awaitable[None],
+    Coroutine[Any, Any, None],
 ]
 
 
@@ -169,9 +169,7 @@ class Supervisor:
                 # ``stop`` returns early on shutdown rather than
                 # sleeping the full interval.
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(
-                        stop.wait(), timeout=self._poll_interval_sec
-                    )
+                    await asyncio.wait_for(stop.wait(), timeout=self._poll_interval_sec)
         finally:
             await self._cancel_all()
 
@@ -188,16 +186,12 @@ class Supervisor:
         """
         await self._reap_dead()
         configs = self._store.list_all()
-        desired: dict[str, StrategyConfig] = {
-            c.strategy_id: c for c in configs if c.enabled
-        }
+        desired: dict[str, StrategyConfig] = {c.strategy_id: c for c in configs if c.enabled}
         await self._reconcile(desired)
 
     # ------ reconcile ----------------------------------------------- #
 
-    async def _reconcile(
-        self, desired: dict[str, StrategyConfig]
-    ) -> None:
+    async def _reconcile(self, desired: dict[str, StrategyConfig]) -> None:
         # Phase 1: cancel runners that are no longer desired or whose
         # signature changed.
         for sid in list(self._tasks):
@@ -225,7 +219,7 @@ class Supervisor:
 
     def _start_runner(self, config: StrategyConfig) -> None:
         stop = asyncio.Event()
-        task = asyncio.create_task(
+        task: asyncio.Task[None] = asyncio.create_task(
             self._runner(config, self._redis, stop),
             name=f"strategy:{config.strategy_id}",
         )
@@ -292,9 +286,7 @@ class Supervisor:
                     exc,
                 )
             else:
-                logger.info(
-                    "supervisor.runner_exited strategy_id=%s", sid
-                )
+                logger.info("supervisor.runner_exited strategy_id=%s", sid)
             self._tasks.pop(sid, None)
             self._stops.pop(sid, None)
             self._signatures.pop(sid, None)

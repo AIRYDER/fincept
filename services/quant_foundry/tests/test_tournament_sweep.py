@@ -12,18 +12,14 @@ Covers:
 from __future__ import annotations
 
 import pathlib
-from dataclasses import dataclass
-from typing import Any
 
 import pytest
-
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
 from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.registry import DossierRegistry
 from quant_foundry.tournament import Tournament, TournamentStatus
 from quant_foundry.tournament_sweep import TournamentSweep
-
 
 # ---------------------------------------------------------------------------
 # Fakes

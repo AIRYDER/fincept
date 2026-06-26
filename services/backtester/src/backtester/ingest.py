@@ -172,9 +172,7 @@ def parse_yfinance_daily_frame(
     """
     out: list[BarEvent] = []
     for row in rows:
-        date_value = (
-            row.get("Date") or row.get("date") or row.get("ts") or row.get("index")
-        )
+        date_value = row.get("Date") or row.get("date") or row.get("ts") or row.get("index")
         if date_value is None:
             continue
         try:
@@ -297,6 +295,4 @@ def assert_parquet_matches_runner_schema(path: pathlib.Path | str) -> None:
     df = pl.read_parquet(path)
     missing = [c for c in _REQUIRED_PARQUET_COLS if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"parquet at {path} missing required columns: {missing}"
-        )
+        raise ValueError(f"parquet at {path} missing required columns: {missing}")

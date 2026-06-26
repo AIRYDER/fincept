@@ -116,26 +116,121 @@ def _make_scoring_input(
 
 
 # A simple profitable model: small positive net edge every period.
-_PROFITABLE_NET = [0.001, 0.002, 0.001, 0.002, 0.001, 0.002, 0.001, 0.002,
-                   0.001, 0.002, 0.001, 0.002, 0.001, 0.002, 0.001, 0.002]
+_PROFITABLE_NET = [
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+    0.001,
+    0.002,
+]
 
 # A high-ML-score model with poor cost-adjusted return: high gross but net is
 # near zero / negative because costs eat the edge.
-_HIGH_ML_GROSS = [0.005, 0.006, 0.005, 0.006, 0.005, 0.006, 0.005, 0.006,
-                  0.005, 0.006, 0.005, 0.006, 0.005, 0.006, 0.005, 0.006]
-_HIGH_ML_NET = [0.0001, -0.0001, 0.0001, -0.0001, 0.0001, -0.0001,
-                0.0001, -0.0001, 0.0001, -0.0001, 0.0001, -0.0001,
-                0.0001, -0.0001, 0.0001, -0.0001]
+_HIGH_ML_GROSS = [
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+    0.005,
+    0.006,
+]
+_HIGH_ML_NET = [
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+    0.0001,
+    -0.0001,
+]
 
 # Pure noise: shuffled-label model. Net returns are i.i.d. zero-mean noise.
-_NOISE_NET = [0.001, -0.001, 0.002, -0.002, 0.001, -0.001, 0.002, -0.002,
-              0.001, -0.001, 0.002, -0.002, 0.001, -0.001, 0.002, -0.002]
+_NOISE_NET = [
+    0.001,
+    -0.001,
+    0.002,
+    -0.002,
+    0.001,
+    -0.001,
+    0.002,
+    -0.002,
+    0.001,
+    -0.001,
+    0.002,
+    -0.002,
+    0.001,
+    -0.001,
+    0.002,
+    -0.002,
+]
 
 # Beats baseline gross but not net: gross positive, net negative (costs dominate).
-_GROSS_POS_NET_NEG_GROSS = [0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003,
-                            0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003]
-_GROSS_POS_NET_NEG_NET = [-0.001, -0.001, -0.001, -0.001, -0.001, -0.001, -0.001, -0.001,
-                          -0.001, -0.001, -0.001, -0.001, -0.001, -0.001, -0.001, -0.001]
+_GROSS_POS_NET_NEG_GROSS = [
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+    0.003,
+]
+_GROSS_POS_NET_NEG_NET = [
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+    -0.001,
+]
 
 
 # ===========================================================================
@@ -147,9 +242,7 @@ class TestDeflatedSharpeRatio:
     """DSR discounts for trial count + return non-normality (rigor §2)."""
 
     def test_dsr_returns_result_with_dsr_sharpe_and_trial_count(self) -> None:
-        result = deflated_sharpe_ratio(
-            oos_returns=_PROFITABLE_NET, trial_count=5
-        )
+        result = deflated_sharpe_ratio(oos_returns=_PROFITABLE_NET, trial_count=5)
         assert isinstance(result, DeflatedSharpeResult)
         assert result.trial_count == 5
         # Raw Sharpe is reported alongside the deflated one.
@@ -170,17 +263,31 @@ class TestDeflatedSharpeRatio:
         assert r.deflated_sharpe <= 0.0
 
     def test_dsr_negative_mean_returns_gives_negative_sharpe(self) -> None:
-        r = deflated_sharpe_ratio(
-            [-0.001, -0.002, -0.001, -0.002], trial_count=1
-        )
+        r = deflated_sharpe_ratio([-0.001, -0.002, -0.001, -0.002], trial_count=1)
         assert r.raw_sharpe < 0.0
         assert r.deflated_sharpe < 0.0
 
     def test_dsr_handles_non_normality(self) -> None:
         """Skewed/fat-tailed returns should produce a non-normality penalty."""
         # Heavy positive outlier in one period.
-        fat_tailed = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.05,
-                      0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        fat_tailed = [
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.05,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+        ]
         r = deflated_sharpe_ratio(fat_tailed, trial_count=1)
         assert hasattr(r, "skew")
         assert hasattr(r, "kurtosis")
@@ -230,12 +337,18 @@ class TestStationaryBootstrapPValue:
     def test_pvalue_deterministic_with_fixed_seed(self) -> None:
         """Same seed + inputs => same p-value (deterministic tests)."""
         r1 = stationary_bootstrap_pvalue(
-            _PROFITABLE_NET, [0.0] * len(_PROFITABLE_NET),
-            trial_count=1, n_bootstrap=200, seed=7,
+            _PROFITABLE_NET,
+            [0.0] * len(_PROFITABLE_NET),
+            trial_count=1,
+            n_bootstrap=200,
+            seed=7,
         )
         r2 = stationary_bootstrap_pvalue(
-            _PROFITABLE_NET, [0.0] * len(_PROFITABLE_NET),
-            trial_count=1, n_bootstrap=200, seed=7,
+            _PROFITABLE_NET,
+            [0.0] * len(_PROFITABLE_NET),
+            trial_count=1,
+            n_bootstrap=200,
+            seed=7,
         )
         assert r1.p_value == r2.p_value
 
@@ -265,7 +378,9 @@ class TestScoringInput:
                 oos_returns_baseline=[0.0] * len(_PROFITABLE_NET),
                 trial_count=1,
                 settled_count=len(_PROFITABLE_NET),
-                now_ns=1, stale_threshold_ns=10, min_settled_samples=10,
+                now_ns=1,
+                stale_threshold_ns=10,
+                min_settled_samples=10,
             )
 
     def test_scoring_input_rejects_empty_model_id(self) -> None:
@@ -277,7 +392,9 @@ class TestScoringInput:
                 oos_returns_baseline=[0.0] * len(_PROFITABLE_NET),
                 trial_count=1,
                 settled_count=len(_PROFITABLE_NET),
-                now_ns=1, stale_threshold_ns=10, min_settled_samples=10,
+                now_ns=1,
+                stale_threshold_ns=10,
+                min_settled_samples=10,
             )
 
 
@@ -335,16 +452,17 @@ class TestTournamentScoring:
         simple = t.score(_make_scoring_input("simple", _PROFITABLE_NET, trial_count=1))
         high_ml = t.score(
             _make_scoring_input(
-                "high_ml", _HIGH_ML_NET, oos_returns_gross=_HIGH_ML_GROSS,
-                training_accuracy=0.95, trial_count=1,
+                "high_ml",
+                _HIGH_ML_NET,
+                oos_returns_gross=_HIGH_ML_GROSS,
+                training_accuracy=0.95,
+                trial_count=1,
             )
         )
         # The simpler profitable model must rank higher (higher total_score).
         assert simple.total_score > high_ml.total_score
         # The high-ML model's net edge must be near zero / negative.
-        net_edge_high = next(
-            c for c in high_ml.score_components if c.name == "net_edge"
-        )
+        net_edge_high = next(c for c in high_ml.score_components if c.name == "net_edge")
         assert net_edge_high.value <= 0.0002
 
     def test_beats_baseline_gross_but_not_net_is_blocked(self) -> None:
@@ -366,9 +484,7 @@ class TestTournamentScoring:
     def test_noise_model_fails_gate(self) -> None:
         """Acceptance: noise/shuffled-label model fails the gate (negative control)."""
         t = Tournament(seed=42, n_bootstrap=500)
-        result = t.score(
-            _make_scoring_input("noise", _NOISE_NET, trial_count=10)
-        )
+        result = t.score(_make_scoring_input("noise", _NOISE_NET, trial_count=10))
         # A noise model must NOT be recommended for promotion.
         assert result.recommendation != PromotionRecommendation.PROMOTE
         # It should be blocked or insufficient-evidence.
@@ -399,7 +515,10 @@ class TestTournamentGating:
         # Only 3 settled samples, min is 10.
         result = t.score(
             _make_scoring_input(
-                "m1", [0.001, 0.002, 0.001], settled_count=3, min_settled_samples=10,
+                "m1",
+                [0.001, 0.002, 0.001],
+                settled_count=3,
+                min_settled_samples=10,
             )
         )
         assert result.status == TournamentStatus.INSUFFICIENT_EVIDENCE
@@ -411,8 +530,12 @@ class TestTournamentGating:
         # last_settled at ns=1, now=100, stale threshold=10 => stale.
         result = t.score(
             _make_scoring_input(
-                "m1", _PROFITABLE_NET, trial_count=1,
-                last_settled_at_ns=1, now_ns=100, stale_threshold_ns=10,
+                "m1",
+                _PROFITABLE_NET,
+                trial_count=1,
+                last_settled_at_ns=1,
+                now_ns=100,
+                stale_threshold_ns=10,
             )
         )
         assert result.status == TournamentStatus.STALE
@@ -425,8 +548,12 @@ class TestTournamentGating:
         t = Tournament(seed=42, n_bootstrap=500)
         result = t.score(
             _make_scoring_input(
-                "m1", _PROFITABLE_NET, trial_count=1,
-                last_settled_at_ns=95, now_ns=100, stale_threshold_ns=10,
+                "m1",
+                _PROFITABLE_NET,
+                trial_count=1,
+                last_settled_at_ns=95,
+                now_ns=100,
+                stale_threshold_ns=10,
                 min_settled_samples=10,
             )
         )
@@ -490,8 +617,11 @@ class TestLeaderboard:
         r_simple = t.score(_make_scoring_input("simple", _PROFITABLE_NET, trial_count=1))
         r_high_ml = t.score(
             _make_scoring_input(
-                "high_ml", _HIGH_ML_NET, oos_returns_gross=_HIGH_ML_GROSS,
-                training_accuracy=0.95, trial_count=1,
+                "high_ml",
+                _HIGH_ML_NET,
+                oos_returns_gross=_HIGH_ML_GROSS,
+                training_accuracy=0.95,
+                trial_count=1,
             )
         )
         lb = Leaderboard()
@@ -519,9 +649,16 @@ class TestLeaderboard:
         """Insufficient-evidence models are never ranked above sufficient ones."""
         t = Tournament(seed=42, n_bootstrap=200)
         lb = Leaderboard()
-        lb.add(t.score(_make_scoring_input(
-            "insufficient", [0.001, 0.002], settled_count=2, min_settled_samples=10,
-        )))
+        lb.add(
+            t.score(
+                _make_scoring_input(
+                    "insufficient",
+                    [0.001, 0.002],
+                    settled_count=2,
+                    min_settled_samples=10,
+                )
+            )
+        )
         lb.add(t.score(_make_scoring_input("good", _PROFITABLE_NET, trial_count=1)))
         ranked = lb.ranked()
         # The good model must be rank 1.
@@ -551,9 +688,17 @@ class TestLeaderboard:
 class TestNoSecretsInTournamentOutput:
     """Tournament output must not leak secrets (cross-cutting security)."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_scoring_input_has_no_secret_fields(self, secret_field: str) -> None:
         """ScoringInput must not have any secret-named field."""
         si_fields = set(ScoringInput.model_fields.keys())
@@ -577,6 +722,5 @@ class TestNoSecretsInTournamentOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

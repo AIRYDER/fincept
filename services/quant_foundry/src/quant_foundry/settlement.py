@@ -43,7 +43,7 @@ from quant_foundry.metrics import (
 from quant_foundry.outcomes import CostModel, SettlementRecord, SettlementStatus
 
 # Same allow-list as fincept_core.prediction_log for consistency.
-_BAD_NAME_CHARS = set("/\\:*?\"<>|\0")
+_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
 
 
 def _validate_model_id(model_id: str) -> None:
@@ -281,10 +281,7 @@ class SettlementLedger:
         is cheap at MVP volumes and avoids a cross-file index.
         """
         for rec in self.read_all():
-            if (
-                rec.prediction_id == prediction_id
-                and rec.cost_model_version == cost_model_version
-            ):
+            if rec.prediction_id == prediction_id and rec.cost_model_version == cost_model_version:
                 return rec
         return None
 
@@ -304,5 +301,5 @@ class SettlementLedger:
                     except (json.JSONDecodeError, KeyError, ValueError):
                         # Malformed line must not take the read down.
                         continue
-        rows.sort(key=lambda r: (r.settled_at_ns or 0), reverse=True)
+        rows.sort(key=lambda r: r.settled_at_ns or 0, reverse=True)
         return rows

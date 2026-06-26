@@ -155,7 +155,9 @@ async def test_orders_returns_empty_when_audit_store_unavailable(
     ) -> list[dict[str, Any]]:
         raise ConnectionRefusedError("db down")
 
-    monkeypatch.setattr("api.routes.orders.list_recent_orders", broken_list_recent_orders)
+    monkeypatch.setattr(
+        "api.routes.orders.list_recent_orders", broken_list_recent_orders
+    )
 
     response = await client.get("/orders", headers=auth_headers)
 

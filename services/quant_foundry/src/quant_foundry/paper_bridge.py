@@ -143,9 +143,7 @@ class BridgeReceipt(BaseModel):
             "reason": self.reason,
             "prediction": self.prediction.model_dump() if self.prediction else None,
             "rollback_pointer": (
-                self.rollback_pointer.model_dump()
-                if self.rollback_pointer
-                else None
+                self.rollback_pointer.model_dump() if self.rollback_pointer else None
             ),
             "published_at_ns": self.published_at_ns,
         }
@@ -287,10 +285,7 @@ class PaperBridge:
             self.circuit_breaker.record_failure()
             return BridgeReceipt(
                 status=BridgeStatus.REFUSED,
-                reason=(
-                    f"model not paper-approved "
-                    f"(status={evidence.dossier.status.value})"
-                ),
+                reason=(f"model not paper-approved (status={evidence.dossier.status.value})"),
                 published_at_ns=now_ns,
             )
 

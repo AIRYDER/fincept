@@ -45,9 +45,7 @@ def patched_promotions(tmp_path: pathlib.Path):
     models_dir.mkdir()
     active_dir.mkdir()
 
-    store = reset_promotion_store(
-        models_dir=models_dir, active_dir=active_dir
-    )
+    store = reset_promotion_store(models_dir=models_dir, active_dir=active_dir)
     yield {
         "models_dir": models_dir,
         "active_dir": active_dir,
@@ -92,9 +90,7 @@ class TestValidation:
     @pytest.mark.parametrize(
         "name", ["foo/bar", "..", ".secret", "a:b", "x*y", 'q"r', ""]
     )
-    def test_rejects_dangerous_model_names(
-        self, name: str, patched_promotions
-    ) -> None:
+    def test_rejects_dangerous_model_names(self, name: str, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
@@ -116,17 +112,13 @@ class TestValidation:
 
         store = patched_promotions["store"]
         with pytest.raises(PromotionError, match="not found"):
-            store.promote(
-                agent_id="gbm_predictor.v1", model_name="doesnt_exist"
-            )
+            store.promote(agent_id="gbm_predictor.v1", model_name="doesnt_exist")
 
     def test_rejects_model_without_booster(self, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
-        _write_fake_model(
-            patched_promotions["models_dir"], "torn", missing="model.txt"
-        )
+        _write_fake_model(patched_promotions["models_dir"], "torn", missing="model.txt")
         with pytest.raises(PromotionError, match="model.txt missing"):
             store.promote(agent_id="gbm_predictor.v1", model_name="torn")
 
@@ -134,9 +126,7 @@ class TestValidation:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
-        _write_fake_model(
-            patched_promotions["models_dir"], "torn", missing="meta.json"
-        )
+        _write_fake_model(patched_promotions["models_dir"], "torn", missing="meta.json")
         with pytest.raises(PromotionError, match="meta.json missing"):
             store.promote(agent_id="gbm_predictor.v1", model_name="torn")
 
@@ -152,9 +142,7 @@ class TestStoreLifecycle:
         assert store.get_active("gbm_predictor.v1") is None
         assert store.get_history("gbm_predictor.v1") == []
 
-    def test_promote_writes_pointer_and_history(
-        self, patched_promotions
-    ) -> None:
+    def test_promote_writes_pointer_and_history(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "m1")
 
@@ -259,9 +247,7 @@ class TestStoreLifecycle:
 
 
 class TestRollback:
-    def test_rollback_with_no_history_returns_none(
-        self, patched_promotions
-    ) -> None:
+    def test_rollback_with_no_history_returns_none(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         result = store.rollback(agent_id="gbm_predictor.v1")
         assert result is None
@@ -269,9 +255,7 @@ class TestRollback:
         pointer = patched_promotions["active_dir"] / "gbm_predictor.v1.json"
         assert not pointer.exists()
 
-    def test_rollback_with_one_history_clears_active(
-        self, patched_promotions
-    ) -> None:
+    def test_rollback_with_one_history_clears_active(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "m1")
         store.promote(agent_id="gbm_predictor.v1", model_name="m1")
@@ -296,9 +280,7 @@ class TestRollback:
         store.promote(agent_id="gbm_predictor.v1", model_name="m1")
         store.promote(agent_id="gbm_predictor.v1", model_name="m2")
 
-        rolled = store.rollback(
-            agent_id="gbm_predictor.v1", promoted_by="alice"
-        )
+        rolled = store.rollback(agent_id="gbm_predictor.v1", promoted_by="alice")
         assert rolled is not None
         assert rolled.model_name == "m1"
         # Tagged so the audit trail records the rollback.
@@ -346,9 +328,7 @@ class TestResolveActiveModelDir:
         """No pointer + no env var -> ``models/<default_model>``."""
         from api.promotions import resolve_active_model_dir
 
-        monkeypatch.setenv(
-            "ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"])
-        )
+        monkeypatch.setenv("ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"]))
         monkeypatch.delenv("GBM_MODEL_DIR", raising=False)
 
         resolved = resolve_active_model_dir(
@@ -359,13 +339,14 @@ class TestResolveActiveModelDir:
         assert resolved == patched_promotions["models_dir"] / "gbm_predictor"
 
     def test_uses_env_when_no_active(
-        self, patched_promotions, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        patched_promotions,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from api.promotions import resolve_active_model_dir
 
-        monkeypatch.setenv(
-            "ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"])
-        )
+        monkeypatch.setenv("ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"]))
         custom = tmp_path / "envar_choice"
         monkeypatch.setenv("GBM_MODEL_DIR", str(custom))
 
@@ -382,16 +363,12 @@ class TestResolveActiveModelDir:
         """Even with env var set, the active pointer takes precedence."""
         from api.promotions import resolve_active_model_dir
 
-        monkeypatch.setenv(
-            "ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"])
-        )
+        monkeypatch.setenv("ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"]))
         monkeypatch.setenv("GBM_MODEL_DIR", "models/should_be_ignored")
 
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "promoted_one")
-        store.promote(
-            agent_id="gbm_predictor.v1", model_name="promoted_one"
-        )
+        store.promote(agent_id="gbm_predictor.v1", model_name="promoted_one")
 
         resolved = resolve_active_model_dir(
             "gbm_predictor.v1",
@@ -405,9 +382,7 @@ class TestResolveActiveModelDir:
     ) -> None:
         from api.promotions import resolve_active_model_dir
 
-        monkeypatch.setenv(
-            "ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"])
-        )
+        monkeypatch.setenv("ACTIVE_MODELS_DIR", str(patched_promotions["active_dir"]))
         monkeypatch.delenv("GBM_MODEL_DIR", raising=False)
 
         pointer = patched_promotions["active_dir"] / "gbm_predictor.v1.json"
@@ -456,9 +431,7 @@ class TestPromoteRoutes:
         auth_headers: dict[str, str],
         patched_promotions,
     ) -> None:
-        response = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        response = await client.get("/models/promote/active", headers=auth_headers)
         assert response.status_code == 200
         body = response.json()
         assert body["agent_id"] == "gbm_predictor.v1"
@@ -501,9 +474,7 @@ class TestPromoteRoutes:
         assert body["restart_required"] is True
 
         # Now query active state.
-        active = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        active = await client.get("/models/promote/active", headers=auth_headers)
         assert active.json()["active"]["model_name"] == "m_first"
 
     @pytest.mark.asyncio
@@ -572,9 +543,7 @@ class TestPromoteRoutes:
         )
 
         # Active is currently 'second'.
-        active = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        active = await client.get("/models/promote/active", headers=auth_headers)
         assert active.json()["active"]["model_name"] == "second"
 
         rollback = await client.post(
@@ -610,9 +579,7 @@ class TestPromoteRoutes:
 class TestShadowStore:
     """Direct PromotionStore tests for the shadow methods."""
 
-    def test_get_shadow_returns_none_when_unset(
-        self, patched_promotions
-    ) -> None:
+    def test_get_shadow_returns_none_when_unset(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         assert store.get_shadow("gbm_predictor.v1") is None
 
@@ -640,16 +607,10 @@ class TestShadowStore:
         _write_fake_model(patched_promotions["models_dir"], "active_one")
         _write_fake_model(patched_promotions["models_dir"], "shadow_one")
         store.promote(agent_id="gbm_predictor.v1", model_name="active_one")
-        store.set_shadow(
-            agent_id="gbm_predictor.v1", model_name="shadow_one"
-        )
+        store.set_shadow(agent_id="gbm_predictor.v1", model_name="shadow_one")
         # Both pointers exist, with different files.
-        active_path = (
-            patched_promotions["active_dir"] / "gbm_predictor.v1.json"
-        )
-        shadow_path = (
-            patched_promotions["active_dir"] / "gbm_predictor.v1.shadow.json"
-        )
+        active_path = patched_promotions["active_dir"] / "gbm_predictor.v1.json"
+        shadow_path = patched_promotions["active_dir"] / "gbm_predictor.v1.shadow.json"
         assert active_path.is_file()
         assert shadow_path.is_file()
         # And the active binding still says active_one.
@@ -657,44 +618,28 @@ class TestShadowStore:
         assert active is not None
         assert active.model_name == "active_one"
 
-    def test_set_shadow_rejects_missing_model_dir(
-        self, patched_promotions
-    ) -> None:
+    def test_set_shadow_rejects_missing_model_dir(self, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
         with pytest.raises(PromotionError, match="model directory not found"):
-            store.set_shadow(
-                agent_id="gbm_predictor.v1", model_name="nope"
-            )
+            store.set_shadow(agent_id="gbm_predictor.v1", model_name="nope")
 
-    def test_set_shadow_rejects_missing_model_txt(
-        self, patched_promotions
-    ) -> None:
+    def test_set_shadow_rejects_missing_model_txt(self, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
-        _write_fake_model(
-            patched_promotions["models_dir"], "torn", missing="model.txt"
-        )
+        _write_fake_model(patched_promotions["models_dir"], "torn", missing="model.txt")
         with pytest.raises(PromotionError, match="model.txt missing"):
-            store.set_shadow(
-                agent_id="gbm_predictor.v1", model_name="torn"
-            )
+            store.set_shadow(agent_id="gbm_predictor.v1", model_name="torn")
 
-    def test_set_shadow_rejects_missing_meta_json(
-        self, patched_promotions
-    ) -> None:
+    def test_set_shadow_rejects_missing_meta_json(self, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
-        _write_fake_model(
-            patched_promotions["models_dir"], "torn", missing="meta.json"
-        )
+        _write_fake_model(patched_promotions["models_dir"], "torn", missing="meta.json")
         with pytest.raises(PromotionError, match="meta.json missing"):
-            store.set_shadow(
-                agent_id="gbm_predictor.v1", model_name="torn"
-            )
+            store.set_shadow(agent_id="gbm_predictor.v1", model_name="torn")
 
     @pytest.mark.parametrize("bad", ["", "..", ".secret", "a/b"])
     def test_set_shadow_rejects_bad_model_name(
@@ -704,37 +649,25 @@ class TestShadowStore:
 
         store = patched_promotions["store"]
         with pytest.raises(PromotionError):
-            store.set_shadow(
-                agent_id="gbm_predictor.v1", model_name=bad
-            )
+            store.set_shadow(agent_id="gbm_predictor.v1", model_name=bad)
 
-    def test_set_shadow_rejects_when_equal_to_active(
-        self, patched_promotions
-    ) -> None:
+    def test_set_shadow_rejects_when_equal_to_active(self, patched_promotions) -> None:
         from api.promotions import PromotionError
 
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "same")
         store.promote(agent_id="gbm_predictor.v1", model_name="same")
         with pytest.raises(PromotionError, match="already active"):
-            store.set_shadow(
-                agent_id="gbm_predictor.v1", model_name="same"
-            )
+            store.set_shadow(agent_id="gbm_predictor.v1", model_name="same")
 
-    def test_clear_shadow_returns_true_when_present(
-        self, patched_promotions
-    ) -> None:
+    def test_clear_shadow_returns_true_when_present(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "candidate")
-        store.set_shadow(
-            agent_id="gbm_predictor.v1", model_name="candidate"
-        )
+        store.set_shadow(agent_id="gbm_predictor.v1", model_name="candidate")
         assert store.clear_shadow("gbm_predictor.v1") is True
         assert store.get_shadow("gbm_predictor.v1") is None
 
-    def test_clear_shadow_idempotent_when_absent(
-        self, patched_promotions
-    ) -> None:
+    def test_clear_shadow_idempotent_when_absent(self, patched_promotions) -> None:
         store = patched_promotions["store"]
         # Never set; clearing should return False, not raise.
         assert store.clear_shadow("gbm_predictor.v1") is False
@@ -746,9 +679,7 @@ class TestShadowStore:
         store = patched_promotions["store"]
         _write_fake_model(patched_promotions["models_dir"], "active_one")
         _write_fake_model(patched_promotions["models_dir"], "shadow_one")
-        store.set_shadow(
-            agent_id="gbm_predictor.v1", model_name="shadow_one"
-        )
+        store.set_shadow(agent_id="gbm_predictor.v1", model_name="shadow_one")
         store.promote(agent_id="gbm_predictor.v1", model_name="active_one")
         # Shadow still set.
         shadow = store.get_shadow("gbm_predictor.v1")
@@ -763,9 +694,7 @@ class TestShadowStore:
         _write_fake_model(patched_promotions["models_dir"], "shadow_one")
         store.promote(agent_id="gbm_predictor.v1", model_name="first")
         store.promote(agent_id="gbm_predictor.v1", model_name="second")
-        store.set_shadow(
-            agent_id="gbm_predictor.v1", model_name="shadow_one"
-        )
+        store.set_shadow(agent_id="gbm_predictor.v1", model_name="shadow_one")
         store.rollback(agent_id="gbm_predictor.v1")
         # Shadow still set.
         shadow = store.get_shadow("gbm_predictor.v1")
@@ -787,9 +716,7 @@ class TestShadowRoutes:
     async def test_clear_shadow_requires_auth(
         self, client: AsyncClient, patched_promotions
     ) -> None:
-        response = await client.post(
-            "/models/promote/shadow/clear", json={}
-        )
+        response = await client.post("/models/promote/shadow/clear", json={})
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -800,9 +727,7 @@ class TestShadowRoutes:
         patched_promotions,
     ) -> None:
         """The augmented GET /promote/active must include a ``shadow`` key."""
-        response = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        response = await client.get("/models/promote/active", headers=auth_headers)
         body = response.json()
         assert "shadow" in body
         assert body["shadow"] is None
@@ -831,9 +756,7 @@ class TestShadowRoutes:
         assert body["active"] is None  # never promoted active
 
         # GET /promote/active returns the same shadow.
-        active = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        active = await client.get("/models/promote/active", headers=auth_headers)
         assert active.json()["shadow"]["model_name"] == "candidate"
 
     @pytest.mark.asyncio
@@ -906,9 +829,7 @@ class TestShadowRoutes:
         assert body["shadow"] is None
 
         # And /promote/active reflects it.
-        active = await client.get(
-            "/models/promote/active", headers=auth_headers
-        )
+        active = await client.get("/models/promote/active", headers=auth_headers)
         assert active.json()["shadow"] is None
 
     @pytest.mark.asyncio

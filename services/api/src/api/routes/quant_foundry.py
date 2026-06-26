@@ -289,7 +289,10 @@ async def receive_callback(
 
     payload = await request.body()
     receipt = gw.receive_callback(
-        job_id=job_id, payload=payload, signature=signature, ts=ts,
+        job_id=job_id,
+        payload=payload,
+        signature=signature,
+        ts=ts,
     )
 
     if not receipt.get("enabled", True):

@@ -153,10 +153,7 @@ class FeatureSnapshotExport:
 
             # Build compact feature vector (in expected_features order).
             feature_map = {fv.name: fv.value for fv in row.features}
-            compact = [
-                float(feature_map.get(fname, 0.0))
-                for fname in expected_features
-            ]
+            compact = [float(feature_map.get(fname, 0.0)) for fname in expected_features]
             features[sym] = compact
 
             # Compute per-symbol availability.
@@ -199,8 +196,11 @@ class FeatureSnapshotExport:
                 per_feature={},
             )
             snapshot = FeatureSnapshot(
-                symbols=[], features={}, availability={},
-                ts_event=decision_time, freshness_ns=0,
+                symbols=[],
+                features={},
+                availability={},
+                ts_event=decision_time,
+                freshness_ns=0,
             )
             return SnapshotExportReceipt(
                 snapshot=snapshot,
@@ -215,20 +215,19 @@ class FeatureSnapshotExport:
 
         # Build the availability report.
         avail_report = FeatureAvailabilityReport.from_rows(
-            rows=rows, expected_features=expected_features,
+            rows=rows,
+            expected_features=expected_features,
         )
 
         # Export the snapshot.
         snapshot = self.export(
-            rows=rows, decision_time=decision_time,
+            rows=rows,
+            decision_time=decision_time,
             expected_features=expected_features,
         )
 
         # Identify degraded symbols.
-        degraded = [
-            sym for sym in snapshot.symbols
-            if not snapshot.availability.get(sym, False)
-        ]
+        degraded = [sym for sym in snapshot.symbols if not snapshot.availability.get(sym, False)]
 
         return SnapshotExportReceipt(
             snapshot=snapshot,
@@ -256,6 +255,7 @@ def export_feature_snapshot(
     """
     exporter = FeatureSnapshotExport(config=config)
     return exporter.export(
-        rows=rows, decision_time=decision_time,
+        rows=rows,
+        decision_time=decision_time,
         expected_features=expected_features,
     )

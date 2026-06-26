@@ -32,6 +32,7 @@ from quant_foundry.schemas import (
 def test_quant_foundry_package_imports() -> None:
     """Package must be importable as 'quant_foundry' with no side effects."""
     import quant_foundry
+
     assert hasattr(quant_foundry, "__version__") or True
 
 
@@ -45,6 +46,7 @@ def test_placeholder_schema_roundtrips() -> None:
 
 
 # --- New core contract tests (TDD targets) ---
+
 
 def _roundtrip(cls: type[BaseModel], instance: BaseModel) -> None:
     data = instance.model_dump()
@@ -207,7 +209,11 @@ def test_shadow_prediction_rejects_order_like_fields() -> None:
             ShadowPrediction.model_validate(bad)
             raise AssertionError(f"ShadowPrediction accepted forbidden field: {bad_field}")
         except ValidationError as exc:
-            assert "extra" in str(exc).lower() or "forbidden" in str(exc).lower() or "field required" not in str(exc).lower()
+            assert (
+                "extra" in str(exc).lower()
+                or "forbidden" in str(exc).lower()
+                or "field required" not in str(exc).lower()
+            )
 
 
 def test_prediction_outcome_roundtrips() -> None:
@@ -263,9 +269,33 @@ def test_worker_heartbeat_roundtrips() -> None:
 def test_json_roundtrips_for_all_and_schema_versions_explicit() -> None:
     """Ensure every schema has schema_version and all roundtrip cleanly."""
     examples = [
-        QuantFoundryJob(schema_version=1, job_id="j1", job_type="training", idempotency_key="k1", dataset_id="d1", model_family="f1", config_hash="h1"),
-        RunPodTrainingRequest(schema_version=1, job_id="j1", dataset_manifest_ref="dm", model_family="f", search_space={}),
-        ShadowPrediction(schema_version=1, prediction_id="p1", model_id="m1", symbol="S", ts_event=1, horizon_ns=1, direction=0.5, confidence=0.9, authority=Authority.SHADOW_ONLY),
+        QuantFoundryJob(
+            schema_version=1,
+            job_id="j1",
+            job_type="training",
+            idempotency_key="k1",
+            dataset_id="d1",
+            model_family="f1",
+            config_hash="h1",
+        ),
+        RunPodTrainingRequest(
+            schema_version=1,
+            job_id="j1",
+            dataset_manifest_ref="dm",
+            model_family="f",
+            search_space={},
+        ),
+        ShadowPrediction(
+            schema_version=1,
+            prediction_id="p1",
+            model_id="m1",
+            symbol="S",
+            ts_event=1,
+            horizon_ns=1,
+            direction=0.5,
+            confidence=0.9,
+            authority=Authority.SHADOW_ONLY,
+        ),
         # spot check a couple more; others covered above
     ]
     for ex in examples:

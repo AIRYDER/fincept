@@ -128,11 +128,7 @@ def make_folds(
     if embargo_bars < 0:
         raise ValueError(f"embargo_bars must be >= 0, got {embargo_bars}")
 
-    required = (
-        train_min_bars
-        + n_folds * (purge_bars + val_bars)
-        + (n_folds - 1) * embargo_bars
-    )
+    required = train_min_bars + n_folds * (purge_bars + val_bars) + (n_folds - 1) * embargo_bars
     if n_bars < required:
         raise ValueError(
             f"need at least {required} bars for {n_folds} folds with "
@@ -355,9 +351,7 @@ def _canonical_timestamps(
     return sorted(seen)
 
 
-def _sharpe_from_returns(
-    returns: list[float], *, bars_per_year: int
-) -> float | None:
+def _sharpe_from_returns(returns: list[float], *, bars_per_year: int) -> float | None:
     """Annualised Sharpe; ``None`` if too few or zero-vol."""
     if len(returns) < 2:
         return None
@@ -476,9 +470,7 @@ async def walk_forward_backtest(
         embargo_bars=embargo_bars,
     )
 
-    out_dir_path: pathlib.Path | None = (
-        pathlib.Path(out_dir) if out_dir is not None else None
-    )
+    out_dir_path: pathlib.Path | None = pathlib.Path(out_dir) if out_dir is not None else None
     bars_per_year = _bars_per_year_for_freq(freq)
 
     fold_reports: list[FoldReport] = []
@@ -498,9 +490,7 @@ async def walk_forward_backtest(
         train_slice = _slice_bars_by_ts(
             bars_by_symbol, start_ns=train_start_ns, end_ns=train_end_ns
         )
-        val_slice = _slice_bars_by_ts(
-            bars_by_symbol, start_ns=val_start_ns, end_ns=val_end_ns
-        )
+        val_slice = _slice_bars_by_ts(bars_by_symbol, start_ns=val_start_ns, end_ns=val_end_ns)
 
         # Persist this fold's model in out_dir/fold_<k> if requested,
         # else use a tempdir scoped to the function.
@@ -509,9 +499,7 @@ async def walk_forward_backtest(
         else:
             import tempfile
 
-            fold_dir = pathlib.Path(
-                tempfile.mkdtemp(prefix=f"wf_fold_{fold.index}_")
-            )
+            fold_dir = pathlib.Path(tempfile.mkdtemp(prefix=f"wf_fold_{fold.index}_"))
 
         meta = _train_fold_model(
             train_bars_by_symbol=train_slice,
@@ -578,9 +566,7 @@ async def walk_forward_backtest(
         await engine.run()
 
         report = compute_metrics(blotter, bars_per_year=bars_per_year)
-        equity_curve = [
-            (ts, float(eq)) for ts, eq in blotter.equity_curve
-        ]
+        equity_curve = [(ts, float(eq)) for ts, eq in blotter.equity_curve]
         fold_returns = _equity_returns(equity_curve)
         fold_returns_concat.extend(fold_returns)
         if report.sharpe is not None:
@@ -609,9 +595,7 @@ async def walk_forward_backtest(
         )
 
     # Aggregate
-    oos_sharpe = _sharpe_from_returns(
-        fold_returns_concat, bars_per_year=bars_per_year
-    )
+    oos_sharpe = _sharpe_from_returns(fold_returns_concat, bars_per_year=bars_per_year)
     oos_max_dd = _max_drawdown_from_returns(fold_returns_concat)
     if fold_returns_concat:
         oos_total_return = math.prod(1.0 + r for r in fold_returns_concat) - 1.0
@@ -631,9 +615,7 @@ async def walk_forward_backtest(
         else 0.0
     )
     pct_pos_sh: float | None = (
-        sum(1 for s in fold_sharpes if s > 0) / len(fold_sharpes)
-        if fold_sharpes
-        else None
+        sum(1 for s in fold_sharpes if s > 0) / len(fold_sharpes) if fold_sharpes else None
     )
 
     return WalkForwardReport(

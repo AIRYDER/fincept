@@ -118,7 +118,9 @@ async def test_process_information_event_skips_seen_symbol() -> None:
     producer = Producer(redis)
     router = FakeRouter(
         (
-            SentimentScore(score=-0.3, confidence=0.7, event_type="product", rationale="test"),
+            SentimentScore(
+                score=-0.3, confidence=0.7, event_type="product", rationale="test"
+            ),
             "openai",
         )
     )
@@ -147,7 +149,9 @@ async def test_process_information_event_skips_seen_symbol() -> None:
         await redis.aclose()
 
 
-async def test_process_information_event_marks_parse_failures_without_emitting() -> None:
+async def test_process_information_event_marks_parse_failures_without_emitting() -> (
+    None
+):
     redis = fakeredis.aioredis.FakeRedis()
     producer = Producer(redis)
     router = FakeRouter(None)

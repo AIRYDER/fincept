@@ -100,9 +100,6 @@ class BarDataAdapter:
                     end_ns=end_ns,
                 )
             )
-            return [
-                PricePoint(ts_ns=int(b.ts_event), close=float(b.close))
-                for b in bars
-            ]
+            return [PricePoint(ts_ns=int(b.ts_event), close=float(b.close)) for b in bars]
         except Exception:
             return []

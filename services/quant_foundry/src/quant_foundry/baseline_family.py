@@ -295,26 +295,26 @@ class BaselineFamily:
             # Brier score for this fold.
             brier = self._brier_score(oos_preds, val_labels)
 
-            folds.append(PurgedFoldResult(
-                fold_id=i,
-                train_start=0,
-                train_end=train_end,
-                val_start=val_start,
-                val_end=val_end,
-                purge_gap=self.config.purge_gap,
-                embargo_gap=self.config.embargo_gap,
-                oos_predictions=oos_preds,
-                oos_labels=val_labels,
-                brier_score=brier,
-            ))
+            folds.append(
+                PurgedFoldResult(
+                    fold_id=i,
+                    train_start=0,
+                    train_end=train_end,
+                    val_start=val_start,
+                    val_end=val_end,
+                    purge_gap=self.config.purge_gap,
+                    embargo_gap=self.config.embargo_gap,
+                    oos_predictions=oos_preds,
+                    oos_labels=val_labels,
+                    brier_score=brier,
+                )
+            )
 
         return PurgedWalkForwardResult(folds=folds)
 
     # -- LightGBM training --------------------------------------------------
 
-    def _train_lgbm(
-        self, features: list[list[float]], labels: list[int]
-    ) -> lgb.Booster:
+    def _train_lgbm(self, features: list[list[float]], labels: list[int]) -> lgb.Booster:
         """Train a LightGBM model on the given data using the native API.
 
         Uses ``lgb.train`` with ``lgb.Dataset`` (no scikit-learn dependency).
@@ -328,7 +328,8 @@ class BaselineFamily:
             "seed": self.config.seed,
             "num_threads": 1,
             **{
-                k: v for k, v in self.config.lgb_params.items()
+                k: v
+                for k, v in self.config.lgb_params.items()
                 if k not in ("objective", "verbose", "n_estimators")
             },
         }
@@ -336,9 +337,7 @@ class BaselineFamily:
         model = lgb.train(params, train_data, num_boost_round=num_round)
         return model
 
-    def _predict_lgbm(
-        self, model: lgb.Booster, features: list[list[float]]
-    ) -> list[float]:
+    def _predict_lgbm(self, model: lgb.Booster, features: list[list[float]]) -> list[float]:
         """Predict probabilities for the given features."""
         X = np.array(features, dtype=np.float64)
         probs = model.predict(X)
@@ -398,9 +397,7 @@ class BaselineFamily:
 
     # -- Calibration --------------------------------------------------------
 
-    def _compute_calibration(
-        self, wf_result: PurgedWalkForwardResult
-    ) -> BaselineCalibrationReport:
+    def _compute_calibration(self, wf_result: PurgedWalkForwardResult) -> BaselineCalibrationReport:
         """Compute the calibration report (Brier score + reliability bins)."""
         all_preds: list[float] = []
         all_labels: list[int] = []
@@ -420,17 +417,20 @@ class BaselineFamily:
             lo = i / n_bins
             hi = (i + 1) / n_bins
             in_bin = [
-                (p, lab) for p, lab in zip(all_preds, all_labels, strict=True)
+                (p, lab)
+                for p, lab in zip(all_preds, all_labels, strict=True)
                 if lo <= p < hi or (i == n_bins - 1 and p == hi)
             ]
             if in_bin:
                 avg_pred = statistics.fmean(p for p, _ in in_bin)
                 obs_freq = statistics.fmean(lab for _, lab in in_bin)
-                bins.append({
-                    "predicted_prob": avg_pred,
-                    "observed_freq": obs_freq,
-                    "count": float(len(in_bin)),
-                })
+                bins.append(
+                    {
+                        "predicted_prob": avg_pred,
+                        "observed_freq": obs_freq,
+                        "count": float(len(in_bin)),
+                    }
+                )
 
         return BaselineCalibrationReport(brier_score=brier, reliability_bins=bins)
 
@@ -452,9 +452,7 @@ class BaselineFamily:
         if fold_size < 10:
             fold_size = 10
 
-        per_fold: dict[str, list[float]] = {
-            f"f{i}": [] for i in range(self.config.n_features)
-        }
+        per_fold: dict[str, list[float]] = {f"f{i}": [] for i in range(self.config.n_features)}
 
         for i in range(self.config.n_folds):
             train_end = (i + 1) * fold_size

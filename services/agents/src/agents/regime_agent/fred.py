@@ -76,7 +76,9 @@ async def fetch_latest(
         except ValueError:
             continue
         try:
-            value: float | None = float(value_str) if value_str not in (None, ".", "") else None
+            value: float | None = (
+                float(value_str) if value_str not in (None, ".", "") else None
+            )
         except (TypeError, ValueError):
             value = None
         out.append(Observation(date=date, value=value))

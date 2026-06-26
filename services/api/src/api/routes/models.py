@@ -54,6 +54,7 @@ def _get_prediction_log() -> PredictionLog:
     """
     return PredictionLog()
 
+
 # Default agent_id when the dashboard hits /models/promote/* without
 # specifying one.  Today only ``gbm_predictor.v1`` has a model-backed
 # inference loop; other agents (sentiment, regime) are LLM-/rules-driven.
@@ -74,7 +75,9 @@ _NEWS_ALPHA_CANDIDATE_REPORT = pathlib.Path(
 )
 
 
-def _safe_read_meta(meta_path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
+def _safe_read_meta(
+    meta_path: pathlib.Path,
+) -> tuple[dict[str, Any] | None, str | None]:
     """Read meta.json, returning (meta, warning_message_or_None).
 
     Any IO / parse error becomes a non-fatal warning so the endpoint
@@ -160,9 +163,7 @@ def _attach_training_request(
     return record
 
 
-def _build_record(
-    model_dir: pathlib.Path, *, now: float
-) -> dict[str, Any]:
+def _build_record(model_dir: pathlib.Path, *, now: float) -> dict[str, Any]:
     """Normalize a single model dir into the API response shape.
 
     All fields are optional - the dashboard expects a stable schema but
@@ -258,7 +259,9 @@ def _build_record(
             if not isinstance(fold, dict):
                 continue
             row: dict[str, Any] = {
-                "fold": int(fold["fold"]) if isinstance(fold.get("fold"), int) else None,
+                "fold": int(fold["fold"])
+                if isinstance(fold.get("fold"), int)
+                else None,
                 "train_rows": (
                     int(fold["train_rows"])
                     if isinstance(fold.get("train_rows"), int)
@@ -582,9 +585,7 @@ async def get_active_promotion(
     that timeline is for the active pointer only.
     """
     if history_limit <= 0 or history_limit > 200:
-        raise HTTPException(
-            status_code=400, detail="history_limit must be in [1, 200]"
-        )
+        raise HTTPException(status_code=400, detail="history_limit must be in [1, 200]")
     store = get_promotion_store()
     try:
         active = store.get_active(agent_id)
@@ -623,10 +624,7 @@ async def post_rollback_promotion(
         "agent_id": body.agent_id,
         "active": new_active.to_dict() if new_active else None,
         "shadow": shadow.to_dict() if shadow else None,
-        "history": [
-            h.to_dict()
-            for h in store.get_history(body.agent_id, limit=10)
-        ],
+        "history": [h.to_dict() for h in store.get_history(body.agent_id, limit=10)],
     }
 
 
@@ -680,7 +678,9 @@ def _resolve_model_dir(name: str) -> pathlib.Path:
         resolved = model_dir.resolve(strict=False)
         root = _MODELS_DIR.resolve(strict=False)
     except OSError:
-        raise HTTPException(status_code=404, detail=f"model not found: {name}") from None
+        raise HTTPException(
+            status_code=404, detail=f"model not found: {name}"
+        ) from None
     if root not in resolved.parents and resolved != root:
         raise HTTPException(status_code=400, detail=f"invalid model path: {name!r}")
     if not model_dir.is_dir() or not (model_dir / "meta.json").exists():

@@ -136,7 +136,11 @@ async def test_approve_promotion_requires_auth(qf_promo_client: AsyncClient) -> 
 async def test_reject_promotion_requires_auth(qf_promo_client: AsyncClient) -> None:
     response = await qf_promo_client.post(
         "/quant-foundry/promotion/reject",
-        json={"model_id": "m1", "review_note": "", "rejection_reason": "blocking_issue"},
+        json={
+            "model_id": "m1",
+            "review_note": "",
+            "rejection_reason": "blocking_issue",
+        },
     )
     assert response.status_code == 401
 
@@ -200,10 +204,13 @@ async def test_submit_then_approve_flow(
     assert body["ok"] is True
     receipt = body["receipt"]
     assert receipt["decision"] == "approved"
-    assert gw.dossier_registry().get("model-promo").status == DossierStatus.SHADOW_APPROVED
-    assert [d.model_id for d in gw.dossier_registry().list(
-        status=DossierStatus.SHADOW_APPROVED
-    )] == ["model-promo"]
+    assert (
+        gw.dossier_registry().get("model-promo").status == DossierStatus.SHADOW_APPROVED
+    )
+    assert [
+        d.model_id
+        for d in gw.dossier_registry().list(status=DossierStatus.SHADOW_APPROVED)
+    ] == ["model-promo"]
 
 
 # ---------------------------------------------------------------------------

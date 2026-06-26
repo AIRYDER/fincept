@@ -104,9 +104,7 @@ async def _load_articles(
         if raw is None:
             continue
         try:
-            out.append(
-                json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-            )
+            out.append(json.loads(raw.decode() if isinstance(raw, bytes) else raw))
         except (ValueError, TypeError):
             continue
     return out
@@ -131,7 +129,7 @@ def _score(
         return Decimal(0)
     half_lives = max(0.0, age_hours / RECENCY_HALF_LIFE_H)
     half_lives = min(half_lives, 50.0)
-    decay = Decimal(str(0.5 ** half_lives))
+    decay = Decimal(str(0.5**half_lives))
     boost = ADVERSE_BOOST if is_adverse else Decimal(1)
     return base_abs_impact * decay * boost
 
@@ -186,8 +184,8 @@ def _enrich_article(
         dollar_impact = None
         # Compute impact from a bar-backed anchor, or from a fallback anchor
         # after the live mark has moved away from that stored anchor.
-        can_compute_impact = (
-            bars_available or (mark is not None and mark != price_at_publish)
+        can_compute_impact = bars_available or (
+            mark is not None and mark != price_at_publish
         )
         if can_compute_impact and price_at_publish > 0 and mark is not None:
             pct = (mark - price_at_publish) / price_at_publish
@@ -207,9 +205,7 @@ def _enrich_article(
             except (TypeError, ValueError):
                 continue
         # Append current mark so the line connects to "now".
-        if mark is not None and (
-            not sparkline or sparkline[-1] != float(mark)
-        ):
+        if mark is not None and (not sparkline or sparkline[-1] != float(mark)):
             sparkline.append(float(mark))
 
         enriched_symbols.append(
@@ -250,9 +246,7 @@ def _enrich_article(
     if not touched_book:
         tier = "universe"
     elif (
-        has_impact_math
-        and pct_of_book is not None
-        and pct_of_book >= ALERT_PCT_OF_BOOK
+        has_impact_math and pct_of_book is not None and pct_of_book >= ALERT_PCT_OF_BOOK
     ):
         tier = "alert"
     else:
@@ -324,9 +318,7 @@ async def list_news(
         for pos in positions.values():
             if pos.quantity == 0:
                 continue
-            book_qty[pos.symbol] = (
-                book_qty.get(pos.symbol, Decimal(0)) + pos.quantity
-            )
+            book_qty[pos.symbol] = book_qty.get(pos.symbol, Decimal(0)) + pos.quantity
 
     articles = await _load_articles(redis, limit)
     if not articles:

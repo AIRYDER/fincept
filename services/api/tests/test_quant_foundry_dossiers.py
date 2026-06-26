@@ -26,7 +26,9 @@ def _gateway(base_dir: pathlib.Path, *, enabled: bool = True) -> QuantFoundryGat
     )
 
 
-def _dossier(model_id: str, *, status: DossierStatus = DossierStatus.CANDIDATE) -> DossierRecord:
+def _dossier(
+    model_id: str, *, status: DossierStatus = DossierStatus.CANDIDATE
+) -> DossierRecord:
     return DossierRecord(
         model_id=model_id,
         artifact_manifest_id=f"artifact-{model_id}",
@@ -99,7 +101,9 @@ async def test_dossiers_empty_registry_returns_empty_list(
 ) -> None:
     # Given: an enabled gateway with no dossier registry records.
     # When: dossiers are listed.
-    response = await qf_dossier_client.get("/quant-foundry/dossiers", headers=auth_headers)
+    response = await qf_dossier_client.get(
+        "/quant-foundry/dossiers", headers=auth_headers
+    )
     # Then: the endpoint returns an empty list.
     assert response.status_code == 200
     assert response.json() == []
@@ -119,7 +123,9 @@ async def test_dossiers_list_returns_registered_dossiers(
     )
 
     # When: dossiers are listed without a filter.
-    response = await qf_dossier_client.get("/quant-foundry/dossiers", headers=auth_headers)
+    response = await qf_dossier_client.get(
+        "/quant-foundry/dossiers", headers=auth_headers
+    )
 
     # Then: all dossiers are returned with their immutable artifact metadata.
     assert response.status_code == 200

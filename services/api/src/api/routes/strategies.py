@@ -96,9 +96,7 @@ async def list_runtime_strategies(
             {
                 "strategy_id": strategy_id,
                 "position_count": len(positions),
-                "open_positions": sum(
-                    1 for p in positions.values() if p.quantity != 0
-                ),
+                "open_positions": sum(1 for p in positions.values() if p.quantity != 0),
             }
         )
     return out
@@ -169,8 +167,7 @@ def _validate_class_name(class_name: str) -> None:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"unknown class_name {class_name!r}; "
-                f"valid: {sorted(STRATEGY_REGISTRY)}"
+                f"unknown class_name {class_name!r}; valid: {sorted(STRATEGY_REGISTRY)}"
             ),
         )
 
@@ -250,9 +247,7 @@ async def adopt_runtime_strategy(
             )
         positions = await position_store.get_all(strategy_id)
         symbols = sorted(
-            symbol
-            for symbol, position in positions.items()
-            if position.quantity != 0
+            symbol for symbol, position in positions.items() if position.quantity != 0
         )
         if not symbols:
             raise HTTPException(
@@ -469,9 +464,7 @@ async def get_strategy_history(
     100k upserts) shouldn't OOM the API.
     """
     if limit < 1:
-        raise HTTPException(
-            status_code=400, detail="limit must be >= 1"
-        )
+        raise HTTPException(status_code=400, detail="limit must be >= 1")
     if limit > 500:
         limit = 500
     try:

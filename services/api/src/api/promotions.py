@@ -84,7 +84,7 @@ def _default_active_dir() -> pathlib.Path:
 
 
 # Names that would leak outside MODELS_DIR or break path joins.
-_BAD_NAME_CHARS = set("/\\:*?\"<>|\0")
+_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
 
 
 # --------------------------------------------------------------------------- #
@@ -195,9 +195,7 @@ class PromotionStore:
             logger.warning("active binding %s malformed: %s", path.name, exc)
             return None
 
-    def get_history(
-        self, agent_id: str, *, limit: int = 50
-    ) -> list[ActiveBinding]:
+    def get_history(self, agent_id: str, *, limit: int = 50) -> list[ActiveBinding]:
         """Return the most recent ``limit`` promotions, newest first.
 
         Bad lines are skipped; the file is append-only, so partial
@@ -227,9 +225,7 @@ class PromotionStore:
                     )
                 )
             except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-                logger.warning(
-                    "history line in %s skipped: %s", path.name, exc
-                )
+                logger.warning("history line in %s skipped: %s", path.name, exc)
             if len(out) >= limit:
                 break
         return out
@@ -252,9 +248,7 @@ class PromotionStore:
         # operator wouldn't know why.
         model_dir = self._models_dir / model_name
         if not model_dir.is_dir():
-            raise PromotionError(
-                f"model directory not found: {model_dir!s}"
-            )
+            raise PromotionError(f"model directory not found: {model_dir!s}")
         if not (model_dir / "model.txt").is_file():
             raise PromotionError(
                 f"model.txt missing in {model_dir!s} -- can't promote a "
@@ -321,9 +315,7 @@ class PromotionStore:
 
         model_dir = self._models_dir / model_name
         if not model_dir.is_dir():
-            raise PromotionError(
-                f"model directory not found: {model_dir!s}"
-            )
+            raise PromotionError(f"model directory not found: {model_dir!s}")
         if not (model_dir / "model.txt").is_file():
             raise PromotionError(
                 f"model.txt missing in {model_dir!s} -- can't set as "
@@ -512,9 +504,7 @@ def resolve_active_model_dir(
     agent would rather fall through to the env-var path than refuse
     to start.
     """
-    models = (
-        models_dir if models_dir is not None else _default_models_dir()
-    )
+    models = models_dir if models_dir is not None else _default_models_dir()
     active = (
         models / "active" / f"{agent_id}.json"
         if os.environ.get("ACTIVE_MODELS_DIR") is None
@@ -531,7 +521,7 @@ def resolve_active_model_dir(
                 "active binding %s ignored on agent boot: %s",
                 active,
                 exc,
-    )
+            )
     if env_fallback and os.environ.get(env_fallback):
         return pathlib.Path(str(os.environ[env_fallback]))
     return models / default_model

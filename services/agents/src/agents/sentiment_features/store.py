@@ -73,7 +73,9 @@ def _weighted_mean(observations: list[SentimentObservation]) -> float | None:
     weight_sum = sum(max(0.0, obs.confidence) for obs in observations)
     if weight_sum <= 0.0:
         return None
-    return sum(obs.score * max(0.0, obs.confidence) for obs in observations) / weight_sum
+    return (
+        sum(obs.score * max(0.0, obs.confidence) for obs in observations) / weight_sum
+    )
 
 
 def _mean_confidence(observations: list[SentimentObservation]) -> float | None:
@@ -90,7 +92,9 @@ def _weighted_std(observations: list[SentimentObservation]) -> float | None:
     if weight_sum <= 0.0:
         return None
     variance = (
-        sum(max(0.0, obs.confidence) * ((obs.score - mean) ** 2) for obs in observations)
+        sum(
+            max(0.0, obs.confidence) * ((obs.score - mean) ** 2) for obs in observations
+        )
         / weight_sum
     )
     return math.sqrt(max(0.0, variance))
@@ -130,7 +134,9 @@ def build_sentiment_frame(
         values[prefix] = _weighted_mean(window_obs)
         values[f"{prefix}_confidence"] = _mean_confidence(window_obs)
         values[f"{prefix}_article_count"] = float(len(window_obs))
-        values[f"{prefix}_unique_sources"] = float(len({obs.source for obs in window_obs}))
+        values[f"{prefix}_unique_sources"] = float(
+            len({obs.source for obs in window_obs})
+        )
         values[f"{prefix}_disagreement"] = _weighted_std(window_obs)
         values[f"{prefix}_max_negative_urgency"] = max(
             ((-obs.score) * obs.confidence for obs in window_obs if obs.score < 0.0),
@@ -144,7 +150,9 @@ def build_sentiment_frame(
             values[f"{alias}_article_count"] = values[f"{prefix}_article_count"]
             values[f"{alias}_unique_sources"] = values[f"{prefix}_unique_sources"]
             values[f"{alias}_disagreement"] = values[f"{prefix}_disagreement"]
-            values[f"{alias}_max_negative_urgency"] = values[f"{prefix}_max_negative_urgency"]
+            values[f"{alias}_max_negative_urgency"] = values[
+                f"{prefix}_max_negative_urgency"
+            ]
 
     latest_type = _latest_event_type(observations)
     dominant_type = _dominant_event_type(latest_window_observations or observations)
@@ -184,7 +192,9 @@ class SentimentFeatureStore:
     def windows_min(self) -> tuple[int, ...]:
         return self._windows_min
 
-    async def _build_and_store_frame(self, symbol: str, reference_ts: int) -> FeatureFrame | None:
+    async def _build_and_store_frame(
+        self, symbol: str, reference_ts: int
+    ) -> FeatureFrame | None:
         symbol = symbol.upper()
         key = _observation_key(symbol)
         cutoff = reference_ts - (self.max_window_min * NANOSECONDS_PER_MINUTE)
@@ -213,12 +223,16 @@ class SentimentFeatureStore:
             raise RuntimeError(f"no sentiment observations available for {symbol}")
         return frame
 
-    async def refresh_symbol(self, symbol: str, *, ts_event: int | None = None) -> FeatureFrame | None:
+    async def refresh_symbol(
+        self, symbol: str, *, ts_event: int | None = None
+    ) -> FeatureFrame | None:
         return await self._build_and_store_frame(symbol, ts_event or now_ns())
 
     async def list_symbols(self) -> list[str]:
         symbols: list[str] = []
-        async for key in self._redis.scan_iter(match=OBS_KEY_TEMPLATE.format(symbol="*")):
+        async for key in self._redis.scan_iter(
+            match=OBS_KEY_TEMPLATE.format(symbol="*")
+        ):
             if isinstance(key, bytes):
                 key = key.decode()
             symbols.append(str(key).rsplit(":", 1)[-1].upper())

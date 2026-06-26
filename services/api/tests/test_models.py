@@ -75,7 +75,9 @@ def _holdout_meta(*, trained_at: int) -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
-def _patch_models_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+def _patch_models_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> pathlib.Path:
     """Redirect the models endpoint at a fresh tmp dir for each test."""
     models_dir = tmp_path / "models"
     models_dir.mkdir()
@@ -94,7 +96,9 @@ def _patch_models_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
 
 
 class TestListModels:
-    def test_empty_dir_returns_empty_list(self, _patch_models_dir: pathlib.Path) -> None:
+    def test_empty_dir_returns_empty_list(
+        self, _patch_models_dir: pathlib.Path
+    ) -> None:
         from api.routes.models import list_models
 
         assert list_models() == []
@@ -233,7 +237,11 @@ class TestListModels:
             _write_meta(sub, _walk_forward_meta(trained_at=int(time.time())))
 
         records = list_models()
-        assert [r["name"] for r in records] == ["alpha_model", "gbm_predictor", "zeta_model"]
+        assert [r["name"] for r in records] == [
+            "alpha_model",
+            "gbm_predictor",
+            "zeta_model",
+        ]
 
 
 # --------------------------------------------------------------------------- #
@@ -367,7 +375,9 @@ class TestModelsRoute:
         body = response.json()
         assert body["exists"] is True
         assert body["report"]["approved"] is True
-        assert body["report"]["candidate_model_name"] == "news_alpha_predictor_candidate"
+        assert (
+            body["report"]["candidate_model_name"] == "news_alpha_predictor_candidate"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -537,9 +547,7 @@ class TestFeatureImportanceRoute:
         # Match the splits below: 3 features, idx 1 most-used.
         meta["features"] = ["alpha", "beta", "gamma"]
         _write_meta(gbm, meta)
-        (gbm / "model.txt").write_text(
-            "split_feature=0 1 2 1\nsplit_feature=1 0\n"
-        )
+        (gbm / "model.txt").write_text("split_feature=0 1 2 1\nsplit_feature=1 0\n")
 
         response = await client.get(
             "/models/gbm_predictor/feature-importance", headers=auth_headers

@@ -120,9 +120,7 @@ class TestMakeFolds:
             assert prev.val_start < cur.val_start
 
     def test_fold_indices_set_in_order(self) -> None:
-        folds = make_folds(
-            n_bars=200, n_folds=4, train_min_bars=50, val_bars=20
-        )
+        folds = make_folds(n_bars=200, n_folds=4, train_min_bars=50, val_bars=20)
         assert [f.index for f in folds] == [0, 1, 2, 3]
 
     @pytest.mark.parametrize(
@@ -154,9 +152,7 @@ class TestMakeFolds:
             ),
         ],
     )
-    def test_rejects_invalid_args(
-        self, kwargs: dict[str, int], match: str
-    ) -> None:
+    def test_rejects_invalid_args(self, kwargs: dict[str, int], match: str) -> None:
         with pytest.raises(ValueError, match=match):
             make_folds(n_bars=500, **kwargs)
 
@@ -338,18 +334,14 @@ async def test_walk_forward_finds_alpha_when_signal_present(
     )
     assert report.n_folds == 3
     assert report.n_oos_bars > 0
-    assert any(f.n_fills > 0 for f in report.folds), (
-        "expected at least one fill across all folds"
-    )
+    assert any(f.n_fills > 0 for f in report.folds), "expected at least one fill across all folds"
     # Per-fold model artifacts persisted
     for f in report.folds:
         assert (pathlib.Path(f.model_dir) / "model.txt").is_file()
         assert (pathlib.Path(f.model_dir) / "meta.json").is_file()
     # Each fold's meta.json records the same features
     for f in report.folds:
-        meta = json.loads(
-            (pathlib.Path(f.model_dir) / "meta.json").read_text()
-        )
+        meta = json.loads((pathlib.Path(f.model_dir) / "meta.json").read_text())
         assert meta["features"] == [
             "ret_1m",
             "ret_5m",

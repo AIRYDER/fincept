@@ -131,7 +131,7 @@ def test_transient_failure_leaves_retryable_job(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-t1",
         request_payload={"job_id": "qf:train:trans:1"},
-            )
+    )
 
     result = dispatcher.dispatch("qf:train:trans:1", request_payload={"job_id": "qf:train:trans:1"})
     assert result.status == DispatchStatus.TRANSIENT_FAILURE
@@ -169,7 +169,7 @@ def test_terminal_failure_fails_job(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-term1",
         request_payload={"job_id": "qf:train:term:1"},
-            )
+    )
 
     result = dispatcher.dispatch("qf:train:term:1", request_payload={"job_id": "qf:train:term:1"})
     assert result.status == DispatchStatus.TERMINAL_FAILURE
@@ -230,10 +230,12 @@ def test_per_job_budget_enforced(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-b1",
         request_payload={"job_id": "qf:train:budget:1"},
-                budget_cents=75,  # exceeds per-job limit
+        budget_cents=75,  # exceeds per-job limit
     )
 
-    result = dispatcher.dispatch("qf:train:budget:1", request_payload={"job_id": "qf:train:budget:1"})
+    result = dispatcher.dispatch(
+        "qf:train:budget:1", request_payload={"job_id": "qf:train:budget:1"}
+    )
     assert result.status == DispatchStatus.BUDGET_EXCEEDED
     assert "per_job" in result.error_code or "budget" in result.error_code.lower()
 
@@ -259,7 +261,7 @@ def test_global_monthly_budget_ceiling_fails_closed(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-c1",
         request_payload={"job_id": "qf:train:cap:1"},
-            )
+    )
     r1 = dispatcher.dispatch("qf:train:cap:1", request_payload={"job_id": "qf:train:cap:1"})
     assert r1.status == DispatchStatus.DISPATCHED
     assert r1.cost_cents == 60
@@ -270,7 +272,7 @@ def test_global_monthly_budget_ceiling_fails_closed(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-c2",
         request_payload={"job_id": "qf:train:cap:2"},
-            )
+    )
     r2 = dispatcher.dispatch("qf:train:cap:2", request_payload={"job_id": "qf:train:cap:2"})
     assert r2.status == DispatchStatus.BUDGET_EXCEEDED
     assert "monthly" in r2.error_code or "global" in r2.error_code.lower()
@@ -308,9 +310,11 @@ def test_spot_preemption_is_transient(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-p1",
         request_payload={"job_id": "qf:train:preempt:1"},
-            )
+    )
 
-    result = dispatcher.dispatch("qf:train:preempt:1", request_payload={"job_id": "qf:train:preempt:1"})
+    result = dispatcher.dispatch(
+        "qf:train:preempt:1", request_payload={"job_id": "qf:train:preempt:1"}
+    )
     assert result.status == DispatchStatus.TRANSIENT_FAILURE
     assert result.error_code == "spot_preemption"
     # Job stays retryable.
@@ -339,10 +343,14 @@ def test_api_key_never_in_result_or_logs(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-r1",
         request_payload={"job_id": "qf:train:redact:1"},
-            )
+    )
 
-    result = dispatcher.dispatch("qf:train:redact:1", request_payload={"job_id": "qf:train:redact:1"})
-    result_json = json.dumps(result.__dict__ if hasattr(result, "__dict__") else result.model_dump())
+    result = dispatcher.dispatch(
+        "qf:train:redact:1", request_payload={"job_id": "qf:train:redact:1"}
+    )
+    result_json = json.dumps(
+        result.__dict__ if hasattr(result, "__dict__") else result.model_dump()
+    )
     assert secret_key not in result_json
 
     rec = outbox.get("qf:train:redact:1")
@@ -370,7 +378,7 @@ def test_runpod_job_id_and_cost_stored_in_outbox(tmp_path) -> None:
         job_type="training",
         idempotency_key="idem-s1",
         request_payload={"job_id": "qf:train:store:1"},
-            )
+    )
 
     result = dispatcher.dispatch("qf:train:store:1", request_payload={"job_id": "qf:train:store:1"})
     assert result.status == DispatchStatus.DISPATCHED
@@ -395,7 +403,6 @@ def test_runpod_job_id_and_cost_stored_in_outbox(tmp_path) -> None:
 def test_http_client_success() -> None:
     """HttpRunPodClient.dispatch() returns DISPATCHED on HTTP 200 with id."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -426,7 +433,6 @@ def test_http_client_success() -> None:
 def test_http_client_rate_limit_transient() -> None:
     """HttpRunPodClient classifies HTTP 429 as TRANSIENT_FAILURE."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(429, text="Rate limited"))
@@ -447,7 +453,6 @@ def test_http_client_rate_limit_transient() -> None:
 def test_http_client_503_transient() -> None:
     """HttpRunPodClient classifies HTTP 503 as TRANSIENT_FAILURE."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(503, text="Unavailable"))
@@ -467,7 +472,6 @@ def test_http_client_503_transient() -> None:
 def test_http_client_400_terminal() -> None:
     """HttpRunPodClient classifies HTTP 400 as TERMINAL_FAILURE."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(400, text="Bad request"))
@@ -488,7 +492,6 @@ def test_http_client_400_terminal() -> None:
 def test_http_client_401_terminal() -> None:
     """HttpRunPodClient classifies HTTP 401 as TERMINAL_FAILURE."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(401, text="Unauthorized"))
@@ -508,7 +511,6 @@ def test_http_client_401_terminal() -> None:
 def test_http_client_missing_id_terminal() -> None:
     """HttpRunPodClient returns TERMINAL_FAILURE when response has no 'id'."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"status": "ok"}))
@@ -529,7 +531,6 @@ def test_http_client_missing_id_terminal() -> None:
 def test_http_client_network_error_transient() -> None:
     """HttpRunPodClient classifies network errors as TRANSIENT_FAILURE."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     def raise_error(request: httpx.Request) -> httpx.Response:
@@ -553,7 +554,6 @@ def test_http_client_network_error_transient() -> None:
 def test_http_client_api_key_never_in_result() -> None:
     """The API key must never appear in the DispatchResult."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"id": "rp-1"}))
@@ -574,7 +574,6 @@ def test_http_client_api_key_never_in_result() -> None:
 def test_http_client_check_status() -> None:
     """HttpRunPodClient.check_status() returns the raw JSON response."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -594,7 +593,6 @@ def test_http_client_check_status() -> None:
 def test_http_client_check_health() -> None:
     """HttpRunPodClient.check_health() returns the raw JSON response."""
     import httpx
-
     from quant_foundry.runpod_client import HttpRunPodClient
 
     transport = httpx.MockTransport(

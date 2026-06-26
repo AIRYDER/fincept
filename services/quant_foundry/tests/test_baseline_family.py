@@ -428,9 +428,17 @@ class TestFullWorkflow:
 class TestNoSecretsInBaselineOutput:
     """Baseline training output must not leak secrets."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_config_has_no_secret_fields(self, secret_field: str) -> None:
         """BaselineTrainingConfig must not have any secret-named field."""
         fields = set(BaselineTrainingConfig.model_fields.keys())
@@ -456,6 +464,5 @@ class TestNoSecretsInBaselineOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

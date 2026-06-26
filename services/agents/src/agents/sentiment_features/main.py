@@ -12,7 +12,7 @@ from agents.sentiment_features.store import SentimentFeatureStore
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE, STREAM_SIG_SENT
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -80,6 +80,7 @@ async def refresh_loop(
 
 async def run_loop(*, consumer_name: str, stop: asyncio.Event) -> None:
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     producer = Producer(redis)
     consumer = Consumer(redis)

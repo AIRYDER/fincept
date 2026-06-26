@@ -128,6 +128,33 @@ class SentimentSignal(BaseModel):
     entities: list[str] = Field(default_factory=list)
 
 
+class NewsImpactHorizon(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    expected_return: float
+    p_up: float = Field(ge=0.0, le=1.0)
+    q10: float
+    q50: float
+    q90: float
+    sample_size: int = Field(ge=0)
+
+
+class NewsImpactSignal(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    agent_id: str
+    event_id: str
+    symbol: str
+    ts_event: int
+    available_at_ns: int
+    event_type: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    horizons: dict[str, NewsImpactHorizon] = Field(default_factory=dict)
+    source_urls: list[str] = Field(default_factory=list)
+    similar_event_ids: list[str] = Field(default_factory=list)
+    model_version: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
 class InformationEvent(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     schema_version: int = 1

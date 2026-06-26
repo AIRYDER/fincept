@@ -18,22 +18,20 @@ Safety invariants verified:
 
 from __future__ import annotations
 
-import os
 import pickle
-import tempfile
 from typing import Any
 
 import pytest
+from quant_foundry.real_inference import (
+    ModelLoader,
+    RealInferenceEngine,
+    run_real_inference,
+)
 from quant_foundry.schemas import (
     Authority,
     RunPodCallbackEnvelope,
     RunPodInferenceRequest,
     ShadowPrediction,
-)
-from quant_foundry.real_inference import (
-    ModelLoader,
-    RealInferenceEngine,
-    run_real_inference,
 )
 from quant_foundry.shadow_inference import (
     FeatureSnapshot,
@@ -41,7 +39,6 @@ from quant_foundry.shadow_inference import (
     ShadowInferenceEngine,
     ShadowInferenceResult,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -155,7 +152,10 @@ class TestDisabledByDefault:
         req = _make_inference_request()
         with pytest.raises(InferenceDisabledError):
             run_real_inference(
-                request=req, snapshot=snap, model_id="m1", enabled=False,
+                request=req,
+                snapshot=snap,
+                model_id="m1",
+                enabled=False,
             )
 
 
@@ -172,7 +172,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert isinstance(result, ShadowInferenceResult)
@@ -183,7 +184,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -194,7 +196,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -205,7 +208,8 @@ class TestRealPredictions:
         req = _make_inference_request(symbols=["AAPL", "MSFT"])
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         pred_symbols = {p.symbol for p in result.predictions}
@@ -216,7 +220,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[10.0, -10.0])  # clamped
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -227,7 +232,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[10.0, -10.0])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -238,7 +244,8 @@ class TestRealPredictions:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[10.0, -10.0])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -264,7 +271,8 @@ class TestRealPredictions:
         req = _make_inference_request(symbols=["AAPL", "MSFT"])
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         engine.run(request=req, snapshot=snap, model_id="m1")
         assert len(scorer.calls) == 1
@@ -300,7 +308,8 @@ class TestShadowOnlyAuthority:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -311,12 +320,19 @@ class TestShadowOnlyAuthority:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         order_keys = {
-            "order", "signal", "trade", "position", "allocation",
-            "quantity", "price", "side",
+            "order",
+            "signal",
+            "trade",
+            "position",
+            "allocation",
+            "quantity",
+            "price",
+            "side",
         }
         for pred in result.predictions:
             d = pred.model_dump()
@@ -342,7 +358,8 @@ class TestAbstainOnLowAvailability:
         req = _make_inference_request(symbols=["AAPL", "MSFT"])
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         pred_symbols = {p.symbol for p in result.predictions}
@@ -355,7 +372,8 @@ class TestAbstainOnLowAvailability:
         req = _make_inference_request(symbols=["AAPL", "MSFT"])
         scorer = _StubScorer(outputs=[0.8])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         pred_symbols = {p.symbol for p in result.predictions}
@@ -363,12 +381,17 @@ class TestAbstainOnLowAvailability:
 
     def test_empty_snapshot_produces_no_predictions(self) -> None:
         snap = FeatureSnapshot(
-            symbols=[], features={}, availability={}, ts_event=1000, freshness_ns=500,
+            symbols=[],
+            features={},
+            availability={},
+            ts_event=1000,
+            freshness_ns=500,
         )
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert len(result.predictions) == 0
@@ -387,7 +410,8 @@ class TestLatencyTracking:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert result.latency_ms >= 0.0
@@ -397,7 +421,8 @@ class TestLatencyTracking:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         for pred in result.predictions:
@@ -418,7 +443,8 @@ class TestSignedCallback:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert isinstance(result.callback, RunPodCallbackEnvelope)
@@ -430,7 +456,8 @@ class TestSignedCallback:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert "predictions" in result.callback.payload
@@ -443,7 +470,8 @@ class TestSignedCallback:
         req = _make_inference_request()
         scorer = _StubScorer(outputs=[0.8, -0.4])
         engine = RealInferenceEngine(
-            enabled=True, model_loader=_stub_loader(scorer),
+            enabled=True,
+            model_loader=_stub_loader(scorer),
         )
         result = engine.run(request=req, snapshot=snap, model_id="m1")
         assert result.callback.worker_id == "real-inference-engine"
@@ -490,7 +518,7 @@ class TestModelLoaderOnnx:
         # Build a tiny synthetic ONNX model: y = sum(x).
         try:
             import onnx
-            from onnx import helper, TensorProto
+            from onnx import TensorProto, helper
         except ImportError:
             pytest.skip("onnx package not available to build a synthetic model")
 
@@ -520,17 +548,21 @@ class TestModelLoaderOnnx:
 
     def test_onnx_engine_end_to_end(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         pytest.importorskip("onnxruntime")
-        np = pytest.importorskip("numpy")
+        pytest.importorskip("numpy")
         try:
             import onnx
-            from onnx import helper, TensorProto
+            from onnx import TensorProto, helper
         except ImportError:
             pytest.skip("onnx package not available")
 
         X = helper.make_tensor_value_info("X", TensorProto.FLOAT, [None, 3])
         Y = helper.make_tensor_value_info("Y", TensorProto.FLOAT, [None, 1])
         node = helper.make_node(
-            "ReduceSum", inputs=["X"], outputs=["Y"], axes=[1], keepdims=1,
+            "ReduceSum",
+            inputs=["X"],
+            outputs=["Y"],
+            axes=[1],
+            keepdims=1,
         )
         graph = helper.make_graph([node], "sum", [X], [Y])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])

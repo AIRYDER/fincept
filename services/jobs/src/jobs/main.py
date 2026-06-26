@@ -27,7 +27,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
 
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
@@ -82,6 +82,7 @@ async def _run() -> None:
     configure_logging()
     configure_tracing("jobs.scheduler")
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     scheduler = build_scheduler()
     stop = asyncio.Event()
 

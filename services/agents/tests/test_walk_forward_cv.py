@@ -107,9 +107,27 @@ class TestWalkForwardSplits:
 class TestSummarizeCv:
     def test_basic_summary(self) -> None:
         folds = [
-            {"fold": 0, "best_auc": 0.50, "best_iter": 100, "train_rows": 1, "val_rows": 1},
-            {"fold": 1, "best_auc": 0.60, "best_iter": 80, "train_rows": 1, "val_rows": 1},
-            {"fold": 2, "best_auc": 0.55, "best_iter": 120, "train_rows": 1, "val_rows": 1},
+            {
+                "fold": 0,
+                "best_auc": 0.50,
+                "best_iter": 100,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
+            {
+                "fold": 1,
+                "best_auc": 0.60,
+                "best_iter": 80,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
+            {
+                "fold": 2,
+                "best_auc": 0.55,
+                "best_iter": 120,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
         ]
         s = summarize_cv(folds)
         assert s["n_folds"] == 3
@@ -123,8 +141,20 @@ class TestSummarizeCv:
 
     def test_skipped_folds_excluded_from_stats(self) -> None:
         folds = [
-            {"fold": 0, "best_auc": 0.55, "best_iter": 100, "train_rows": 1, "val_rows": 1},
-            {"fold": 1, "best_auc": None, "best_iter": None, "train_rows": 1, "val_rows": 1},
+            {
+                "fold": 0,
+                "best_auc": 0.55,
+                "best_iter": 100,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
+            {
+                "fold": 1,
+                "best_auc": None,
+                "best_iter": None,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
         ]
         s = summarize_cv(folds)
         assert s["n_folds"] == 2
@@ -136,8 +166,20 @@ class TestSummarizeCv:
 
     def test_all_skipped(self) -> None:
         folds = [
-            {"fold": 0, "best_auc": None, "best_iter": None, "train_rows": 1, "val_rows": 1},
-            {"fold": 1, "best_auc": None, "best_iter": None, "train_rows": 1, "val_rows": 1},
+            {
+                "fold": 0,
+                "best_auc": None,
+                "best_iter": None,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
+            {
+                "fold": 1,
+                "best_auc": None,
+                "best_iter": None,
+                "train_rows": 1,
+                "val_rows": 1,
+            },
         ]
         s = summarize_cv(folds)
         assert s["n_folds"] == 2

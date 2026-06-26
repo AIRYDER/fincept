@@ -31,7 +31,9 @@ def _event(**overrides: object) -> InformationEvent:
 
 
 def test_enrich_information_event_normalizes_operational_fields() -> None:
-    enriched = enrich_information_event(_event(source_quality=None), observed_at_ns=1_000_000_000)
+    enriched = enrich_information_event(
+        _event(source_quality=None), observed_at_ns=1_000_000_000
+    )
 
     assert enriched.symbols == ["NVDA", "MSFT"]
     assert enriched.entities == ["Nvidia", "NVDA", "MSFT"]

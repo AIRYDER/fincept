@@ -50,14 +50,10 @@ class AlpacaScheduler:
     def start(self) -> None:
         settings = get_settings()
         if not settings.ALPACA_API_KEY or not settings.ALPACA_API_SECRET:
-            log.info(
-                "alpaca.scheduler.skip", reason="no_credentials"
-            )
+            log.info("alpaca.scheduler.skip", reason="no_credentials")
             return
         self._task = asyncio.create_task(self._loop(), name="alpaca-sync")
-        log.info(
-            "alpaca.scheduler.start", interval_sec=self._interval
-        )
+        log.info("alpaca.scheduler.start", interval_sec=self._interval)
 
     async def stop(self) -> None:
         if self._task is None:

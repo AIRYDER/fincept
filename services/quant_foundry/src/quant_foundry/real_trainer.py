@@ -29,6 +29,7 @@ Security invariants (same as ``LocalTrainer``):
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import pickle
 import time
@@ -54,7 +55,7 @@ try:
     from fincept_core.storage import StorageBackend, get_storage_backend
 except ImportError:  # pragma: no cover - fincept-core always present in-workspace
     StorageBackend = None  # type: ignore[assignment,misc]
-    get_storage_backend = None  # type: ignore[assignment,misc]
+    get_storage_backend = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -108,13 +109,15 @@ class RealLightGBMTrainer:
                 error_summary="training deadline breached before work started",
             )
 
-        try:
-            import lightgbm as lgb  # noqa: F811
-            import numpy as np  # noqa: F811
-        except ImportError as exc:
+        if importlib.util.find_spec("lightgbm") is None:
             raise TrainingFailure(
                 error_code="missing_dependency",
-                error_summary=f"ML dependency not available: {exc}",
+                error_summary="ML dependency not available: lightgbm",
+            )
+        if importlib.util.find_spec("numpy") is None:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="ML dependency not available: numpy",
             )
 
         X, y, timestamps = self._load_dataset(req.dataset_manifest_ref)
@@ -128,7 +131,12 @@ class RealLightGBMTrainer:
         seed = req.random_seed if req.random_seed is not None else 0
 
         metrics = self._walk_forward_validate(
-            X, y, timestamps, seed, deadline_ns, req,
+            X,
+            y,
+            timestamps,
+            seed,
+            deadline_ns,
+            req,
         )
 
         if time.time_ns() >= deadline_ns:
@@ -146,10 +154,10 @@ class RealLightGBMTrainer:
         n_features = int(X.shape[1])
         n_rows = int(X.shape[0])
         feature_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:n_features={n_features}".encode("utf-8"),
+            f"{req.dataset_manifest_ref}:n_features={n_features}".encode(),
         ).hexdigest()[:16]
         label_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:label=binary".encode("utf-8"),
+            f"{req.dataset_manifest_ref}:label=binary".encode(),
         ).hexdigest()[:16]
 
         now_ns = time.time_ns()
@@ -223,7 +231,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="unsupported_uri",
                         error_summary=f"no storage backend available for s3 dataset: {exc}",
-                    )
+                    ) from exc
             if backend is None:
                 raise TrainingFailure(
                     error_code="unsupported_uri",
@@ -237,7 +245,7 @@ class RealLightGBMTrainer:
                 raise TrainingFailure(
                     error_code="unsupported_uri",
                     error_summary=f"failed to fetch s3 dataset {ref!r}: {exc}",
-                )
+                ) from exc
             return Path(tmp_path)
         else:
             raise TrainingFailure(
@@ -247,7 +255,6 @@ class RealLightGBMTrainer:
 
     def _load_dataset(self, ref: str) -> tuple[Any, Any, Any]:
         """Load dataset from a URI. Returns ``(X, y, timestamps)``."""
-        import numpy as np
 
         path = self._resolve_path(ref)
         if not path.exists():
@@ -288,7 +295,7 @@ class RealLightGBMTrainer:
                 raise TrainingFailure(
                     error_code="missing_dependency",
                     error_summary="neither pyarrow nor pandas available for parquet loading",
-                )
+                ) from None
 
         label_col = "label" if "label" in columns else columns[-1]
         ts_col: str | None = None
@@ -357,20 +364,20 @@ class RealLightGBMTrainer:
         }
 
         ss = req.search_space
-        if "num_leaves" in ss and ss["num_leaves"]:
+        if ss.get("num_leaves"):
             params["num_leaves"] = int(ss["num_leaves"][0])
-        if "learning_rate" in ss and ss["learning_rate"]:
+        if ss.get("learning_rate"):
             params["learning_rate"] = float(ss["learning_rate"][0])
-        if "max_depth" in ss and ss["max_depth"]:
+        if ss.get("max_depth"):
             params["max_depth"] = int(ss["max_depth"][0])
-        if "min_data_in_leaf" in ss and ss["min_data_in_leaf"]:
+        if ss.get("min_data_in_leaf"):
             params["min_data_in_leaf"] = int(ss["min_data_in_leaf"][0])
 
         return params
 
     def _get_n_estimators(self, req: RunPodTrainingRequest) -> int:
         ss = req.search_space
-        if "n_estimators" in ss and ss["n_estimators"]:
+        if ss.get("n_estimators"):
             return int(ss["n_estimators"][0])
         return 100
 
@@ -445,9 +452,9 @@ class RealLightGBMTrainer:
                 num_boost_round=n_estimators,
             )
 
-            train_pred = model.predict(X_train)
+            train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
             train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
-            val_pred = model.predict(X_val)
+            val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
             val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
 
             fold_train_acc.append(train_acc)
@@ -459,8 +466,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="no_validation_data",
                 error_summary=(
-                    "no validation folds produced predictions "
-                    "(dataset too small or single-class)"
+                    "no validation folds produced predictions (dataset too small or single-class)"
                 ),
             )
 
@@ -468,7 +474,10 @@ class RealLightGBMTrainer:
         labels_arr = np.array(all_labels, dtype=np.float64)
 
         return self._compute_metrics(
-            preds_arr, labels_arr, fold_train_acc, fold_val_acc,
+            preds_arr,
+            labels_arr,
+            fold_train_acc,
+            fold_val_acc,
         )
 
     # --- metric computation ----------------------------------------------
@@ -490,8 +499,7 @@ class RealLightGBMTrainer:
         pred_clipped = np.clip(all_preds, eps, 1 - eps)
         logloss = float(
             -np.mean(
-                all_labels * np.log(pred_clipped)
-                + (1 - all_labels) * np.log(1 - pred_clipped),
+                all_labels * np.log(pred_clipped) + (1 - all_labels) * np.log(1 - pred_clipped),
             ),
         )
 
@@ -530,7 +538,7 @@ class RealLightGBMTrainer:
 
         if fold_train_acc and fold_val_acc:
             overfit_count = sum(
-                1 for t, v in zip(fold_train_acc, fold_val_acc) if v < t
+                1 for t, v in zip(fold_train_acc, fold_val_acc, strict=False) if v < t
             )
             pbo = float(overfit_count / len(fold_train_acc))
         else:

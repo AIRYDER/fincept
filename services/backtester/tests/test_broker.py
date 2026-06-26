@@ -165,9 +165,7 @@ def test_open_orders_for_other_symbols_are_skipped() -> None:
 
 def _capped_broker(cap_pct: str = "50") -> SimBroker:
     """Broker whose cost model caps participation at *cap_pct*% of bar vol."""
-    return SimBroker(
-        cost_model=CostModel(max_participation_pct=Decimal(cap_pct))
-    )
+    return SimBroker(cost_model=CostModel(max_participation_pct=Decimal(cap_pct)))
 
 
 def _bar_with_volume(volume: str, **kwargs: object) -> BarEvent:
@@ -220,17 +218,15 @@ def test_partial_fill_avg_fill_price_is_quantity_weighted() -> None:
     assert open_after_first.avg_fill_price == fill_a.price
 
     fill_b = broker.on_bar(_bar_with_volume("100", open_="101", ts_event=2_000))[0]
-    expected_avg = (
-        Decimal("50") * fill_a.price + Decimal("50") * fill_b.price
-    ) / Decimal("100")
+    expected_avg = (Decimal("50") * fill_a.price + Decimal("50") * fill_b.price) / Decimal("100")
     # Order fully filled now -> not in book; check via the fill stream
     # we observed.  Verify quantity sum and weighted price arithmetic.
     assert "o1" not in broker.open_orders
     assert fill_a.quantity + fill_b.quantity == Decimal("100")
     # Reconstruct what the avg would have been at completion:
-    reconstruct = (
-        fill_a.quantity * fill_a.price + fill_b.quantity * fill_b.price
-    ) / (fill_a.quantity + fill_b.quantity)
+    reconstruct = (fill_a.quantity * fill_a.price + fill_b.quantity * fill_b.price) / (
+        fill_a.quantity + fill_b.quantity
+    )
     assert reconstruct == expected_avg
 
 
@@ -299,9 +295,7 @@ def test_partial_fill_works_with_limit_orders() -> None:
             quantity="200",
         )
     )
-    fills = broker.on_bar(
-        _bar_with_volume("100", low="99", high="101", open_="100.5")
-    )
+    fills = broker.on_bar(_bar_with_volume("100", low="99", high="101", open_="100.5"))
     assert len(fills) == 1
     assert fills[0].quantity == Decimal("50")
     assert fills[0].is_maker is True
@@ -354,9 +348,7 @@ def _zero_cost_broker() -> SimBroker:
 def test_stop_buy_triggers_when_high_crosses_stop() -> None:
     """STOP BUY at 105: bar.high=110 crosses up, fills at stop level."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105"))
-    )
+    broker.submit(_intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105")))
     fills = broker.on_bar(_bar(open_="100", high="110", low="99", close="108"))
     assert len(fills) == 1
     # open=100 < stop=105 so we trigger on the way up at 105.
@@ -368,9 +360,7 @@ def test_stop_buy_triggers_when_high_crosses_stop() -> None:
 def test_stop_buy_gap_up_fills_at_open() -> None:
     """STOP BUY at 105 with bar.open=108 => filled at open (worse price)."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105"))
-    )
+    broker.submit(_intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105")))
     fills = broker.on_bar(_bar(open_="108", high="112", low="107", close="110"))
     assert len(fills) == 1
     # open=108 already past stop=105 -> gap-up, fill at open.
@@ -380,9 +370,7 @@ def test_stop_buy_gap_up_fills_at_open() -> None:
 def test_stop_buy_does_not_trigger_when_high_below_stop() -> None:
     """STOP BUY at 105: bar's range stays below 105 => no fill, stays open."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105"))
-    )
+    broker.submit(_intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105")))
     fills = broker.on_bar(_bar(open_="100", high="104", low="99", close="103"))
     assert fills == []
     assert "o1" in broker.open_orders  # GTC keeps it alive
@@ -391,9 +379,7 @@ def test_stop_buy_does_not_trigger_when_high_below_stop() -> None:
 def test_stop_sell_triggers_when_low_crosses_stop() -> None:
     """STOP SELL at 95 (a stop-loss): bar.low=92 fires it, fill at stop."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95"))
-    )
+    broker.submit(_intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95")))
     fills = broker.on_bar(_bar(open_="100", high="101", low="92", close="93"))
     assert len(fills) == 1
     # open=100 > stop=95 -> triggered on the way down at 95.
@@ -403,9 +389,7 @@ def test_stop_sell_triggers_when_low_crosses_stop() -> None:
 def test_stop_sell_gap_down_fills_at_open() -> None:
     """STOP SELL at 95 with bar.open=92 => filled at open (worse price)."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95"))
-    )
+    broker.submit(_intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95")))
     fills = broker.on_bar(_bar(open_="92", high="93", low="90", close="91"))
     assert len(fills) == 1
     # open=92 already past stop=95 -> gap-down, fill at open=92.
@@ -415,9 +399,7 @@ def test_stop_sell_gap_down_fills_at_open() -> None:
 def test_stop_sell_does_not_trigger_when_low_above_stop() -> None:
     """STOP SELL at 95 with bar.low=96 => no fill."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95"))
-    )
+    broker.submit(_intent(side=Side.SELL, order_type=OrderType.STOP, stop_price=Decimal("95")))
     fills = broker.on_bar(_bar(open_="100", high="101", low="96", close="98"))
     assert fills == []
     assert "o1" in broker.open_orders
@@ -426,9 +408,7 @@ def test_stop_sell_does_not_trigger_when_low_above_stop() -> None:
 def test_stop_persists_across_bars_until_triggered() -> None:
     """A non-triggered STOP stays open and triggers on a later bar."""
     broker = _zero_cost_broker()
-    broker.submit(
-        _intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105"))
-    )
+    broker.submit(_intent(side=Side.BUY, order_type=OrderType.STOP, stop_price=Decimal("105")))
     # Bar 1: doesn't trigger.
     assert broker.on_bar(_bar(open_="100", high="103", low="99", close="102")) == []
     assert "o1" in broker.open_orders
@@ -559,9 +539,7 @@ def test_stop_buy_respects_participation_cap() -> None:
         )
     )
     # Bar volume = 100; cap 50% => fill 50 shares this bar.
-    fills = broker.on_bar(
-        _bar_with_volume("100", open_="100", high="110", low="99", close="108")
-    )
+    fills = broker.on_bar(_bar_with_volume("100", open_="100", high="110", low="99", close="108"))
     assert len(fills) == 1
     assert fills[0].quantity == Decimal("50")
     assert fills[0].price == Decimal("105")  # stop level

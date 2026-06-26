@@ -39,9 +39,7 @@ class PriceTick:
     price: float
 
 
-def _first_price_at_or_after(
-    prices: Sequence[PriceTick], threshold_ts: int
-) -> float | None:
+def _first_price_at_or_after(prices: Sequence[PriceTick], threshold_ts: int) -> float | None:
     """Return the price of the earliest tick with ts >= threshold_ts, or None.
 
     Iterates in a single pass; ties broken by file order (first observed wins,
@@ -147,9 +145,7 @@ def apply_costs(
     net, never better). This is the settlement-side guard that lets the
     tournament rank on net edge, not gross.
     """
-    round_trip_bps = (
-        cost_model.fee_bps + cost_model.spread_bps + cost_model.slippage_bps
-    )
+    round_trip_bps = cost_model.fee_bps + cost_model.spread_bps + cost_model.slippage_bps
     borrow_bps = 0.0
     if direction < 0 and holding_days > 0:
         borrow_bps = cost_model.borrow_bps_per_day * float(holding_days)

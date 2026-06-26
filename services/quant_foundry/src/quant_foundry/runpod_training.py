@@ -224,8 +224,7 @@ class RunPodTrainingHandler:
             raise TrainingFailure(
                 error_code="timeout",
                 error_summary=(
-                    f"training deadline breached (deadline_seconds="
-                    f"{self.deadline_seconds})"
+                    f"training deadline breached (deadline_seconds={self.deadline_seconds})"
                 ),
             )
 
@@ -250,7 +249,10 @@ class RunPodTrainingHandler:
         # Sign the callback (real HMAC path, same as mock dispatcher).
         ts = int(time.time())
         signature = sign_callback(
-            envelope_bytes, secret=self.callback_secret, ts=ts, job_id=req.job_id,
+            envelope_bytes,
+            secret=self.callback_secret,
+            ts=ts,
+            job_id=req.job_id,
         )
 
         return TrainingResult(

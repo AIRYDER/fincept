@@ -237,8 +237,11 @@ class TestDecayedModelFlagged:
     def test_healthy_model_is_not_flagged(self) -> None:
         """A healthy model is not flagged."""
         entry = _make_entry(
-            brier_score=0.1, baseline_delta=0.2, decay_score=0.0,
-            is_stale=False, is_decayed=False,
+            brier_score=0.1,
+            baseline_delta=0.2,
+            decay_score=0.0,
+            is_stale=False,
+            is_decayed=False,
         )
         flagger = RetirementFlagger()
         flag = flagger.evaluate(entry)
@@ -319,8 +322,7 @@ class TestNoArtifactDeletion:
         flag = flagger.evaluate(entry)
         assert flag is not None
         d = flag.to_dict()
-        delete_keys = {"delete", "delete_artifacts", "artifact_deleted",
-                       "remove", "purge"}
+        delete_keys = {"delete", "delete_artifacts", "artifact_deleted", "remove", "purge"}
         assert not any(k in d for k in delete_keys)
 
 
@@ -413,6 +415,5 @@ class TestNoSecretsInRetirementOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

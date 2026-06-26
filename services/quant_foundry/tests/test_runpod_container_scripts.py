@@ -13,6 +13,7 @@ The scripts live outside the ``quant_foundry`` package (in the repo-root
 ``scripts/`` directory), so we load them via ``importlib`` from their
 file paths rather than a package import.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -96,12 +97,8 @@ class TestScriptImports:
 
     def test_verify_script_endpoint_defaults(self, verify_module):
         """The verify script has the correct default endpoint IDs."""
-        assert (
-            verify_module.DEFAULT_TRAINING_ENDPOINT_ID == "8vol1uc9l75jgs"
-        )
-        assert (
-            verify_module.DEFAULT_INFERENCE_ENDPOINT_ID == "36mz2q30jdyvru"
-        )
+        assert verify_module.DEFAULT_TRAINING_ENDPOINT_ID == "8vol1uc9l75jgs"
+        assert verify_module.DEFAULT_INFERENCE_ENDPOINT_ID == "36mz2q30jdyvru"
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +160,7 @@ class TestDryRunMode:
 
     def test_dry_run_main_does_not_execute_docker(self, rebuild_module, capsys):
         """Running main() with --dry-run builds both containers without Docker."""
-        exit_code = rebuild_module.main(
-            ["--container", "both", "--dry-run"]
-        )
+        exit_code = rebuild_module.main(["--container", "both", "--dry-run"])
         captured = capsys.readouterr()
 
         assert exit_code == 0
@@ -178,9 +173,11 @@ class TestDryRunMode:
         """--dry-run with --push and --refresh-endpoint prints all commands."""
         exit_code = rebuild_module.main(
             [
-                "--container", "both",
+                "--container",
+                "both",
                 "--push",
-                "--registry", "ghcr.io/test",
+                "--registry",
+                "ghcr.io/test",
                 "--refresh-endpoint",
                 "--dry-run",
             ]
@@ -211,9 +208,11 @@ class TestMissingDocker:
 
     def test_check_docker_installed_raises_when_missing(self, rebuild_module):
         """check_docker_installed raises PreconditionError when docker is not on PATH."""
-        with patch.object(rebuild_module.shutil, "which", return_value=None):
-            with pytest.raises(rebuild_module.PreconditionError) as exc_info:
-                rebuild_module.check_docker_installed()
+        with (
+            patch.object(rebuild_module.shutil, "which", return_value=None),
+            pytest.raises(rebuild_module.PreconditionError) as exc_info,
+        ):
+            rebuild_module.check_docker_installed()
 
         msg = str(exc_info.value).lower()
         assert "docker" in msg
@@ -236,9 +235,11 @@ class TestMissingDocker:
         mock_result.returncode = 1
         mock_result.stderr = "Cannot connect to the Docker daemon"
 
-        with patch.object(rebuild_module.subprocess, "run", return_value=mock_result):
-            with pytest.raises(rebuild_module.PreconditionError) as exc_info:
-                rebuild_module.check_docker_running(dry_run=False)
+        with (
+            patch.object(rebuild_module.subprocess, "run", return_value=mock_result),
+            pytest.raises(rebuild_module.PreconditionError) as exc_info,
+        ):
+            rebuild_module.check_docker_running(dry_run=False)
 
         msg = str(exc_info.value).lower()
         assert "docker" in msg
@@ -292,9 +293,7 @@ class TestMissingDockerfile:
         captured = capsys.readouterr()
         assert "dockerfile" in captured.err.lower()
 
-    def test_check_dockerfile_exists_succeeds_for_real_dockerfiles(
-        self, rebuild_module
-    ):
+    def test_check_dockerfile_exists_succeeds_for_real_dockerfiles(self, rebuild_module):
         """check_dockerfile_exists succeeds for the real training + inference Dockerfiles."""
         train_path = rebuild_module.check_dockerfile_exists("training")
         infer_path = rebuild_module.check_dockerfile_exists("inference")
@@ -325,9 +324,12 @@ class TestArgumentParsing:
         """Custom args are parsed correctly."""
         args = rebuild_module.parse_args(
             [
-                "--container", "inference",
-                "--tag", "v1.2.3",
-                "--registry", "ghcr.io/myorg",
+                "--container",
+                "inference",
+                "--tag",
+                "v1.2.3",
+                "--registry",
+                "ghcr.io/myorg",
                 "--push",
                 "--refresh-endpoint",
                 "--dry-run",
@@ -350,9 +352,12 @@ class TestArgumentParsing:
         """Custom verify args are parsed correctly."""
         args = verify_module.parse_args(
             [
-                "--endpoint", "training",
-                "--api-key", "test-key",
-                "--training-endpoint-id", "custom-train-id",
+                "--endpoint",
+                "training",
+                "--api-key",
+                "test-key",
+                "--training-endpoint-id",
+                "custom-train-id",
             ]
         )
         assert args.endpoint == "training"

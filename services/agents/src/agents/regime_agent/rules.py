@@ -108,9 +108,7 @@ def classify(
             else 0.0
         )
         inv_strength = (
-            -yield_spread
-            if yield_spread is not None and yield_spread < 0
-            else 0.0
+            -yield_spread if yield_spread is not None and yield_spread < 0 else 0.0
         )
         strength = max(vix_overshoot, inv_strength)
         confidence = max(0.4, min(1.0, 0.6 + strength))

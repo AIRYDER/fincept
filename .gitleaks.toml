@@ -1,0 +1,5 @@
+[allowlist]
+description = "Allow fake redaction-test tokens that intentionally resemble provider secrets."
+regexes = [
+  '''sk_live_1234567890abcdef''',
+]

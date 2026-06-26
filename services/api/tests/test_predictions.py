@@ -25,9 +25,7 @@ from httpx import AsyncClient
 
 
 @pytest.fixture
-def patched_predictions(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-):
+def patched_predictions(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     """Redirect the prediction-log accessor at a tmp directory.
 
     Yields the :class:`PredictionLog` instance the routes will read,
@@ -38,9 +36,7 @@ def patched_predictions(
     predictions_dir = tmp_path / "predictions"
     log = PredictionLog(predictions_dir=predictions_dir)
 
-    monkeypatch.setattr(
-        "api.routes.models._get_prediction_log", lambda: log
-    )
+    monkeypatch.setattr("api.routes.models._get_prediction_log", lambda: log)
     return log
 
 
@@ -96,9 +92,7 @@ async def test_predictions_empty_when_no_data(
     auth_headers: dict[str, str],
     patched_predictions,
 ) -> None:
-    r = await client.get(
-        "/models/gbm_predictor/predictions", headers=auth_headers
-    )
+    r = await client.get("/models/gbm_predictor/predictions", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert body == {
@@ -114,9 +108,7 @@ async def test_prediction_stats_zero_when_no_data(
     auth_headers: dict[str, str],
     patched_predictions,
 ) -> None:
-    r = await client.get(
-        "/models/gbm_predictor/prediction-stats", headers=auth_headers
-    )
+    r = await client.get("/models/gbm_predictor/prediction-stats", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert body["model"] == "gbm_predictor"
@@ -141,9 +133,7 @@ async def test_predictions_returns_appended_rows(
     patched_predictions,
 ) -> None:
     _seed(patched_predictions, n=3)
-    r = await client.get(
-        "/models/gbm_predictor/predictions", headers=auth_headers
-    )
+    r = await client.get("/models/gbm_predictor/predictions", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 3
@@ -200,12 +190,8 @@ async def test_predictions_filters_by_model_name_implicit_in_path(
     """A row written under model_a should not appear in model_b's response."""
     _seed(patched_predictions, n=2, model_name="model_a")
     _seed(patched_predictions, n=3, model_name="model_b")
-    r_a = await client.get(
-        "/models/model_a/predictions", headers=auth_headers
-    )
-    r_b = await client.get(
-        "/models/model_b/predictions", headers=auth_headers
-    )
+    r_a = await client.get("/models/model_a/predictions", headers=auth_headers)
+    r_b = await client.get("/models/model_b/predictions", headers=auth_headers)
     assert r_a.json()["count"] == 2
     assert r_b.json()["count"] == 3
 
@@ -245,9 +231,7 @@ async def test_prediction_stats_counts_and_distribution(
         n=4,
         direction_pattern=[0.5, -0.4, 0.0, 0.2],
     )
-    r = await client.get(
-        "/models/gbm_predictor/prediction-stats", headers=auth_headers
-    )
+    r = await client.get("/models/gbm_predictor/prediction-stats", headers=auth_headers)
     body = r.json()
     s = body["stats"]
     assert s["count"] == 4
@@ -263,18 +247,10 @@ async def test_prediction_stats_isolates_per_model(
     auth_headers: dict[str, str],
     patched_predictions,
 ) -> None:
-    _seed(
-        patched_predictions, n=2, model_name="model_a", direction_pattern=[0.5]
-    )
-    _seed(
-        patched_predictions, n=3, model_name="model_b", direction_pattern=[-0.5]
-    )
-    r_a = await client.get(
-        "/models/model_a/prediction-stats", headers=auth_headers
-    )
-    r_b = await client.get(
-        "/models/model_b/prediction-stats", headers=auth_headers
-    )
+    _seed(patched_predictions, n=2, model_name="model_a", direction_pattern=[0.5])
+    _seed(patched_predictions, n=3, model_name="model_b", direction_pattern=[-0.5])
+    r_a = await client.get("/models/model_a/prediction-stats", headers=auth_headers)
+    r_b = await client.get("/models/model_b/prediction-stats", headers=auth_headers)
     sa = r_a.json()["stats"]
     sb = r_b.json()["stats"]
     assert sa["count"] == 2 and sa["long_count"] == 2 and sa["short_count"] == 0

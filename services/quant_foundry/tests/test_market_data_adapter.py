@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from quant_foundry.market_data_adapter import BarDataAdapter, PricePoint
 
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
@@ -22,15 +21,11 @@ from quant_foundry.market_data_adapter import BarDataAdapter, PricePoint
 
 def _make_bar_reader(
     bars: dict[str, list[PricePoint]],
-) -> "callable[[str, int, int], list[PricePoint]]":
+) -> callable[[str, int, int], list[PricePoint]]:
     """Return a simple in-memory bar reader keyed by symbol."""
 
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
-        return [
-            p
-            for p in bars.get(symbol, [])
-            if start_ns <= p.ts_ns < end_ns
-        ]
+        return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
 
     return reader
 

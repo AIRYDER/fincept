@@ -90,6 +90,7 @@ def _bars_semaphore() -> asyncio.Semaphore:
         _BARS_SEMAPHORE = asyncio.Semaphore(BARS_API_SEMAPHORE_LIMIT)
     return _BARS_SEMAPHORE
 
+
 # Headlines that match any of these patterns are skipped entirely - they
 # are filler content from Benzinga's automated feeds (listicles, halt
 # notifications) that have zero alpha for an algo trader.  Skipping at
@@ -168,9 +169,7 @@ async def _snapshot_symbol(
                 limit=MAX_BARS_PER_SNAPSHOT,
             )
     except AlpacaDataError as exc:
-        log.debug(
-            "news.bars.fetch_failed", symbol=symbol, error=str(exc)
-        )
+        log.debug("news.bars.fetch_failed", symbol=symbol, error=str(exc))
         payload = {"bars": {}}
 
     raw_bars = payload.get("bars", {}).get(symbol) or []
@@ -232,11 +231,7 @@ def _article_to_information_event(
     *,
     raw_payload_ref: str,
 ) -> InformationEvent:
-    symbols = [
-        str(s).strip().upper()
-        for s in article.get("symbols", [])
-        if str(s).strip()
-    ]
+    symbols = [str(s).strip().upper() for s in article.get("symbols", []) if str(s).strip()]
     return InformationEvent(
         event_id=f"alpaca_news:{article['id']}",
         source=str(article.get("source") or "alpaca"),
@@ -270,13 +265,9 @@ async def sync_recent_news(
     new IDs to keep the bars call volume bounded).  Returns a summary
     with counts so callers can log the result.
     """
-    start_iso = _ns_to_iso(
-        now_ns() - lookback_minutes * 60 * 1_000_000_000
-    )
+    start_iso = _ns_to_iso(now_ns() - lookback_minutes * 60 * 1_000_000_000)
     async with httpx.AsyncClient(timeout=30.0) as http:
-        client = AlpacaDataClient(
-            http=http, api_key=api_key, api_secret=api_secret
-        )
+        client = AlpacaDataClient(http=http, api_key=api_key, api_secret=api_secret)
         try:
             payload = await client.list_news(
                 symbols=extra_symbols,
@@ -304,8 +295,11 @@ async def sync_recent_news(
                 ts_event=now_ns(),
             )
             await write_provider_data([rec])
-        except Exception:
-            pass  # never let evidence recording break news ingest
+        except Exception as exc:
+            log.debug(
+                "news.provider_evidence_write_failed",
+                error=str(exc),
+            )
 
         producer = Producer(redis)
         written = 0
@@ -406,20 +400,14 @@ async def refresh_snapshot_bars(
 
     updated = 0
     async with httpx.AsyncClient(timeout=30.0) as http:
-        client = AlpacaDataClient(
-            http=http, api_key=api_key, api_secret=api_secret
-        )
+        client = AlpacaDataClient(http=http, api_key=api_key, api_secret=api_secret)
         for raw_id in ids:
-            article_id = (
-                raw_id.decode() if isinstance(raw_id, bytes) else raw_id
-            )
+            article_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
             key = _article_key(article_id)
             payload = await redis.get(key)
             if payload is None:
                 continue
-            article = json.loads(
-                payload.decode() if isinstance(payload, bytes) else payload
-            )
+            article = json.loads(payload.decode() if isinstance(payload, bytes) else payload)
             symbols: list[str] = list(article.get("snapshots", {}).keys())
             if not symbols:
                 continue
@@ -441,9 +429,7 @@ async def refresh_snapshot_bars(
                     # Re-anchor price_at_publish to the first real bar so
                     # the impact math is no longer pinned to "now".
                     if snap["bars"]:
-                        article["snapshots"][symbol]["price_at_publish"] = (
-                            snap["bars"][0][1]
-                        )
+                        article["snapshots"][symbol]["price_at_publish"] = snap["bars"][0][1]
             await redis.set(key, json.dumps(article), ex=NEWS_TTL_SEC)
             updated += 1
     return {"updated": updated}

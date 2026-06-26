@@ -70,10 +70,23 @@ def _make_entry(
         settled_count=settled_count,
         horizon_slices=[HorizonSlice(horizon=h, score=s) for h, s in horizon_scores.items()],
         regime_slices=[RegimeSlice(regime=r, score=s) for r, s in regime_scores.items()],
-        symbol_cluster_slices=[SymbolClusterSlice(cluster=c, score=s) for c, s in symbol_cluster_scores.items()],
-        baseline_delta=BaselineDelta(baseline_model_id="baseline", delta=baseline_delta, baseline_score=total_score - baseline_delta),
-        calibration_summary=CalibrationSummary(brier_score=brier_score, reliability=0.85, n_bins=10),
-        decay_indicator=DecayIndicator(decay_score=decay_score, is_stale=is_stale, is_decayed=is_decayed, days_since_last_settlement=1),
+        symbol_cluster_slices=[
+            SymbolClusterSlice(cluster=c, score=s) for c, s in symbol_cluster_scores.items()
+        ],
+        baseline_delta=BaselineDelta(
+            baseline_model_id="baseline",
+            delta=baseline_delta,
+            baseline_score=total_score - baseline_delta,
+        ),
+        calibration_summary=CalibrationSummary(
+            brier_score=brier_score, reliability=0.85, n_bins=10
+        ),
+        decay_indicator=DecayIndicator(
+            decay_score=decay_score,
+            is_stale=is_stale,
+            is_decayed=is_decayed,
+            days_since_last_settlement=1,
+        ),
     )
 
 
@@ -444,6 +457,5 @@ class TestNoSecretsInMoEOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

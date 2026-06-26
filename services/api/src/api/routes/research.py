@@ -303,10 +303,18 @@ async def provider_data_status(
     except RuntimeError as exc:
         if "FINCEPT_DB_URL is empty" in str(exc):
             return _provider_capture_unavailable("ProviderDataDisabled", str(exc))
-        logger.warning("provider_data_read_failed", extra={"error_type": type(exc).__name__}, exc_info=True)
+        logger.warning(
+            "provider_data_read_failed",
+            extra={"error_type": type(exc).__name__},
+            exc_info=True,
+        )
         return _provider_capture_unavailable(type(exc).__name__, str(exc))
     except Exception as exc:
-        logger.warning("provider_data_read_failed", extra={"error_type": type(exc).__name__}, exc_info=True)
+        logger.warning(
+            "provider_data_read_failed",
+            extra={"error_type": type(exc).__name__},
+            exc_info=True,
+        )
         return _provider_capture_unavailable(type(exc).__name__, str(exc))
     return {
         "ok": True,
@@ -324,7 +332,9 @@ async def exa_research(
     """Run read-only Exa research and return a structured operator brief."""
     request_payload = body.model_dump()
     result = await run_exa_research(**request_payload)
-    await _capture_provider_record(build_exa_record(request=request_payload, response=result))
+    await _capture_provider_record(
+        build_exa_record(request=request_payload, response=result)
+    )
     return result
 
 
@@ -338,7 +348,9 @@ async def openbb_quote(
     data["symbol"] = body.symbol.strip().upper()
     data["provider"] = body.provider.strip()
     result = await run_openbb_quote(**data)
-    await _capture_provider_record(build_openbb_quote_record(request=data, response=result))
+    await _capture_provider_record(
+        build_openbb_quote_record(request=data, response=result)
+    )
     return _respond_with_tool_result(result)
 
 
@@ -413,7 +425,9 @@ async def openbb_call(
 
     request_payload = body.model_dump()
     result = await run_openbb_call(**request_payload)
-    await _capture_provider_record(build_openbb_call_record(request=request_payload, response=result))
+    await _capture_provider_record(
+        build_openbb_call_record(request=request_payload, response=result)
+    )
     response = _respond_with_tool_result(result)
     # Attach rate-limit diagnostics so the dashboard can surface "57/60
     # left this minute" without a second round-trip.

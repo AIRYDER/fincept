@@ -112,9 +112,7 @@ def load_bars_from_parquet(
     df = pl.read_parquet(path)
     missing = [c for c in _REQUIRED_COLS if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"parquet at {path} is missing required columns: {missing}"
-        )
+        raise ValueError(f"parquet at {path} is missing required columns: {missing}")
     df = df.sort(["symbol", "ts_event"])
     by_symbol: dict[str, list[BarEvent]] = {}
     for row in df.to_dicts():
@@ -156,15 +154,11 @@ def build_strategy(
     from float/int/string to ``Decimal`` since JSON only carries numerics.
     """
     if name not in STRATEGY_REGISTRY:
-        raise ValueError(
-            f"unknown strategy {name!r}; valid: {sorted(STRATEGY_REGISTRY)}"
-        )
+        raise ValueError(f"unknown strategy {name!r}; valid: {sorted(STRATEGY_REGISTRY)}")
     cls = STRATEGY_REGISTRY[name]
     kwargs: dict[str, Any] = dict(params or {})
     if "per_symbol_notional" in kwargs:
-        kwargs["per_symbol_notional"] = _coerce_decimal(
-            kwargs["per_symbol_notional"]
-        )
+        kwargs["per_symbol_notional"] = _coerce_decimal(kwargs["per_symbol_notional"])
     instance: Strategy = cls(symbols=list(symbols), **kwargs)
     return instance
 
@@ -255,9 +249,7 @@ async def run_backtest(
         end_ns=end_ns,
         bar_reader=bar_reader,
     )
-    strategy = build_strategy(
-        strategy_name, symbols=symbols, params=strategy_params
-    )
+    strategy = build_strategy(strategy_name, symbols=symbols, params=strategy_params)
     broker = SimBroker(cost_model=cost_model or CostModel())
     blotter = Blotter(starting_cash=starting_cash)
     engine = BacktestEngine(
@@ -303,9 +295,7 @@ async def run_backtest(
         run_dir = root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "run.json").write_text(json.dumps(manifest, indent=2))
-        (run_dir / "report.json").write_text(
-            json.dumps(report_to_dict(report), indent=2)
-        )
+        (run_dir / "report.json").write_text(json.dumps(report_to_dict(report), indent=2))
 
     return RunResult(
         run_id=run_id,
@@ -354,9 +344,7 @@ def list_run_manifests(
             manifests.append(json.loads(manifest_path.read_text()))
         except (json.JSONDecodeError, OSError):
             continue
-    manifests.sort(
-        key=lambda m: int(m.get("started_at") or 0), reverse=True
-    )
+    manifests.sort(key=lambda m: int(m.get("started_at") or 0), reverse=True)
     return manifests
 
 

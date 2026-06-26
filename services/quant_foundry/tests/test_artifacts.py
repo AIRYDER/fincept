@@ -56,8 +56,10 @@ def _write_temp_artifact(data: bytes) -> tuple[str, str]:
 
 def _make_mock_s3_reader(data: bytes):
     """Return a callable that mimics reading from S3 (for test injection)."""
+
     def _reader(bucket: str, key: str) -> bytes:
         return data
+
     return _reader
 
 
@@ -489,9 +491,17 @@ class TestValidArtifactGetsDossierCandidate:
 class TestNoSecretsInArtifactOutput:
     """Artifact records and security receipts must not leak secrets."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_artifact_record_has_no_secret_fields(self, secret_field: str) -> None:
         """ArtifactRecord must not have any secret-named field."""
         fields = set(ArtifactRecord.model_fields.keys())
@@ -519,6 +529,5 @@ class TestNoSecretsInArtifactOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

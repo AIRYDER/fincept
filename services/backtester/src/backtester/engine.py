@@ -163,9 +163,7 @@ class BacktestEngine:
             if price is None:
                 continue
             notional = (Decimal(pos.quantity) * price).copy_abs()
-            notional_by_symbol[symbol] = (
-                notional_by_symbol.get(symbol, Decimal(0)) + notional
-            )
+            notional_by_symbol[symbol] = notional_by_symbol.get(symbol, Decimal(0)) + notional
             gross += notional
         return RiskContext(
             notional_by_symbol=notional_by_symbol,
@@ -314,6 +312,4 @@ class BacktestEngine:
             fees += fill.fee
         # Borrow accrual is tracked aggregate on the blotter (parallel
         # to fees) so we can subtract it in one shot here.
-        return (
-            cash + realized + unrealized - fees - self.blotter.borrow_paid
-        )
+        return cash + realized + unrealized - fees - self.blotter.borrow_paid

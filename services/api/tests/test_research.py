@@ -28,7 +28,9 @@ async def test_exa_research_endpoint_returns_structured_brief(
             "grounding": [
                 {
                     "field": "summary",
-                    "citations": [{"url": "https://example.com/nvda", "title": "NVDA note"}],
+                    "citations": [
+                        {"url": "https://example.com/nvda", "title": "NVDA note"}
+                    ],
                     "confidence": "high",
                 }
             ],
@@ -44,7 +46,9 @@ async def test_exa_research_endpoint_returns_structured_brief(
         return len(records)
 
     monkeypatch.setattr("api.routes.research.run_exa_research", fake_run_exa_research)
-    monkeypatch.setattr("api.routes.research.write_provider_data", fake_write_provider_data)
+    monkeypatch.setattr(
+        "api.routes.research.write_provider_data", fake_write_provider_data
+    )
 
     response = await client.post(
         "/research/exa",
@@ -61,7 +65,10 @@ async def test_exa_research_endpoint_returns_structured_brief(
     payload = response.json()
     assert payload["ok"] is True
     assert payload["request_id"] == "req_123"
-    assert payload["brief"]["headline"] == "NVDA supply constraints remain the key watch item"
+    assert (
+        payload["brief"]["headline"]
+        == "NVDA supply constraints remain the key watch item"
+    )
     assert payload["brief"]["bull_case"] == ["Hyperscaler capex remains resilient"]
     assert payload["grounding"][0]["confidence"] == "high"
     assert len(captured_records) == 1
@@ -109,7 +116,9 @@ async def test_openbb_quote_endpoint_returns_market_rows(
         }
 
     monkeypatch.setattr("api.routes.research.run_openbb_quote", fake_run_openbb_quote)
-    monkeypatch.setattr("api.routes.research.write_provider_data", fake_write_provider_data)
+    monkeypatch.setattr(
+        "api.routes.research.write_provider_data", fake_write_provider_data
+    )
 
     response = await client.post(
         "/research/openbb/quote",
@@ -168,7 +177,9 @@ async def test_openbb_call_endpoint_dispatches_to_tool(
         }
 
     monkeypatch.setattr("api.routes.research.run_openbb_call", fake_run_openbb_call)
-    monkeypatch.setattr("api.routes.research.write_provider_data", fake_write_provider_data)
+    monkeypatch.setattr(
+        "api.routes.research.write_provider_data", fake_write_provider_data
+    )
 
     response = await client.post(
         "/research/openbb",

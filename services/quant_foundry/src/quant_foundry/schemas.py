@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class Authority(StrEnum):
     """Authority level for predictions/signals. Only 'shadow-only' allowed for external worker output initially."""
+
     SHADOW_ONLY = "shadow-only"
 
 
@@ -232,6 +233,7 @@ class WorkerHeartbeat(BaseModel):
 
 
 # --- Skeleton compatibility (TASK-0301) ---
+
 
 class PlaceholderJob(BaseModel):
     """Retained for backward compat with skeleton tests / __init__ re-export during Wave 1-2 transition."""

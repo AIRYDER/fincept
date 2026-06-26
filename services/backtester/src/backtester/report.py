@@ -172,9 +172,7 @@ def _per_symbol_stats(blotter: Blotter) -> list[PerSymbolStats]:
             slot["bought_qty"] = Decimal(slot["bought_qty"]) + fill.quantity
         else:
             slot["sold_qty"] = Decimal(slot["sold_qty"]) + fill.quantity
-        slot["notional_traded"] = (
-            Decimal(slot["notional_traded"]) + fill.price * fill.quantity
-        )
+        slot["notional_traded"] = Decimal(slot["notional_traded"]) + fill.price * fill.quantity
         slot["fees_paid"] = Decimal(slot["fees_paid"]) + fill.fee
     rows: list[PerSymbolStats] = []
     for sym, slot in sorted(by_sym.items()):
@@ -224,13 +222,9 @@ def compute_metrics(
     """
     equity = _equity_floats(blotter)
     starting_cash = float(blotter.starting_cash)
-    final_equity = (
-        equity[-1][1] if equity else float(blotter.starting_cash)
-    )
+    final_equity = equity[-1][1] if equity else float(blotter.starting_cash)
     total_return = (
-        (final_equity - starting_cash) / starting_cash * 100.0
-        if starting_cash > 0
-        else 0.0
+        (final_equity - starting_cash) / starting_cash * 100.0 if starting_cash > 0 else 0.0
     )
     returns = _bar_returns(equity)
     sharpe = _sharpe(returns, bars_per_year=bars_per_year)

@@ -37,9 +37,9 @@ def test_levenshtein_handles_identical() -> None:
     "a,b",
     [
         ("aapl", "aaple"),  # insertion
-        ("nvda", "nvd"),    # deletion
-        ("nvda", "nvds"),   # substitution
-        ("", "a"),          # empty + 1
+        ("nvda", "nvd"),  # deletion
+        ("nvda", "nvds"),  # substitution
+        ("", "a"),  # empty + 1
     ],
 )
 def test_levenshtein_one_edit(a: str, b: str) -> None:
@@ -49,9 +49,9 @@ def test_levenshtein_one_edit(a: str, b: str) -> None:
 @pytest.mark.parametrize(
     "a,b",
     [
-        ("aapl", "msft"),    # totally different
+        ("aapl", "msft"),  # totally different
         ("nvda", "nvdaxy"),  # 2 insertions
-        ("abc", "xyz"),      # 3 substitutions
+        ("abc", "xyz"),  # 3 substitutions
     ],
 )
 def test_levenshtein_rejects_two_or_more_edits(a: str, b: str) -> None:
@@ -217,9 +217,7 @@ async def test_symbol_search_includes_universe_overrides(
             }
         ]
 
-    monkeypatch.setattr(
-        "api.routes.data.read_universe", universe_with_custom
-    )
+    monkeypatch.setattr("api.routes.data.read_universe", universe_with_custom)
 
     response = await client.get(
         "/data/symbols/search",

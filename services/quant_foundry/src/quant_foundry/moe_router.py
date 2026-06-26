@@ -133,9 +133,7 @@ class RoutingDecision(BaseModel):
         return {
             "weights": [w.model_dump() for w in self.weights],
             "is_abstain": self.is_abstain,
-            "abstain_reason": (
-                self.abstain_reason.value if self.abstain_reason else None
-            ),
+            "abstain_reason": (self.abstain_reason.value if self.abstain_reason else None),
         }
 
 
@@ -266,7 +264,8 @@ class MoERouter:
 
         # 5. Check calibration — abstain if all eligible models have poor calibration.
         well_calibrated = [
-            e for e in eligible
+            e
+            for e in eligible
             if e.calibration_summary is None
             or e.calibration_summary.brier_score <= self.config.max_brier_score
         ]
@@ -279,8 +278,7 @@ class MoERouter:
 
         # 6. Check settled evidence — abstain if all models have insufficient evidence.
         sufficient_evidence = [
-            e for e in well_calibrated
-            if e.settled_count >= self.config.min_settled_count
+            e for e in well_calibrated if e.settled_count >= self.config.min_settled_count
         ]
         if not sufficient_evidence:
             return RoutingDecision(
@@ -290,9 +288,7 @@ class MoERouter:
             )
 
         # 7. Compute scores for eligible entries.
-        scored = [
-            (e, self._get_entry_score(e, ctx)) for e in sufficient_evidence
-        ]
+        scored = [(e, self._get_entry_score(e, ctx)) for e in sufficient_evidence]
 
         # 8. Filter out non-positive scores.
         positive = [(e, s) for e, s in scored if s > 0]

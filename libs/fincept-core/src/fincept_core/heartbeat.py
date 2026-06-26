@@ -57,9 +57,7 @@ async def beat_periodically(
     pause without flapping.
     """
     if ttl_sec <= interval_sec:
-        raise ValueError(
-            f"ttl_sec ({ttl_sec}) must be greater than interval_sec ({interval_sec})"
-        )
+        raise ValueError(f"ttl_sec ({ttl_sec}) must be greater than interval_sec ({interval_sec})")
     key = _key(name)
     try:
         while True:
@@ -87,9 +85,7 @@ async def read_all(redis: Redis[Any]) -> dict[str, float]:
         if raw_val is None:
             continue
         try:
-            out[name] = float(
-                raw_val.decode() if isinstance(raw_val, bytes) else raw_val
-            )
+            out[name] = float(raw_val.decode() if isinstance(raw_val, bytes) else raw_val)
         except ValueError:
             continue
     return out

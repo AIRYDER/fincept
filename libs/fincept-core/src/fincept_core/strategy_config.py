@@ -74,7 +74,7 @@ def _default_configs_dir() -> pathlib.Path:
 # Same anti-traversal allow-list as agent_id / model_name in
 # api.promotions and agent_id in prediction_log.  Keep these three
 # in sync if the policy ever changes.
-_BAD_NAME_CHARS = set("/\\:*?\"<>|\0")
+_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
 
 
 class StrategyConfigError(ValueError):
@@ -86,9 +86,7 @@ def _validate_strategy_id(strategy_id: str) -> None:
     if not strategy_id or any(c in _BAD_NAME_CHARS for c in strategy_id):
         raise StrategyConfigError(f"invalid strategy_id: {strategy_id!r}")
     if strategy_id in {".", ".."} or strategy_id.startswith("."):
-        raise StrategyConfigError(
-            f"strategy_id may not start with '.': {strategy_id!r}"
-        )
+        raise StrategyConfigError(f"strategy_id may not start with '.': {strategy_id!r}")
 
 
 # --------------------------------------------------------------------------- #
@@ -170,9 +168,7 @@ class StrategyConfig:
             symbols=list(data.get("symbols") or []),
             params=dict(data.get("params") or {}),
             model_binding=(
-                None
-                if data.get("model_binding") in (None, "")
-                else str(data["model_binding"])
+                None if data.get("model_binding") in (None, "") else str(data["model_binding"])
             ),
             enabled=bool(data.get("enabled", False)),
             created_at=float(data.get("created_at", 0.0)),
@@ -202,9 +198,7 @@ class StrategyConfigStore:
         *,
         configs_dir: pathlib.Path | None = None,
     ) -> None:
-        self._configs_dir = (
-            configs_dir if configs_dir is not None else _default_configs_dir()
-        )
+        self._configs_dir = configs_dir if configs_dir is not None else _default_configs_dir()
 
     @property
     def configs_dir(self) -> pathlib.Path:
@@ -240,9 +234,7 @@ class StrategyConfigStore:
             TypeError,
             ValueError,
         ) as exc:
-            logger.warning(
-                "strategy config %s malformed: %s", path.name, exc
-            )
+            logger.warning("strategy config %s malformed: %s", path.name, exc)
             return None
 
     def list_all(self) -> list[StrategyConfig]:
@@ -274,9 +266,7 @@ class StrategyConfigStore:
                 out.append(cfg)
         return out
 
-    def get_history(
-        self, strategy_id: str, *, limit: int = 50
-    ) -> list[StrategyConfig]:
+    def get_history(self, strategy_id: str, *, limit: int = 50) -> list[StrategyConfig]:
         """Most-recent ``limit`` config snapshots, newest first.
 
         The history file is append-only; on partial-write only the
@@ -307,9 +297,7 @@ class StrategyConfigStore:
                 TypeError,
                 ValueError,
             ) as exc:
-                logger.warning(
-                    "history line in %s skipped: %s", path.name, exc
-                )
+                logger.warning("history line in %s skipped: %s", path.name, exc)
             if len(out) >= limit:
                 break
         return out
@@ -346,15 +334,11 @@ class StrategyConfigStore:
             updated_at=now,
         )
         self._configs_dir.mkdir(parents=True, exist_ok=True)
-        self._atomic_write_json(
-            self._config_path(sealed.strategy_id), sealed.to_dict()
-        )
+        self._atomic_write_json(self._config_path(sealed.strategy_id), sealed.to_dict())
         self._append_history(self._history_path(sealed.strategy_id), sealed)
         return sealed
 
-    def set_enabled(
-        self, strategy_id: str, *, enabled: bool
-    ) -> StrategyConfig:
+    def set_enabled(self, strategy_id: str, *, enabled: bool) -> StrategyConfig:
         """Flip the run flag.  Raises if the config doesn't exist.
 
         Idempotent: if the flag already matches, no rewrite happens
@@ -365,8 +349,7 @@ class StrategyConfigStore:
         existing = self.get(strategy_id)
         if existing is None:
             raise StrategyConfigError(
-                f"strategy {strategy_id!r} not found; create it before "
-                "toggling enabled"
+                f"strategy {strategy_id!r} not found; create it before toggling enabled"
             )
         if existing.enabled == enabled:
             return existing
@@ -442,9 +425,7 @@ def get_strategy_config_store() -> StrategyConfigStore:
     return _store
 
 
-def reset_strategy_config_store(
-    *, configs_dir: pathlib.Path | None = None
-) -> StrategyConfigStore:
+def reset_strategy_config_store(*, configs_dir: pathlib.Path | None = None) -> StrategyConfigStore:
     """Test hook: rebuild the singleton against a fresh dir."""
     global _store
     _store = StrategyConfigStore(configs_dir=configs_dir)

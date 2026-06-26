@@ -84,9 +84,7 @@ async def export_labeled_examples(
         data = await redis.hgetall(raw_key)
         decoded = {
             key: value
-            for key, value in (
-                (_decode(k), _decode(v)) for k, v in data.items()
-            )
+            for key, value in ((_decode(k), _decode(v)) for k, v in data.items())
             if key is not None and value is not None
         }
         row = _row_from_example(decoded, horizon=horizon, feature_names=features)
@@ -223,7 +221,11 @@ async def _export_command(args: argparse.Namespace) -> None:
 def _train_command(args: argparse.Namespace) -> None:
     feature_names = list(DEFAULT_FEATURES)
     input_path = pathlib.Path(args.input)
-    df = pl.read_csv(input_path) if input_path.suffix.lower() == ".csv" else pl.read_parquet(input_path)
+    df = (
+        pl.read_csv(input_path)
+        if input_path.suffix.lower() == ".csv"
+        else pl.read_parquet(input_path)
+    )
     X, y = build_dataset(
         df,
         horizon=args.horizon,

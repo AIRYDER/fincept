@@ -22,7 +22,6 @@ from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.runpod_client import MockRunPodClient
 
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
@@ -99,9 +98,7 @@ class TestDispatchShadowInferenceBatch:
         assert receipt["skipped"] == 0
         assert len(receipt["job_ids"]) == 1
 
-    def test_dispatches_for_shadow_approved_models(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_dispatches_for_shadow_approved_models(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-a"))
         gw.dossier_registry().register(_dossier("model-b"))
@@ -116,9 +113,7 @@ class TestDispatchShadowInferenceBatch:
 
     def test_skips_non_shadow_approved_models(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
-        gw.dossier_registry().register(
-            _dossier("model-candidate", status=DossierStatus.CANDIDATE)
-        )
+        gw.dossier_registry().register(_dossier("model-candidate", status=DossierStatus.CANDIDATE))
         gw.dossier_registry().register(_dossier("model-shadow"))
 
         receipt = gw.dispatch_shadow_inference_batch()
@@ -168,7 +163,11 @@ class TestDispatchShadowInferenceBatch:
         receipt = gw.dispatch_shadow_inference_batch()
 
         assert set(receipt.keys()) >= {
-            "enabled", "dispatched", "skipped", "job_ids", "errors",
+            "enabled",
+            "dispatched",
+            "skipped",
+            "job_ids",
+            "errors",
         }
         assert receipt["enabled"] is True
         assert receipt["dispatched"] == 1
@@ -177,9 +176,7 @@ class TestDispatchShadowInferenceBatch:
         assert all(isinstance(jid, str) for jid in receipt["job_ids"])
         assert isinstance(receipt["errors"], list)
 
-    def test_updates_dispatch_count_and_timestamp(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_updates_dispatch_count_and_timestamp(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-count"))
 
@@ -254,9 +251,7 @@ class TestShadowDispatchStatus:
 
 
 class TestDispatchIntegration:
-    def test_settlement_sweep_still_works_after_dispatch(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_settlement_sweep_still_works_after_dispatch(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-int-settle"))
         gw.dispatch_shadow_inference_batch()
@@ -264,9 +259,7 @@ class TestDispatchIntegration:
         receipt = gw.run_settlement_sweep()
         assert "settled_count" in receipt
 
-    def test_tournament_sweep_still_works_after_dispatch(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_tournament_sweep_still_works_after_dispatch(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-int-tourn"))
         gw.dispatch_shadow_inference_batch()
@@ -274,9 +267,7 @@ class TestDispatchIntegration:
         receipt = gw.run_tournament_sweep()
         assert receipt["enabled"] is True
 
-    def test_poll_runpod_results_still_works_after_dispatch(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_poll_runpod_results_still_works_after_dispatch(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-int-poll"))
         gw.dispatch_shadow_inference_batch()
@@ -284,9 +275,7 @@ class TestDispatchIntegration:
         results = gw.poll_runpod_results()
         assert isinstance(results, list)
 
-    def test_shadow_health_still_works_after_dispatch(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_shadow_health_still_works_after_dispatch(self, tmp_path: pathlib.Path) -> None:
         gw = _gateway(tmp_path)
         gw.dossier_registry().register(_dossier("model-int-health"))
         gw.dispatch_shadow_inference_batch()

@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 import pytest
+from quant_foundry.schemas import RunPodTrainingRequest
 
 # --- lazy import tests (no ML deps required) --------------------------------
 
@@ -93,9 +94,7 @@ def _make_training_request(
     job_id: str,
     dataset_ref: str,
     seed: int = 42,
-) -> "RunPodTrainingRequest":
-    from quant_foundry.schemas import RunPodTrainingRequest
-
+) -> RunPodTrainingRequest:
     return RunPodTrainingRequest(
         job_id=job_id,
         dataset_manifest_ref=dataset_ref,
@@ -121,7 +120,7 @@ def test_real_trainer_produces_real_artifact(tmp_path: Path) -> None:
 
     trainer = RealLightGBMTrainer()
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    artifact, _dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     assert isinstance(artifact, ArtifactManifest)
     assert artifact.sha256  # non-empty
@@ -183,7 +182,7 @@ def test_real_trainer_produces_real_metrics(tmp_path: Path) -> None:
 
     trainer = RealLightGBMTrainer()
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     metrics = dossier.training_metrics
     assert "accuracy" in metrics
@@ -264,7 +263,7 @@ def test_real_trainer_shadow_only(tmp_path: Path) -> None:
 
     trainer = RealLightGBMTrainer()
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     assert dossier.authority == Authority.SHADOW_ONLY
 
@@ -348,9 +347,16 @@ def test_real_trainer_handler_no_broker_credentials(tmp_path: Path) -> None:
         trainer=RealLightGBMTrainer(),
     )
     for attr in (
-        "redis", "broker", "bus", "producer", "stream",
-        "sig_predict_writer", "order_writer", "trading_stream",
-        "FINCEPT_JWT_SECRET", "ALPACA_API_KEY",
+        "redis",
+        "broker",
+        "bus",
+        "producer",
+        "stream",
+        "sig_predict_writer",
+        "order_writer",
+        "trading_stream",
+        "FINCEPT_JWT_SECRET",
+        "ALPACA_API_KEY",
     ):
         assert not hasattr(handler, attr), f"handler must not have {attr}"
 
@@ -368,7 +374,7 @@ def test_real_trainer_metadata_contains_trainer_tag(tmp_path: Path) -> None:
 
     trainer = RealLightGBMTrainer()
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     assert dossier.metadata.get("trainer") == "real_lightgbm"
     assert dossier.metadata.get("model_family") == "gbm"
@@ -390,7 +396,7 @@ def test_real_trainer_pbo_in_valid_range(tmp_path: Path) -> None:
 
     trainer = RealLightGBMTrainer()
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     assert dossier.pbo is not None
     assert 0.0 <= dossier.pbo <= 1.0
@@ -401,7 +407,7 @@ def test_real_trainer_pbo_in_valid_range(tmp_path: Path) -> None:
 
 def test_local_trainer_still_works() -> None:
     """LocalTrainer must still work unchanged (backward compat)."""
-    from quant_foundry.runpod_training import LocalTrainer, RunPodTrainingHandler
+    from quant_foundry.runpod_training import RunPodTrainingHandler
     from quant_foundry.schemas import (
         ArtifactManifest,
         Authority,

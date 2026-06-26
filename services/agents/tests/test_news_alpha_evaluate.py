@@ -11,7 +11,9 @@ from agents.news_alpha_predictor.evaluate import (
 )
 
 
-def _write_model(path: pathlib.Path, *, auc: float = 0.61, rows: int = 500, val_rows: int = 100) -> None:
+def _write_model(
+    path: pathlib.Path, *, auc: float = 0.61, rows: int = 500, val_rows: int = 100
+) -> None:
     path.mkdir(parents=True, exist_ok=True)
     (path / "model.txt").write_text("model")
     (path / "meta.json").write_text(
@@ -29,7 +31,9 @@ def _write_model(path: pathlib.Path, *, auc: float = 0.61, rows: int = 500, val_
     )
 
 
-def test_evaluate_candidate_approves_model_that_passes_policy(tmp_path: pathlib.Path) -> None:
+def test_evaluate_candidate_approves_model_that_passes_policy(
+    tmp_path: pathlib.Path,
+) -> None:
     models = tmp_path / "models"
     candidate = models / "news_alpha_predictor_candidate"
     _write_model(candidate, auc=0.62, rows=500, val_rows=100)
@@ -43,8 +47,13 @@ def test_evaluate_candidate_approves_model_that_passes_policy(tmp_path: pathlib.
     assert report.approved is True
     assert report.reasons == []
     assert report.candidate_model_name == "news_alpha_predictor_candidate"
-    assert report.promotion_hint["shadow"]["path"] == "/models/news_alpha_predictor_candidate/shadow"
-    assert report.promotion_hint["active"]["body"]["agent_id"] == "news_alpha_predictor.v1"
+    assert (
+        report.promotion_hint["shadow"]["path"]
+        == "/models/news_alpha_predictor_candidate/shadow"
+    )
+    assert (
+        report.promotion_hint["active"]["body"]["agent_id"] == "news_alpha_predictor.v1"
+    )
 
 
 def test_evaluate_candidate_rejects_low_auc_and_rows(tmp_path: pathlib.Path) -> None:
@@ -87,7 +96,9 @@ def test_evaluate_candidate_compares_against_active_auc(tmp_path: pathlib.Path) 
         candidate_dir=candidate,
         models_dir=models,
         active_dir=active_dir,
-        policy=CandidateGatePolicy(min_auc=0.55, min_rows=200, min_val_rows=40, min_auc_delta=0.0),
+        policy=CandidateGatePolicy(
+            min_auc=0.55, min_rows=200, min_val_rows=40, min_auc_delta=0.0
+        ),
     )
 
     assert report.approved is False

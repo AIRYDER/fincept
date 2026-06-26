@@ -135,9 +135,7 @@ class AlpacaClient:
     ) -> list[dict[str, Any]]:
         """GET /v2/orders - recent orders (default: all statuses, 100 rows)."""
         params = {"status": status, "limit": str(limit), "direction": "desc"}
-        response = await self._http.get(
-            "/v2/orders", headers=self._headers, params=params
-        )
+        response = await self._http.get("/v2/orders", headers=self._headers, params=params)
         data = self._parse(response)
         if isinstance(data, list):
             return cast(list[dict[str, Any]], data)

@@ -61,7 +61,7 @@ def stub_trainer_cmd(tmp_path: pathlib.Path) -> list[str]:
     """
     script = tmp_path / "stub_trainer.py"
     script.write_text(
-        '''
+        """
 import argparse, json, pathlib, sys
 
 p = argparse.ArgumentParser()
@@ -93,7 +93,7 @@ out.mkdir(parents=True, exist_ok=True)
     "eval_mode": "walk_forward" if args.cv_folds > 0 else "holdout_80_20",
 }))
 print("done")
-'''
+"""
     )
     return [sys.executable, str(script)]
 
@@ -241,12 +241,8 @@ class TestValidation:
         with pytest.raises(TrainingValidationError):
             _validate_request(req)
 
-    @pytest.mark.parametrize(
-        "name", ["foo/bar", "..", ".secret", "a:b", "x*y", 'q"r']
-    )
-    def test_rejects_dangerous_names(
-        self, name: str, tmp_path: pathlib.Path
-    ) -> None:
+    @pytest.mark.parametrize("name", ["foo/bar", "..", ".secret", "a:b", "x*y", 'q"r'])
+    def test_rejects_dangerous_names(self, name: str, tmp_path: pathlib.Path) -> None:
         from api.training import (
             TrainingRequest,
             TrainingValidationError,
@@ -454,9 +450,7 @@ class TestStoreLifecycle:
 
 class TestTrainRoute:
     @pytest.mark.asyncio
-    async def test_requires_auth(
-        self, client: AsyncClient, patched_training
-    ) -> None:
+    async def test_requires_auth(self, client: AsyncClient, patched_training) -> None:
         response = await client.post("/models/train", json={})
         assert response.status_code == 401
 
@@ -507,9 +501,7 @@ class TestTrainRoute:
 
         # Wait for completion via the store, then poll the detail route.
         await _wait_terminal(store, run_id)
-        detail = await client.get(
-            f"/models/runs/{run_id}", headers=auth_headers
-        )
+        detail = await client.get(f"/models/runs/{run_id}", headers=auth_headers)
         assert detail.status_code == 200
         d = detail.json()
         assert d["status"] == "completed"
@@ -612,9 +604,7 @@ class TestRunsRoutes:
         assert body["runs"][0]["run_id"] == run_id
 
         # status filter still works.
-        filtered = await client.get(
-            "/models/runs?status=failed", headers=auth_headers
-        )
+        filtered = await client.get("/models/runs?status=failed", headers=auth_headers)
         assert filtered.json()["runs"] == []
 
     @pytest.mark.asyncio
@@ -624,9 +614,7 @@ class TestRunsRoutes:
         auth_headers: dict[str, str],
         patched_training,
     ) -> None:
-        response = await client.get(
-            "/models/runs/no_such_id", headers=auth_headers
-        )
+        response = await client.get("/models/runs/no_such_id", headers=auth_headers)
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -636,9 +624,7 @@ class TestRunsRoutes:
         auth_headers: dict[str, str],
         patched_training,
     ) -> None:
-        response = await client.get(
-            "/models/runs?status=banana", headers=auth_headers
-        )
+        response = await client.get("/models/runs?status=banana", headers=auth_headers)
         assert response.status_code == 400
 
     @pytest.mark.asyncio
@@ -648,11 +634,7 @@ class TestRunsRoutes:
         auth_headers: dict[str, str],
         patched_training,
     ) -> None:
-        response = await client.get(
-            "/models/runs?limit=0", headers=auth_headers
-        )
+        response = await client.get("/models/runs?limit=0", headers=auth_headers)
         assert response.status_code == 400
-        response = await client.get(
-            "/models/runs?limit=999", headers=auth_headers
-        )
+        response = await client.get("/models/runs?limit=999", headers=auth_headers)
         assert response.status_code == 400

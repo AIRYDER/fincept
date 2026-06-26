@@ -303,11 +303,17 @@ app.include_router(health_route.router, prefix="/health", tags=["health"])
 app.include_router(control.router, prefix="", tags=["control"])
 # Quant Foundry gateway (TASK-0306). Disabled by default; operator endpoints
 # bearer-auth, callback endpoint HMAC-auth. No bus / sig.predict writes.
-app.include_router(quant_foundry_route.router, prefix="/quant-foundry", tags=["quant-foundry"])
+app.include_router(
+    quant_foundry_route.router, prefix="/quant-foundry", tags=["quant-foundry"]
+)
 # Alpha Genome Lab (TASK-1005) — recipe sweep surface, mounted under the same
 # gateway prefix so the operator URL is consistent. Bearer-auth; opt-in; no
 # bypass of tournament / promotion gates.
-app.include_router(quant_foundry_alpha_route.router, prefix="/quant-foundry/alpha", tags=["quant-foundry-alpha"])
+app.include_router(
+    quant_foundry_alpha_route.router,
+    prefix="/quant-foundry/alpha",
+    tags=["quant-foundry-alpha"],
+)
 # On-demand module control (TASK-0203). Auth-required, local-only launches.
 app.include_router(modules_route.router, prefix="/modules", tags=["modules"])
 # WebSocket multiplexer.

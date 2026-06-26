@@ -44,7 +44,9 @@ def _write_synth_parquet(path: pathlib.Path, n_bars: int = 60) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _patch_reports_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+def _patch_reports_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> pathlib.Path:
     """Redirect the runner + route at a tmp_path reports root."""
     root = tmp_path / "backtest_reports"
     root.mkdir()
@@ -109,9 +111,7 @@ class TestRunEndpoint:
             "starting_cash": 50_000,
             "freq": "1m",
         }
-        response = await client.post(
-            "/backtest/run", json=body, headers=auth_headers
-        )
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
         assert response.status_code == 200, response.text
         payload = response.json()
         assert "run_id" in payload
@@ -132,9 +132,7 @@ class TestRunEndpoint:
             "bars_path": str(synth_parquet),
             "strategy": "definitely_not_real",
         }
-        response = await client.post(
-            "/backtest/run", json=body, headers=auth_headers
-        )
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
         assert response.status_code == 400
         assert "unknown strategy" in response.json()["detail"]
 
@@ -149,9 +147,7 @@ class TestRunEndpoint:
             "bars_path": str(tmp_path / "nope.parquet"),
             "strategy": "buy_and_hold",
         }
-        response = await client.post(
-            "/backtest/run", json=body, headers=auth_headers
-        )
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
         assert response.status_code == 400
         assert "does not exist" in response.json()["detail"]
 
@@ -167,9 +163,7 @@ class TestRunEndpoint:
             "strategy": "buy_and_hold",
             "venue": "definitely_not_a_venue",
         }
-        response = await client.post(
-            "/backtest/run", json=body, headers=auth_headers
-        )
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
         assert response.status_code == 400
 
 
@@ -200,9 +194,7 @@ class TestRunsListAndDetail:
             "bars_path": str(synth_parquet),
             "strategy": "buy_and_hold",
         }
-        run_resp = await client.post(
-            "/backtest/run", json=body, headers=auth_headers
-        )
+        run_resp = await client.post("/backtest/run", json=body, headers=auth_headers)
         assert run_resp.status_code == 200
         run_id = run_resp.json()["run_id"]
 
@@ -212,9 +204,7 @@ class TestRunsListAndDetail:
         assert len(runs) == 1
         assert runs[0]["run_id"] == run_id
 
-        detail_resp = await client.get(
-            f"/backtest/runs/{run_id}", headers=auth_headers
-        )
+        detail_resp = await client.get(f"/backtest/runs/{run_id}", headers=auth_headers)
         assert detail_resp.status_code == 200
         detail = detail_resp.json()
         assert detail["run_id"] == run_id

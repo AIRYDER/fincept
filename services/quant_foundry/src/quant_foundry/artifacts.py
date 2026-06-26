@@ -181,10 +181,11 @@ def _validate_uri(uri: str) -> tuple[str, str, str]:
     scheme = (parsed.scheme or "").lower()
     if scheme not in _ALLOWED_URI_SCHEMES:
         raise UnsupportedUriError(
-            f"unsupported artifact URI scheme {scheme!r}; allowed: "
-            f"{sorted(_ALLOWED_URI_SCHEMES)}",
+            f"unsupported artifact URI scheme {scheme!r}; allowed: {sorted(_ALLOWED_URI_SCHEMES)}",
             security_receipt=SecurityReceipt(
-                uri=uri, reason="unsupported_uri", detail={"scheme": scheme},
+                uri=uri,
+                reason="unsupported_uri",
+                detail={"scheme": scheme},
             ),
         )
     if scheme == "s3":
@@ -299,10 +300,10 @@ def import_artifact(
         ext = _get_content_type(uri)
         if ext not in allowed_content_types:
             raise ArtifactContentTypeError(
-                f"artifact content type {ext!r} not in allowed: "
-                f"{sorted(allowed_content_types)}",
+                f"artifact content type {ext!r} not in allowed: {sorted(allowed_content_types)}",
                 security_receipt=SecurityReceipt(
-                    uri=uri, reason="invalid_content_type",
+                    uri=uri,
+                    reason="invalid_content_type",
                     detail={"extension": ext, "allowed": sorted(allowed_content_types)},
                 ),
             )
@@ -329,16 +330,15 @@ def import_artifact(
         raise ArtifactSizeError(
             f"artifact size {len(data)} bytes exceeds max {max_size_bytes} bytes",
             security_receipt=SecurityReceipt(
-                uri=uri, reason="oversized",
+                uri=uri,
+                reason="oversized",
                 detail={"size_bytes": len(data), "max_size_bytes": max_size_bytes},
             ),
         )
 
     # Quarantine / staging: copy to staging dir before hash verification.
     if quarantine_dir is not None:
-        staging_path = os.path.join(
-            quarantine_dir, f"{artifact_id}_{expected_sha256[:16]}.staging"
-        )
+        staging_path = os.path.join(quarantine_dir, f"{artifact_id}_{expected_sha256[:16]}.staging")
         pathlib.Path(staging_path).write_bytes(data)
 
     # Hash verification (fail closed on mismatch).
@@ -348,7 +348,8 @@ def import_artifact(
         raise ArtifactHashMismatchError(
             str(exc),
             security_receipt=SecurityReceipt(
-                uri=uri, reason="hash_mismatch",
+                uri=uri,
+                reason="hash_mismatch",
                 detail={
                     "expected": expected_sha256,
                     "actual": hashlib.sha256(data).hexdigest(),

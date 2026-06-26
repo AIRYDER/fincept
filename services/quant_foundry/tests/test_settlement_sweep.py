@@ -18,7 +18,6 @@ from quant_foundry.settlement import SettlementLedger
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
 from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
 
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
@@ -65,6 +64,7 @@ def _make_bar_reader(
 ):
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
         return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
+
     return reader
 
 

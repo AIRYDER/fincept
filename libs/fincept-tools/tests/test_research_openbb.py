@@ -238,7 +238,10 @@ async def test_check_openbb_readiness_separates_api_from_provider(
         if url.endswith("/openapi.json"):
             return {"openapi": "3.1.0"}
         if url.endswith("/api/v1/equity/price/quote"):
-            return {"provider": "yfinance", "results": [{"symbol": params["symbol"], "last_price": 100}]}
+            return {
+                "provider": "yfinance",
+                "results": [{"symbol": params["symbol"], "last_price": 100}],
+            }
         raise ToolBackendError("provider failed for fundamentals")
 
     monkeypatch.setenv("OPENBB_API_URL", "http://127.0.0.1:6900")

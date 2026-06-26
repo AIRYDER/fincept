@@ -147,9 +147,7 @@ class ShadowSettlementOrchestrator:
 
     def _verify_signature(self, batch_hash: str, signature: str) -> bool:
         """Verify the HMAC signature of the batch hash."""
-        expected = hmac.new(
-            self.secret, batch_hash.encode(), hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(self.secret, batch_hash.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature)
 
     def store_batch(
@@ -170,12 +168,14 @@ class ShadowSettlementOrchestrator:
         # Verify signature.
         if not self._verify_signature(batch_hash, signature):
             return SettlementReceipt(
-                rejected=[RejectedCallback(
-                    reason=CallbackRejectionReason.BAD_SIGNATURE,
-                    message="HMAC signature mismatch",
-                    raw_payload={"batch_hash": batch_hash, "n_predictions": len(predictions)},
-                    rejected_at_ns=now_ns,
-                )],
+                rejected=[
+                    RejectedCallback(
+                        reason=CallbackRejectionReason.BAD_SIGNATURE,
+                        message="HMAC signature mismatch",
+                        raw_payload={"batch_hash": batch_hash, "n_predictions": len(predictions)},
+                        rejected_at_ns=now_ns,
+                    )
+                ],
                 batch_hash=batch_hash,
             )
 
@@ -183,12 +183,14 @@ class ShadowSettlementOrchestrator:
         computed = compute_batch_hash(predictions)
         if computed != batch_hash:
             return SettlementReceipt(
-                rejected=[RejectedCallback(
-                    reason=CallbackRejectionReason.BAD_HASH,
-                    message="batch hash mismatch (tamper / serialization mismatch)",
-                    raw_payload={"expected": batch_hash, "computed": computed},
-                    rejected_at_ns=now_ns,
-                )],
+                rejected=[
+                    RejectedCallback(
+                        reason=CallbackRejectionReason.BAD_HASH,
+                        message="batch hash mismatch (tamper / serialization mismatch)",
+                        raw_payload={"expected": batch_hash, "computed": computed},
+                        rejected_at_ns=now_ns,
+                    )
+                ],
                 batch_hash=batch_hash,
             )
 
@@ -198,12 +200,14 @@ class ShadowSettlementOrchestrator:
                 ShadowPrediction(**p)
             except Exception as e:
                 return SettlementReceipt(
-                    rejected=[RejectedCallback(
-                        reason=CallbackRejectionReason.BAD_SCHEMA,
-                        message=f"schema validation failed: {e}",
-                        raw_payload=p,
-                        rejected_at_ns=now_ns,
-                    )],
+                    rejected=[
+                        RejectedCallback(
+                            reason=CallbackRejectionReason.BAD_SCHEMA,
+                            message=f"schema validation failed: {e}",
+                            raw_payload=p,
+                            rejected_at_ns=now_ns,
+                        )
+                    ],
                     batch_hash=batch_hash,
                 )
 

@@ -111,21 +111,24 @@ class MockDispatcher:
             )
 
         # Parse the request against the real schema (defense in depth).
-        job_type = JobType(rec.job_type) if rec.job_type in JobType._value2member_map_ else rec.job_type
+        job_type = (
+            JobType(rec.job_type) if rec.job_type in JobType._value2member_map_ else rec.job_type
+        )
         result_type: str
         if job_type == JobType.TRAINING:
             train_req = RunPodTrainingRequest.model_validate(
-                request_payload if isinstance(request_payload, dict)
-                else json.loads(payload_bytes)
+                request_payload if isinstance(request_payload, dict) else json.loads(payload_bytes)
             )
             envelope_payload = self._simulate_training(
-                job_id, rec.idempotency_key, train_req, payload_hash,
+                job_id,
+                rec.idempotency_key,
+                train_req,
+                payload_hash,
             )
             result_type = "training_complete"
         elif job_type == JobType.INFERENCE:
             infer_req = RunPodInferenceRequest.model_validate(
-                request_payload if isinstance(request_payload, dict)
-                else json.loads(payload_bytes)
+                request_payload if isinstance(request_payload, dict) else json.loads(payload_bytes)
             )
             envelope_payload = self._simulate_inference(job_id, infer_req, payload_hash)
             result_type = "inference_batch"
@@ -157,7 +160,10 @@ class MockDispatcher:
         # Sign the callback (real HMAC path).
         ts = int(time.time())
         signature = sign_callback(
-            envelope_bytes, secret=self.callback_secret, ts=ts, job_id=job_id,
+            envelope_bytes,
+            secret=self.callback_secret,
+            ts=ts,
+            job_id=job_id,
         )
 
         # Record the callback in the inbox (real durability path).
@@ -190,8 +196,10 @@ class MockDispatcher:
         if rec is None:
             raise KeyError(f"unknown job_id: {job_id}")
         self.outbox.update_status(
-            job_id, JobStatus.FAILED,
-            error_code=error_code, error_summary=error_summary,
+            job_id,
+            JobStatus.FAILED,
+            error_code=error_code,
+            error_summary=error_summary,
         )
         return {
             "job_id": job_id,
@@ -251,13 +259,16 @@ class MockDispatcher:
         }
 
     def _simulate_inference(
-        self, job_id: str, req: RunPodInferenceRequest, payload_hash: str,
+        self,
+        job_id: str,
+        req: RunPodInferenceRequest,
+        payload_hash: str,
     ) -> dict[str, Any]:
         """Deterministic mock shadow inference batch (one prediction per symbol)."""
         now_ns = time.time_ns()
         predictions: list[dict[str, Any]] = []
         for i, symbol in enumerate(req.symbols):
-            seed_hex = int(payload_hash[i * 2: i * 2 + 8].ljust(8, "0"), 16)
+            seed_hex = int(payload_hash[i * 2 : i * 2 + 8].ljust(8, "0"), 16)
             direction = ((seed_hex % 200) - 100) / 100.0  # [-1.0, 1.0]
             confidence = (seed_hex % 100) / 100.0  # [0.0, 1.0]
             p_up = 0.5 + (direction / 4.0)

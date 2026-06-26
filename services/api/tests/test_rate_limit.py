@@ -13,9 +13,7 @@ async def test_rate_limit_allows_under_budget() -> None:
     redis = fakeredis.aioredis.FakeRedis()
     try:
         for expected_count in range(1, 4):
-            state = await enforce_rate_limit(
-                redis, "rl:test", limit=5, window_sec=10
-            )
+            state = await enforce_rate_limit(redis, "rl:test", limit=5, window_sec=10)
             assert state.count == expected_count
             assert state.remaining == 5 - expected_count
             assert state.reset_sec <= 10
@@ -52,9 +50,7 @@ async def test_rate_limit_repairs_missing_ttl() -> None:
     try:
         # Pre-seed the key at the exact limit with no TTL.
         await redis.set("rl:test", 2)
-        state = await enforce_rate_limit(
-            redis, "rl:test", limit=5, window_sec=10
-        )
+        state = await enforce_rate_limit(redis, "rl:test", limit=5, window_sec=10)
         # The limiter should have INCR-ed to 3 and set a TTL close to the window.
         assert state.count == 3
         ttl = await redis.ttl("rl:test")

@@ -182,9 +182,7 @@ class TestStoreBatch:
         assert receipt2.duplicates == 2
         assert len(ledger.list()) == 2  # no duplication
 
-    def test_same_prediction_id_different_batch_hash_rejected(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_same_prediction_id_different_batch_hash_rejected(self, tmp_path: pathlib.Path) -> None:
         ledger = ShadowLedger(base_dir=tmp_path)
         preds1 = [_pred(prediction_id="p1", direction=0.6)]
         bh1 = compute_batch_hash(preds1)
@@ -199,9 +197,7 @@ class TestStoreBatch:
         assert ledger.list()[0].prediction_id == "p1"
         assert ledger.list()[0].direction == 0.6
 
-    def test_new_prediction_id_in_same_batch_hash_appends(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_new_prediction_id_in_same_batch_hash_appends(self, tmp_path: pathlib.Path) -> None:
         ledger = ShadowLedger(base_dir=tmp_path)
         preds1 = [_pred(prediction_id="p1")]
         bh1 = compute_batch_hash(preds1)

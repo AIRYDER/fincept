@@ -50,9 +50,15 @@ async def test_export_labeled_examples_reads_matured_redis_records() -> None:
         assert neg_id is not None
 
         async def lookup(symbol: str, ts_event: int) -> Decimal | None:
-            return Decimal("102") if ts_event == positive.ts_event + 30 * NS_PER_MIN else Decimal("98")
+            return (
+                Decimal("102")
+                if ts_event == positive.ts_event + 30 * NS_PER_MIN
+                else Decimal("98")
+            )
 
-        await store.label_due(now_ns=negative.ts_event + 30 * NS_PER_MIN, price_lookup=lookup)
+        await store.label_due(
+            now_ns=negative.ts_event + 30 * NS_PER_MIN, price_lookup=lookup
+        )
         df = await export_labeled_examples(redis, horizon="30m")
 
         assert df.height == 2

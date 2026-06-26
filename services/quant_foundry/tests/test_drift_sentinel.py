@@ -55,7 +55,10 @@ class TestDriftMetric:
     def test_metric_is_frozen(self) -> None:
         """DriftMetric is frozen."""
         metric = DriftMetric(
-            name="test", value=0.5, threshold=0.3, is_drifting=True,
+            name="test",
+            value=0.5,
+            threshold=0.3,
+            is_drifting=True,
         )
         with pytest.raises((TypeError, ValueError)):
             metric.value = 0.9  # type: ignore[misc]
@@ -261,7 +264,9 @@ class TestDriftSentinelDetect:
             prediction_disagreement_value=0.7,
             live_edge_decay_value=0.0,
         )
-        assert any(m.name == "prediction_disagreement_spike" and m.is_drifting for m in report.metrics)
+        assert any(
+            m.name == "prediction_disagreement_spike" and m.is_drifting for m in report.metrics
+        )
 
     def test_sentinel_detects_live_edge_decay(self) -> None:
         """The sentinel detects live edge decay."""
@@ -445,6 +450,5 @@ class TestNoSecretsInDriftOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

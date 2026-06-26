@@ -171,9 +171,12 @@ class TestBridgeDisabledByDefault:
         old = os.environ.get("QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE")
         try:
             os.environ["QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE"] = "true"
-            bridge = PaperBridge(config=BridgeConfig(
-                allow_paper_bridge=True, runtime_mode="paper",
-            ))
+            bridge = PaperBridge(
+                config=BridgeConfig(
+                    allow_paper_bridge=True,
+                    runtime_mode="paper",
+                )
+            )
             assert bridge.status == BridgeStatus.ENABLED
         finally:
             if old is not None:
@@ -192,9 +195,12 @@ class TestBridgeRefusesNonPaper:
 
     def test_bridge_refuses_live_runtime(self) -> None:
         """The bridge refuses to publish in live runtime."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="live",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="live",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -204,9 +210,12 @@ class TestBridgeRefusesNonPaper:
 
     def test_bridge_accepts_paper_runtime(self) -> None:
         """The bridge accepts paper runtime."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -224,9 +233,12 @@ class TestBridgeRefusesNoEvidence:
 
     def test_bridge_refuses_without_evidence(self) -> None:
         """The bridge refuses to publish without an evidence packet."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=None,
@@ -236,9 +248,12 @@ class TestBridgeRefusesNoEvidence:
 
     def test_bridge_refuses_without_dossier(self) -> None:
         """The bridge refuses to publish without a dossier in the evidence."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=PromotionEvidence(dossier=None),
@@ -247,9 +262,12 @@ class TestBridgeRefusesNoEvidence:
 
     def test_bridge_refuses_non_paper_approved_model(self) -> None:
         """The bridge refuses a model that is not paper-approved."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(dossier_status=DossierStatus.SHADOW_APPROVED),
@@ -282,16 +300,22 @@ class TestRollbackPointer:
     def test_rollback_pointer_is_frozen(self) -> None:
         """RollbackPointer is frozen."""
         ptr = RollbackPointer(
-            model_id="m1", pointer_id="ptr-1", created_at_ns=1000, reason="test",
+            model_id="m1",
+            pointer_id="ptr-1",
+            created_at_ns=1000,
+            reason="test",
         )
         with pytest.raises((TypeError, ValueError)):
             ptr.reason = "changed"  # type: ignore[misc]
 
     def test_bridge_creates_rollback_pointer_before_publishing(self) -> None:
         """The bridge creates a rollback pointer before publishing."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -312,8 +336,16 @@ class TestRiskOMSBoundaries:
     def test_paper_prediction_has_no_order_fields(self) -> None:
         """The converted PaperPrediction has no order/OMS fields."""
         pred = convert_shadow_to_paper(_make_shadow_prediction())
-        order_keys = {"order", "signal", "trade", "position", "allocation",
-                      "quantity", "side", "sig_predict"}
+        order_keys = {
+            "order",
+            "signal",
+            "trade",
+            "position",
+            "allocation",
+            "quantity",
+            "side",
+            "sig_predict",
+        }
         for key in order_keys:
             assert not hasattr(pred, key)
 
@@ -341,9 +373,12 @@ class TestBridgeReceipt:
 
     def test_receipt_has_required_fields(self) -> None:
         """Receipt has status, reason, prediction, rollback_pointer."""
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -356,9 +391,12 @@ class TestBridgeReceipt:
         """The receipt can be serialized to JSON."""
         import json
 
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -443,9 +481,12 @@ class TestNoSecretsInPaperBridge:
 
     def test_receipt_to_dict_has_no_secret_keys(self) -> None:
 
-        bridge = PaperBridge(config=BridgeConfig(
-            allow_paper_bridge=True, runtime_mode="paper",
-        ))
+        bridge = PaperBridge(
+            config=BridgeConfig(
+                allow_paper_bridge=True,
+                runtime_mode="paper",
+            )
+        )
         result = bridge.publish(
             prediction=_make_shadow_prediction(),
             evidence=_make_evidence(),
@@ -465,6 +506,5 @@ class TestNoSecretsInPaperBridge:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

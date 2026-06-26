@@ -97,7 +97,9 @@ def _make_cost_model() -> CostModel:
     )
 
 
-def _make_prices(symbol: str = "AAPL", ts_event: int = 1000, horizon_ns: int = 3600_000_000_000) -> list[PriceTick]:
+def _make_prices(
+    symbol: str = "AAPL", ts_event: int = 1000, horizon_ns: int = 3600_000_000_000
+) -> list[PriceTick]:
     """Build entry + exit prices for a prediction."""
     return [
         PriceTick(ts=ts_event, price=100.0),
@@ -241,7 +243,9 @@ class TestPendingByHorizon:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         # Settle before horizon expires.
         record = orchestrator.settle_prediction(
@@ -264,7 +268,9 @@ class TestPendingByHorizon:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         # Settle after horizon expires.
         record = orchestrator.settle_prediction(
@@ -296,7 +302,9 @@ class TestSettlementLag:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -320,7 +328,9 @@ class TestSettlementLag:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -350,7 +360,9 @@ class TestNoTradingAuthority:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         records = orchestrator.shadow_ledger.list()
         for record in records:
@@ -368,7 +380,9 @@ class TestNoTradingAuthority:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -378,8 +392,17 @@ class TestNoTradingAuthority:
             now_ns=now_ns,
         )
         d = receipt.to_dict()
-        order_keys = {"order", "signal", "trade", "position", "allocation",
-                      "quantity", "price", "side", "sig_predict"}
+        order_keys = {
+            "order",
+            "signal",
+            "trade",
+            "position",
+            "allocation",
+            "quantity",
+            "price",
+            "side",
+            "sig_predict",
+        }
         assert not any(k in d for k in order_keys)
 
 
@@ -403,7 +426,9 @@ class TestSettlementReceipt:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -431,7 +456,9 @@ class TestSettlementReceipt:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -496,7 +523,9 @@ class TestNoSecretsInSettlementOutput:
             secret=_SECRET,
         )
         orchestrator.store_batch(
-            predictions=predictions, batch_hash=batch_hash, signature=signature,
+            predictions=predictions,
+            batch_hash=batch_hash,
+            signature=signature,
         )
         now_ns = 1000 + 3600_000_000_000 + 100
         receipt = orchestrator.settle_batch(
@@ -520,6 +549,13 @@ class TestNoSecretsInSettlementOutput:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential", "shared_secret"}
+        secret_names = {
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+            "shared_secret",
+        }
         assert not _has_secret(d, secret_names)

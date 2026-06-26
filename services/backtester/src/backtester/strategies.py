@@ -426,20 +426,14 @@ class GBMStrategy(Strategy):
         meta = json.loads(meta_path.read_text())
         features = list(meta.get("features") or [])
         if not features:
-            raise ValueError(
-                f"meta.json at {meta_path} is missing the 'features' list"
-            )
+            raise ValueError(f"meta.json at {meta_path} is missing the 'features' list")
         # Fail fast if any feature isn't OHLCV-derivable.
         require_supported(features)
         self._features = features
-        self._window_bars = required_window_bars(
-            features, bar_minutes=self._bar_minutes
-        )
+        self._window_bars = required_window_bars(features, bar_minutes=self._bar_minutes)
         self._booster = lgb.Booster(model_file=str(model_path))
 
-        self._windows = {
-            sym: deque(maxlen=self._window_bars) for sym in self.symbols
-        }
+        self._windows = {sym: deque(maxlen=self._window_bars) for sym in self.symbols}
         self._pending_buys = {sym: Decimal(0) for sym in self.symbols}
         self._pending_sells = {sym: Decimal(0) for sym in self.symbols}
         ctx.log(
@@ -482,26 +476,20 @@ class GBMStrategy(Strategy):
         # Open: signal is bullish, we currently hold nothing, and no
         # BUY or SELL is in flight.  Blocking on pending_sell prevents
         # a flapping signal from re-opening before the unwind completes.
-        is_inactive_flat = (
-            current_qty == 0 and pending_buy == 0 and pending_sell == 0
-        )
+        is_inactive_flat = current_qty == 0 and pending_buy == 0 and pending_sell == 0
         # Close: signal is bearish, we are actually long, and no SELL
         # is already working (so we don't double up the unwind).
         # ``pending_buy == 0`` ensures we don't start unwinding while a
         # BUY leg is still partially filling — wait for it to complete
         # rather than getting flat-then-long-again loops.
-        is_inactive_long = (
-            current_qty > 0 and pending_buy == 0 and pending_sell == 0
-        )
+        is_inactive_long = current_qty > 0 and pending_buy == 0 and pending_sell == 0
 
         if is_inactive_flat and direction > self._entry_threshold:
             self._open_long(ctx, bar, direction)
         elif is_inactive_long and direction < -self._exit_threshold:
             self._close_long(ctx, bar, direction, current_qty)
 
-    def _open_long(
-        self, ctx: StrategyContext, bar: BarEvent, direction: float
-    ) -> None:
+    def _open_long(self, ctx: StrategyContext, bar: BarEvent, direction: float) -> None:
         if bar.close <= 0:
             return
         qty = self._per_symbol_notional / bar.close
@@ -520,9 +508,7 @@ class GBMStrategy(Strategy):
         )
         # Record outstanding qty so on_bar suppresses re-submission until
         # this BUY drains via on_fill (one or many partial fills).
-        self._pending_buys[bar.symbol] = (
-            self._pending_buys.get(bar.symbol, Decimal(0)) + qty
-        )
+        self._pending_buys[bar.symbol] = self._pending_buys.get(bar.symbol, Decimal(0)) + qty
         ctx.log(
             "gbm.go_long",
             symbol=bar.symbol,
@@ -554,9 +540,7 @@ class GBMStrategy(Strategy):
                 ts_ns=bar.ts_event,
             )
         )
-        self._pending_sells[bar.symbol] = (
-            self._pending_sells.get(bar.symbol, Decimal(0)) + sell_qty
-        )
+        self._pending_sells[bar.symbol] = self._pending_sells.get(bar.symbol, Decimal(0)) + sell_qty
         ctx.log(
             "gbm.go_flat",
             symbol=bar.symbol,
@@ -649,19 +633,13 @@ class GBMStrategy(Strategy):
         meta_path = new_dir / "meta.json"
         model_path = new_dir / "model.txt"
         if not meta_path.is_file() or not model_path.is_file():
-            raise FileNotFoundError(
-                f"GBMStrategy.reload: missing artifacts in {new_dir!s}"
-            )
+            raise FileNotFoundError(f"GBMStrategy.reload: missing artifacts in {new_dir!s}")
         meta = json.loads(meta_path.read_text())
         new_features = list(meta.get("features") or [])
         if not new_features:
-            raise ValueError(
-                f"meta.json at {meta_path} is missing the 'features' list"
-            )
+            raise ValueError(f"meta.json at {meta_path} is missing the 'features' list")
         require_supported(new_features)
-        new_window_bars = required_window_bars(
-            new_features, bar_minutes=self._bar_minutes
-        )
+        new_window_bars = required_window_bars(new_features, bar_minutes=self._bar_minutes)
         # Load the booster LAST so a parse / validation failure
         # above doesn't leave us with an orphaned booster object.
         new_booster = lgb.Booster(model_file=str(model_path))
@@ -678,9 +656,7 @@ class GBMStrategy(Strategy):
         self._model_dir = new_dir
         if new_window_bars != self._window_bars:
             self._window_bars = new_window_bars
-            self._windows = {
-                sym: deque(maxlen=new_window_bars) for sym in self.symbols
-            }
+            self._windows = {sym: deque(maxlen=new_window_bars) for sym in self.symbols}
 
 
 # --------------------------------------------------------------------------- #

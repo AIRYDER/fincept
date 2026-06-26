@@ -91,7 +91,7 @@ jobs:
           soft_fail: false
           # Reporting: SARIF gets uploaded as an artifact; the GitHub code-
           # scanning tab picks it up automatically.
-          additional_args: --regression false
+          additional_args: --format sarif --out infra/aws/tfsec
 
       - name: Upload SARIF
         if: always()

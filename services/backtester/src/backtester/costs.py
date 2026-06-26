@@ -190,9 +190,7 @@ class CostModel(BaseModel):
         if bps <= 0:
             return Decimal(0)
         notional = quantity.copy_abs() * mark_price
-        return (
-            notional * bps / Decimal(10000) * elapsed_seconds / SECONDS_PER_YEAR
-        )
+        return notional * bps / Decimal(10000) * elapsed_seconds / SECONDS_PER_YEAR
 
     # ------------------------------------------------------------------ #
     # Fill simulation                                                    #
@@ -264,10 +262,6 @@ class CostModel(BaseModel):
 
         # -- Fees -------------------------------------------------------
         notional = exec_price * quantity
-        fee_bps = (
-            self.maker_fee_bps_for(symbol)
-            if is_maker
-            else self.taker_fee_bps_for(symbol)
-        )
+        fee_bps = self.maker_fee_bps_for(symbol) if is_maker else self.taker_fee_bps_for(symbol)
         fee = notional * fee_bps / Decimal(10000)
         return exec_price, fee

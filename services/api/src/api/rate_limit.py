@@ -45,9 +45,7 @@ class RateLimitExceeded(Exception):
     """
 
     def __init__(self, *, limit: int, window_sec: int, retry_after: int) -> None:
-        super().__init__(
-            f"rate limit exceeded: {limit} requests per {window_sec}s"
-        )
+        super().__init__(f"rate limit exceeded: {limit} requests per {window_sec}s")
         self.limit = limit
         self.window_sec = window_sec
         self.retry_after = retry_after

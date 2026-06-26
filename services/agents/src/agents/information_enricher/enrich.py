@@ -24,26 +24,93 @@ SOURCE_QUALITY_BY_NAME: dict[str, float] = {
     "marketwatch": 0.72,
 }
 _EVENT_CATEGORY_PATTERNS: tuple[tuple[str, tuple[re.Pattern[str], ...]], ...] = (
-    ("earnings", (re.compile(r"\b(earnings|eps|revenue|guidance|quarterly results)\b", re.I),)),
-    ("regulatory", (re.compile(r"\b(sec|doj|ftc|fda|regulator|regulatory|antitrust|lawsuit|probe)\b", re.I),)),
-    ("macro", (re.compile(r"\b(fed|fomc|inflation|cpi|jobs report|payrolls|rates|treasury|gdp)\b", re.I),)),
-    ("product", (re.compile(r"\b(launch|unveil|product|chip|model|platform|supply)\b", re.I),)),
-    ("security", (re.compile(r"\b(hack|breach|exploit|ransomware|vulnerability|security)\b", re.I),)),
-    ("partnership", (re.compile(r"\b(partner|partnership|collaboration|deal|contract|agreement)\b", re.I),)),
-    ("analyst", (re.compile(r"\b(upgrade|downgrade|price target|initiates|maintains|analyst)\b", re.I),)),
-    ("market_move", (re.compile(r"\b(shares|stock|surges|plunges|jumps|falls|rallies|sinks)\b", re.I),)),
+    (
+        "earnings",
+        (re.compile(r"\b(earnings|eps|revenue|guidance|quarterly results)\b", re.I),),
+    ),
+    (
+        "regulatory",
+        (
+            re.compile(
+                r"\b(sec|doj|ftc|fda|regulator|regulatory|antitrust|lawsuit|probe)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "macro",
+        (
+            re.compile(
+                r"\b(fed|fomc|inflation|cpi|jobs report|payrolls|rates|treasury|gdp)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "product",
+        (re.compile(r"\b(launch|unveil|product|chip|model|platform|supply)\b", re.I),),
+    ),
+    (
+        "security",
+        (
+            re.compile(
+                r"\b(hack|breach|exploit|ransomware|vulnerability|security)\b", re.I
+            ),
+        ),
+    ),
+    (
+        "partnership",
+        (
+            re.compile(
+                r"\b(partner|partnership|collaboration|deal|contract|agreement)\b", re.I
+            ),
+        ),
+    ),
+    (
+        "analyst",
+        (
+            re.compile(
+                r"\b(upgrade|downgrade|price target|initiates|maintains|analyst)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "market_move",
+        (
+            re.compile(
+                r"\b(shares|stock|surges|plunges|jumps|falls|rallies|sinks)\b", re.I
+            ),
+        ),
+    ),
 )
 _NON_WORD = re.compile(r"[^a-z0-9]+")
-_TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"}
+_TRACKING_PARAMS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+}
 
 
-def enrich_information_event(event: InformationEvent, *, observed_at_ns: int | None = None) -> InformationEvent:
+def enrich_information_event(
+    event: InformationEvent, *, observed_at_ns: int | None = None
+) -> InformationEvent:
     observed = observed_at_ns if observed_at_ns is not None else now_ns()
     symbols = normalize_symbols(event.symbols)
-    entities = normalize_entities([*event.entities, *symbols], known_symbols=set(symbols))
-    category = event.event_category or classify_event_category(event.headline, event.body)
+    entities = normalize_entities(
+        [*event.entities, *symbols], known_symbols=set(symbols)
+    )
+    category = event.event_category or classify_event_category(
+        event.headline, event.body
+    )
     dedupe_key = normalize_dedupe_key(event)
-    dedupe_group_id = event.dedupe_group_id or group_id_for(event, dedupe_key=dedupe_key)
+    dedupe_group_id = event.dedupe_group_id or group_id_for(
+        event, dedupe_key=dedupe_key
+    )
     source_quality = event.source_quality
     if source_quality is None:
         source_quality = source_quality_for(event.source_type, event.source)
@@ -80,7 +147,9 @@ def normalize_symbols(symbols: list[str]) -> list[str]:
     return out
 
 
-def normalize_entities(entities: list[str], *, known_symbols: set[str] | None = None) -> list[str]:
+def normalize_entities(
+    entities: list[str], *, known_symbols: set[str] | None = None
+) -> list[str]:
     known_symbols = known_symbols or set()
     out: list[str] = []
     seen: set[str] = set()
@@ -117,7 +186,15 @@ def normalize_url(url: str) -> str:
             if key and key not in _TRACKING_PARAMS:
                 query_pairs.append(raw_pair)
     path = parts.path.rstrip("/") or "/"
-    return urlunsplit((parts.scheme.lower() or "https", parts.netloc.lower(), path, "&".join(query_pairs), ""))
+    return urlunsplit(
+        (
+            parts.scheme.lower() or "https",
+            parts.netloc.lower(),
+            path,
+            "&".join(query_pairs),
+            "",
+        )
+    )
 
 
 def slugify(text: str) -> str:
@@ -126,7 +203,9 @@ def slugify(text: str) -> str:
 
 def group_id_for(event: InformationEvent, *, dedupe_key: str) -> str:
     symbols = ",".join(normalize_symbols(event.symbols))
-    category = event.event_category or classify_event_category(event.headline, event.body)
+    category = event.event_category or classify_event_category(
+        event.headline, event.body
+    )
     basis = f"{symbols}|{category}|{slugify(event.headline)[:80]}|{dedupe_key}"
     digest = hashlib.sha256(basis.encode()).hexdigest()[:16]
     return f"info:{digest}"

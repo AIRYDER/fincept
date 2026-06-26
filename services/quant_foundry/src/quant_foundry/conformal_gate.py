@@ -116,9 +116,7 @@ class ConformalPrediction(BaseModel):
                 else None
             ),
             "is_abstain": self.is_abstain,
-            "abstain_reason": (
-                self.abstain_reason.value if self.abstain_reason else None
-            ),
+            "abstain_reason": (self.abstain_reason.value if self.abstain_reason else None),
         }
 
 
@@ -181,8 +179,7 @@ class ConformalCalibrator:
             raise RuntimeError("calibrator not fitted")
         if self.n_samples < 2:
             raise ValueError(
-                f"insufficient calibration data: {self.n_samples} samples "
-                f"(need at least 2)"
+                f"insufficient calibration data: {self.n_samples} samples (need at least 2)"
             )
         q10_resid = self._quantile(0.10)
         q50_resid = self._quantile(0.50)

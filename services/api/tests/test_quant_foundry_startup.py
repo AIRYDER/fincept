@@ -3,7 +3,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 
-def test_configure_quant_foundry_gateway_attaches_gateway(monkeypatch, tmp_path) -> None:
+def test_configure_quant_foundry_gateway_attaches_gateway(
+    monkeypatch, tmp_path
+) -> None:
     from api.main import configure_quant_foundry_gateway
 
     monkeypatch.setenv("QUANT_FOUNDRY_ENABLED", "true")

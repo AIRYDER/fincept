@@ -14,9 +14,8 @@ from __future__ import annotations
 import pathlib
 
 import pytest
-
-from quant_foundry.inbox import CallbackInbox, InboxRecord, CallbackStatus
 from quant_foundry.ids import hash_payload
+from quant_foundry.inbox import CallbackInbox, CallbackStatus, InboxRecord
 
 
 def test_inbox_module_imports() -> None:
@@ -65,7 +64,7 @@ def test_inbox_rejects_diff_payload_for_same_job_as_security_event(tmp_path: pat
 
     ib.receive(job_id="j-sec", idempotency_key="ksec", signature_valid=True, payload=p1)
 
-    with pytest.raises(ValueError, match="payload hash mismatch|security|different payload"):
+    with pytest.raises(ValueError, match=r"payload hash mismatch|security|different payload"):
         ib.receive(job_id="j-sec", idempotency_key="ksec", signature_valid=True, payload=p2)
 
 
@@ -83,7 +82,7 @@ def test_inbox_survives_restart(tmp_path: pathlib.Path) -> None:
 def test_inbox_mark_processed_and_history(tmp_path: pathlib.Path) -> None:
     base = tmp_path / "qf-inbox"
     ib = CallbackInbox(base_dir=base)
-    rec = ib.receive(job_id="j7", idempotency_key="k7", signature_valid=True, payload=b"ok")
+    ib.receive(job_id="j7", idempotency_key="k7", signature_valid=True, payload=b"ok")
     rec2 = ib.mark_processed("j7", status=CallbackStatus.PROCESSED, note="dossier stored")
     assert rec2.processed_at_ns is not None
     assert rec2.status == CallbackStatus.PROCESSED

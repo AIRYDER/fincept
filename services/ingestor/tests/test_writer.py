@@ -73,9 +73,7 @@ async def test_writer_publishes_closed_one_minute_bar_from_trades() -> None:
     next_minute = base + 60_000_000_000
 
     await writer.handle(
-        _trade(1, ts=base).model_copy(
-            update={"price": Decimal("100"), "size": Decimal("2")}
-        )
+        _trade(1, ts=base).model_copy(update={"price": Decimal("100"), "size": Decimal("2")})
     )
     await writer.handle(
         _trade(2, ts=base + 1_000_000_000).model_copy(
@@ -84,9 +82,7 @@ async def test_writer_publishes_closed_one_minute_bar_from_trades() -> None:
     )
     # The minute closes when the first trade from a later minute arrives.
     await writer.handle(
-        _trade(3, ts=next_minute).model_copy(
-            update={"price": Decimal("99"), "size": Decimal("3")}
-        )
+        _trade(3, ts=next_minute).model_copy(update={"price": Decimal("99"), "size": Decimal("3")})
     )
 
     msgs = await redis.xrange("md.bars.1m")  # type: ignore[attr-defined]
@@ -201,9 +197,7 @@ async def test_writer_flush_drains_partial_buffers() -> None:
         patch(
             "ingestor.writer.write_book_deltas", new_callable=AsyncMock, return_value=1
         ) as mock_books,
-        patch(
-            "ingestor.writer.write_bars", new_callable=AsyncMock, return_value=1
-        ) as mock_bars,
+        patch("ingestor.writer.write_bars", new_callable=AsyncMock, return_value=1) as mock_bars,
     ):
         await writer.handle(_trade(1))
         await writer.handle(_trade(2))

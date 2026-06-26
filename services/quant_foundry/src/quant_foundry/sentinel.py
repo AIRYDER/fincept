@@ -285,9 +285,7 @@ class LeakageSentinel:
     # -- Point-in-time assertion ------------------------------------------
 
     @staticmethod
-    def assert_point_in_time(
-        decision_time: int, observed_at: int, feature: str
-    ) -> None:
+    def assert_point_in_time(decision_time: int, observed_at: int, feature: str) -> None:
         """Assert that a feature observation is point-in-time correct.
 
         ``observed_at`` must be <= ``decision_time`` (the feature was
@@ -324,23 +322,25 @@ class LeakageSentinel:
         checks_run = ["shuffled_label"]
         excess = inp.claimed_edge - inp.baseline_edge
         if excess > self.edge_threshold:
-            issues.append(SentinelIssue(
-                code="shuffled_label_edge",
-                severity=SentinelSeverity.BLOCKING,
-                message=(
-                    f"model claims edge {inp.claimed_edge:.6f} on shuffled "
-                    f"labels (baseline {inp.baseline_edge:.6f}, excess "
-                    f"{excess:.6f} > threshold {self.edge_threshold:.6f}); "
-                    "a pipeline that finds alpha on shuffled labels is leaking"
-                ),
-                detail={
-                    "claimed_edge": inp.claimed_edge,
-                    "baseline_edge": inp.baseline_edge,
-                    "excess": excess,
-                    "threshold": self.edge_threshold,
-                    "n_samples": inp.n_samples,
-                },
-            ))
+            issues.append(
+                SentinelIssue(
+                    code="shuffled_label_edge",
+                    severity=SentinelSeverity.BLOCKING,
+                    message=(
+                        f"model claims edge {inp.claimed_edge:.6f} on shuffled "
+                        f"labels (baseline {inp.baseline_edge:.6f}, excess "
+                        f"{excess:.6f} > threshold {self.edge_threshold:.6f}); "
+                        "a pipeline that finds alpha on shuffled labels is leaking"
+                    ),
+                    detail={
+                        "claimed_edge": inp.claimed_edge,
+                        "baseline_edge": inp.baseline_edge,
+                        "excess": excess,
+                        "threshold": self.edge_threshold,
+                        "n_samples": inp.n_samples,
+                    },
+                )
+            )
         return SentinelReceipt(
             model_id=inp.model_id,
             issues=issues,
@@ -360,24 +360,26 @@ class LeakageSentinel:
         checks_run = ["time_reverse"]
         excess = inp.claimed_edge - inp.baseline_edge
         if excess > self.edge_threshold:
-            issues.append(SentinelIssue(
-                code="time_reversed_edge",
-                severity=SentinelSeverity.BLOCKING,
-                message=(
-                    f"model claims edge {inp.claimed_edge:.6f} on "
-                    f"time-reversed features (baseline "
-                    f"{inp.baseline_edge:.6f}, excess {excess:.6f} > "
-                    f"threshold {self.edge_threshold:.6f}); model is "
-                    "exploiting temporal structure that shouldn't exist"
-                ),
-                detail={
-                    "claimed_edge": inp.claimed_edge,
-                    "baseline_edge": inp.baseline_edge,
-                    "excess": excess,
-                    "threshold": self.edge_threshold,
-                    "n_samples": inp.n_samples,
-                },
-            ))
+            issues.append(
+                SentinelIssue(
+                    code="time_reversed_edge",
+                    severity=SentinelSeverity.BLOCKING,
+                    message=(
+                        f"model claims edge {inp.claimed_edge:.6f} on "
+                        f"time-reversed features (baseline "
+                        f"{inp.baseline_edge:.6f}, excess {excess:.6f} > "
+                        f"threshold {self.edge_threshold:.6f}); model is "
+                        "exploiting temporal structure that shouldn't exist"
+                    ),
+                    detail={
+                        "claimed_edge": inp.claimed_edge,
+                        "baseline_edge": inp.baseline_edge,
+                        "excess": excess,
+                        "threshold": self.edge_threshold,
+                        "n_samples": inp.n_samples,
+                    },
+                )
+            )
         return SentinelReceipt(
             model_id=inp.model_id,
             issues=issues,
@@ -399,19 +401,21 @@ class LeakageSentinel:
             observed_at = obs.get("observed_at", 0)
             feature = obs.get("feature", "unknown")
             if observed_at > decision_time:
-                issues.append(SentinelIssue(
-                    code="future_leak_feature",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"feature '{feature}' observed_at={observed_at} > "
-                        f"decision_time={decision_time} (future leak)"
-                    ),
-                    detail={
-                        "feature": feature,
-                        "decision_time": decision_time,
-                        "observed_at": observed_at,
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="future_leak_feature",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"feature '{feature}' observed_at={observed_at} > "
+                            f"decision_time={decision_time} (future leak)"
+                        ),
+                        detail={
+                            "feature": feature,
+                            "decision_time": decision_time,
+                            "observed_at": observed_at,
+                        },
+                    )
+                )
         return SentinelReceipt(
             model_id=inp.model_id,
             issues=issues,
@@ -445,36 +449,40 @@ class LeakageSentinel:
             # Purge gap: val_start - train_end >= purge_gap.
             purge_actual = fold.val_start - fold.train_end
             if purge_actual < purge_gap:
-                issues.append(SentinelIssue(
-                    code="missing_purge_gap",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"fold {fold.fold_id}: purge gap {purge_actual} < "
-                        f"required {purge_gap} (train_end={fold.train_end}, "
-                        f"val_start={fold.val_start})"
-                    ),
-                    detail={
-                        "fold_id": fold.fold_id,
-                        "purge_actual": purge_actual,
-                        "purge_required": purge_gap,
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="missing_purge_gap",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"fold {fold.fold_id}: purge gap {purge_actual} < "
+                            f"required {purge_gap} (train_end={fold.train_end}, "
+                            f"val_start={fold.val_start})"
+                        ),
+                        detail={
+                            "fold_id": fold.fold_id,
+                            "purge_actual": purge_actual,
+                            "purge_required": purge_gap,
+                        },
+                    )
+                )
             # Train/val overlap: train_end > val_start.
             if fold.train_end > fold.val_start:
-                issues.append(SentinelIssue(
-                    code="train_val_overlap",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"fold {fold.fold_id}: train_end={fold.train_end} > "
-                        f"val_start={fold.val_start} (training rows overlap "
-                        "validation window)"
-                    ),
-                    detail={
-                        "fold_id": fold.fold_id,
-                        "train_end": fold.train_end,
-                        "val_start": fold.val_start,
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="train_val_overlap",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"fold {fold.fold_id}: train_end={fold.train_end} > "
+                            f"val_start={fold.val_start} (training rows overlap "
+                            "validation window)"
+                        ),
+                        detail={
+                            "fold_id": fold.fold_id,
+                            "train_end": fold.train_end,
+                            "val_start": fold.val_start,
+                        },
+                    )
+                )
 
         # Embargo gap: for consecutive folds, next fold's train_start -
         # this fold's val_end >= embargo_gap.
@@ -484,23 +492,25 @@ class LeakageSentinel:
             next_fold = sorted_folds[i + 1]
             embargo_actual = next_fold.train_start - this_fold.val_end
             if embargo_actual < embargo_gap:
-                issues.append(SentinelIssue(
-                    code="missing_embargo_gap",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"embargo gap between fold {this_fold.fold_id} "
-                        f"(val_end={this_fold.val_end}) and fold "
-                        f"{next_fold.fold_id} (train_start="
-                        f"{next_fold.train_start}) is {embargo_actual} < "
-                        f"required {embargo_gap}"
-                    ),
-                    detail={
-                        "fold_id_a": this_fold.fold_id,
-                        "fold_id_b": next_fold.fold_id,
-                        "embargo_actual": embargo_actual,
-                        "embargo_required": embargo_gap,
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="missing_embargo_gap",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"embargo gap between fold {this_fold.fold_id} "
+                            f"(val_end={this_fold.val_end}) and fold "
+                            f"{next_fold.fold_id} (train_start="
+                            f"{next_fold.train_start}) is {embargo_actual} < "
+                            f"required {embargo_gap}"
+                        ),
+                        detail={
+                            "fold_id_a": this_fold.fold_id,
+                            "fold_id_b": next_fold.fold_id,
+                            "embargo_actual": embargo_actual,
+                            "embargo_required": embargo_gap,
+                        },
+                    )
+                )
 
         return SentinelReceipt(
             model_id=model_id,
@@ -512,9 +522,7 @@ class LeakageSentinel:
 
     # -- Train/live gap check ---------------------------------------------
 
-    def check_train_live_gap(
-        self, inp: TrainLiveGapInput
-    ) -> SentinelReceipt:
+    def check_train_live_gap(self, inp: TrainLiveGapInput) -> SentinelReceipt:
         """Check for a large persistent train/live gap (overfit signal).
 
         Flags:
@@ -528,44 +536,48 @@ class LeakageSentinel:
         if inp.in_sample_edge > 0:
             ratio = inp.live_edge / inp.in_sample_edge if inp.in_sample_edge != 0 else 1.0
             if ratio < self.gap_ratio_threshold:
-                issues.append(SentinelIssue(
-                    code="train_live_edge_gap",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"live edge {inp.live_edge:.6f} is "
-                        f"{ratio:.1%} of IS edge {inp.in_sample_edge:.6f} "
-                        f"(< threshold {self.gap_ratio_threshold:.0%}); "
-                        "large persistent train/live gap is an overfit flag"
-                    ),
-                    detail={
-                        "in_sample_edge": inp.in_sample_edge,
-                        "live_edge": inp.live_edge,
-                        "ratio": ratio,
-                        "threshold": self.gap_ratio_threshold,
-                        "n_live_settled": inp.n_live_settled,
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="train_live_edge_gap",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"live edge {inp.live_edge:.6f} is "
+                            f"{ratio:.1%} of IS edge {inp.in_sample_edge:.6f} "
+                            f"(< threshold {self.gap_ratio_threshold:.0%}); "
+                            "large persistent train/live gap is an overfit flag"
+                        ),
+                        detail={
+                            "in_sample_edge": inp.in_sample_edge,
+                            "live_edge": inp.live_edge,
+                            "ratio": ratio,
+                            "threshold": self.gap_ratio_threshold,
+                            "n_live_settled": inp.n_live_settled,
+                        },
+                    )
+                )
 
         # Calibration gap: live Brier - IS Brier should be small.
         brier_gap = inp.live_brier - inp.in_sample_brier
         if brier_gap > self.calibration_gap_threshold:
-            issues.append(SentinelIssue(
-                code="train_live_calibration_gap",
-                severity=SentinelSeverity.BLOCKING,
-                message=(
-                    f"live Brier {inp.live_brier:.4f} - IS Brier "
-                    f"{inp.in_sample_brier:.4f} = {brier_gap:.4f} > "
-                    f"threshold {self.calibration_gap_threshold:.4f}; "
-                    "calibration has degraded significantly in live trading"
-                ),
-                detail={
-                    "in_sample_brier": inp.in_sample_brier,
-                    "live_brier": inp.live_brier,
-                    "gap": brier_gap,
-                    "threshold": self.calibration_gap_threshold,
-                    "n_live_settled": inp.n_live_settled,
-                },
-            ))
+            issues.append(
+                SentinelIssue(
+                    code="train_live_calibration_gap",
+                    severity=SentinelSeverity.BLOCKING,
+                    message=(
+                        f"live Brier {inp.live_brier:.4f} - IS Brier "
+                        f"{inp.in_sample_brier:.4f} = {brier_gap:.4f} > "
+                        f"threshold {self.calibration_gap_threshold:.4f}; "
+                        "calibration has degraded significantly in live trading"
+                    ),
+                    detail={
+                        "in_sample_brier": inp.in_sample_brier,
+                        "live_brier": inp.live_brier,
+                        "gap": brier_gap,
+                        "threshold": self.calibration_gap_threshold,
+                        "n_live_settled": inp.n_live_settled,
+                    },
+                )
+            )
 
         return SentinelReceipt(
             model_id=inp.model_id,
@@ -577,9 +589,7 @@ class LeakageSentinel:
 
     # -- Feature stability check ------------------------------------------
 
-    def check_feature_stability(
-        self, inp: FeatureStabilityInput
-    ) -> SentinelReceipt:
+    def check_feature_stability(self, inp: FeatureStabilityInput) -> SentinelReceipt:
         """Flag features whose importance is wildly unstable across folds.
 
         Uses the coefficient of variation (CV = std/mean) of each feature's
@@ -600,24 +610,26 @@ class LeakageSentinel:
             std_imp = statistics.pstdev(importances)
             cv = std_imp / abs(mean_imp)
             if cv > self.feature_cv_threshold:
-                issues.append(SentinelIssue(
-                    code="unstable_feature_importance",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"feature '{feature}' importance CV={cv:.2%} > "
-                        f"threshold {self.feature_cv_threshold:.0%} "
-                        f"(mean={mean_imp:.4f}, std={std_imp:.4f}); "
-                        "wildly unstable importance is likely an artifact"
-                    ),
-                    detail={
-                        "feature": feature,
-                        "cv": cv,
-                        "mean": mean_imp,
-                        "std": std_imp,
-                        "threshold": self.feature_cv_threshold,
-                        "importances": list(importances),
-                    },
-                ))
+                issues.append(
+                    SentinelIssue(
+                        code="unstable_feature_importance",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"feature '{feature}' importance CV={cv:.2%} > "
+                            f"threshold {self.feature_cv_threshold:.0%} "
+                            f"(mean={mean_imp:.4f}, std={std_imp:.4f}); "
+                            "wildly unstable importance is likely an artifact"
+                        ),
+                        detail={
+                            "feature": feature,
+                            "cv": cv,
+                            "mean": mean_imp,
+                            "std": std_imp,
+                            "threshold": self.feature_cv_threshold,
+                            "importances": list(importances),
+                        },
+                    )
+                )
 
         return SentinelReceipt(
             model_id=inp.model_id,
@@ -687,24 +699,26 @@ class LeakageSentinel:
             pbo_flagged = pbo_result.flagged
             checks_run.append("pbo")
             if pbo_result.flagged:
-                all_issues.append(SentinelIssue(
-                    code="pbo_overfit",
-                    severity=SentinelSeverity.BLOCKING,
-                    message=(
-                        f"PBO={pbo_result.pbo:.4f} > threshold "
-                        f"{inp.pbo_threshold:.4f}; family is likely overfit "
-                        f"(logit={pbo_result.logit:.4f}, "
-                        f"n_candidates={pbo_result.n_candidates}, "
-                        f"n_combinations={pbo_result.n_combinations})"
-                    ),
-                    detail={
-                        "pbo": pbo_result.pbo,
-                        "logit": pbo_result.logit,
-                        "n_candidates": pbo_result.n_candidates,
-                        "n_combinations": pbo_result.n_combinations,
-                        "threshold": inp.pbo_threshold,
-                    },
-                ))
+                all_issues.append(
+                    SentinelIssue(
+                        code="pbo_overfit",
+                        severity=SentinelSeverity.BLOCKING,
+                        message=(
+                            f"PBO={pbo_result.pbo:.4f} > threshold "
+                            f"{inp.pbo_threshold:.4f}; family is likely overfit "
+                            f"(logit={pbo_result.logit:.4f}, "
+                            f"n_candidates={pbo_result.n_candidates}, "
+                            f"n_combinations={pbo_result.n_combinations})"
+                        ),
+                        detail={
+                            "pbo": pbo_result.pbo,
+                            "logit": pbo_result.logit,
+                            "n_candidates": pbo_result.n_candidates,
+                            "n_combinations": pbo_result.n_combinations,
+                            "threshold": inp.pbo_threshold,
+                        },
+                    )
+                )
 
         # Train/live gap.
         if inp.train_live_gap:

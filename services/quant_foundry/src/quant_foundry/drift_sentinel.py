@@ -196,13 +196,15 @@ class DriftSentinel:
                 name=DriftIndicator.PROVIDER_FRESHNESS_DRIFT.value,
                 value=provider_freshness_drift_value,
                 threshold=self.config.provider_freshness_drift_threshold,
-                is_drifting=provider_freshness_drift_value > self.config.provider_freshness_drift_threshold,
+                is_drifting=provider_freshness_drift_value
+                > self.config.provider_freshness_drift_threshold,
             ),
             DriftMetric(
                 name=DriftIndicator.PREDICTION_DISAGREEMENT_SPIKE.value,
                 value=prediction_disagreement_value,
                 threshold=self.config.prediction_disagreement_threshold,
-                is_drifting=prediction_disagreement_value > self.config.prediction_disagreement_threshold,
+                is_drifting=prediction_disagreement_value
+                > self.config.prediction_disagreement_threshold,
             ),
             DriftMetric(
                 name=DriftIndicator.LIVE_EDGE_DECAY.value,

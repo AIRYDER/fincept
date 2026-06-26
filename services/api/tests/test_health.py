@@ -24,6 +24,7 @@ async def test_health_does_not_require_bearer(client: AsyncClient) -> None:
 # Readiness (TASK-0202) — TDD: tests first
 # ---------------------------------------------------------------------------
 
+
 async def test_readiness_requires_auth(client: AsyncClient) -> None:
     """Detailed readiness must be protected (operator dashboard supplies token)."""
     response = await client.get("/health/readiness")
@@ -56,7 +57,14 @@ async def test_readiness_returns_categories_and_states(
 
     for cid, check in checks.items():
         assert "state" in check
-        assert check["state"] in {"pass", "warn", "fail", "skipped", "disabled", "stale"}
+        assert check["state"] in {
+            "pass",
+            "warn",
+            "fail",
+            "skipped",
+            "disabled",
+            "stale",
+        }
         assert "label" in check
         assert "detail" in check
         # Never leak secrets

@@ -41,11 +41,7 @@ class TestParseSplitCounts:
         assert parse_split_counts(text) == {0: 2, 1: 2, 2: 1}
 
     def test_multiple_trees_accumulate(self) -> None:
-        text = (
-            "split_feature=0 1 2\n"
-            "split_feature=2 2 1\n"
-            "split_feature=0\n"
-        )
+        text = "split_feature=0 1 2\nsplit_feature=2 2 1\nsplit_feature=0\n"
         # idx 0: 1+0+1 = 2; idx 1: 1+1+0 = 2; idx 2: 1+2+0 = 3.
         assert parse_split_counts(text) == {0: 2, 1: 2, 2: 3}
 
@@ -161,9 +157,7 @@ def _write_sidecar(model_dir: pathlib.Path, payload: dict[str, Any]) -> None:
 
 
 class TestComputeFeatureImportanceSidecar:
-    def test_sidecar_with_gain_takes_precedence(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_sidecar_with_gain_takes_precedence(self, tmp_path: pathlib.Path) -> None:
         features = ["a", "b", "c"]
         _write_text_model(tmp_path, splits=[[0, 0, 0]])  # would say a=3 only
         _write_sidecar(
@@ -193,14 +187,14 @@ class TestComputeFeatureImportanceSidecar:
         names = [r["feature"] for r in result["importances"]]
         assert names == ["b", "a"]
 
-    def test_malformed_sidecar_falls_back_to_text(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_malformed_sidecar_falls_back_to_text(self, tmp_path: pathlib.Path) -> None:
         features = ["a", "b"]
         _write_text_model(tmp_path, splits=[[1, 1, 0]])
         (tmp_path / "feature_importance.json").write_text("{not valid json")
         result = compute_feature_importance(tmp_path, features=features)
         assert result["source"] == "model_text"
         # Sanity: we got the text-parser counts.
-        rows_by_feature = {r["feature"]: r["split_count"] for r in result["importances"]}
+        rows_by_feature = {
+            r["feature"]: r["split_count"] for r in result["importances"]
+        }
         assert rows_by_feature == {"a": 1, "b": 2}

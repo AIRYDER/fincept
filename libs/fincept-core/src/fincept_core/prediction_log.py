@@ -66,7 +66,7 @@ def _default_predictions_dir() -> pathlib.Path:
 # Reject agent ids that could escape the predictions dir or break a
 # path join.  Same allow-list as api.promotions for consistency: a
 # human-typed identifier with dots, dashes, and underscores.
-_BAD_NAME_CHARS = set("/\\:*?\"<>|\0")
+_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
 
 
 def _validate_agent_id(agent_id: str) -> None:
@@ -172,9 +172,7 @@ class PredictionLog:
     ``data/predictions``).
     """
 
-    def __init__(
-        self, *, predictions_dir: pathlib.Path | None = None
-    ) -> None:
+    def __init__(self, *, predictions_dir: pathlib.Path | None = None) -> None:
         self._predictions_dir = predictions_dir or _default_predictions_dir()
 
     @property

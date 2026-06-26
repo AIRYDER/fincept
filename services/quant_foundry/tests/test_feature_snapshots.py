@@ -56,12 +56,14 @@ def _make_feature_rows(
             FeatureValue(name=f"f{i}", value=0.1 * i, observed_at=decision_time - 100)
             for i in range(n_features)
         )
-        rows.append(FeatureRow(
-            symbol=sym,
-            event_ts=decision_time - 50,
-            decision_time=decision_time,
-            features=features,
-        ))
+        rows.append(
+            FeatureRow(
+                symbol=sym,
+                event_ts=decision_time - 50,
+                decision_time=decision_time,
+                features=features,
+            )
+        )
     universe = tuple(UniverseEntry(symbol=s, listed_until=None) for s in symbols)
     return tuple(rows), universe
 
@@ -196,7 +198,8 @@ class TestFeatureAvailability:
         config = SnapshotExportConfig()
         export = FeatureSnapshotExport(config=config)
         receipt = export.export_with_receipt(
-            rows=rows, decision_time=1000,
+            rows=rows,
+            decision_time=1000,
             expected_features=("f0", "f1", "f2"),
         )
         # f0: 2/2 = 100%, f1: 2/2 = 100%, f2: 1/2 = 50%.
@@ -231,15 +234,14 @@ class TestMissingFeaturesAbstain:
                 symbol="AAPL",
                 event_ts=950,
                 decision_time=1000,
-                features=(
-                    FeatureValue(name="f0", value=0.0, observed_at=900),
-                ),
+                features=(FeatureValue(name="f0", value=0.0, observed_at=900),),
             ),
         )
         config = SnapshotExportConfig(min_availability_pct=80.0)
         export = FeatureSnapshotExport(config=config)
         snapshot = export.export(
-            rows=rows, decision_time=1000,
+            rows=rows,
+            decision_time=1000,
             expected_features=("f0", "f1", "f2"),
         )
         # AAPL has only 33% availability — below 80% threshold.
@@ -251,7 +253,8 @@ class TestMissingFeaturesAbstain:
         config = SnapshotExportConfig(min_availability_pct=80.0)
         export = FeatureSnapshotExport(config=config)
         snapshot = export.export(
-            rows=rows, decision_time=1000,
+            rows=rows,
+            decision_time=1000,
             expected_features=("f0", "f1", "f2"),
         )
         for sym in snapshot.symbols:
@@ -274,15 +277,14 @@ class TestMissingFeaturesAbstain:
                 symbol="MSFT",
                 event_ts=950,
                 decision_time=1000,
-                features=(
-                    FeatureValue(name="f0", value=0.0, observed_at=900),
-                ),
+                features=(FeatureValue(name="f0", value=0.0, observed_at=900),),
             ),
         )
         config = SnapshotExportConfig(min_availability_pct=80.0)
         export = FeatureSnapshotExport(config=config)
         receipt = export.export_with_receipt(
-            rows=rows, decision_time=1000,
+            rows=rows,
+            decision_time=1000,
             expected_features=("f0", "f1", "f2"),
         )
         assert "AAPL" not in receipt.degraded_symbols
@@ -383,9 +385,17 @@ class TestExportFeatureSnapshot:
 class TestNoSecretsInSnapshotExport:
     """Snapshot export output must not leak secrets."""
 
-    @pytest.mark.parametrize("secret_field", [
-        "api_key", "token", "secret", "password", "broker_account", "credential",
-    ])
+    @pytest.mark.parametrize(
+        "secret_field",
+        [
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "broker_account",
+            "credential",
+        ],
+    )
     def test_config_has_no_secret_fields(self, secret_field: str) -> None:
         """SnapshotExportConfig must not have any secret-named field."""
         fields = set(SnapshotExportConfig.model_fields.keys())
@@ -412,6 +422,5 @@ class TestNoSecretsInSnapshotExport:
                         return True
             return False
 
-        secret_names = {"api_key", "token", "secret", "password",
-                        "broker_account", "credential"}
+        secret_names = {"api_key", "token", "secret", "password", "broker_account", "credential"}
         assert not _has_secret(d, secret_names)

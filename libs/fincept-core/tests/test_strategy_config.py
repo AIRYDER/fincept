@@ -146,9 +146,7 @@ class TestValidation:
             "btc?main",
         ],
     )
-    def test_get_rejects_unsafe_id(
-        self, store: StrategyConfigStore, bad: str
-    ) -> None:
+    def test_get_rejects_unsafe_id(self, store: StrategyConfigStore, bad: str) -> None:
         with pytest.raises(StrategyConfigError):
             store.get(bad)
 
@@ -156,16 +154,12 @@ class TestValidation:
         "bad",
         ["", "../escape", ".", ".."],
     )
-    def test_upsert_rejects_unsafe_id(
-        self, store: StrategyConfigStore, bad: str
-    ) -> None:
+    def test_upsert_rejects_unsafe_id(self, store: StrategyConfigStore, bad: str) -> None:
         cfg = _make_config(strategy_id=bad)
         with pytest.raises(StrategyConfigError):
             store.upsert(cfg)
 
-    def test_set_enabled_rejects_unsafe_id(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_set_enabled_rejects_unsafe_id(self, store: StrategyConfigStore) -> None:
         with pytest.raises(StrategyConfigError):
             store.set_enabled("../escape", enabled=True)
 
@@ -183,9 +177,7 @@ class TestUpsertAndGet:
     def test_get_missing_returns_none(self, store: StrategyConfigStore) -> None:
         assert store.get("nope") is None
 
-    def test_upsert_then_get_round_trip(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_upsert_then_get_round_trip(self, store: StrategyConfigStore) -> None:
         cfg = _make_config()
         sealed = store.upsert(cfg)
         # Returned record has timestamps populated.
@@ -196,9 +188,7 @@ class TestUpsertAndGet:
         again = store.get(cfg.strategy_id)
         assert again == sealed
 
-    def test_upsert_preserves_created_at_on_update(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_upsert_preserves_created_at_on_update(self, store: StrategyConfigStore) -> None:
         first = store.upsert(_make_config())
         time.sleep(0.01)
         # Caller-provided created_at on the second upsert is ignored;
@@ -213,23 +203,17 @@ class TestUpsertAndGet:
         assert updated.created_at == first.created_at
         assert updated.updated_at > first.updated_at
 
-    def test_upsert_overwrites_caller_updated_at(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_upsert_overwrites_caller_updated_at(self, store: StrategyConfigStore) -> None:
         # Even an explicit caller value loses to wall-clock now so the
         # host can rely on monotonic ordering for change detection.
-        sealed = store.upsert(
-            _make_config(updated_at=time.time() - 10_000)
-        )
+        sealed = store.upsert(_make_config(updated_at=time.time() - 10_000))
         # ``updated_at`` is "now" at write time, not the input value.
         assert sealed.updated_at > time.time() - 5
 
     def test_list_all_empty_dir(self, store: StrategyConfigStore) -> None:
         assert store.list_all() == []
 
-    def test_list_all_returns_sorted_by_id(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_list_all_returns_sorted_by_id(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config(strategy_id="c_strategy"))
         store.upsert(_make_config(strategy_id="a_strategy"))
         store.upsert(_make_config(strategy_id="b_strategy"))
@@ -247,9 +231,7 @@ class TestUpsertAndGet:
         assert len(listed) == 1
         assert listed[0].strategy_id == "alpha"
 
-    def test_list_all_skips_unsafe_named_files(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_list_all_skips_unsafe_named_files(self, store: StrategyConfigStore) -> None:
         # If someone drops a file named ".hidden.json" in the configs
         # dir it must be ignored (its stem starts with '.', which our
         # validator rejects).
@@ -269,9 +251,7 @@ class TestHistory:
     def test_get_history_empty(self, store: StrategyConfigStore) -> None:
         assert store.get_history("never") == []
 
-    def test_history_records_each_upsert(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_history_records_each_upsert(self, store: StrategyConfigStore) -> None:
         first = store.upsert(_make_config())
         time.sleep(0.005)
         second = store.upsert(_make_config(enabled=True))
@@ -289,9 +269,7 @@ class TestHistory:
         on_disk = store.get("btc_ma_main")
         assert on_disk == second
 
-    def test_history_limit_truncates(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_history_limit_truncates(self, store: StrategyConfigStore) -> None:
         for i in range(5):
             store.upsert(_make_config(params={"fast": i, "slow": 30}))
         history = store.get_history("btc_ma_main", limit=2)
@@ -300,19 +278,15 @@ class TestHistory:
         assert history[0].params["fast"] == 4
         assert history[1].params["fast"] == 3
 
-    def test_history_rejects_zero_limit(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_history_rejects_zero_limit(self, store: StrategyConfigStore) -> None:
         with pytest.raises(StrategyConfigError, match="limit"):
             store.get_history("anything", limit=0)
 
-    def test_history_skips_malformed_lines(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_history_skips_malformed_lines(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config())
         # Hand-corrupt a line into the middle of the history file to
         # simulate a crash mid-write or a hand edit.
-        path = store._history_path("btc_ma_main")  # noqa: SLF001
+        path = store._history_path("btc_ma_main")
         with path.open("a", encoding="utf-8") as f:
             f.write("not-json\n")
             f.write('{"strategy_id": "btc_ma_main"}\n')  # missing class_name
@@ -329,9 +303,7 @@ class TestHistory:
 
 
 class TestSetEnabled:
-    def test_set_enabled_missing_raises(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_set_enabled_missing_raises(self, store: StrategyConfigStore) -> None:
         with pytest.raises(StrategyConfigError, match="not found"):
             store.set_enabled("nope", enabled=True)
 
@@ -341,9 +313,7 @@ class TestSetEnabled:
         assert toggled.enabled is True
         assert store.get("btc_ma_main") == toggled  # type: ignore[arg-type]
 
-    def test_set_enabled_idempotent(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_set_enabled_idempotent(self, store: StrategyConfigStore) -> None:
         # Setting to the current value is a no-op: same record back,
         # no new history line, no rewritten timestamp.
         original = store.upsert(_make_config(enabled=True))
@@ -360,21 +330,15 @@ class TestSetEnabled:
 
 
 class TestDelete:
-    def test_delete_missing_returns_false(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_delete_missing_returns_false(self, store: StrategyConfigStore) -> None:
         assert store.delete("nope") is False
 
-    def test_delete_removes_file_and_returns_true(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_delete_removes_file_and_returns_true(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config())
         assert store.delete("btc_ma_main") is True
         assert store.get("btc_ma_main") is None
 
-    def test_delete_appends_tombstone_to_history(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_delete_appends_tombstone_to_history(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config(enabled=True))
         store.delete("btc_ma_main")
         history = store.get_history("btc_ma_main")
@@ -401,29 +365,23 @@ class TestDelete:
 
 
 class TestAtomicWrite:
-    def test_atomic_write_leaves_no_tmp_file(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_atomic_write_leaves_no_tmp_file(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config())
         # The rename completes fully; no .tmp left around.
         leftover = list(store.configs_dir.glob("*.tmp"))
         assert leftover == []
 
-    def test_get_tolerates_malformed_json(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_get_tolerates_malformed_json(self, store: StrategyConfigStore) -> None:
         # An operator hand-editing the file may leave it invalid;
         # the dashboard should see "no config" rather than a 500.
         store.upsert(_make_config())
-        path = store._config_path("btc_ma_main")  # noqa: SLF001
+        path = store._config_path("btc_ma_main")
         path.write_text("{this is not json")
         assert store.get("btc_ma_main") is None
 
-    def test_get_tolerates_missing_required_key(
-        self, store: StrategyConfigStore
-    ) -> None:
+    def test_get_tolerates_missing_required_key(self, store: StrategyConfigStore) -> None:
         store.upsert(_make_config())
-        path = store._config_path("btc_ma_main")  # noqa: SLF001
+        path = store._config_path("btc_ma_main")
         path.write_text(json.dumps({"strategy_id": "btc_ma_main"}))
         # Required ``class_name`` missing -> treated as malformed.
         assert store.get("btc_ma_main") is None
@@ -443,9 +401,7 @@ class TestSingleton:
         s2 = get_strategy_config_store()
         assert s1 is s2
 
-    def test_reset_swaps_underlying_dir(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reset_swaps_underlying_dir(self, tmp_path: pathlib.Path) -> None:
         a = tmp_path / "a"
         b = tmp_path / "b"
         s1 = reset_strategy_config_store(configs_dir=a)

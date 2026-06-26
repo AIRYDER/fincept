@@ -44,13 +44,13 @@ import logging
 import os
 import pathlib
 import signal
-from typing import Any
+from typing import Any, cast
 
 from redis.asyncio import Redis
 
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_SIG_PREDICT
-from fincept_core.config import get_settings
+from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
@@ -104,8 +104,8 @@ def _resolve_model_dir() -> pathlib.Path:
     if pointer.is_file():
         try:
             data = json.loads(pointer.read_text())
-            name = data.get("model_name")
-            if name and isinstance(name, str):
+            name = data.get("model_name") if isinstance(data, dict) else None
+            if isinstance(name, str) and name:
                 resolved = models_root / name
                 log.info("gbm.model.from_active", pointer=str(pointer), model=name)
                 return resolved
@@ -140,8 +140,8 @@ def _resolve_shadow_model_dir() -> pathlib.Path | None:
         return None
     try:
         data = json.loads(pointer.read_text())
-        name = data.get("model_name")
-        if name and isinstance(name, str):
+        name = data.get("model_name") if isinstance(data, dict) else None
+        if isinstance(name, str) and name:
             resolved = _models_root() / name
             log.info(
                 "gbm.shadow.from_pointer",
@@ -156,9 +156,7 @@ def _resolve_shadow_model_dir() -> pathlib.Path | None:
     return None
 
 
-async def _build_agent(
-    model_dir: pathlib.Path, redis: Redis[Any]
-) -> GBMPredictor:
+async def _build_agent(model_dir: pathlib.Path, redis: Redis[Any]) -> GBMPredictor:
     """Construct + setup() a GBMPredictor for ``model_dir``.
 
     Centralised so the initial load and every hot-reload go through
@@ -225,6 +223,7 @@ async def run(
     candidate, not the production path.
     """
     settings = get_settings()
+    assert_safe_for_runtime(settings)
     if redis is None:
         redis = Redis.from_url(settings.REDIS_URL)
     if poll_interval_s is None:
@@ -352,9 +351,7 @@ async def run(
                 new_shadow_agent: GBMPredictor | None = None
                 if new_shadow_dir is not None:
                     try:
-                        new_shadow_agent = await build_agent(
-                            new_shadow_dir, redis
-                        )
+                        new_shadow_agent = await build_agent(new_shadow_dir, redis)
                     except (FileNotFoundError, OSError) as exc:
                         log.warning(
                             "gbm.shadow.load_failed",
@@ -371,13 +368,9 @@ async def run(
                     log.info(
                         "gbm.shadow.swap",
                         from_dir=(
-                            str(current_shadow_dir)
-                            if current_shadow_dir
-                            else None
+                            str(current_shadow_dir) if current_shadow_dir else None
                         ),
-                        to_dir=(
-                            str(new_shadow_dir) if new_shadow_dir else None
-                        ),
+                        to_dir=(str(new_shadow_dir) if new_shadow_dir else None),
                     )
                     shadow_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -416,7 +409,7 @@ async def run(
         await current_agent.teardown()
         if current_shadow_agent is not None:
             await current_shadow_agent.teardown()
-        await redis.aclose()  # type: ignore[attr-defined]
+        await cast(Any, redis).aclose()
 
 
 async def _publish_loop(

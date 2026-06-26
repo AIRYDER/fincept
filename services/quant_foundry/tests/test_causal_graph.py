@@ -137,7 +137,11 @@ class TestResearchFeatures:
     def test_extract_features_returns_degree_weight_and_average_strength(self) -> None:
         graph = CausalGraph(
             built_at_ns=123,
-            nodes=[_node("AAPL"), _node("tech", CausalNodeKind.SECTOR), _node("recession", CausalNodeKind.EVENT)],
+            nodes=[
+                _node("AAPL"),
+                _node("tech", CausalNodeKind.SECTOR),
+                _node("recession", CausalNodeKind.EVENT),
+            ],
             edges=[
                 _edge("AAPL", "tech", CausalEdgeKind.INFLUENCES, strength=0.8, lag_ns=10),
                 _edge("recession", "AAPL", CausalEdgeKind.CAUSES, strength=0.4, lag_ns=30),

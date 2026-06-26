@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import json
 import pathlib
-import time
 
 import pytest
-
 from quant_foundry.ids import hash_payload
 from quant_foundry.outbox import JobOutbox, JobStatus, OutboxRecord
 
@@ -44,7 +42,9 @@ def test_outbox_enqueue_creates_record_with_history(tmp_path: pathlib.Path) -> N
     assert isinstance(rec, OutboxRecord)
     assert rec.job_id == "qf:train:ds1:gbm:h1:1"
     assert rec.status == JobStatus.QUEUED
-    assert rec.request_payload_hash == hash_payload(json.dumps({"model": "gbm", "seed": 42}, sort_keys=True).encode())
+    assert rec.request_payload_hash == hash_payload(
+        json.dumps({"model": "gbm", "seed": 42}, sort_keys=True).encode()
+    )
     assert len(rec.history) >= 1
     assert rec.history[0]["status"] == "queued"
     assert rec.created_at_ns > 0
@@ -55,11 +55,11 @@ def test_outbox_status_transitions_append_history(tmp_path: pathlib.Path) -> Non
     """update_status transitions and appends to history. Receipt has full history."""
     base = tmp_path / "qf-test"
     ob = JobOutbox(base_dir=base)
-    rec0 = ob.enqueue(job_id="j2", job_type="inference", idempotency_key="k2", request_payload=b"{}")
+    ob.enqueue(job_id="j2", job_type="inference", idempotency_key="k2", request_payload=b"{}")
     rec1 = ob.update_status("j2", JobStatus.DISPATCHING, runpod_endpoint_id="ep-1")
     assert rec1.status == JobStatus.DISPATCHING
     assert len(rec1.history) == 2
-    rec2 = ob.update_status("j2", JobStatus.DISPATCHED, runpod_job_id="rp-99")
+    ob.update_status("j2", JobStatus.DISPATCHED, runpod_job_id="rp-99")
     rec3 = ob.update_status("j2", JobStatus.COMPLETED)
     assert rec3.status == JobStatus.COMPLETED
     assert len(rec3.history) == 4
@@ -104,5 +104,5 @@ def test_outbox_rejects_same_job_id_different_payload_hash(tmp_path: pathlib.Pat
     base = tmp_path / "qf-test"
     ob = JobOutbox(base_dir=base)
     ob.enqueue(job_id="j5", job_type="t", idempotency_key="k5", request_payload=b"v1")
-    with pytest.raises(ValueError, match="payload hash mismatch|security"):
+    with pytest.raises(ValueError, match=r"payload hash mismatch|security"):
         ob.enqueue(job_id="j5", job_type="t", idempotency_key="k5", request_payload=b"v2-different")

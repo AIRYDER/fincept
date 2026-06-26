@@ -52,9 +52,7 @@ class ExaMarketResearchInput(ToolInput):
 
 class ExaMarketResearchOutput(ToolOutput):
     request_id: str | None = None
-    brief: ResearchBrief = Field(
-        default_factory=lambda: ResearchBrief(headline="", summary="")
-    )
+    brief: ResearchBrief = Field(default_factory=lambda: ResearchBrief(headline="", summary=""))
     grounding: list[ResearchGrounding] = Field(default_factory=list)
     sources: list[ResearchCitation] = Field(default_factory=list)
     cost_dollars: float | None = None
@@ -93,7 +91,15 @@ def _brief_output_schema() -> dict[str, object]:
     return {
         "type": "object",
         "description": "Trading research brief grounded in cited web sources.",
-        "required": ["headline", "summary", "bullCase", "bearCase", "catalysts", "risks", "watchItems"],
+        "required": [
+            "headline",
+            "summary",
+            "bullCase",
+            "bearCase",
+            "catalysts",
+            "risks",
+            "watchItems",
+        ],
         "properties": {
             "headline": {"type": "string", "description": "One concise operator-facing headline."},
             "summary": {"type": "string", "description": "Short synthesis of the research result."},
@@ -106,7 +112,9 @@ def _brief_output_schema() -> dict[str, object]:
     }
 
 
-async def _post_json(url: str, headers: dict[str, str], body: dict[str, object]) -> dict[str, object]:
+async def _post_json(
+    url: str, headers: dict[str, str], body: dict[str, object]
+) -> dict[str, object]:
     payload = json.dumps(body).encode("utf-8")
 
     def send() -> dict[str, object]:
@@ -128,7 +136,9 @@ async def _post_json(url: str, headers: dict[str, str], body: dict[str, object])
 
 class ExaMarketResearchTool(BaseTool):
     name = "research.exa_market"
-    description = "Read-only Exa web research that returns a structured trading brief with citations."
+    description = (
+        "Read-only Exa web research that returns a structured trading brief with citations."
+    )
     input_model = ExaMarketResearchInput
     output_model = ExaMarketResearchOutput
 
@@ -153,7 +163,9 @@ class ExaMarketResearchTool(BaseTool):
             ),
         }
         if payload.symbol:
-            body["systemPrompt"] = f"{body['systemPrompt']} Focus on symbol {payload.symbol.upper()}."
+            body["systemPrompt"] = (
+                f"{body['systemPrompt']} Focus on symbol {payload.symbol.upper()}."
+            )
         if payload.max_age_hours is not None:
             contents = body["contents"]
             assert isinstance(contents, dict)
@@ -182,7 +194,10 @@ class ExaMarketResearchTool(BaseTool):
             for item in results:
                 if isinstance(item, dict) and isinstance(item.get("url"), str):
                     sources.append(
-                        ResearchCitation(url=item["url"], title=item.get("title") if isinstance(item.get("title"), str) else None)
+                        ResearchCitation(
+                            url=item["url"],
+                            title=item.get("title") if isinstance(item.get("title"), str) else None,
+                        )
                     )
 
         cost = response.get("costDollars", {})

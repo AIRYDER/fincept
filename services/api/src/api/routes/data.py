@@ -24,7 +24,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -192,7 +192,12 @@ DATASOURCE_REGISTRY: tuple[dict[str, Any], ...] = (
 
 
 def _debug_errors_enabled() -> bool:
-    return os.getenv("FINCEPT_DEBUG_ERRORS", "").lower() in {"1", "true", "yes", "local"}
+    return os.getenv("FINCEPT_DEBUG_ERRORS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "local",
+    }
 
 
 def _public_error(
@@ -370,8 +375,14 @@ async def alpaca_data_demo(
             ),
         ) from exc
 
-    news_rows = news.get("news") if isinstance(news.get("news"), list) else []
-    bar_rows = bars.get("bars") if isinstance(bars.get("bars"), dict) else {}
+    raw_news_rows = news.get("news")
+    raw_bar_rows = bars.get("bars")
+    news_rows = raw_news_rows if isinstance(raw_news_rows, list) else []
+    bar_rows = (
+        cast(dict[str, list[Any]], raw_bar_rows)
+        if isinstance(raw_bar_rows, dict)
+        else {}
+    )
     return {
         "ok": True,
         "provider": "alpaca",
@@ -396,7 +407,9 @@ async def alpaca_data_demo(
 @router.get("/symbols/search")
 async def symbol_search(
     q: str = Query(
-        ..., min_length=1, max_length=24,
+        ...,
+        min_length=1,
+        max_length=24,
         description="Query string (case-insensitive); 1-24 chars",
     ),
     limit: int = Query(10, ge=1, le=50),
@@ -483,7 +496,7 @@ async def data_coverage(
     except Exception as exc:
         logger.exception("data_coverage_bar_read_failed")
         error = _public_error("BarReadFailed", "Bar coverage read failed.", exc)
-        rows = [
+        error_rows = [
             {
                 "symbol": str(symbol_row["symbol"]),
                 "asset_class": symbol_row.get("asset_class"),
@@ -500,7 +513,7 @@ async def data_coverage(
             }
             for symbol_row in universe
         ]
-        total = len(rows)
+        total = len(error_rows)
         return {
             "freq": freq,
             "venue": venue,
@@ -515,10 +528,10 @@ async def data_coverage(
                 "error": total,
                 "coverage_pct": 0.0,
             },
-            "rows": rows,
+            "rows": error_rows,
         }
 
-    rows: list[dict[str, Any]] = []
+    coverage_rows: list[dict[str, Any]] = []
     for symbol_row in universe:
         symbol = str(symbol_row["symbol"])
         symbol_coverage = coverage.get(symbol)
@@ -533,7 +546,7 @@ async def data_coverage(
             if age_ns is not None and age_ns > stale_after_ns
             else "ok"
         )
-        rows.append(
+        coverage_rows.append(
             {
                 "symbol": symbol,
                 "asset_class": symbol_row.get("asset_class"),
@@ -550,13 +563,13 @@ async def data_coverage(
         )
 
     counts = {
-        "ok": sum(1 for row in rows if row["status"] == "ok"),
-        "stale": sum(1 for row in rows if row["status"] == "stale"),
-        "empty": sum(1 for row in rows if row["status"] == "empty"),
-        "error": sum(1 for row in rows if row["status"] == "error"),
+        "ok": sum(1 for row in coverage_rows if row["status"] == "ok"),
+        "stale": sum(1 for row in coverage_rows if row["status"] == "stale"),
+        "empty": sum(1 for row in coverage_rows if row["status"] == "empty"),
+        "error": sum(1 for row in coverage_rows if row["status"] == "error"),
     }
     covered = counts["ok"] + counts["stale"]
-    total = len(rows)
+    total = len(coverage_rows)
     coverage_pct = round((covered / total) * 100, 2) if total else 0.0
     return {
         "freq": freq,
@@ -572,7 +585,7 @@ async def data_coverage(
             "error": counts["error"],
             "coverage_pct": coverage_pct,
         },
-        "rows": rows,
+        "rows": coverage_rows,
     }
 
 

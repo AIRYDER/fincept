@@ -100,9 +100,7 @@ class TestSqrtImpact:
         )
         # impact at 50%: sqrt(50) * 10 bps ≈ 70.71 bps = 0.7071
         expected_impact = math.sqrt(50.0) * 10 / 10000 * 100
-        assert float(capped_price - Decimal("100")) == pytest.approx(
-            expected_impact, rel=1e-3
-        )
+        assert float(capped_price - Decimal("100")) == pytest.approx(expected_impact, rel=1e-3)
 
     def test_zero_bar_volume_falls_back_to_linear_mode(self) -> None:
         """bar_volume=0 should NOT use sqrt mode (would divide by zero)."""
@@ -127,9 +125,7 @@ class TestSqrtImpact:
 class TestPerSymbolOverrides:
     def test_symbol_override_for_spread_only(self) -> None:
         """SPY tightens just spread; impact + fees still inherit globals."""
-        model = CostModel(
-            per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))}
-        )
+        model = CostModel(per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))})
         exec_spy, _ = model.apply(
             side=Side.BUY,
             price=Decimal("100"),
@@ -150,11 +146,7 @@ class TestPerSymbolOverrides:
 
     def test_symbol_override_for_fees_only(self) -> None:
         """Override taker fee while spread inherits global."""
-        model = CostModel(
-            per_symbol={
-                "BTC": SymbolCosts(taker_fee_bps=Decimal("20"))
-            }
-        )
+        model = CostModel(per_symbol={"BTC": SymbolCosts(taker_fee_bps=Decimal("20"))})
         exec_price, fee_btc = model.apply(
             side=Side.BUY,
             price=Decimal("100"),
@@ -167,9 +159,7 @@ class TestPerSymbolOverrides:
         assert fee_btc == expected_fee
 
     def test_unknown_symbol_uses_global_defaults(self) -> None:
-        model = CostModel(
-            per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))}
-        )
+        model = CostModel(per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))})
         exec_unknown, _ = model.apply(
             side=Side.BUY,
             price=Decimal("100"),
@@ -181,9 +171,7 @@ class TestPerSymbolOverrides:
         assert exec_unknown == pytest.approx(Decimal("100.015"), abs=Decimal("0.0001"))
 
     def test_no_symbol_passed_uses_global_defaults(self) -> None:
-        model = CostModel(
-            per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))}
-        )
+        model = CostModel(per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))})
         # Don't pass symbol => global defaults regardless of dict contents
         exec_price, _ = model.apply(
             side=Side.BUY,
@@ -197,9 +185,7 @@ class TestPerSymbolOverrides:
         """Lower impact coef for a high-liquidity name."""
         model = CostModel(
             spread_bps_default=Decimal("0"),
-            per_symbol={
-                "SPY": SymbolCosts(impact_coef_sqrt=Decimal("2"))
-            },
+            per_symbol={"SPY": SymbolCosts(impact_coef_sqrt=Decimal("2"))},
         )
         exec_spy, _ = model.apply(
             side=Side.BUY,
@@ -241,9 +227,7 @@ class TestVolScaledSpread:
             bar_low=Decimal("100"),
         )
         # Should match a call without bar_high/bar_low: 100 + 3bp/2 = 100.015
-        assert exec_with_bar == pytest.approx(
-            Decimal("100.015"), abs=Decimal("0.0001")
-        )
+        assert exec_with_bar == pytest.approx(Decimal("100.015"), abs=Decimal("0.0001"))
 
     def test_widens_spread_on_volatile_bar(self) -> None:
         """factor=0.5, range 200bp => effective spread = max(3, 100) = 100bp."""
@@ -339,9 +323,7 @@ class TestBrokerWithRealisticCosts:
 
     def test_broker_passes_symbol_override_through(self) -> None:
         """Per-symbol override on SPY beats global default at fill time."""
-        model = CostModel(
-            per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))}
-        )
+        model = CostModel(per_symbol={"SPY": SymbolCosts(spread_bps=Decimal("0.5"))})
         broker_spy = SimBroker(cost_model=model)
         broker_aapl = SimBroker(cost_model=model)
         bar_spy = _bar("SPY", close=400.0, volume=1_000_000)

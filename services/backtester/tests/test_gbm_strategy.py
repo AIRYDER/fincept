@@ -140,9 +140,7 @@ def test_gbm_strategy_rejects_unsupported_features(
     meta["features"] = ["book_imbalance_1", "spread_bps"]
     (tmp_path / "meta.json").write_text(json.dumps(meta))
 
-    strategy = GBMStrategy(
-        symbols=[SYMBOL], model_dir=tmp_path, bar_minutes=1
-    )
+    strategy = GBMStrategy(symbols=[SYMBOL], model_dir=tmp_path, bar_minutes=1)
 
     class _Ctx:
         def log(self, *_a: object, **_kw: object) -> None:
@@ -155,9 +153,7 @@ def test_gbm_strategy_rejects_unsupported_features(
 def test_gbm_strategy_missing_artifacts_raises(
     tmp_path: pathlib.Path,
 ) -> None:
-    strategy = GBMStrategy(
-        symbols=[SYMBOL], model_dir=tmp_path, bar_minutes=1
-    )
+    strategy = GBMStrategy(symbols=[SYMBOL], model_dir=tmp_path, bar_minutes=1)
 
     class _Ctx:
         def log(self, *_a: object, **_kw: object) -> None:
@@ -231,18 +227,14 @@ def _set_position(ctx: _StubCtx, *, symbol: str, qty: str) -> None:
     )
 
 
-def _make_strategy_for_state_machine(
-    *, prob_ups: list[float]
-) -> tuple[GBMStrategy, _StubCtx]:
+def _make_strategy_for_state_machine(*, prob_ups: list[float]) -> tuple[GBMStrategy, _StubCtx]:
     """Build a GBMStrategy with internals primed for state-machine tests
     (single feature, no model load, scripted booster).
 
     The ``prob_ups`` script is consumed one entry per *post-warmup* bar
     (the first bar fills the window but doesn't invoke predict).
     """
-    strategy = GBMStrategy(
-        symbols=[SYMBOL], model_dir=pathlib.Path("/nonexistent")
-    )
+    strategy = GBMStrategy(symbols=[SYMBOL], model_dir=pathlib.Path("/nonexistent"))
     strategy._features = ["ret_1m"]
     strategy._window_bars = 2  # 1 lookback + 1 buffer
     strategy._windows = {SYMBOL: deque(maxlen=2)}
@@ -307,9 +299,7 @@ def test_state_machine_does_not_pyramid_during_partial_buy() -> None:
 def test_state_machine_re_enters_only_after_full_unwind() -> None:
     """After a full BUY+SELL round-trip, a fresh bullish signal can re-open."""
     # Four post-warmup bars: bullish, bearish, bearish, bullish.
-    strategy, ctx = _make_strategy_for_state_machine(
-        prob_ups=[0.99, 0.01, 0.01, 0.99]
-    )
+    strategy, ctx = _make_strategy_for_state_machine(prob_ups=[0.99, 0.01, 0.01, 0.99])
     # Warmup.
     strategy.on_bar(ctx, _bar(close=100.0, ts_ns=0))
     # Bar 2 (bullish): submit BUY.
@@ -347,9 +337,7 @@ def test_state_machine_close_until_flat_under_partial_sells() -> None:
     but the existing SELL drains to flat over multiple ``on_fill`` calls."""
     # Six post-warmup bars: bullish (open BUY), bearish (submit SELL),
     # then four bearish bars while the SELL drains via partial fills.
-    strategy, ctx = _make_strategy_for_state_machine(
-        prob_ups=[0.99, 0.01, 0.01, 0.01, 0.01, 0.01]
-    )
+    strategy, ctx = _make_strategy_for_state_machine(prob_ups=[0.99, 0.01, 0.01, 0.01, 0.01, 0.01])
     strategy.on_bar(ctx, _bar(close=100.0, ts_ns=0))
     strategy.on_bar(ctx, _bar(close=101.0, ts_ns=60_000_000_000))
     qty_buy = ctx.submitted[-1].quantity
@@ -491,9 +479,7 @@ def _build_loaded_strategy(
     if bars is None:
         bars = _make_uptrend_bars(n=200)
     _train_tiny_model(model_dir, bars)
-    strategy = GBMStrategy(
-        symbols=[SYMBOL], model_dir=model_dir, bar_minutes=1
-    )
+    strategy = GBMStrategy(symbols=[SYMBOL], model_dir=model_dir, bar_minutes=1)
     strategy.on_start(_StubCtx())  # type: ignore[arg-type]
     return strategy
 
@@ -509,22 +495,18 @@ class TestReloadFromDir:
         _train_tiny_model(dir_a, _make_uptrend_bars(n=200, drift=0.001))
         _train_tiny_model(dir_b, _make_uptrend_bars(n=200, drift=-0.001))
 
-        strategy = GBMStrategy(
-            symbols=[SYMBOL], model_dir=dir_a, bar_minutes=1
-        )
+        strategy = GBMStrategy(symbols=[SYMBOL], model_dir=dir_a, bar_minutes=1)
         strategy.on_start(_StubCtx())  # type: ignore[arg-type]
-        old_booster = strategy._booster  # noqa: SLF001
+        old_booster = strategy._booster
         assert old_booster is not None
 
         strategy.reload_from_dir(dir_b)
 
-        assert strategy._booster is not None  # noqa: SLF001
-        assert strategy._booster is not old_booster  # noqa: SLF001
-        assert strategy._model_dir == dir_b  # noqa: SLF001
+        assert strategy._booster is not None
+        assert strategy._booster is not old_booster
+        assert strategy._model_dir == dir_b
 
-    def test_reload_preserves_pending_order_state(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_preserves_pending_order_state(self, tmp_path: pathlib.Path) -> None:
         # Pre-load a strategy and seed its pending-buys counter
         # (simulating an in-flight BUY mid-fill).  After reload, the
         # counter must be intact -- otherwise the no-pyramiding logic
@@ -535,17 +517,15 @@ class TestReloadFromDir:
         _train_tiny_model(dir_b, _make_uptrend_bars(n=200))
 
         strategy = _build_loaded_strategy(dir_a)
-        strategy._pending_buys[SYMBOL] = Decimal("1.5")  # noqa: SLF001
-        strategy._pending_sells[SYMBOL] = Decimal("0.7")  # noqa: SLF001
+        strategy._pending_buys[SYMBOL] = Decimal("1.5")
+        strategy._pending_sells[SYMBOL] = Decimal("0.7")
 
         strategy.reload_from_dir(dir_b)
 
-        assert strategy._pending_buys[SYMBOL] == Decimal("1.5")  # noqa: SLF001
-        assert strategy._pending_sells[SYMBOL] == Decimal("0.7")  # noqa: SLF001
+        assert strategy._pending_buys[SYMBOL] == Decimal("1.5")
+        assert strategy._pending_sells[SYMBOL] == Decimal("0.7")
 
-    def test_reload_keeps_windows_when_window_bars_unchanged(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_keeps_windows_when_window_bars_unchanged(self, tmp_path: pathlib.Path) -> None:
         # Same FEATURES list -> same window_bars -> windows preserved.
         dir_a = tmp_path / "a"
         dir_b = tmp_path / "b"
@@ -557,16 +537,14 @@ class TestReloadFromDir:
         # still has the same N entries.
         seeded_bars = _make_uptrend_bars(n=10)
         for bar in seeded_bars:
-            strategy._windows[SYMBOL].append(bar)  # noqa: SLF001
-        old_len = len(strategy._windows[SYMBOL])  # noqa: SLF001
+            strategy._windows[SYMBOL].append(bar)
+        old_len = len(strategy._windows[SYMBOL])
 
         strategy.reload_from_dir(dir_b)
 
-        assert len(strategy._windows[SYMBOL]) == old_len  # noqa: SLF001
+        assert len(strategy._windows[SYMBOL]) == old_len
 
-    def test_reload_resets_windows_when_window_bars_changes(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_resets_windows_when_window_bars_changes(self, tmp_path: pathlib.Path) -> None:
         # Train model A with default FEATURES (ret_1m, ret_5m, rv_5m
         # -> max lookback 5 bars).  For B, write a meta with a
         # longer-lookback feature so window_bars increases.  The
@@ -586,18 +564,16 @@ class TestReloadFromDir:
         # Seed window with stale data; reload should drop it.
         seeded_bars = _make_uptrend_bars(n=10)
         for bar in seeded_bars:
-            strategy._windows[SYMBOL].append(bar)  # noqa: SLF001
-        old_window_bars = strategy._window_bars  # noqa: SLF001
+            strategy._windows[SYMBOL].append(bar)
+        old_window_bars = strategy._window_bars
 
         strategy.reload_from_dir(dir_b)
 
-        assert strategy._window_bars > old_window_bars  # noqa: SLF001
+        assert strategy._window_bars > old_window_bars
         # Reset deque is empty: the strategy will re-warm naturally.
-        assert len(strategy._windows[SYMBOL]) == 0  # noqa: SLF001
+        assert len(strategy._windows[SYMBOL]) == 0
 
-    def test_reload_missing_artifacts_raises_and_keeps_old(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_missing_artifacts_raises_and_keeps_old(self, tmp_path: pathlib.Path) -> None:
         # Reload pointing at an empty dir must raise BEFORE touching
         # any state; old booster + features still in place.
         dir_a = tmp_path / "a"
@@ -606,20 +582,18 @@ class TestReloadFromDir:
         _train_tiny_model(dir_a, _make_uptrend_bars(n=200))
 
         strategy = _build_loaded_strategy(dir_a)
-        old_booster = strategy._booster  # noqa: SLF001
-        old_features = list(strategy._features)  # noqa: SLF001
-        old_dir = strategy._model_dir  # noqa: SLF001
+        old_booster = strategy._booster
+        old_features = list(strategy._features)
+        old_dir = strategy._model_dir
 
         with pytest.raises(FileNotFoundError):
             strategy.reload_from_dir(empty_dir)
 
-        assert strategy._booster is old_booster  # noqa: SLF001
-        assert strategy._features == old_features  # noqa: SLF001
-        assert strategy._model_dir == old_dir  # noqa: SLF001
+        assert strategy._booster is old_booster
+        assert strategy._features == old_features
+        assert strategy._model_dir == old_dir
 
-    def test_reload_invalid_features_raises_and_keeps_old(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_invalid_features_raises_and_keeps_old(self, tmp_path: pathlib.Path) -> None:
         # An order-book feature in meta.json must be rejected by
         # ``require_supported`` BEFORE the booster swap happens.
         dir_a = tmp_path / "a"
@@ -631,17 +605,15 @@ class TestReloadFromDir:
         (dir_bad / "meta.json").write_text(json.dumps(meta_bad))
 
         strategy = _build_loaded_strategy(dir_a)
-        old_booster = strategy._booster  # noqa: SLF001
+        old_booster = strategy._booster
 
         with pytest.raises(ValueError, match="cannot compute"):
             strategy.reload_from_dir(dir_bad)
 
         # Old booster still installed despite the failed reload.
-        assert strategy._booster is old_booster  # noqa: SLF001
+        assert strategy._booster is old_booster
 
-    def test_reload_empty_features_list_raises(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_reload_empty_features_list_raises(self, tmp_path: pathlib.Path) -> None:
         dir_a = tmp_path / "a"
         dir_empty_meta = tmp_path / "empty_meta"
         _train_tiny_model(dir_a, _make_uptrend_bars(n=200))

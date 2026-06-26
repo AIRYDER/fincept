@@ -137,9 +137,7 @@ def models_root(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture(autouse=True)
-def _patch_env(
-    monkeypatch: pytest.MonkeyPatch, models_root: pathlib.Path
-) -> None:
+def _patch_env(monkeypatch: pytest.MonkeyPatch, models_root: pathlib.Path) -> None:
     """Point the resolver at our tmp models tree.
 
     We don't touch ``GBM_RELOAD_POLL_S`` here; tests pass the poll
@@ -248,15 +246,11 @@ async def test_run_keeps_current_agent_when_reload_fails(
 
     builds: list[pathlib.Path] = []
 
-    async def flaky_build(
-        model_dir: pathlib.Path, _r: Redis[Any]
-    ) -> _StubAgent:
+    async def flaky_build(model_dir: pathlib.Path, _r: Redis[Any]) -> _StubAgent:
         builds.append(model_dir)
         if len(builds) == 1:
             return _StubAgent(model_dir)
-        raise FileNotFoundError(
-            f"GBMPredictor model artifacts missing in {model_dir}"
-        )
+        raise FileNotFoundError(f"GBMPredictor model artifacts missing in {model_dir}")
 
     stop = asyncio.Event()
     run_task = asyncio.create_task(

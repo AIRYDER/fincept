@@ -169,10 +169,7 @@ class SimBroker:
                 continue
 
             # FOK: must fully fill in one shot, else cancel without filling.
-            if (
-                order.time_in_force == TimeInForce.FOK
-                and fillable_qty < remaining
-            ):
+            if order.time_in_force == TimeInForce.FOK and fillable_qty < remaining:
                 self._mark_canceled(order_id, order)
                 continue
 
@@ -229,9 +226,7 @@ class SimBroker:
                 )
         return fills
 
-    def _fillable_qty(
-        self, *, remaining: Decimal, bar: BarEvent
-    ) -> Decimal:
+    def _fillable_qty(self, *, remaining: Decimal, bar: BarEvent) -> Decimal:
         """Return how much of *remaining* can fill against *bar*.
 
         With the default ``max_participation_pct = 100`` we preserve the

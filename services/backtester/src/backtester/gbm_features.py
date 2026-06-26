@@ -122,9 +122,7 @@ def require_supported(feature_names: Sequence[str]) -> list[tuple[str, int]]:
     return parsed
 
 
-def required_window_bars(
-    feature_names: Sequence[str], *, bar_minutes: int
-) -> int:
+def required_window_bars(feature_names: Sequence[str], *, bar_minutes: int) -> int:
     """Return the minimum window size needed to compute every feature.
 
     Every feature ``<kind>_<N><unit>`` is normalised to a total minute
@@ -185,9 +183,7 @@ def compute_features(
     n_bars = len(closes)
 
     # Pre-compute bar-to-bar log returns once; many features use this.
-    log_returns: list[float] = [
-        math.log(closes[i] / closes[i - 1]) for i in range(1, n_bars)
-    ]
+    log_returns: list[float] = [math.log(closes[i] / closes[i - 1]) for i in range(1, n_bars)]
 
     for name, (kind, minutes) in zip(feature_names, parsed, strict=True):
         bars_back = math.ceil(minutes / bar_minutes)

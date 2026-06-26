@@ -76,13 +76,11 @@ logger = logging.getLogger(__name__)
 LOG_TAIL_LINES = 200
 
 # Names that would leak outside MODELS_DIR or break path joins.
-_BAD_NAME_CHARS = set("/\\:*?\"<>|\0")
+_BAD_NAME_CHARS = set('/\\:*?"<>|\0')
 
 
 def _default_runs_dir() -> pathlib.Path:
-    return pathlib.Path(
-        os.environ.get("TRAINING_RUNS_DIR", "data/training_runs")
-    )
+    return pathlib.Path(os.environ.get("TRAINING_RUNS_DIR", "data/training_runs"))
 
 
 def _default_models_dir() -> pathlib.Path:
@@ -322,7 +320,15 @@ def _resolve_trainer_command() -> list[str]:
                 "agents package not importable and `uv` not on PATH; "
                 "set MODEL_TRAINER_CMD or install the agents wheel."
             ) from None
-        return [uv, "run", "--package", "agents", "python", "-m", "agents.gbm_predictor.train"]
+        return [
+            uv,
+            "run",
+            "--package",
+            "agents",
+            "python",
+            "-m",
+            "agents.gbm_predictor.train",
+        ]
 
 
 # --------------------------------------------------------------------------- #
@@ -434,9 +440,7 @@ class TrainingStore:
 
     # ------ internals ------------------------------------------------- #
 
-    def _forget_task(
-        self, run_id: str
-    ) -> Callable[[asyncio.Task[None]], None]:
+    def _forget_task(self, run_id: str) -> Callable[[asyncio.Task[None]], None]:
         def done(_task: asyncio.Task[None]) -> None:
             self._tasks.pop(run_id, None)
 
@@ -476,9 +480,7 @@ class TrainingStore:
                 if self._trainer_cmd is not None
                 else _resolve_trainer_command()
             )
-            cmd = base_cmd + run.request.as_cli_args(
-                out_dir=pathlib.Path(run.out_dir)
-            )
+            cmd = base_cmd + run.request.as_cli_args(out_dir=pathlib.Path(run.out_dir))
         except TrainingValidationError as exc:
             run.status = "failed"
             run.finished_at = time.time()
@@ -490,9 +492,7 @@ class TrainingStore:
         # directly without extra encoding hops.
         try:
             with log_path.open("wb") as logf:
-                logf.write(
-                    f"$ {' '.join(cmd)}\n".encode("utf-8")
-                )
+                logf.write(f"$ {' '.join(cmd)}\n".encode("utf-8"))
                 logf.flush()
                 proc = subprocess.Popen(
                     cmd,

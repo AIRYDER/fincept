@@ -108,7 +108,9 @@ class NewsOutcomeStore:
         price_lookup: PriceLookup,
         limit: int = 200,
     ) -> list[MaturedLabel]:
-        due = await self._redis.zrangebyscore(PENDING_ZSET, min=0, max=now_ns, start=0, num=limit)
+        due = await self._redis.zrangebyscore(
+            PENDING_ZSET, min=0, max=now_ns, start=0, num=limit
+        )
         labels: list[MaturedLabel] = []
         for raw_member in due:
             member = _decode(raw_member)
@@ -129,7 +131,9 @@ class NewsOutcomeStore:
                 await self._redis.zrem(PENDING_ZSET, member)
                 continue
             start_price = Decimal(start_raw)
-            end_price = await price_lookup(symbol, int(ts_event_raw) + self._horizons_ns[horizon])
+            end_price = await price_lookup(
+                symbol, int(ts_event_raw) + self._horizons_ns[horizon]
+            )
             if end_price is None:
                 continue
             return_value = float((end_price / start_price) - Decimal(1))

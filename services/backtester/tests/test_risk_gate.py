@@ -56,14 +56,8 @@ def _datasource(bars: list[BarEvent]) -> BarsDataSource:
     for bar in bars:
         by_symbol.setdefault(bar.symbol, []).append(bar)
 
-    async def reader(
-        symbol: str, freq: str, start_ns: int, end_ns: int
-    ) -> list[BarEvent]:
-        return [
-            b
-            for b in by_symbol.get(symbol, [])
-            if start_ns <= b.ts_event < end_ns
-        ]
+    async def reader(symbol: str, freq: str, start_ns: int, end_ns: int) -> list[BarEvent]:
+        return [b for b in by_symbol.get(symbol, []) if start_ns <= b.ts_event < end_ns]
 
     symbols = sorted({bar.symbol for bar in bars})
     return BarsDataSource(symbols, "1m", 0, 1_000_000_000, bar_reader=reader)
@@ -178,7 +172,8 @@ class TestPerSymbolCap:
         bars = [_bar(0, close="100"), _bar(1, close="100")]
         # 50 units * $100 = $5,000 < $10,000 cap
         intent = _intent(
-            quantity="50", limit_price=Decimal("100")  # use limit so notional is unambiguous
+            quantity="50",
+            limit_price=Decimal("100"),  # use limit so notional is unambiguous
         )
         engine = BacktestEngine(
             strategy=_ScriptedStrategy([intent]),
@@ -281,9 +276,9 @@ class TestGrossCap:
         intent should be rejected because the first position is now
         visible in RiskContext.
         """
-        bars = [
-            _bar(t, symbol="BTC-USD", close="100") for t in range(8)
-        ] + [_bar(t, symbol="ETH-USD", close="100") for t in range(8)]
+        bars = [_bar(t, symbol="BTC-USD", close="100") for t in range(8)] + [
+            _bar(t, symbol="ETH-USD", close="100") for t in range(8)
+        ]
 
         class _DelayedSecondSubmit(Strategy):
             strategy_id: ClassVar[str] = "delayed"

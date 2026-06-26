@@ -29,7 +29,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from quant_foundry.outbox import JobOutbox, JobStatus
 
@@ -328,7 +328,7 @@ class HttpRunPodClient:
         with client as c:
             resp = c.get(url, headers=headers)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
     def check_health(self) -> dict[str, Any]:
         """Check RunPod endpoint health via ``/health``.
@@ -344,7 +344,7 @@ class HttpRunPodClient:
         with client as c:
             resp = c.get(url, headers=headers)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # --- dispatcher ------------------------------------------------------------
@@ -374,7 +374,10 @@ class RunPodDispatcher:
     endpoint_id: str | None = None
 
     def dispatch(
-        self, job_id: str, *, request_payload: dict[str, Any],
+        self,
+        job_id: str,
+        *,
+        request_payload: dict[str, Any],
     ) -> DispatchResult:
         """Dispatch a single job to RunPod.
 
@@ -383,7 +386,8 @@ class RunPodDispatcher:
         """
         if self.mode != "runpod":
             return DispatchResult(
-                job_id=job_id, status=DispatchStatus.SKIPPED,
+                job_id=job_id,
+                status=DispatchStatus.SKIPPED,
                 error_code="mode_not_runpod",
                 error_summary=f"QUANT_FOUNDRY_MODE={self.mode}; no RunPod call",
             )
@@ -391,7 +395,8 @@ class RunPodDispatcher:
         rec = self.outbox.get(job_id)
         if rec is None:
             return DispatchResult(
-                job_id=job_id, status=DispatchStatus.TERMINAL_FAILURE,
+                job_id=job_id,
+                status=DispatchStatus.TERMINAL_FAILURE,
                 error_code="unknown_job",
                 error_summary=f"no outbox record for job_id {job_id}",
             )
@@ -400,7 +405,8 @@ class RunPodDispatcher:
         ok, err = self.budget_guard.check_per_job(rec.budget_cents)
         if not ok:
             return DispatchResult(
-                job_id=job_id, status=DispatchStatus.BUDGET_EXCEEDED,
+                job_id=job_id,
+                status=DispatchStatus.BUDGET_EXCEEDED,
                 error_code=err,
                 error_summary=(
                     f"per-job budget exceeded: job budget "
@@ -417,7 +423,8 @@ class RunPodDispatcher:
         ok, err = self.budget_guard.check_global(prospective_cost)
         if not ok:
             return DispatchResult(
-                job_id=job_id, status=DispatchStatus.BUDGET_EXCEEDED,
+                job_id=job_id,
+                status=DispatchStatus.BUDGET_EXCEEDED,
                 error_code=err,
                 error_summary=(
                     f"global monthly budget ceiling exceeded: spent "
@@ -451,12 +458,15 @@ class RunPodDispatcher:
                 endpoint_id = getattr(self.client, "endpoint_id", None)
             if endpoint_id is None:
                 endpoint_id = getattr(self.client, "_endpoint_id", None)
-            note = json.dumps({
-                "cost_cents": result.cost_cents,
-                "duration_seconds": result.duration_seconds or elapsed,
-            })
+            note = json.dumps(
+                {
+                    "cost_cents": result.cost_cents,
+                    "duration_seconds": result.duration_seconds or elapsed,
+                }
+            )
             self.outbox.update_status(
-                job_id, JobStatus.RUNNING,
+                job_id,
+                JobStatus.RUNNING,
                 runpod_endpoint_id=endpoint_id,
                 runpod_job_id=result.runpod_job_id,
                 note=note,
@@ -466,14 +476,16 @@ class RunPodDispatcher:
         if result.status == DispatchStatus.TRANSIENT_FAILURE:
             # Leave retryable: update to a non-terminal status with error.
             self.outbox.update_status(
-                job_id, JobStatus.QUEUED,  # back to queued for retry
+                job_id,
+                JobStatus.QUEUED,  # back to queued for retry
                 error_code=result.error_code,
                 error_summary=result.error_summary,
                 note="transient failure; queued for retry",
             )
         elif result.status == DispatchStatus.TERMINAL_FAILURE:
             self.outbox.update_status(
-                job_id, JobStatus.FAILED,
+                job_id,
+                JobStatus.FAILED,
                 error_code=result.error_code,
                 error_summary=result.error_summary,
             )
@@ -485,10 +497,7 @@ class RunPodDispatcher:
 
         Returns a list of DispatchResult, one per job considered.
         """
-        queued = [
-            rec for rec in self.outbox.list()
-            if rec.status == JobStatus.QUEUED
-        ]
+        queued = [rec for rec in self.outbox.list() if rec.status == JobStatus.QUEUED]
         # Sort by priority (desc) then created_at (asc).
         queued.sort(key=lambda r: (-r.priority, r.created_at_ns))
 
@@ -499,11 +508,14 @@ class RunPodDispatcher:
                 self.max_dispatches_per_sweep is not None
                 and dispatched >= self.max_dispatches_per_sweep
             ):
-                results.append(DispatchResult(
-                    job_id=rec.job_id, status=DispatchStatus.SKIPPED,
-                    error_code="rate_limited",
-                    error_summary="max_dispatches_per_sweep reached",
-                ))
+                results.append(
+                    DispatchResult(
+                        job_id=rec.job_id,
+                        status=DispatchStatus.SKIPPED,
+                        error_code="rate_limited",
+                        error_summary="max_dispatches_per_sweep reached",
+                    )
+                )
                 continue
 
             # Parse the request payload from the outbox record.

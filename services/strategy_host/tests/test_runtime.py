@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from strategy_host.runtime import LiveStrategyContext
 
 from fincept_core.schemas import (
     OrderIntent,
@@ -31,7 +32,6 @@ from fincept_core.schemas import (
     TimeInForce,
     Venue,
 )
-from strategy_host.runtime import LiveStrategyContext
 
 # --------------------------------------------------------------------------- #
 # Helpers + fixtures                                                          #
@@ -111,15 +111,11 @@ def _position(
 
 
 class TestSubmit:
-    def test_submit_returns_order_id(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_submit_returns_order_id(self, ctx: LiveStrategyContext) -> None:
         intent = _intent(order_id="abc-123")
         assert ctx.submit(intent) == "abc-123"
 
-    def test_submit_queues_for_drain(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_submit_queues_for_drain(self, ctx: LiveStrategyContext) -> None:
         intent_a = _intent(order_id="a")
         intent_b = _intent(order_id="b")
         ctx.submit(intent_a)
@@ -134,9 +130,7 @@ class TestSubmit:
         # Subsequent drain returns empty -- no double-publish risk.
         assert ctx.drain_submits() == []
 
-    def test_drain_returns_independent_list(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_drain_returns_independent_list(self, ctx: LiveStrategyContext) -> None:
         # The runner iterates the drained list while the strategy
         # may submit again on the next event.  The drained list
         # MUST be detached from the internal queue so the runner's
@@ -150,9 +144,7 @@ class TestSubmit:
         assert [i.order_id for i in drained] == ["a"]
         assert [i.order_id for i in ctx.drain_submits()] == ["b"]
 
-    def test_drain_empty_on_fresh_ctx(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_drain_empty_on_fresh_ctx(self, ctx: LiveStrategyContext) -> None:
         assert ctx.drain_submits() == []
 
 
@@ -162,16 +154,12 @@ class TestSubmit:
 
 
 class TestPositions:
-    def test_update_installs_matching_strategy(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_update_installs_matching_strategy(self, ctx: LiveStrategyContext) -> None:
         pos = _position(strategy_id="alpha", symbol="BTC-USD", qty="0.5")
         ctx.update_position(pos)
         assert ctx.positions["BTC-USD"] == pos
 
-    def test_update_ignores_other_strategy(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_update_ignores_other_strategy(self, ctx: LiveStrategyContext) -> None:
         # Defence-in-depth: even if the caller forgets to filter
         # upstream, the context itself rejects positions for a
         # different strategy_id.  This means a strategy's positions
@@ -179,9 +167,7 @@ class TestPositions:
         ctx.update_position(_position(strategy_id="beta", symbol="BTC-USD"))
         assert ctx.positions == {}
 
-    def test_update_overwrites_prior_position(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_update_overwrites_prior_position(self, ctx: LiveStrategyContext) -> None:
         ctx.update_position(_position(qty="0.5"))
         ctx.update_position(_position(qty="0.7"))
         assert ctx.positions["BTC-USD"].quantity == Decimal("0.7")
@@ -200,14 +186,9 @@ class TestStubs:
         ctx.cancel("any-order-id")
         # Verify the warning landed -- this is the only signal an
         # operator gets that cancel was attempted.
-        assert any(
-            entry[1] == "strategy.cancel_unsupported"
-            for entry in rec_log.entries
-        )
+        assert any(entry[1] == "strategy.cancel_unsupported" for entry in rec_log.entries)
 
-    def test_get_feature_returns_none(
-        self, ctx: LiveStrategyContext
-    ) -> None:
+    def test_get_feature_returns_none(self, ctx: LiveStrategyContext) -> None:
         assert ctx.get_feature("rv_5m", "BTC-USD") is None
 
 
@@ -233,9 +214,7 @@ class TestLog:
         # The protocol allows passing any logger with an .info(msg,
         # **kwargs) shape.  A stdlib Logger ignores **kwargs except
         # ``extra=`` -- which is fine for tests / fallback use.
-        ctx = LiveStrategyContext(
-            strategy_id="alpha", log=logging.getLogger("test")
-        )
+        ctx = LiveStrategyContext(strategy_id="alpha", log=logging.getLogger("test"))
         ctx.log("plain_msg", a=1)
 
 

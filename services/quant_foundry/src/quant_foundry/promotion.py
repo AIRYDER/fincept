@@ -160,9 +160,7 @@ class PromotionReceipt(BaseModel):
             "decision": self.decision.value,
             "request": self.request.model_dump(),
             "review_note": self.review_note,
-            "rejection_reason": (
-                self.rejection_reason.value if self.rejection_reason else None
-            ),
+            "rejection_reason": (self.rejection_reason.value if self.rejection_reason else None),
             "decided_at_ns": self.decided_at_ns,
         }
 
@@ -226,9 +224,7 @@ class PromotionGate:
 
         # 3. Insufficient settlement evidence -> reject.
         settled_count = (
-            evidence.tournament_result.settled_count
-            if evidence.tournament_result
-            else 0
+            evidence.tournament_result.settled_count if evidence.tournament_result else 0
         )
         if settled_count < self.min_settled_count:
             return PromotionReceipt(

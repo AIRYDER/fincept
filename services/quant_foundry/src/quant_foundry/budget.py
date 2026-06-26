@@ -125,9 +125,7 @@ class BudgetGuard:
             ``BudgetDecision`` with ``allowed=True`` if the job may proceed.
         """
         if amount_cents < 0:
-            raise ValueError(
-                f"amount_cents must be >= 0; got {amount_cents}"
-            )
+            raise ValueError(f"amount_cents must be >= 0; got {amount_cents}")
 
         year_month = _current_year_month()
         spent = self._read_monthly_spend(year_month)
@@ -210,9 +208,7 @@ class BudgetGuard:
         Use a negative amount to adjust a prior over-reservation downward.
         """
         if amount_cents < 0:
-            raise ValueError(
-                f"amount_cents must be >= 0; got {amount_cents}"
-            )
+            raise ValueError(f"amount_cents must be >= 0; got {amount_cents}")
         ym = year_month or _current_year_month()
         self._append_ledger(
             year_month=ym,
