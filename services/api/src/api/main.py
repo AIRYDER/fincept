@@ -60,6 +60,68 @@ API_VERSION = "0.1.0"
 log = get_logger(__name__)
 
 
+class RedisPredictionPublisher:
+    """Sync publisher for paper-approved predictions to the ``sig.predict`` stream.
+
+    The CallbackProcessor runs in a thread (via ``asyncio.to_thread``), so we
+    need a sync Redis client — the async ``Producer`` can't be awaited from
+    a sync context. This class creates a dedicated sync Redis connection and
+    publishes ``Prediction`` events using the same serialization as the async
+    Producer.
+    """
+
+    def __init__(self, redis: Redis[Any]) -> None:
+        # Store the URL so we can create a sync client lazily.
+        # The async Redis client is passed for URL extraction; the sync
+        # client is created on first publish to avoid blocking the event
+        # loop at construction time.
+        self._redis_url: str | None = None
+        # Extract URL from the async client's connection pool.
+        try:
+            pool = redis.connection_pool
+            kw = pool.connection_kwargs
+            host = kw.get("host", "localhost")
+            port = kw.get("port", 6379)
+            db = kw.get("db", 0)
+            password = kw.get("password")
+            if password:
+                self._redis_url = f"redis://:{password}@{host}:{port}/{db}"
+            else:
+                self._redis_url = f"redis://{host}:{port}/{db}"
+        except Exception:
+            self._redis_url = "redis://localhost:6379/0"
+        self._sync_redis: Any = None
+
+    def _get_sync_redis(self) -> Any:
+        if self._sync_redis is None:
+            import redis as sync_redis_mod
+
+            self._sync_redis = sync_redis_mod.Redis.from_url(self._redis_url)
+        return self._sync_redis
+
+    def publish_prediction(self, prediction: dict[str, Any]) -> str:
+        """Publish a Prediction event to ``sig.predict``.
+
+        Returns the Redis stream ID. Uses the same Event serialization as
+        the async Producer so consumers see identical message format.
+        """
+        from fincept_bus.streams import STREAM_SIG_PREDICT, RETENTION
+        from fincept_core.events import Event, make_event, serialize
+        from fincept_core.clock import now_ns
+        from fincept_core.ids import new_id
+
+        event = make_event("prediction", prediction)
+        fields = serialize(event, event_id=new_id(), published_at=now_ns())
+        client = self._get_sync_redis()
+        message_id = client.xadd(
+            STREAM_SIG_PREDICT,
+            fields,
+            maxlen=RETENTION.get(STREAM_SIG_PREDICT),
+            approximate=True,
+        )
+        return message_id.decode() if isinstance(message_id, bytes) else str(message_id)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the shared Redis client + tracing at startup."""
@@ -68,9 +130,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     configure_tracing("api")
     settings = get_settings()
-    quant_foundry_gateway = configure_quant_foundry_gateway(app)
     redis: Redis[Any] = Redis.from_url(settings.REDIS_URL)
     app.state.redis = redis
+    # Create the gateway with the Redis-backed prediction publisher so
+    # paper-approved models can publish to sig.predict.
+    publisher = RedisPredictionPublisher(redis)
+    quant_foundry_gateway = configure_quant_foundry_gateway(
+        app, prediction_publisher=publisher
+    )
     scheduler = AlpacaScheduler(redis)
     scheduler.start()
     app.state.alpaca_scheduler = scheduler
@@ -188,8 +255,26 @@ def configure_quant_foundry_gateway(
     app: FastAPI,
     *,
     base_dir: pathlib.Path | str | None = None,
+    prediction_publisher: Any | None = None,
 ) -> QuantFoundryGateway:
     gateway = QuantFoundryGateway.from_env(base_dir=base_dir)
+    # Inject the prediction publisher after construction (from_env doesn't
+    # have access to the Redis client, so we inject it here).
+    if prediction_publisher is not None and gateway._paper_bridge is not None:
+        gateway._prediction_publisher = prediction_publisher
+        # Re-construct the processor with the publisher wired in.
+        from quant_foundry.callbacks import CallbackProcessor
+
+        gateway.processor = CallbackProcessor(
+            outbox=gateway.outbox,
+            inbox=gateway.inbox,
+            callback_secret=gateway.callback_secret,
+            shadow_ledger=gateway.shadow_ledger,
+            dossier_store=gateway.dossier_store,
+            paper_bridge=gateway._paper_bridge,
+            prediction_publisher=prediction_publisher,
+            dossier_lookup=gateway._dossier_registry_lazy(),
+        )
     app.state.quant_foundry_gateway = gateway
     return gateway
 

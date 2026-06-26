@@ -57,6 +57,23 @@ class DossierStoreSink(Protocol):
     def store(self, training_result: dict[str, Any]) -> None: ...
 
 
+class PredictionPublisher(Protocol):
+    """Publishes a Prediction event to the ``sig.predict`` Redis stream.
+
+    Implementations must be idempotent (the callback processor's idempotency
+    guard prevents duplicate calls for the same job_id, but the publisher
+    should also be safe to retry).
+    """
+
+    def publish_prediction(self, prediction: dict[str, Any]) -> str: ...
+
+
+class DossierLookup(Protocol):
+    """Looks up a dossier by model_id to check promotion status."""
+
+    def get(self, model_id: str) -> DossierRecord | None: ...
+
+
 class ShadowLedgerStub:
     """In-process stub for shadow predictions. NO bus, NO sig.predict writer.
 
@@ -171,6 +188,13 @@ class CallbackProcessor:
     callback `secret` (TASK-0303), and the shadow/dossier stubs. Drives
     outbox transitions (VALIDATING -> COMPLETED | FAILED) and inbox status
     (PROCESSED | REJECTED).
+
+    When ``paper_bridge`` and ``prediction_publisher`` are provided, the
+    processor also publishes paper-approved predictions to the
+    ``sig.predict`` Redis stream — but only for models with
+    ``DossierStatus.PAPER_APPROVED`` and only when the bridge is enabled.
+    This is the single connection point between shadow inference and live
+    paper trading.
     """
 
     def __init__(
@@ -181,12 +205,18 @@ class CallbackProcessor:
         callback_secret: str,
         shadow_ledger: ShadowLedgerSink,
         dossier_store: DossierStoreSink,
+        paper_bridge: Any | None = None,
+        prediction_publisher: PredictionPublisher | None = None,
+        dossier_lookup: DossierLookup | None = None,
     ) -> None:
         self.outbox = outbox
         self.inbox = inbox
         self.callback_secret = callback_secret
         self.shadow_ledger = shadow_ledger
         self.dossier_store = dossier_store
+        self.paper_bridge = paper_bridge
+        self.prediction_publisher = prediction_publisher
+        self.dossier_lookup = dossier_lookup
 
     def process(self, job_id: str) -> dict[str, Any]:
         """Process the latest callback for a job. Idempotent + fail-closed."""
@@ -287,12 +317,18 @@ class CallbackProcessor:
 
         # Apply domain effect by result_type.
         result_type = envelope.result_type
+        paper_published: list[dict[str, Any]] = []
         try:
             if result_type == "training_complete":
                 self.dossier_store.store(envelope.payload)
             elif result_type == "inference_batch":
                 preds = envelope.payload.get("predictions", [])
                 self.shadow_ledger.store(preds)
+                # Paper bridge: publish paper-approved predictions to sig.predict.
+                # This is the ONLY code path that connects shadow inference to
+                # live paper trading. Guarded by paper_bridge + prediction_publisher
+                # + dossier_lookup all being configured, and the bridge being enabled.
+                paper_published = self._maybe_publish_paper(preds)
             else:
                 raise ValueError(f"unknown result_type: {result_type}")
         except (ValidationError, ValueError, KeyError) as exc:
@@ -317,9 +353,99 @@ class CallbackProcessor:
         )
         self.outbox.update_status(job_id, JobStatus.VALIDATING)
         self.outbox.update_status(job_id, JobStatus.COMPLETED)
-        return self._receipt(job_id, CallbackStatus.PROCESSED, "processed")
+        receipt = self._receipt(job_id, CallbackStatus.PROCESSED, "processed")
+        if paper_published:
+            receipt["paper_published"] = paper_published
+        return receipt
 
     # --- internals ---
+
+    def _maybe_publish_paper(
+        self, preds: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Check each shadow prediction's model for paper-approved status.
+
+        If the paper bridge is enabled, the model is ``paper_approved``, and
+        the prediction publisher is configured, convert the shadow prediction
+        to a ``Prediction`` event and publish it to ``sig.predict``.
+
+        Returns a list of publish receipts (one per published prediction).
+        Errors in publishing are caught and logged in the receipt — a single
+        publish failure does NOT fail the callback (the shadow ledger store
+        already succeeded).
+        """
+        if (
+            self.paper_bridge is None
+            or self.prediction_publisher is None
+            or self.dossier_lookup is None
+        ):
+            return []
+
+        published: list[dict[str, Any]] = []
+        for pred in preds:
+            model_id = pred.get("model_id", "")
+            if not model_id:
+                continue
+
+            # Look up the dossier to check promotion status.
+            dossier = self.dossier_lookup.get(model_id)
+            if dossier is None:
+                continue
+
+            # Build evidence packet for the bridge.
+            from quant_foundry.promotion import PromotionEvidence
+
+            evidence = PromotionEvidence(
+                dossier=dossier,
+                blocking_issues=[],
+            )
+
+            # Attempt to publish via the paper bridge.
+            bridge_receipt = self.paper_bridge.publish(
+                prediction=pred,
+                evidence=evidence,
+            )
+
+            if bridge_receipt.status.value == "published":
+                # Convert PaperPrediction to Prediction event and publish.
+                paper_pred = bridge_receipt.prediction
+                if paper_pred is not None:
+                    prediction_event = {
+                        "agent_id": f"quant_foundry.{model_id}",
+                        "symbol": paper_pred.symbol,
+                        "horizon_ns": paper_pred.horizon_ns,
+                        "ts_event": paper_pred.ts_event,
+                        "direction": paper_pred.direction,
+                        "confidence": paper_pred.confidence,
+                        "calibration_tag": "paper-bridge",
+                    }
+                    try:
+                        stream_id = self.prediction_publisher.publish_prediction(
+                            prediction_event
+                        )
+                        published.append(
+                            {
+                                "model_id": model_id,
+                                "prediction_id": paper_pred.prediction_id,
+                                "stream_id": stream_id,
+                                "status": "published",
+                            }
+                        )
+                    except Exception as exc:
+                        published.append(
+                            {
+                                "model_id": model_id,
+                                "prediction_id": paper_pred.prediction_id,
+                                "status": "publish_failed",
+                                "error": f"{type(exc).__name__}: {exc}",
+                            }
+                        )
+            elif bridge_receipt.status.value == "refused":
+                # Bridge refused (not paper-approved, disabled, etc.) —
+                # this is normal, not an error.
+                pass
+
+        return published
 
     def _read_payload(self, payload_ref: str | None, expected_hash: str) -> bytes | None:
         """Read payload bytes from payload_ref and verify hash. None on tamper."""

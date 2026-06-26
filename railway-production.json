@@ -54,7 +54,8 @@
         "QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS": "300",
         "QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS": "60",
         "QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS": "300",
-        "QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS": "15"
+        "QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS": "15",
+        "QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE": "false"
       },
       "volumes": {
         "/data": "persistent volume for quant foundry durable stores (outbox, inbox, shadow ledger, dossier registry). Mount before first deploy so the lifespan-created gateway has a writable base dir."

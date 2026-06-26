@@ -52,6 +52,7 @@ from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
 from quant_foundry.market_data_adapter import BarDataAdapter, alpaca_reader_from_env
 from quant_foundry.mock_dispatcher import MockDispatcher
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.paper_bridge import PaperBridge
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
 from quant_foundry.runpod_client import (
@@ -92,6 +93,8 @@ class QuantFoundryGateway:
         budget_guard: BudgetGuard | None = None,
         runpod_client: Any = None,
         runpod_clients: Mapping[str, Any] | None = None,
+        paper_bridge: PaperBridge | None = None,
+        prediction_publisher: Any | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -100,6 +103,8 @@ class QuantFoundryGateway:
         self.base_dir = pathlib.Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.budget_guard = budget_guard
+        self._paper_bridge = paper_bridge
+        self._prediction_publisher = prediction_publisher
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -137,6 +142,9 @@ class QuantFoundryGateway:
             callback_secret=callback_secret,
             shadow_ledger=self.shadow_ledger,
             dossier_store=self.dossier_store,
+            paper_bridge=self._paper_bridge,
+            prediction_publisher=self._prediction_publisher,
+            dossier_lookup=self._dossier_registry_lazy() if self._paper_bridge else None,
         )
 
         if runpod_clients is not None:
@@ -233,6 +241,17 @@ class QuantFoundryGateway:
                     cost_per_dispatch_cents=cost_cents,
                 )
 
+        # Paper bridge: construct when QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true.
+        # The bridge is disabled by default and must be explicitly enabled.
+        # The prediction publisher is injected by the API lifespan (which has
+        # access to the Redis client); from_env() leaves it as None.
+        paper_bridge = None
+        allow_paper_bridge = (
+            os.environ.get("QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE", "").lower() == "true"
+        )
+        if allow_paper_bridge:
+            paper_bridge = PaperBridge()
+
         return cls(
             enabled=enabled,
             mode=mode,
@@ -241,6 +260,7 @@ class QuantFoundryGateway:
             base_dir=base_dir,
             budget_guard=budget_guard,
             runpod_clients=runpod_clients,
+            paper_bridge=paper_bridge,
         )
 
     # --- health / state ---
@@ -256,6 +276,11 @@ class QuantFoundryGateway:
             "runpod_routes": {
                 job_type: _client_endpoint_id(client)
                 for job_type, client in self._runpod_clients.items()
+            },
+            "paper_bridge": {
+                "configured": self._paper_bridge is not None,
+                "status": self._paper_bridge.status.value if self._paper_bridge else "disabled",
+                "publisher_wired": self._prediction_publisher is not None,
             },
         }
 
@@ -565,6 +590,22 @@ class QuantFoundryGateway:
         if self._dossier_registry is None:
             self._dossier_registry = DossierRegistry(self.base_dir / "dossier_registry")
         return self._dossier_registry
+
+    def _dossier_registry_lazy(self) -> Any:
+        """Return a lazy lookup wrapper for the dossier registry.
+
+        The registry is constructed on first access, so we return a small
+        adapter that defers the ``get(model_id)`` call until the registry
+        is actually needed. This avoids constructing the registry at
+        gateway init time when the paper bridge is not enabled.
+        """
+        gateway = self
+
+        class _LazyDossierLookup:
+            def get(self, model_id: str) -> Any:
+                return gateway.dossier_registry().get(model_id)
+
+        return _LazyDossierLookup()
 
     def expanded_leaderboard(self) -> ExpandedLeaderboard:
         """Return the lazily constructed expanded leaderboard."""
