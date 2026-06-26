@@ -1,0 +1,54 @@
+============================================================
+RunPod E2E Real ML Pipeline Test
+============================================================
+
+--- Endpoint Health ---
+  training (h2blqodcicxqyy): ready=0, running=1, idle=0
+  inference (t31u1z426jy1ub): ready=0, running=1, idle=0
+
+--- Generating Synthetic Dataset ---
+  CSV size: 9114 bytes, 201 lines
+
+--- Dispatching Training Job ---
+  job_id: qf:e2e:real:train:d04ac998
+  runpod_job_id: 9318b244-1f02-42c9-a197-89e73834387a-u2
+
+--- Polling Training Job ---
+  [TRAIN] attempt 1/60: COMPLETED
+
+--- Training Result Verification ---
+  job_id: qf:e2e:real:train:d04ac998
+  artifact_id: artifact:d46fd3d047b5b169
+  model_id: model:qf:e2e:real:train:d04ac998
+  authority: shadow-only
+  metrics: {
+    "accuracy": 0.9182389937106918,
+    "logloss": 0.2307104901988057,
+    "brier_score": 0.06660335528020635,
+    "sharpe_ratio": 26.99133389617496,
+    "max_drawdown": -0.7169009229703747,
+    "win_rate": 0.9182389937106918
+}
+  [OK] accuracy 0.9182389937106918 != stub 1.0 (real model)
+  [OK] authority=shadow-only
+  [OK] all metric checks passed
+
+--- Dispatching Inference Job ---
+  job_id: qf:e2e:real:infer:ff87e8c9
+  model_id: model:qf:e2e:real:train:d04ac998
+  runpod_job_id: b07b756d-8af0-40b3-bbc2-6f4557a7f5df-u2
+
+--- Polling Inference Job ---
+  [INFER] attempt 1/60: COMPLETED
+
+--- Inference Result Verification ---
+  predictions count: 3
+  sample: symbol=SYM_A, direction=0.5, confidence=0.55, p_up=0.7772998611381502
+  sample: symbol=SYM_B, direction=0.15000000000000002, confidence=0.375, p_up=0.5926665999387817
+  sample: symbol=SYM_C, direction=0.05, confidence=0.325, p_up=0.5312093733684995
+  [OK] all predictions have valid ranges and shadow_only authority
+  [OK] inference verification passed
+
+============================================================
+[SUCCESS] E2E RunPod real ML pipeline test passed!
+============================================================
