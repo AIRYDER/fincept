@@ -97,3 +97,16 @@ uv.lock
 # --- Leftover test scratch files --------------------------------------------
 /services/*/t.txt
 /services/*/*.tmp
+
+# --- Local generated hygiene artifacts (Worker C, gh_swarm 2026-06-26) ------
+# Scout 1 approved: generated/runtime paths only; no broad rules.
+.omo/
+.opencode/
+.playwright-cli/
+.worktrees/
+.devin/
+data/datasets/
+reports/quant-foundry/
+reports/training-stage/
+clipboard-*.png
+session-db.md
