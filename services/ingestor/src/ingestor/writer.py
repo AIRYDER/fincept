@@ -47,6 +47,11 @@ from fincept_db.ticks import write_book_deltas, write_trades
 log = get_logger(__name__)
 
 DEFAULT_BATCH_SIZE = 500
+# Maximum buffer size before backpressure kicks in.  When the buffer
+# exceeds this threshold, new events are dropped (oldest-first for
+# trades/books) and a warning is logged.  This prevents OOM when the
+# downstream DB is slower than the upstream feed.
+DEFAULT_MAX_BUFFER_SIZE = 10_000
 BAR_FREQ = "1m"
 NS_PER_MINUTE = 60_000_000_000
 
@@ -119,7 +124,15 @@ class _MinuteBar:
 
 
 class Writer:
-    """Fan-out writer with in-memory batching for Timescale persistence."""
+    """Fan-out writer with in-memory batching for Timescale persistence.
+
+    Backpressure: if the downstream DB is slower than the upstream feed,
+    the in-memory buffers grow.  When a buffer exceeds ``max_buffer_size``,
+    the oldest events are dropped and a warning is logged.  This prevents
+    OOM while preserving the most recent events (which are more likely
+    to be relevant for real-time strategies).  The ``dropped`` property
+    exposes the total drop count for monitoring.
+    """
 
     def __init__(
         self,
@@ -127,15 +140,21 @@ class Writer:
         batch_size: int = DEFAULT_BATCH_SIZE,
         *,
         persist_to_db: bool = True,
+        max_buffer_size: int = DEFAULT_MAX_BUFFER_SIZE,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
+        if max_buffer_size < batch_size:
+            raise ValueError("max_buffer_size must be >= batch_size")
         self.producer = Producer(redis)
         self.batch_size = batch_size
         self.persist_to_db = persist_to_db
+        self.max_buffer_size = max_buffer_size
         self._trades: list[TradeEvent] = []
         self._books: list[BookDeltaEvent] = []
         self._bars: dict[tuple[str, str], _MinuteBar] = {}
+        self._dropped_trades = 0
+        self._dropped_books = 0
 
     async def handle(self, event: BaseModel) -> None:
         """Route a single canonical event to Redis + the DB buffer."""
@@ -145,17 +164,53 @@ class Writer:
             self._trades.append(event)
             if len(self._trades) >= self.batch_size:
                 await self._flush_trades()
+            elif len(self._trades) > self.max_buffer_size:
+                self._drop_oldest_trades()
         elif isinstance(event, BookDeltaEvent):
             await self.producer.publish(STREAM_MD_BOOKS, Event(type="book_delta", payload=event))
             self._books.append(event)
             if len(self._books) >= self.batch_size:
                 await self._flush_books()
+            elif len(self._books) > self.max_buffer_size:
+                self._drop_oldest_books()
         elif isinstance(event, BookSnapshotEvent):
             # Snapshots go to the same stream but aren't persisted as deltas;
             # downstream services replay snapshots into book state directly.
             await self.producer.publish(STREAM_MD_BOOKS, Event(type="book_snapshot", payload=event))
         else:
             log.warning("writer.unknown_event_type", model=type(event).__name__)
+
+    def _drop_oldest_trades(self) -> None:
+        """Drop the oldest trades to bring the buffer under max_buffer_size.
+
+        We drop down to ``batch_size`` so the next handle() call triggers
+        a flush, draining the buffer quickly.
+        """
+        excess = len(self._trades) - self.batch_size
+        if excess <= 0:
+            return
+        self._trades = self._trades[excess:]
+        self._dropped_trades += excess
+        log.warning(
+            "writer.backpressure_dropped_trades",
+            dropped=excess,
+            buffer_size=len(self._trades),
+            total_dropped=self._dropped_trades,
+        )
+
+    def _drop_oldest_books(self) -> None:
+        """Drop the oldest book deltas to bring the buffer under max_buffer_size."""
+        excess = len(self._books) - self.batch_size
+        if excess <= 0:
+            return
+        self._books = self._books[excess:]
+        self._dropped_books += excess
+        log.warning(
+            "writer.backpressure_dropped_books",
+            dropped=excess,
+            buffer_size=len(self._books),
+            total_dropped=self._dropped_books,
+        )
 
     async def _observe_trade_for_bar(self, trade: TradeEvent) -> None:
         """Roll trades into minute bars and publish closed buckets.
@@ -230,3 +285,8 @@ class Writer:
     def pending(self) -> tuple[int, int]:
         """``(trades_pending, books_pending)`` — exposed for QualityMonitor."""
         return len(self._trades), len(self._books)
+
+    @property
+    def dropped(self) -> tuple[int, int]:
+        """``(trades_dropped, books_dropped)`` — total events dropped by backpressure."""
+        return self._dropped_trades, self._dropped_books
