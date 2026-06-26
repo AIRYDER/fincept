@@ -164,7 +164,12 @@ def _config(
     )
 
 
-async def _wait_for(predicate: Any, *, timeout_s: float = 3.0, interval: float = 0.02) -> bool:
+async def _wait_for(
+    predicate: Any,
+    *,
+    timeout_s: float = 3.0,
+    interval: float = 0.02,
+) -> bool:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if predicate():
@@ -278,12 +283,12 @@ class TestPointerChange:
             assert strategy.reloads == []
             # Promote model_v2.
             _write_pointer(models_tree, "test_binding", "model_v2")
-            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout_s=3.0)
             assert ok
             assert strategy.reloads[0] == models_tree / "model_v2"
             # Promote again.
             _write_pointer(models_tree, "test_binding", "model_v3")
-            ok = await _wait_for(lambda: len(strategy.reloads) >= 2, timeout=3.0)
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 2, timeout_s=3.0)
             assert ok
             assert strategy.reloads[1] == models_tree / "model_v3"
         finally:
@@ -344,7 +349,7 @@ class TestPointerChange:
             # verify the watcher picks it up despite the prior
             # malformed read.
             _write_pointer(models_tree, "test_binding", "model_v2")
-            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout_s=3.0)
             assert ok
         finally:
             stop.set()
@@ -387,7 +392,7 @@ class TestReloadFailure:
             # flag and trigger another pointer change.
             strategy.reload_should_fail = False
             _write_pointer(models_tree, "test_binding", "model_v3")
-            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout=3.0)
+            ok = await _wait_for(lambda: len(strategy.reloads) >= 1, timeout_s=3.0)
             assert ok
             assert strategy.reloads[0] == models_tree / "model_v3"
         finally:

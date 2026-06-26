@@ -52,6 +52,7 @@ async def _schema() -> AsyncIterator[None]:
     eng = db_engine.get_engine()
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await db_engine.reset_engine()
 
     yield
 
@@ -67,8 +68,10 @@ async def _schema() -> AsyncIterator[None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _truncate_tables() -> AsyncIterator[None]:
+    await db_engine.reset_engine()
     eng = db_engine.get_engine()
     async with eng.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(text(f'TRUNCATE TABLE "{table.name}" CASCADE'))
     yield
+    await db_engine.reset_engine()

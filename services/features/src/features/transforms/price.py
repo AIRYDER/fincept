@@ -22,7 +22,7 @@ from decimal import Decimal
 class PriceFeatures:
     """Per-symbol rolling close history -> returns + momentum features."""
 
-    DEFAULT_MOMENTUM_LOOKBACKS = (5, 15, 20, 60)
+    DEFAULT_MOMENTUM_LOOKBACKS = (5, 20, 60)
 
     def __init__(
         self,

@@ -28,16 +28,18 @@ async def write_features(frames: Iterable[FeatureFrame]) -> int:
     same input bars (spec landmine in TASK-017).  Always backfill into a
     sandbox schema first if you're unsure.
     """
-    rows = [
-        {
-            "symbol": frame.symbol,
-            "freq": frame.freq,
-            "ts_event": frame.ts_event,
-            "values": frame.values,
-            "tags": frame.tags,
-        }
-        for frame in frames
-    ]
+    rows = []
+    for frame in frames:
+        payload = frame.model_dump(mode="python")
+        rows.append(
+            {
+                "symbol": frame.symbol,
+                "freq": frame.freq,
+                "ts_event": frame.ts_event,
+                "values": payload["values"],
+                "tags": frame.tags,
+            }
+        )
     if not rows:
         return 0
     async with session_scope() as session:

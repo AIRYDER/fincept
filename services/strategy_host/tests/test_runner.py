@@ -262,7 +262,12 @@ def _config(
     )
 
 
-async def _wait_for(predicate: Any, *, timeout_s: float = 3.0, interval: float = 0.05) -> bool:
+async def _wait_for(
+    predicate: Any,
+    *,
+    timeout_s: float = 3.0,
+    interval: float = 0.05,
+) -> bool:
     """Poll ``predicate`` until truthy or timeout.  Returns whether
     the predicate eventually became truthy.
 
@@ -294,7 +299,7 @@ async def _start_runner(
                 or RecordingStrategy.instances[-1]._fail_on_start
             )
         ),
-        timeout=2.0,
+        timeout_s=2.0,
     )
     # Even after on_start, the consumer.consume() task is created
     # but ensure_groups runs before its first iteration.  Sleep one
@@ -347,7 +352,7 @@ class TestBarDispatch:
             await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
                 lambda: any(c[0] == "on_bar" for c in RecordingStrategy.instances[-1].calls),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok, "on_bar was never called for matching symbol"
         finally:
@@ -440,7 +445,7 @@ class TestPositionDispatch:
             await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
                 lambda: bool(RecordingStrategy.instances[-1].position_snapshots),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok
             snap = RecordingStrategy.instances[-1].position_snapshots[-1]
@@ -467,7 +472,7 @@ class TestPositionDispatch:
             await producer.publish(STREAM_MD_BARS_1M, Event(type="bar", payload=_bar()))
             ok = await _wait_for(
                 lambda: bool(RecordingStrategy.instances[-1].position_snapshots),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok
             # The snapshot taken at on_bar time has NO BTC-USD
@@ -501,7 +506,7 @@ class TestFillDispatch:
             # the runner has the order_id in its outstanding ledger.
             ok = await _wait_for(
                 lambda: True,
-                timeout=0.0,
+                timeout_s=0.0,
             )
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline:
@@ -516,7 +521,7 @@ class TestFillDispatch:
             )
             ok = await _wait_for(
                 lambda: any(c[0] == "on_fill" for c in RecordingStrategy.instances[-1].calls),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok, "on_fill was never called for matching outstanding order"
             on_fill_calls = [c for c in RecordingStrategy.instances[-1].calls if c[0] == "on_fill"]
@@ -671,7 +676,7 @@ class TestLifecycle:
             # runner is still alive after the crash.
             ok = await _wait_for(
                 lambda: any(c[0] == "on_bar" for c in RecordingStrategy.instances[-1].calls),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok
             # Second bar: confirms the runner is still consuming.
@@ -685,7 +690,7 @@ class TestLifecycle:
                 lambda: (
                     len([c for c in RecordingStrategy.instances[-1].calls if c[0] == "on_bar"]) >= 2
                 ),
-                timeout=3.0,
+                timeout_s=3.0,
             )
             assert ok
         finally:
