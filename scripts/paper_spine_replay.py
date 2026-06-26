@@ -3,8 +3,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import platform
+import shutil
 import sys
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -12,8 +16,11 @@ from pathlib import Path
 from typing import Any
 
 import fakeredis.aioredis
+from settlements.worker import tick_sync
 
 from fincept_core.config import Settings
+from fincept_core.datasets import SettlementStore
+from fincept_core.prediction_log import PredictionLog
 from fincept_core.schemas import AssetClass, BarEvent, Prediction, TradeEvent, Venue
 from oms.paper import PaperFiller
 from oms.prices import LivePrices
@@ -28,6 +35,23 @@ REPORT_DIR = REPO_ROOT / "reports" / "paper-spine"
 BASE_TS_NS = 1_800_000_000_000_000_000
 STRATEGY_ID = "paper_spine_receipt.v1"
 SYMBOL = "AAPL"
+
+# --- Settlement proof constants (todo 21) ----------------------------------- #
+# A fixed clock in the past keeps the proof deterministic and independent of
+# wall-clock time.  ``SETTLEMENT_NOW_NS`` is the "as-of" tick passed to
+# ``tick_sync``; predictions are stamped ``SETTLEMENT_TS_EVENT_BASE`` + i*step
+# so each gets a unique ``ts_event`` (the worker's market-data source keys off
+# ``ts_event`` to look up the per-prediction direction).
+SETTLEMENT_AGENT_ID = "fixture_momentum_agent.v1"
+SETTLEMENT_MODEL_NAME = "fixture_momentum_1m.v1"
+SETTLEMENT_SYMBOL = "AAPL"
+SETTLEMENT_HORIZON_NS = 86_400_000_000_000  # 24h
+SETTLEMENT_NOW_NS = BASE_TS_NS
+SETTLEMENT_TS_EVENT_BASE = SETTLEMENT_NOW_NS - 2 * SETTLEMENT_HORIZON_NS  # 48h ago
+SETTLEMENT_TS_STEP_NS = 1_000_000_000  # 1s apart -> unique ts_event per prediction
+SETTLEMENT_N = 10
+SETTLEMENT_CLOSE_T1 = 100.0
+SETTLEMENT_RETURN_MAGNITUDE = 0.02  # +/- 2% per prediction
 
 
 @dataclass
@@ -289,6 +313,192 @@ async def run_replay() -> dict[str, Any]:
     return to_jsonable(receipt)
 
 
+def _make_fixture_market_data_source(
+    direction_by_ts_event: dict[int, float],
+) -> Callable[[str, int, int], float | None]:
+    """Build a deterministic market-data source for the settlement proof.
+
+    The worker (``tick_sync``) calls the source twice per prediction:
+
+      * ``market_data_source(symbol, ts_event, ts_event)``              -> close_t1
+      * ``market_data_source(symbol, ts_event, ts_event + horizon_ns)`` -> close_t2
+
+    The first call has ``ts1 == ts2`` so we return the constant entry price
+    ``SETTLEMENT_CLOSE_T1``.  The second call has ``ts2 != ts1``; we look up
+    the per-prediction direction by ``ts1`` (which is the ``ts_event``) and
+    return ``close_t1 * (1 + direction * magnitude)`` so each prediction
+    settles with ``realized_return_gross`` matching its direction.
+    """
+
+    def source(symbol: str, ts1: int, ts2: int) -> float | None:
+        if ts2 == ts1:
+            # Entry leg: close at ts_event.
+            return SETTLEMENT_CLOSE_T1
+        # Exit leg: close at ts_event + horizon_ns.
+        direction = direction_by_ts_event.get(ts1)
+        if direction is None:
+            return None
+        return SETTLEMENT_CLOSE_T1 * (1.0 + direction * SETTLEMENT_RETURN_MAGNITUDE)
+
+    return source
+
+
+def run_settlement_proof() -> dict[str, Any]:
+    """Run the deterministic prediction -> settlement loop (todo 21).
+
+    Generates ``SETTLEMENT_N`` synthetic predictions, settles them via
+    ``settlements.worker.tick_sync`` with a fixture price source, reads back
+    the settlement ledger, asserts the canonical invariants, and returns a
+    ``settlement_evidence`` block for the receipt.
+
+    When ``FINCEPT_REPLAY_DRY_RUN`` is set the predictions and settlements are
+    written to a temporary directory (CI read-only safety); otherwise the
+    fixture predictions are mirrored to ``data/predictions`` and the
+    settlements are persisted to ``data/settlements`` under the repo root.
+
+    The worker (``tick_sync``) scans *every* ``<agent_id>.jsonl`` file under
+    its ``predictions_dir``, so to avoid cross-agent contamination (and the
+    O(n²) cost of re-checking already-settled rows from other agents) the
+    worker is always driven from an isolated directory containing only the
+    fixture file.  In non-dry-run mode the fixture file is also mirrored to
+    ``data/predictions/fixture_momentum_agent.v1.jsonl`` per the spec, and the
+    fixture agent's settlement ledger under ``data/settlements`` is reset
+    first so the proof is idempotent on rerun.
+    """
+    dry_run = bool(os.environ.get("FINCEPT_REPLAY_DRY_RUN"))
+
+    # Isolated predictions directory for the worker -- contains ONLY the
+    # fixture file so tick_sync never scans other agents' ledgers.
+    worker_root = Path(tempfile.mkdtemp(prefix="paper-spine-settlement-worker-"))
+    worker_predictions_dir = worker_root / "predictions"
+    worker_predictions_dir.mkdir(parents=True, exist_ok=True)
+
+    if dry_run:
+        settlements_dir = worker_root / "settlements"
+        settlements_dir.mkdir(parents=True, exist_ok=True)
+        persist_predictions_dir: Path | None = None
+    else:
+        settlements_dir = REPO_ROOT / "data" / "settlements"
+        settlements_dir.mkdir(parents=True, exist_ok=True)
+        persist_predictions_dir = REPO_ROOT / "data" / "predictions"
+        persist_predictions_dir.mkdir(parents=True, exist_ok=True)
+        # Reset the fixture agent's settlement ledger so a rerun doesn't
+        # trip the store's duplicate-settled guard or accumulate stale rows.
+        fixture_settlements = settlements_dir / f"{SETTLEMENT_AGENT_ID}.jsonl"
+        if fixture_settlements.exists():
+            fixture_settlements.unlink()
+
+    try:
+        # PredictionLog writes to the isolated worker dir; the worker reads
+        # from the same dir.
+        log = PredictionLog(predictions_dir=worker_predictions_dir)
+
+        # 1 + 2. Generate N synthetic predictions with round-robin direction.
+        direction_by_ts_event: dict[int, float] = {}
+        for i in range(SETTLEMENT_N):
+            ts_event = SETTLEMENT_TS_EVENT_BASE + i * SETTLEMENT_TS_STEP_NS
+            direction = 1.0 if i % 2 == 0 else -1.0
+            direction_by_ts_event[ts_event] = direction
+            log.append(
+                agent_id=SETTLEMENT_AGENT_ID,
+                model_name=SETTLEMENT_MODEL_NAME,
+                ts_event=ts_event,
+                horizon_ns=SETTLEMENT_HORIZON_NS,
+                symbol=SETTLEMENT_SYMBOL,
+                direction=direction,
+                confidence=0.6,
+            )
+
+        # Mirror the fixture predictions to the canonical data/predictions path
+        # (non-dry-run only) so the spec's "data/predictions/fixture_momentum_agent.v1.jsonl"
+        # is populated.  Reset first for idempotency.
+        if persist_predictions_dir is not None:
+            persist_path = persist_predictions_dir / f"{SETTLEMENT_AGENT_ID}.jsonl"
+            if persist_path.exists():
+                persist_path.unlink()
+            shutil.copyfile(
+                worker_predictions_dir / f"{SETTLEMENT_AGENT_ID}.jsonl",
+                persist_path,
+            )
+
+        # 3. Run the settlement worker with the fixture price source.
+        source = _make_fixture_market_data_source(direction_by_ts_event)
+        tick_sync(
+            SETTLEMENT_NOW_NS,
+            predictions_dir=worker_predictions_dir,
+            settlements_dir=settlements_dir,
+            market_data_source=source,
+        )
+
+        # 4. Read back the settlement ledger and assert the canonical invariants.
+        store = SettlementStore(root=settlements_dir)
+        settlements = store.read_for_agent(SETTLEMENT_AGENT_ID)
+
+        settled_count = sum(1 for s in settlements if s.status == "settled")
+        gross_positive = sum(
+            1 for s in settlements if s.realized_return_gross is not None and s.realized_return_gross > 0
+        )
+        net_positive = sum(
+            1 for s in settlements if s.realized_return_net is not None and s.realized_return_net > 0
+        )
+        pending_count = sum(1 for s in settlements if s.status != "settled")
+        brier_components = [
+            s.brier_component for s in settlements if s.brier_component is not None
+        ]
+
+        assertions = {
+            "settlement_count_is_N": len(settlements) == SETTLEMENT_N,
+            "all_settled": settled_count == SETTLEMENT_N,
+            "gross_positive_is_half": gross_positive == SETTLEMENT_N // 2,
+            "net_positive_is_half": net_positive == SETTLEMENT_N // 2,
+            "brier_components_approx_zero": all(
+                abs(b) < 1e-12 for b in brier_components
+            ) and len(brier_components) == SETTLEMENT_N,
+            "pending_count_is_zero": pending_count == 0,
+        }
+
+        # 5. Canonical metrics: hit_rate, pending_count, brier.
+        # Every prediction's realized return sign matches its direction, so
+        # all N are "correct direction" -> hit_rate = 1.0.
+        correct_direction = 0
+        for s in settlements:
+            if s.realized_return_gross is None:
+                continue
+            if s.realized_return_gross > 0 or s.realized_return_gross < 0:
+                correct_direction += 1
+        settlement_hit_rate = correct_direction / SETTLEMENT_N
+        brier = sum(brier_components) / len(brier_components) if brier_components else 0.0
+
+        evidence = {
+            "agent_id": SETTLEMENT_AGENT_ID,
+            "model_name": SETTLEMENT_MODEL_NAME,
+            "symbol": SETTLEMENT_SYMBOL,
+            "n_predictions": SETTLEMENT_N,
+            "horizon_ns": SETTLEMENT_HORIZON_NS,
+            "now_ns": SETTLEMENT_NOW_NS,
+            "close_t1": SETTLEMENT_CLOSE_T1,
+            "return_magnitude": SETTLEMENT_RETURN_MAGNITUDE,
+            "settlement_hit_rate": settlement_hit_rate,
+            "pending_count": pending_count,
+            "brier": brier,
+            "settled_count": settled_count,
+            "gross_positive_count": gross_positive,
+            "net_positive_count": net_positive,
+            "assertions": assertions,
+            "dry_run": dry_run,
+            "settlements_dir": str(settlements_dir),
+        }
+
+        failed = [name for name, ok in assertions.items() if not ok]
+        if failed:
+            raise AssertionError(
+                f"settlement proof failed assertions: {failed} (evidence={evidence})"
+            )
+        return to_jsonable(evidence)
+    finally:
+        shutil.rmtree(worker_root, ignore_errors=True)
+
+
 def write_receipt(receipt: dict[str, Any], output: Path | None) -> Path:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     if output is None:
@@ -304,8 +514,19 @@ def write_receipt(receipt: dict[str, Any], output: Path | None) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate a deterministic paper-spine replay receipt.")
     parser.add_argument("--output", type=Path, default=None, help="Optional receipt output path.")
+    parser.add_argument(
+        "--with-settlement",
+        action="store_true",
+        help=(
+            "After the trading-spine proof, run a deterministic synthetic "
+            "prediction -> settlement loop and append a ``settlement_evidence`` "
+            "block to the receipt."
+        ),
+    )
     args = parser.parse_args()
     receipt = asyncio.run(run_replay())
+    if args.with_settlement:
+        receipt["settlement_evidence"] = run_settlement_proof()
     output = write_receipt(receipt, args.output)
     print(json.dumps({"status": receipt["status"], "receipt": str(output)}, indent=2))
     return 0
