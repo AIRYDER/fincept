@@ -47,7 +47,7 @@ async def write_features(frames: Iterable[FeatureFrame]) -> int:
         stmt = stmt.on_conflict_do_update(
             index_elements=["symbol", "freq", "ts_event"],
             set_={
-                "values": stmt.excluded.values,
+                "values": stmt.excluded["values"],
                 "tags": stmt.excluded.tags,
             },
         )
