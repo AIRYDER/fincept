@@ -28,7 +28,6 @@ import uuid
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
-from fincept_core.logging import get_logger
 from quant_foundry.schemas import (
     Authority,
     RunPodCallbackEnvelope,
@@ -40,6 +39,17 @@ from quant_foundry.shadow_inference import (
     InferenceDisabledError,
     ShadowInferenceResult,
 )
+
+try:
+    # fincept_core.logging pulls in structlog + config; it may not be present
+    # in the minimal RunPod inference container. Fall back to stdlib logging
+    # so importing this module never crashes the worker on startup.
+    from fincept_core.logging import get_logger
+except ImportError:  # pragma: no cover - fincept-core present in-workspace
+    import logging as _logging
+
+    def get_logger(name: str) -> Any:  # type: ignore[misc]
+        return _logging.getLogger(name)
 
 try:
     from fincept_core.storage import StorageBackend, get_storage_backend

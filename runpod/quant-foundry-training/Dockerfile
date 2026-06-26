@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
+# NOTE: fincept_core is intentionally NOT copied. real_trainer.py imports it
+# lazily behind try/except, so it is optional for the baked-in image.
 COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
 
 # Copy the handler.

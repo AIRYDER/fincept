@@ -25,6 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
+# NOTE: fincept_core is intentionally NOT copied. real_inference.py imports
+# fincept_core.logging/storage behind try/except with stdlib fallbacks, so
+# the package is optional. Copying it would require structlog +
+# pydantic_settings (not installed here) and pull in a heavy import chain.
 COPY services/quant_foundry/src/quant_foundry/ /app/quant_foundry/
 
 # Copy the handler.
