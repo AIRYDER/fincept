@@ -60,7 +60,7 @@ budget_kill_switch_topic_arn = ""
 #   { name = "fincept/jwt-signing-key",   description = "API JWT signing key",                initial_value = "REPLACE_ME" },
 #   { name = "fincept/runpod-api-key",    description = "RunPod serverless API key",          initial_value = "REPLACE_ME" },
 #   { name = "fincept/db-password",       description = "RDS master password (initial)",      initial_value = "REPLACE_ME" },
-#   { name = "fincept/redis-auth-token",  description = "ElastiCache auth token",             initial_value = "REPLACE_ME" },
+#   { name = "fincept/redis-url",         description = "Full rediss:// URL for ElastiCache",  initial_value = "rediss://:TOKEN@HOST:6379/0" },
 #   { name = "fincept/openai-api-key",    description = "OpenAI API key",                     initial_value = "REPLACE_ME" },
 #   { name = "fincept/anthropic-api-key", description = "Anthropic API key",                  initial_value = "REPLACE_ME" },
 # ]

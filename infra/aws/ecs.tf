@@ -46,7 +46,11 @@ locals {
     { name = "JWT_SIGNING_KEY", valueFrom = aws_secretsmanager_secret.main["fincept/jwt-signing-key"].arn },
     { name = "RUNPOD_API_KEY", valueFrom = aws_secretsmanager_secret.main["fincept/runpod-api-key"].arn },
     { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.main["fincept/db-password"].arn}::password::" },
-    { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.main["fincept/redis-auth-token"].arn },
+    # REDIS_URL must be a full rediss:// URL (e.g. rediss://:token@host:6379/0)
+    # because ElastiCache has TLS enabled (transit_encryption_enabled=true).
+    # The secret in Secrets Manager should store the full URL, not just the
+    # auth token.  See terraform.tfvars.example for the expected format.
+    { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.main["fincept/redis-url"].arn },
   ]
 }
 

@@ -17,7 +17,6 @@ WORKDIR /build
 COPY pyproject.toml uv.lock ./
 COPY libs libs
 COPY services services
-COPY apps apps 2>/dev/null || true
 
 RUN uv sync --frozen --no-dev --package risk
 

@@ -253,7 +253,7 @@ variable "secrets" {
     { name = "fincept/jwt-signing-key", description = "API JWT signing key" },
     { name = "fincept/runpod-api-key", description = "RunPod serverless API key" },
     { name = "fincept/db-password", description = "RDS master password (initial)" },
-    { name = "fincept/redis-auth-token", description = "ElastiCache auth token" },
+    { name = "fincept/redis-url", description = "Full rediss:// URL for ElastiCache (e.g. rediss://:token@host:6379/0)" },
     { name = "fincept/openai-api-key", description = "OpenAI API key (portfolio reports)" },
     { name = "fincept/anthropic-api-key", description = "Anthropic API key (portfolio reports)" },
   ]

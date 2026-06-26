@@ -48,11 +48,20 @@ COPY --from=builder --chown=fincept:fincept /build/.next/static ./.next/static
 COPY --from=builder --chown=fincept:fincept /build/public ./public
 
 # The dashboard talks to the API two ways:
-#   - NEXT_PUBLIC_API_URL: baked into the JS bundle for client-side fetches
+#   - NEXT_PUBLIC_API_URL: client-side fetches (must be available at runtime)
 #   - API_INTERNAL_URL:    used by Next.js API routes (server-side) for SSR
-# Both are injected at task start from ECS task env (NOT secrets).
-ENV NEXT_PUBLIC_API_URL="http://localhost:8000/api" \
+#
+# NEXT_PUBLIC_* vars are normally baked into the JS bundle at build time.
+# To allow runtime override, we use a placeholder __NEXT_PUBLIC_API_URL__
+# that gets replaced by an entrypoint script before server.js starts.
+# This lets ECS inject the real URL at task start without rebuilding.
+ENV NEXT_PUBLIC_API_URL="__NEXT_PUBLIC_API_URL__" \
     API_INTERNAL_URL="http://localhost:8000"
+
+# Entrypoint script that replaces the placeholder in the built JS files
+# with the runtime NEXT_PUBLIC_API_URL env var, then starts server.js.
+COPY --chown=fincept:fincept infra/docker/dashboard-entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 USER fincept
 
@@ -61,5 +70,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD wget -q --spider http://localhost:3000/ || exit 1
 
-# server.js is the entry point emitted by Next.js standalone builds.
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "server.js"]

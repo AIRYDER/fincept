@@ -111,6 +111,53 @@ resource "aws_s3_bucket_policy" "ssl_only" {
   depends_on = [aws_s3_bucket_public_access_block.main]
 }
 
+# --- ALB access log bucket policy ------------------------------------------
+# The ALB access_logs block in alb_waf.tf writes to the "receipts" bucket.
+# AWS requires a bucket policy granting the ELB service principal
+# s3:PutObject permission, otherwise access logging fails silently.
+# See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html
+
+data "aws_elb_service_account" "main" {
+  count = contains([for b in var.s3_buckets : b.name_suffix], "receipts") ? 1 : 0
+}
+
+resource "aws_s3_bucket_policy" "alb_access_logs" {
+  count  = contains([for b in var.s3_buckets : b.name_suffix], "receipts") ? 1 : 0
+  bucket = aws_s3_bucket.main["receipts"].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = data.aws_elb_service_account.main[0].arn
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.main["receipts"].arn}/alb-access-logs/*"
+      },
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "delivery.logs.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.main["receipts"].arn}/alb-access-logs/*"
+      },
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "delivery.logs.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = aws_s3_bucket.main["receipts"].arn
+      },
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.main]
+}
+
 # --- Lifecycle (artifacts → Glacier after 90 days) -----------------------
 
 resource "aws_s3_bucket_lifecycle_configuration" "main" {
