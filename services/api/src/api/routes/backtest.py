@@ -39,6 +39,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from api.approved_roots import ApprovedRoots, get_approved_roots
 from api.auth import require_user
 from backtester.report import report_to_dict
 from backtester.runner import (
@@ -113,8 +114,19 @@ async def list_strategies(
 async def post_run(
     body: RunBacktestRequest,
     _: dict[str, Any] = Depends(require_user),
+    approved_roots: ApprovedRoots = Depends(get_approved_roots),
 ) -> dict[str, Any]:
     """Run a backtest and return the resulting report (persisted)."""
+    # Approved-root gate: layered on top of the existing existence /
+    # traversal checks below.  Runs before anything touches the
+    # filesystem so a probing caller learns nothing about on-disk
+    # layout beyond the approved-roots verdict.  The resolved absolute
+    # path is intentionally not logged on success.  An
+    # ``ApprovedRootsError`` propagates to the shared exception handler
+    # registered in ``api.main`` which renders the uniform 422 body
+    # ``{"detail": ..., "code": "approved_roots_violation"}``.
+    approved_roots.resolve(body.bars_path)
+
     bars_path = pathlib.Path(body.bars_path)
     if not bars_path.exists():
         raise HTTPException(

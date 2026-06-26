@@ -7,6 +7,7 @@ Covers:
   * /backtest/runs/{id} returns the matching report
   * /backtest/runs/{id} 404 on unknown id
   * Bad inputs (missing parquet, unknown strategy, bad venue) -> 400
+  * Approved-roots gate: approved path runs; unapproved / traversal -> 422
 
 A fresh ``reports/backtests`` root is created in tmp_path and patched
 into both the route + the runner so tests don't pollute the workspace.
@@ -62,6 +63,24 @@ def synth_parquet(tmp_path: pathlib.Path) -> pathlib.Path:
     return path
 
 
+@pytest.fixture
+def approved_data_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> pathlib.Path:
+    """Admit ``tmp_path`` as an approved data root for the duration of the test.
+
+    The production default approved roots (``data``, ``models``) are
+    relative to the repo working directory, which is not where pytest's
+    ``tmp_path`` lives.  Rather than write a real parquet under
+    ``<repo>/data/captures`` (which would pollute the workspace and race
+    with other tests), we point ``FINCEPT_APPROVED_DATA_ROOTS`` at the
+    per-test tmp_path so the gate admits the synth parquet while still
+    rejecting absolute paths outside tmp_path (e.g. ``/etc/passwd``).
+    """
+    monkeypatch.setenv("FINCEPT_APPROVED_DATA_ROOTS", str(tmp_path))
+    return tmp_path
+
+
 # --------------------------------------------------------------------------- #
 # /backtest/strategies                                                        #
 # --------------------------------------------------------------------------- #
@@ -103,6 +122,7 @@ class TestRunEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         synth_parquet: pathlib.Path,
+        approved_data_root: pathlib.Path,
     ) -> None:
         body = {
             "bars_path": str(synth_parquet),
@@ -127,6 +147,7 @@ class TestRunEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         synth_parquet: pathlib.Path,
+        approved_data_root: pathlib.Path,
     ) -> None:
         body = {
             "bars_path": str(synth_parquet),
@@ -142,6 +163,7 @@ class TestRunEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         tmp_path: pathlib.Path,
+        approved_data_root: pathlib.Path,
     ) -> None:
         body = {
             "bars_path": str(tmp_path / "nope.parquet"),
@@ -157,6 +179,7 @@ class TestRunEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         synth_parquet: pathlib.Path,
+        approved_data_root: pathlib.Path,
     ) -> None:
         body = {
             "bars_path": str(synth_parquet),
@@ -189,6 +212,7 @@ class TestRunsListAndDetail:
         client: AsyncClient,
         auth_headers: dict[str, str],
         synth_parquet: pathlib.Path,
+        approved_data_root: pathlib.Path,
     ) -> None:
         body = {
             "bars_path": str(synth_parquet),
@@ -219,3 +243,102 @@ class TestRunsListAndDetail:
             "/backtest/runs/does-not-exist", headers=auth_headers
         )
         assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Approved-roots gate (todo 7)                                                #
+# --------------------------------------------------------------------------- #
+
+
+class TestApprovedRootsGate:
+    """The approved-roots gate is layered on top of the existing checks.
+
+    Happy path: a parquet inside an approved root runs as before.
+    Failure paths:
+      * absolute path outside every approved root -> 422
+        ``{"detail": ..., "code": "approved_roots_violation"}``
+      * traversal (``..``) anywhere in the candidate -> 422
+    The existing 400 "does not exist" / "unknown strategy" checks still
+    fire for paths that pass the gate but miss on disk, proving the new
+    check is layered on top rather than replacing the old ones.
+    """
+
+    @pytest.mark.asyncio
+    async def test_approved_path_runs_as_before(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        synth_parquet: pathlib.Path,
+        approved_data_root: pathlib.Path,
+    ) -> None:
+        """A parquet inside an approved root produces a normal 200 report."""
+        body = {
+            "bars_path": str(synth_parquet),
+            "strategy": "buy_and_hold",
+        }
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["report"]["n_bars"] > 0
+        assert payload["manifest"]["strategy_name"] == "buy_and_hold"
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_outside_roots_returns_422(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        approved_data_root: pathlib.Path,
+    ) -> None:
+        """``/etc/passwd`` is outside every approved root -> 422."""
+        body = {
+            "bars_path": "/etc/passwd",
+            "strategy": "buy_and_hold",
+        }
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
+        assert response.status_code == 422, response.text
+        payload = response.json()
+        assert payload["code"] == "approved_roots_violation"
+        assert "detail" in payload
+        # The approved-roots list is never echoed in the message.
+        assert "approved_roots_violation" not in payload["detail"]
+        # The finer reason lives in the response header for operators.
+        assert response.headers.get("X-Approved-Roots-Code") == "outside_root"
+
+    @pytest.mark.asyncio
+    async def test_traversal_path_returns_422(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        approved_data_root: pathlib.Path,
+    ) -> None:
+        """``../etc/passwd`` contains a ``..`` component -> 422."""
+        body = {
+            "bars_path": "../etc/passwd",
+            "strategy": "buy_and_hold",
+        }
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
+        assert response.status_code == 422, response.text
+        payload = response.json()
+        assert payload["code"] == "approved_roots_violation"
+        assert response.headers.get("X-Approved-Roots-Code") == "traversal"
+
+    @pytest.mark.asyncio
+    async def test_gate_layers_on_top_of_existence_check(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        approved_data_root: pathlib.Path,
+    ) -> None:
+        """A path inside the approved root but missing on disk -> 400 (not 422).
+
+        Proves the new gate does not replace the existing
+        ``bars_path does not exist`` check; it runs before it and only
+        short-circuits on an approved-roots violation.
+        """
+        body = {
+            "bars_path": str(approved_data_root / "nope.parquet"),
+            "strategy": "buy_and_hold",
+        }
+        response = await client.post("/backtest/run", json=body, headers=auth_headers)
+        assert response.status_code == 400
+        assert "does not exist" in response.json()["detail"]

@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from api.background import AlpacaScheduler, NewsScheduler
+from api.approved_roots import register_approved_roots_handler
 from api.routes import (
     backtest as backtest_route,
     control,
@@ -265,6 +266,10 @@ async def _poll_quant_foundry_shadow_dispatch(
 
 
 app = FastAPI(title="Fincept API", version=API_VERSION, lifespan=lifespan)
+# Shared approved-roots violation handler -> uniform 422 body
+# {"detail": ..., "code": "approved_roots_violation"} for every route
+# that gates a user-supplied path through ApprovedRoots.resolve(...).
+register_approved_roots_handler(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
