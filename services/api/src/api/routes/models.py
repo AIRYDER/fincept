@@ -27,12 +27,10 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from fincept_core.datasets import (
     ApprovedRoots,
-    ApprovedRootsError,
     SettlementStore,
     build_evidence_receipt,
     default_approved_roots,
@@ -514,21 +512,15 @@ async def post_train(
     # Layer 2: approved-root gate (fail-closed).  We resolve before
     # constructing the TrainingRequest so the orchestrator never sees a
     # path that hasn't passed the gate.  The resolved absolute path is
-    # NOT logged on success (per the plan's must-not-do).
-    try:
-        _get_approved_roots().resolve(body.input_path)
-    except ApprovedRootsError as exc:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "detail": str(exc),
-                "code": "approved_roots_violation",
-            },
-        )
+    # NOT logged on success (per the plan's must-not-do).  An
+    # ``ApprovedRootsError`` propagates to the shared exception handler
+    # registered in ``api.main`` which renders the uniform 422 body
+    # ``{"detail": ..., "code": "approved_roots_violation"}``.
+    resolved = _get_approved_roots().resolve(body.input_path)
 
     req = TrainingRequest(
         model_name=body.model_name,
-        input_path=body.input_path,
+        input_path=str(resolved.path),
         horizon_bars=body.horizon_bars,
         bar_seconds=body.bar_seconds,
         cv_folds=body.cv_folds,

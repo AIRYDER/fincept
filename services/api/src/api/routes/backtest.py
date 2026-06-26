@@ -125,9 +125,12 @@ async def post_run(
     # ``ApprovedRootsError`` propagates to the shared exception handler
     # registered in ``api.main`` which renders the uniform 422 body
     # ``{"detail": ..., "code": "approved_roots_violation"}``.
-    approved_roots.resolve(body.bars_path)
+    resolved = approved_roots.resolve(body.bars_path)
 
-    bars_path = pathlib.Path(body.bars_path)
+    # Use the symlink-resolved absolute path from the gate downstream
+    # (closes the TOCTOU window where a symlink could be swapped
+    # between the check and the file read).
+    bars_path = resolved.path
     if not bars_path.exists():
         raise HTTPException(
             status_code=400,
