@@ -353,8 +353,15 @@ class Consumer:
         - fields: the original message fields (JSON-encoded)
         """
         dlq = _dlq_stream(stream)
-        # Serialize the original fields for the DLQ entry.
+        # Fetch the original message fields from the stream so they can
+        # be preserved in the DLQ entry for debugging/replay.
         import json
+
+        raw_messages = await self.redis.xrange(stream, min=message_id, max=message_id)
+        fields: dict[Any, Any] = {}
+        if raw_messages:
+            # xrange returns [(message_id, {field: value, ...}), ...]
+            fields = raw_messages[0][1] if raw_messages[0] else {}
 
         decoded_fields = {
             (k.decode() if isinstance(k, bytes) else str(k)): (

@@ -574,7 +574,8 @@ def test_backoff_exponential_increase() -> None:
     base = 60_000
     assert _backoff_idle_ms(base, 2) == int(base * BACKOFF_FACTOR)
     assert _backoff_idle_ms(base, 3) == int(base * BACKOFF_FACTOR**2)
-    assert _backoff_idle_ms(base, 4) == int(base * BACKOFF_FACTOR**3)
+    # attempt 4: 60_000 * 2^3 = 480_000, but capped at BACKOFF_MAX_MS (300_000)
+    assert _backoff_idle_ms(base, 4) == min(int(base * BACKOFF_FACTOR**3), BACKOFF_MAX_MS)
 
 
 def test_backoff_capped_at_max() -> None:
