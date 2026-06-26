@@ -10,6 +10,7 @@ from fincept_core.schemas import (
     BarEvent,
     BookDeltaEvent,
     BookSnapshotEvent,
+    CancelRequest,
     FeatureFrame,
     Fill,
     Order,
@@ -207,3 +208,24 @@ def test_every_market_event_round_trips(event_type, payload, payload_cls):
 def test_parse_event_rejects_unknown_type():
     with pytest.raises(ContractError):
         parse_event({"type": "unknown", "payload": {}})
+
+
+def test_cancel_request_round_trip():
+    """CancelRequest events should serialize and deserialize correctly."""
+    event = make_event(
+        "cancel_request",
+        {
+            "cancel_id": "01HXY",
+            "order_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "strategy_id": "strat-001",
+            "ts_event": 1_000,
+            "reason": "risk_limit_breach",
+        },
+    )
+    parsed = parse_event(event.model_dump())
+    assert parsed == event
+    assert parsed.type == "cancel_request"
+    assert isinstance(parsed.payload, CancelRequest)
+    assert parsed.payload.cancel_id == "01HXY"
+    assert parsed.payload.order_id == "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+    assert parsed.payload.reason == "risk_limit_breach"

@@ -16,6 +16,7 @@ EventPayload = (
     | schemas.AlertEvent
     | schemas.FeatureFrame
     | schemas.OrderIntent
+    | schemas.CancelRequest
     | schemas.Order
     | schemas.Fill
     | schemas.Position
@@ -35,6 +36,7 @@ _EVENT_SCHEMAS: dict[str, type[EventPayload]] = {
     "alert": schemas.AlertEvent,
     "feature_frame": schemas.FeatureFrame,
     "order_intent": schemas.OrderIntent,
+    "cancel_request": schemas.CancelRequest,
     "order": schemas.Order,
     "fill": schemas.Fill,
     "position": schemas.Position,
@@ -102,5 +104,4 @@ def deserialize(fields: Mapping[str | bytes, str | bytes]) -> Event:
         else value
         for key, value in fields.items()
     }
-    return parse_event({"type": decoded["type"], "payload": decoded["payload"]})
     return parse_event({"type": decoded["type"], "payload": decoded["payload"]})

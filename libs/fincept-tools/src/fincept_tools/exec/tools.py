@@ -22,11 +22,20 @@ from typing import Any
 from pydantic import Field
 from redis.asyncio import Redis
 
+from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_ORDERS
 from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
+from fincept_core.events import make_event
 from fincept_core.ids import new_id
-from fincept_core.schemas import OrderIntent, OrderType, Side, TimeInForce, Venue
+from fincept_core.schemas import (
+    CancelRequest,
+    OrderIntent,
+    OrderType,
+    Side,
+    TimeInForce,
+    Venue,
+)
 from fincept_tools.errors import PaperOnlyExec, ToolBackendError
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
 from fincept_tools.registry import register
@@ -112,22 +121,12 @@ class SubmitOrderTool(BaseTool):
             time_in_force=payload.time_in_force,
         )
 
-        # Self-describing JSON envelope.  Top-level keys (order_id, state,
-        # ts_event) are extracted for stream-side filtering by
-        # exec.get_order_status; the full intent lives under ``payload``.
-        fields: dict[str, str] = {
-            "event_type": "order_intent",
-            "order_id": order_id,
-            "strategy_id": payload.strategy_id,
-            "state": "submitted",
-            "ts_event": str(ts),
-            "payload": intent.model_dump_json(),
-        }
-
         try:
             r: Redis[Any] = Redis.from_url(get_settings().REDIS_URL)
             try:
-                await r.xadd(STREAM_ORDERS, fields)
+                producer = Producer(r)
+                event = make_event("order_intent", intent)
+                await producer.publish(STREAM_ORDERS, event)
             finally:
                 await r.aclose()  # type: ignore[attr-defined]
         except Exception as exc:
@@ -181,19 +180,20 @@ class CancelOrderTool(BaseTool):
         _ensure_paper_mode()
 
         cancel_id = new_id()
-        cancel_msg: dict[str, str] = {
-            "event_type": "cancel_request",
-            "cancel_id": cancel_id,
-            "order_id": payload.order_id,
-            "strategy_id": payload.strategy_id,
-            "reason": payload.reason,
-            "ts_event": str(now_ns()),
-        }
+        cancel_request = CancelRequest(
+            cancel_id=cancel_id,
+            order_id=payload.order_id,
+            strategy_id=payload.strategy_id,
+            ts_event=now_ns(),
+            reason=payload.reason,
+        )
 
         try:
             r: Redis[Any] = Redis.from_url(get_settings().REDIS_URL)
             try:
-                await r.xadd(STREAM_ORDERS, cancel_msg)
+                producer = Producer(r)
+                event = make_event("cancel_request", cancel_request)
+                await producer.publish(STREAM_ORDERS, event)
             finally:
                 await r.aclose()  # type: ignore[attr-defined]
         except Exception as exc:

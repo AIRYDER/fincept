@@ -221,6 +221,22 @@ class OrderIntent(BaseModel):
     tags: dict[str, str] = Field(default_factory=dict)
 
 
+class CancelRequest(BaseModel):
+    """Request to cancel an open order.
+
+    Published to ``ord.orders`` as an Event with type ``cancel_request``.
+    The OMS consumes these and attempts to cancel the referenced order.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    schema_version: int = 1
+    cancel_id: str
+    order_id: str
+    strategy_id: str
+    ts_event: int
+    reason: str | None = None
+
+
 class Order(OrderIntent):
     status: OrderStatus = OrderStatus.PENDING_NEW
     filled_qty: Decimal = Decimal(0)
