@@ -54,7 +54,7 @@ def upgrade() -> None:
         "timescaledb.compress, "
         "timescaledb.compress_segmentby = 'provider, dataset')"
     )
-    op.execute("SELECT add_compression_policy('provider_data', INTERVAL '14 days')")
+    op.execute("SELECT add_compression_policy('provider_data', 1209600000000000)")
 
 
 def downgrade() -> None:

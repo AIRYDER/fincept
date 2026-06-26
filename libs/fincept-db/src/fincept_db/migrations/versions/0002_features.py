@@ -42,7 +42,7 @@ def upgrade() -> None:
         "timescaledb.compress, "
         "timescaledb.compress_segmentby = 'symbol, freq')"
     )
-    op.execute("SELECT add_compression_policy('features', INTERVAL '14 days')")
+    op.execute("SELECT add_compression_policy('features', 1209600000000000)")
 
 
 def downgrade() -> None:
