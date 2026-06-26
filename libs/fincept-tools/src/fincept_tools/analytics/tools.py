@@ -29,12 +29,13 @@ from fincept_tools.errors import ToolBackendError
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
 from fincept_tools.registry import register
 
-# Annualisation factors by frequency
-_BARS_PER_YEAR: dict[str, float] = {
-    "1m": 525_600.0,
-    "1h": 8_760.0,
-    "1d": 252.0,
-}
+# Annualisation factors by frequency — delegates to the shared
+# fincept_core.clock.bars_per_year_for_freq so all services use the
+# same mapping (supports 5m, 15m, and arbitrary N+unit frequencies).
+def _bars_per_year(freq: str) -> float:
+    from fincept_core.clock import bars_per_year_for_freq
+
+    return float(bars_per_year_for_freq(freq))
 
 
 async def _safe_read_bars(
@@ -159,7 +160,7 @@ class ComputeVolTool(BaseTool):
         bars = bars[-(payload.lookback_bars + 1) :]
         closes = np.array([float(b.close) for b in bars], dtype=np.float64)
         log_rets = np.diff(np.log(closes))
-        per_year = _BARS_PER_YEAR[payload.freq]
+        per_year = _bars_per_year(payload.freq)
         vol = float(np.std(log_rets, ddof=1) * math.sqrt(per_year))
         return ComputeVolOutput(realized_vol_annualized=vol, n_returns=len(log_rets))
 
@@ -359,7 +360,7 @@ class ComputeSharpeTool(BaseTool):
         if len(log_rets) < 2:
             return ComputeSharpeOutput(sharpe_ratio=None, n_returns=len(log_rets))
 
-        per_year = _BARS_PER_YEAR[payload.freq]
+        per_year = _bars_per_year(payload.freq)
         rf_per_bar = payload.risk_free_rate_annual / per_year
         excess = log_rets - rf_per_bar
         std = float(np.std(excess, ddof=1))

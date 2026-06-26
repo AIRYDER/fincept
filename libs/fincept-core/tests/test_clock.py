@@ -1,4 +1,4 @@
-from fincept_core.clock import FrozenClock, MonotonicClock, iso_to_ns, ns_to_iso
+from fincept_core.clock import FrozenClock, MonotonicClock, bars_per_year_for_freq, iso_to_ns, ns_to_iso
 
 
 def test_monotonic_clock_returns_int_ns():
@@ -51,3 +51,33 @@ def test_monotonic_clock_returns_epoch_ns_per_contracts_section_1():
         f"MonotonicClock returned {got}, outside epoch window [{before}, {after}]. "
         "CONTRACTS section 1 requires nanoseconds since UNIX epoch."
     )
+
+
+# ---------------------------------------------------------------------------
+# bars_per_year_for_freq
+# ---------------------------------------------------------------------------
+
+
+def test_bars_per_year_common_frequencies():
+    assert bars_per_year_for_freq("1m") == 525_600
+    assert bars_per_year_for_freq("5m") == 105_120
+    assert bars_per_year_for_freq("15m") == 35_040
+    assert bars_per_year_for_freq("1h") == 8_760
+    assert bars_per_year_for_freq("1d") == 252
+
+
+def test_bars_per_year_arbitrary_frequencies():
+    assert bars_per_year_for_freq("30m") == 17_520
+    assert bars_per_year_for_freq("4h") == 2_190
+    assert bars_per_year_for_freq("1w") == 52
+
+
+def test_bars_per_year_unknown_freq_defaults_to_1m():
+    assert bars_per_year_for_freq("unknown") == 525_600
+
+
+def test_bars_per_year_returns_positive_int():
+    for freq in ("1m", "5m", "15m", "1h", "1d", "30m", "4h", "1w"):
+        val = bars_per_year_for_freq(freq)
+        assert isinstance(val, int)
+        assert val > 0

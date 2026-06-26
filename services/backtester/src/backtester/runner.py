@@ -309,49 +309,12 @@ async def run_backtest(
 def _bars_per_year_for_freq(freq: str) -> int:
     """Map common bar frequencies to annualization factors.
 
-    Supports common shorthand frequencies (1m, 5m, 15m, 1h, 1d) and
-    arbitrary ``<N><unit>`` patterns (e.g., 30m, 4h, 1w) via parsing.
-    Falls back to 1-minute bars (525,600/year) for unknown formats.
+    Delegates to the shared ``fincept_core.clock.bars_per_year_for_freq``
+    so the backtester and fincept-tools use the same annualization logic.
     """
-    # Fast path for common frequencies.
-    _COMMON = {
-        "1m": 365 * 24 * 60,
-        "5m": 365 * 24 * 12,
-        "15m": 365 * 24 * 4,
-        "1h": 365 * 24,
-        "1d": 252,
-    }
-    if freq in _COMMON:
-        return _COMMON[freq]
+    from fincept_core.clock import bars_per_year_for_freq
 
-    # Parse arbitrary "<N><unit>" frequencies.
-    import re
-
-    match = re.match(r"^(\d+)([smhdw])$", freq)
-    if match is None:
-        # Unknown format — default to 1-minute bars.
-        return 365 * 24 * 60
-
-    n = int(match.group(1))
-    unit = match.group(2)
-    # Minutes per year (365 days, no leap):
-    #   365 * 24 * 60 = 525,600
-    _MINUTES_PER_YEAR = 525_600
-    _UNIT_TO_MINUTES = {
-        "s": 1 / 60,
-        "m": 1,
-        "h": 60,
-        "d": 60 * 24,
-        "w": 60 * 24 * 7,
-    }
-    minutes_per_bar = n * _UNIT_TO_MINUTES[unit]
-    bars_per_year = int(_MINUTES_PER_YEAR / minutes_per_bar)
-    # For daily/weekly, use trading-day convention (252 trading days/year).
-    if unit == "d":
-        bars_per_year = 252 // n if n <= 252 else 1
-    elif unit == "w":
-        bars_per_year = 52 // n if n <= 52 else 1
-    return max(1, bars_per_year)
+    return bars_per_year_for_freq(freq)
 
 
 # --------------------------------------------------------------------------- #
