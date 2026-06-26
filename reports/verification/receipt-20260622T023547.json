@@ -1,0 +1,132 @@
+{
+  "schema": "fincept.verification-receipt/v1",
+  "started_at": "2026-06-22T02:35:47.9888408-05:00",
+  "ended_at": "2026-06-22T02:36:16.2148967-05:00",
+  "duration_s": 28.23,
+  "overall": "PASS",
+  "summary": {
+    "pass": 6,
+    "fail": 0,
+    "skipped": 7,
+    "required_failures": 0
+  },
+  "checks": [
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "npm run test:shadow-news-impact",
+      "status": "pass",
+      "name": "dashboard:shadow-news-impact",
+      "duration_ms": 5505,
+      "required": true
+    },
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "npm run test:source-health",
+      "status": "pass",
+      "name": "dashboard:source-health",
+      "duration_ms": 1173,
+      "required": true
+    },
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "npm run test:strategy-readiness",
+      "status": "pass",
+      "name": "dashboard:strategy-readiness",
+      "duration_ms": 1313,
+      "required": true
+    },
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "pnpm --dir apps/dashboard exec tsc --noEmit --pretty false",
+      "status": "pass",
+      "name": "dashboard:tsc-noEmit",
+      "duration_ms": 5430,
+      "required": true
+    },
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "uv run pytest services/api/tests/test_news_impact.py -q",
+      "status": "pass",
+      "name": "python:news-impact-api",
+      "duration_ms": 5568,
+      "required": true
+    },
+    {
+      "reason": "",
+      "exit_code": 0,
+      "command": "uv run pytest libs/fincept-core/tests -q",
+      "status": "pass",
+      "name": "python:core-lib",
+      "duration_ms": 9156,
+      "required": true
+    },
+    {
+      "reason": "needs operator environment + Docker daemon",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "docker:compose-boot",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "needs Playwright session + running dashboard",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "browser:smoke",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "needs provider API keys; never run by default",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "provider:live-checks",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "needs broker credentials; never run by default",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "broker:checks",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "RunPod work not yet implemented (later phases)",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "runpod:checks",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "heavy; run in preflight.ps1 or CI, not the light receipt",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "ci:mypy-full",
+      "duration_ms": 0,
+      "required": false
+    },
+    {
+      "reason": "heavy; run in preflight.ps1 or CI, not the light receipt",
+      "exit_code": 0,
+      "command": "",
+      "status": "skipped",
+      "name": "ci:full-pytest-cov",
+      "duration_ms": 0,
+      "required": false
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+﻿{
+    "schema":  "fincept.verification-receipt/v1",
+    "started_at":  "2026-06-25T22:32:48.1725524-05:00",
+    "ended_at":  "2026-06-25T22:33:31.5813655-05:00",
+    "duration_s":  43.41,
+    "overall":  "FAIL",
+    "summary":  {
+                    "pass":  5,
+                    "fail":  1,
+                    "skipped":  7,
+                    "required_failures":  1
+                },
+    "checks":  [
+                   {
+                       "exit_code":  0,
+                       "name":  "dashboard:shadow-news-impact",
+                       "command":  "npm run test:shadow-news-impact",
+                       "required":  true,
+                       "duration_ms":  11476,
+                       "reason":  "",
+                       "status":  "pass"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "dashboard:source-health",
+                       "command":  "npm run test:source-health",
+                       "required":  true,
+                       "duration_ms":  1943,
+                       "reason":  "",
+                       "status":  "pass"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "dashboard:strategy-readiness",
+                       "command":  "npm run test:strategy-readiness",
+                       "required":  true,
+                       "duration_ms":  1767,
+                       "reason":  "",
+                       "status":  "pass"
+                   },
+                   {
+                       "exit_code":  1,
+                       "name":  "dashboard:tsc-noEmit",
+                       "command":  "pnpm --dir apps/dashboard exec tsc --noEmit --pretty false",
+                       "required":  true,
+                       "duration_ms":  3564,
+                       "reason":  "",
+                       "status":  "fail"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "python:news-impact-api",
+                       "command":  "uv run pytest services/api/tests/test_news_impact.py -q",
+                       "required":  true,
+                       "duration_ms":  7699,
+                       "reason":  "",
+                       "status":  "pass"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "python:core-lib",
+                       "command":  "uv run pytest libs/fincept-core/tests -q",
+                       "required":  true,
+                       "duration_ms":  16813,
+                       "reason":  "",
+                       "status":  "pass"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "docker:compose-boot",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "needs operator environment + Docker daemon",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "browser:smoke",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "needs Playwright session + running dashboard",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "provider:live-checks",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "needs provider API keys; never run by default",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "broker:checks",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "needs broker credentials; never run by default",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "runpod:checks",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "RunPod work not yet implemented (later phases)",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "ci:mypy-full",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "heavy; run in preflight.ps1 or CI, not the light receipt",
+                       "status":  "skipped"
+                   },
+                   {
+                       "exit_code":  0,
+                       "name":  "ci:full-pytest-cov",
+                       "command":  "",
+                       "required":  false,
+                       "duration_ms":  0,
+                       "reason":  "heavy; run in preflight.ps1 or CI, not the light receipt",
+                       "status":  "skipped"
+                   }
+               ]
+}

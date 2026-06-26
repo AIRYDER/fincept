@@ -1,0 +1,3 @@
+# Verification receipts live here.
+# Timestamped receipt-*.md / receipt-*.json files are gitignored (machine-generated).
+# Commit manually-curated baseline-*.md receipts (e.g. baseline-2026-06-22.md).
