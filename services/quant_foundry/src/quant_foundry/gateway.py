@@ -563,9 +563,21 @@ class QuantFoundryGateway:
         return self._expanded_leaderboard
 
     def promotion_queue(self) -> PromotionReviewQueue:
-        """Return the lazily constructed promotion review queue."""
+        """Return the lazily constructed promotion review queue.
+
+        The queue's gate is configured with the
+        ``QUANT_FOUNDRY_PROMOTION_MIN_SETTLED`` env var (default: 10).
+        See ``promotion_gate`` for full documentation on the bootstrap
+        implications of lowering this threshold.
+        """
         if self._promotion_queue is None:
-            self._promotion_queue = PromotionReviewQueue()
+            from quant_foundry.promotion import PromotionGate
+
+            min_settled = int(
+                os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10")
+            )
+            gate = PromotionGate(min_settled_count=min_settled)
+            self._promotion_queue = PromotionReviewQueue(gate=gate)
         return self._promotion_queue
 
     def list_dossiers(self, *, status: DossierStatus | None = None) -> list[dict[str, Any]]:
