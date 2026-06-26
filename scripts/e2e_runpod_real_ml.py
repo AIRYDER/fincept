@@ -203,8 +203,8 @@ def verify_inference_result(output: dict, symbols: list[str]) -> None:
     for pred in predictions:
         assert -1.0 <= pred.get("direction", 0) <= 1.0, f"direction out of range: {pred.get('direction')}"
         assert 0.0 <= pred.get("confidence", 0) <= 1.0, f"confidence out of range: {pred.get('confidence')}"
-        assert pred.get("authority") == "shadow_only", (
-            f"authority must be shadow_only, got {pred.get('authority')}"
+        assert pred.get("authority") in ("shadow_only", "shadow-only"), (
+            f"authority must be shadow-only, got {pred.get('authority')}"
         )
 
     print("  [OK] all predictions have valid ranges and shadow_only authority")
