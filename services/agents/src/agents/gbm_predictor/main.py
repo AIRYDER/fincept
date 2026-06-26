@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -57,7 +58,7 @@ from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import Prediction
 from fincept_core.tracing import configure_tracing
 
-from fincept_core.prediction_log import PredictionLog
+from fincept_core.prediction_log import PredictionLog, PredictionRow, _validate_agent_id
 
 from agents.gbm_predictor.infer import GBMPredictor
 
@@ -71,6 +72,127 @@ DEFAULT_MODEL_DIR = "models/gbm_predictor"
 # clicking Promote (worst case ~30s to take effect), and easy to crank
 # down from tests via the env var without monkey-patching.
 DEFAULT_RELOAD_POLL_S = 30.0
+
+
+# --------------------------------------------------------------------------- #
+# Feature-availability sidecar (Phase: ml-dataset-evidence-spine, todo 9)     #
+# --------------------------------------------------------------------------- #
+
+
+def _default_feature_health_dir() -> pathlib.Path:
+    return pathlib.Path(os.environ.get("FEATURE_HEALTH_DIR", "data/feature_health"))
+
+
+@dataclasses.dataclass(frozen=True)
+class FeatureHealthRow:
+    """One persisted feature-availability diagnostic.
+
+    A sidecar to :class:`fincept_core.prediction_log.PredictionRow`:
+    joined by ``prediction_id`` (the ``PredictionRow.id`` returned by
+    ``prediction_log.append``).  Kept in a separate JSONL file so the
+    prediction log schema stays stable and the health rows can be
+    truncated / rotated independently.
+    """
+
+    prediction_id: str
+    ts_event: int
+    symbol: str
+    missing: list[str]
+    defaulted: list[str]
+    aliased: list[str]
+
+    def to_json(self) -> str:
+        return json.dumps(dataclasses.asdict(self), separators=(",", ":"))
+
+    @classmethod
+    def from_json(cls, line: str) -> FeatureHealthRow:
+        data = json.loads(line)
+        return cls(
+            prediction_id=str(data["prediction_id"]),
+            ts_event=int(data["ts_event"]),
+            symbol=str(data["symbol"]),
+            missing=list(data.get("missing", [])),
+            defaulted=list(data.get("defaulted", [])),
+            aliased=list(data.get("aliased", [])),
+        )
+
+
+class FeatureHealthLog:
+    """Append-only feature-availability record on the filesystem.
+
+    Mirrors the shape of :class:`fincept_core.prediction_log.PredictionLog`
+    but writes to ``data/feature_health/<agent_id>.jsonl``.  The write
+    is best-effort from the publish loop's perspective: a failure is
+    logged as ``feature_health_write_failed`` and never propagates --
+    a broken health sidecar must not stop predictions from being
+    published or recorded.
+    """
+
+    def __init__(self, *, health_dir: pathlib.Path | None = None) -> None:
+        self._health_dir = health_dir or _default_feature_health_dir()
+
+    @property
+    def health_dir(self) -> pathlib.Path:
+        return self._health_dir
+
+    def _path(self, agent_id: str) -> pathlib.Path:
+        _validate_agent_id(agent_id)
+        return self._health_dir / f"{agent_id}.jsonl"
+
+    def append(
+        self,
+        *,
+        agent_id: str,
+        prediction_id: str,
+        ts_event: int,
+        symbol: str,
+        missing: list[str],
+        defaulted: list[str],
+        aliased: list[str],
+    ) -> FeatureHealthRow:
+        _validate_agent_id(agent_id)
+        if not isinstance(prediction_id, str) or not prediction_id:
+            raise ValueError("prediction_id must be a non-empty string")
+        if not isinstance(symbol, str) or not symbol:
+            raise ValueError("symbol must be a non-empty string")
+
+        self._health_dir.mkdir(parents=True, exist_ok=True)
+        row = FeatureHealthRow(
+            prediction_id=prediction_id,
+            ts_event=ts_event,
+            symbol=symbol,
+            missing=list(missing),
+            defaulted=list(defaulted),
+            aliased=list(aliased),
+        )
+        path = self._path(agent_id)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(row.to_json() + "\n")
+        return row
+
+    def read(self, *, agent_id: str, limit: int = 200) -> list[FeatureHealthRow]:
+        """Return the most-recent ``limit`` health rows for an agent.
+
+        Tolerant of malformed lines (skipped, matching the prediction
+        log's resilience pattern) so a partially-corrupted file never
+        takes the read down.
+        """
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        path = self._path(agent_id)
+        if not path.is_file():
+            return []
+        rows: list[FeatureHealthRow] = []
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(FeatureHealthRow.from_json(line))
+                except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                    continue
+        return rows[-limit:]
 
 
 def _models_root() -> pathlib.Path:
@@ -244,6 +366,11 @@ async def run(
     # (agent_id, model_name) inside, so each appended row carries the
     # name of the booster that emitted it even after a hot-reload.
     prediction_log = PredictionLog()
+    # Feature-availability sidecar: one JSONL row per emitted prediction
+    # recording which requested features were missing / defaulted /
+    # aliased.  Best-effort -- a write failure is logged and never
+    # blocks the publish loop (see _publish_loop).
+    feature_health_log = FeatureHealthLog()
 
     current_dir = _resolve_model_dir()
     log.info(
@@ -260,6 +387,7 @@ async def run(
             current_agent,
             producer,
             prediction_log=prediction_log,
+            feature_health_log=feature_health_log,
             model_name=current_dir.name,
         )
     )
@@ -333,6 +461,7 @@ async def run(
                             current_agent,
                             producer,
                             prediction_log=prediction_log,
+                            feature_health_log=feature_health_log,
                             model_name=current_dir.name,
                         )
                     )
@@ -417,6 +546,7 @@ async def _publish_loop(
     producer: Producer,
     *,
     prediction_log: PredictionLog | None = None,
+    feature_health_log: FeatureHealthLog | None = None,
     model_name: str | None = None,
 ) -> None:
     """Publish predictions to Redis and (optionally) record to disk.
@@ -430,6 +560,14 @@ async def _publish_loop(
     ``prediction_log`` and ``model_name`` are optional so the existing
     hot-reload tests can keep injecting a stand-in publish loop without
     needing to materialise a log on disk.
+
+    ``feature_health_log`` (todo 9) records a FeatureHealthRow sidecar
+    per emitted prediction.  Its write is best-effort: any failure is
+    logged as ``feature_health_write_failed`` and swallowed so a broken
+    health sidecar never stops predictions from being published or
+    recorded.  The health snapshot is read from
+    ``agent.last_feature_health`` (set by ``GBMPredictor.run`` on every
+    cycle right before the Prediction is yielded).
     """
     async for event_payload in agent.run():
         if not isinstance(event_payload, Prediction):
@@ -437,8 +575,9 @@ async def _publish_loop(
         await producer.publish(
             STREAM_SIG_PREDICT, Event(type="prediction", payload=event_payload)
         )
+        pred_row: PredictionRow | None = None
         if prediction_log is not None and model_name is not None:
-            prediction_log.append(
+            pred_row = prediction_log.append(
                 agent_id=event_payload.agent_id,
                 model_name=model_name,
                 ts_event=event_payload.ts_event,
@@ -447,6 +586,28 @@ async def _publish_loop(
                 direction=event_payload.direction,
                 confidence=event_payload.confidence,
             )
+        if feature_health_log is not None and pred_row is not None:
+            health = getattr(agent, "last_feature_health", None)
+            if health is not None:
+                try:
+                    feature_health_log.append(
+                        agent_id=event_payload.agent_id,
+                        prediction_id=pred_row.id,
+                        ts_event=event_payload.ts_event,
+                        symbol=event_payload.symbol,
+                        missing=list(health.missing),
+                        defaulted=list(health.defaulted),
+                        aliased=list(health.aliased),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # Best-effort: a broken health sidecar must never
+                    # stop predictions from being published/recorded.
+                    log.warning(
+                        "feature_health_write_failed",
+                        agent_id=event_payload.agent_id,
+                        symbol=event_payload.symbol,
+                        error=str(exc),
+                    )
         log.info(
             "gbm.pred",
             symbol=event_payload.symbol,

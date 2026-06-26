@@ -36,7 +36,7 @@ from fincept_core.logging import get_logger
 from fincept_core.schemas import Prediction
 
 from agents.base import Agent
-from agents.gbm_predictor.features import FEATURES, load_live
+from agents.gbm_predictor.features import FEATURES, FeatureHealth, load_live
 
 log = get_logger(__name__)
 
@@ -67,6 +67,13 @@ class GBMPredictor(Agent):
         self._features: list[str] = list(FEATURES)
         self._horizon_ns: int = 0
         self._store: OnlineStore | None = None
+        # Feature-availability diagnostics from the most recent
+        # load_live call.  Set on every cycle before a Prediction is
+        # yielded so the publish loop (main._publish_loop) can record a
+        # FeatureHealthRow sidecar without re-deriving the projection.
+        # Public-read so the publish loop can introspect it; the agent
+        # owns the write.
+        self.last_feature_health: FeatureHealth | None = None
 
     async def setup(self) -> None:
         """Load model + meta; initialise the OnlineStore reader."""
@@ -97,15 +104,17 @@ class GBMPredictor(Agent):
         symbols = self._explicit_symbols or list(get_settings().UNIVERSE)
         while True:
             for symbol in symbols:
-                row = await load_live(
+                loaded = await load_live(
                     self._store,
                     symbol,
                     feature_names=self._features,
                     freq=self._freq,
                     allow_compat_defaults=True,
                 )
-                if row is None:
+                if loaded is None:
                     continue
+                row, health = loaded
+                self.last_feature_health = health
                 prediction = self._predict(symbol, row)
                 yield prediction
             await asyncio.sleep(self._cadence_s)

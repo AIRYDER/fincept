@@ -11,6 +11,8 @@ module only depends on the *names* and the OnlineStore wire format.
 
 from __future__ import annotations
 
+import dataclasses
+
 from features.store import OnlineStore
 
 # Feature order is fixed at train-time and read at inference-time from
@@ -60,6 +62,35 @@ DEFAULTABLE_FEATURES: set[str] = {
 }
 
 
+@dataclasses.dataclass(frozen=True)
+class FeatureHealth:
+    """Per-cycle feature-availability diagnostics.
+
+    Returned alongside the feature vector from :func:`load_live` so the
+    publish loop can record a sidecar JSONL row (``FeatureHealthRow``)
+    without having to re-derive what was missing / defaulted / aliased.
+
+    Semantics:
+
+      * ``missing`` -- the canonical feature name was absent from the
+        online frame (direct lookup returned ``None``) AND it was not
+        recovered via an alias.  A feature that fell back to the 0.0
+        default appears here *and* in ``defaulted``; a feature that was
+        not recoverable at all causes :func:`load_live` to return
+        ``None`` (no health row is emitted for that cycle).
+      * ``defaulted`` -- the feature was filled with the 0.0 compat
+        default (subset of ``missing``).
+      * ``aliased`` -- the feature was resolved via
+        :data:`FEATURE_ALIASES` (the canonical name was absent but the
+        alias name was present).  These are NOT in ``missing`` -- the
+        data exists, just under a legacy name.
+    """
+
+    missing: list[str]
+    defaulted: list[str]
+    aliased: list[str]
+
+
 async def load_live(
     store: OnlineStore,
     symbol: str,
@@ -67,7 +98,7 @@ async def load_live(
     feature_names: list[str],
     freq: str = "1m",
     allow_compat_defaults: bool = False,
-) -> dict[str, float] | None:
+) -> tuple[dict[str, float], FeatureHealth] | None:
     """Read the latest FeatureFrame and project it onto ``feature_names``.
 
     Returns ``None`` if:
@@ -83,20 +114,42 @@ async def load_live(
     small set of non-price features may default to 0.0.  This is used
     only by the live GBM agent so older trained artifacts don't leave
     the dashboard permanently empty.
+
+    The second element of the returned tuple is a :class:`FeatureHealth`
+    snapshot describing which requested features were missing from the
+    online frame, which fell back to a default, and which were resolved
+    via an alias.  Callers that don't care about diagnostics can ignore
+    it; the dict is always the first element so existing unpacking
+    ``features, _ = await load_live(...)`` works.
     """
     frame = await store.get_latest(symbol, freq=freq)
     if frame is None:
         return None
     out: dict[str, float] = {}
+    missing: list[str] = []
+    defaulted: list[str] = []
+    aliased: list[str] = []
     for name in feature_names:
         value = frame.values.get(name)
         if value is None and allow_compat_defaults:
             alias = FEATURE_ALIASES.get(name)
             if alias is not None:
-                value = frame.values.get(alias)
+                alias_value = frame.values.get(alias)
+                if alias_value is not None:
+                    value = alias_value
+                    aliased.append(name)
+                else:
+                    # Alias exists but the alias name is also absent --
+                    # the canonical feature is genuinely missing.
+                    missing.append(name)
+            else:
+                missing.append(name)
+        elif value is None:
+            missing.append(name)
         if value is None and allow_compat_defaults and name in DEFAULTABLE_FEATURES:
             value = 0.0
+            defaulted.append(name)
         if value is None:
             return None
         out[name] = float(value)
-    return out
+    return out, FeatureHealth(missing=missing, defaulted=defaulted, aliased=aliased)

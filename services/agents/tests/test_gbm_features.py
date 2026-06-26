@@ -54,9 +54,14 @@ async def test_returns_dict_when_all_features_present(store: OnlineStore) -> Non
 
     result = await load_live(store, "BTC-USD", feature_names=FEATURES)
     assert result is not None
-    assert set(result.keys()) == set(FEATURES)
+    features, health = result
+    assert set(features.keys()) == set(FEATURES)
     for name in FEATURES:
-        assert result[name] == 1.5
+        assert features[name] == 1.5
+    # All features present under their canonical names -> no diagnostics.
+    assert health.missing == []
+    assert health.defaulted == []
+    assert health.aliased == []
 
 
 async def test_projects_only_requested_feature_names(store: OnlineStore) -> None:
@@ -69,7 +74,8 @@ async def test_projects_only_requested_feature_names(store: OnlineStore) -> None
     subset = ["ret_1m", "ret_5m"]
     result = await load_live(store, "BTC-USD", feature_names=subset)
     assert result is not None
-    assert set(result.keys()) == set(subset)
+    features, _ = result
+    assert set(features.keys()) == set(subset)
 
 
 # ---------------------------------------------------------------------------
@@ -114,16 +120,21 @@ async def test_compat_mode_projects_current_live_feature_names(
     )
 
     assert result is not None
-    assert result["ret_1m"] == 0.01
-    assert result["ret_5m"] == 0.0
-    assert result["ret_15m"] == 0.0
-    assert result["ret_60m"] == 0.0
-    assert result["rv_5m"] == 0.0
-    assert result["rv_30m"] == 0.0
-    assert result["mom_z_30m"] == 0.0
-    assert result["mom_z_240m"] == 0.0
-    assert result["book_imbalance_1"] == 0.0
-    assert result["spread_bps"] == 0.0
+    features, health = result
+    assert features["ret_1m"] == 0.01
+    assert features["ret_5m"] == 0.0
+    assert features["ret_15m"] == 0.0
+    assert features["ret_60m"] == 0.0
+    assert features["rv_5m"] == 0.0
+    assert features["rv_30m"] == 0.0
+    assert features["mom_z_30m"] == 0.0
+    assert features["mom_z_240m"] == 0.0
+    assert features["book_imbalance_1"] == 0.0
+    assert features["spread_bps"] == 0.0
+    # ret_1m was resolved via alias (ret_simple_1); the rest were absent
+    # and fell back to the 0.0 default.
+    assert health.aliased == ["ret_1m"]
+    assert "ret_1m" not in health.missing
 
 
 # ---------------------------------------------------------------------------
