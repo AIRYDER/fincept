@@ -63,9 +63,13 @@ from quant_foundry.schemas import RunPodInferenceRequest
 from quant_foundry.settlement import SettlementLedger
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
 from quant_foundry.shadow_ledger import ShadowLedger
-from quant_foundry.signatures import sign_callback, verify_callback
+from quant_foundry.signatures import sign_callback, verify_callback  # noqa: F401
 from quant_foundry.tournament import Tournament
 from quant_foundry.tournament_sweep import TournamentSweep
+
+# `sign_callback` is imported (not used at runtime) so the callback-security
+# test can monkey-patch this module's `sign_callback` attribute and assert the
+# poller never signs on the Fincept side — only `verify_callback` is allowed.
 
 
 class QuantFoundryGateway:
@@ -448,14 +452,10 @@ class QuantFoundryGateway:
             output = status.get("output")
             callback_fields = _extract_callback_fields(output if output is not None else status)
             if callback_fields is None:
-                # Backward-compat: old handler returns unsigned "callback" dict.
-                # Sign on the trusted Fincept side (HTTPS to RunPod API is authenticated).
-                callback_fields = _compat_sign_callback(
-                    output if output is not None else status,
-                    secret=self.callback_secret,
-                    job_id=rec.job_id,
-                )
-            if callback_fields is None:
+                # Fail-closed: RunPod handlers MUST return signed
+                # callback_payload/callback_signature/callback_ts fields. The
+                # Fincept side only verifies (verify_callback) — it never signs
+                # on behalf of an unsigned handler (legacy compat shim removed).
                 self.outbox.update_status(
                     rec.job_id,
                     JobStatus.FAILED,
@@ -1692,38 +1692,6 @@ def _extract_callback_fields(output: Any) -> tuple[str, str, int] | None:
     except (TypeError, ValueError):
         return None
     return payload, signature, callback_ts
-
-
-def _compat_sign_callback(
-    output: Any,
-    *,
-    secret: str,
-    job_id: str,
-) -> tuple[str, str, int] | None:
-    """Backward-compat: old handler returns unsigned 'callback' dict.
-
-    Signs the callback on the trusted Fincept side. Valid because the
-    transport is authenticated HTTPS to the RunPod API. Once deployed
-    handlers return signed callback_payload/signature/ts, this path
-    is never hit.
-    """
-    if not isinstance(output, dict):
-        return None
-    callback_dict = output.get("callback")
-    if not isinstance(callback_dict, dict):
-        return None
-    import json as _json
-    import time as _time
-
-    payload_text = _json.dumps(callback_dict, separators=(",", ":"), sort_keys=True)
-    callback_ts = int(_time.time())
-    signature = sign_callback(
-        payload_text.encode("utf-8"),
-        secret=secret,
-        ts=callback_ts,
-        job_id=job_id,
-    )
-    return payload_text, signature, callback_ts
 
 
 def _decision_time_from_payload(
