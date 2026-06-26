@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-06-26T05:32:00Z",
+  "plan_reference": ".omo/plans/ml-dataset-evidence-spine.md lines 58-61",
+  "todos_covered": [13, 14, 15],
+  "summary": "Legacy unsigned-callback compat shim (_compat_sign_callback) fully removed. Gateway fail-closes on missing/bad callback fields. Durable callback_rejection_rate metric store operational.",
+  "tests": {
+    "test_callback_metrics.py": {
+      "count": 10,
+      "status": "PASS",
+      "assertions": [
+        "happy_path_three_accepted_one_rejected",
+        "empty_store_returns_zero_not_exception",
+        "divide_by_zero_returns_zero",
+        "windowing_excludes_old_events",
+        "persistence_across_instances",
+        "malformed_lines_skipped",
+        "invalid_event_rejected_on_write",
+        "no_secret_or_payload_in_record",
+        "shadow_health_none_when_no_events",
+        "shadow_health_numeric_after_recorded_sequence"
+      ]
+    },
+    "test_gateway_callbacks.py": {
+      "count": 5,
+      "status": "PASS",
+      "assertions": [
+        "no_compat_sign_path",
+        "signed_callback_accepted",
+        "unsigned_old_shape_marked_failed",
+        "bad_signature_rejected",
+        "ts_skew_rejected"
+      ]
+    },
+    "test_gateway_runpod_loop.py": {
+      "count": 6,
+      "status": "PASS",
+      "durable_health_assertion": "gateway.runpod_loop records durable health events to callback_metrics store"
+    }
+  },
+  "total_tests": 21,
+  "all_passed": true,
+  "counter_sample": {
+    "description": "Unsigned callback (old shape) is marked FAILED, not signed-on-behalf-of. Bad signature is rejected with no durable trace created. TS skew > 300s rejected.",
+    "fail_closed": true,
+    "hmac_compare_digest": true,
+    "max_ts_skew_seconds": 300
+  },
+  "no_secret_leakage": true,
+  "metric_store_records_shape": {"ts_ns": "int", "event": "str", "reason_code": "str|None"}
+}

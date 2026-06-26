@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-06-26T05:32:00Z",
+  "plan_reference": ".omo/plans/ml-dataset-evidence-spine.md todo 17 + verification lines 58-61",
+  "todos_covered": [17, 18, 19, 20],
+  "summary": "Shared purged+embargoed walk-forward CV utility extracted to fincept_core.datasets.cv. All three call sites delegate to the shared implementation. No duplicated fold-math remains.",
+  "shared_module": "libs/fincept-core/src/fincept_core/datasets/cv.py",
+  "shared_exports": ["make_folds", "derive_walk_forward_window", "Fold", "WalkForwardWindow", "fold_iter_to_dicts"],
+  "call_sites": [
+    {
+      "name": "services/agents/gbm_predictor/train.py",
+      "line": 55,
+      "import": "from fincept_core.datasets import make_folds",
+      "delegation": "full — fold-position math delegated; local walk_forward_slices applies purge_bars per-fold during slice translation",
+      "embargo": "intentional no-op for anchored expansion (documented)",
+      "commit": "38d8d9c"
+    },
+    {
+      "name": "services/backtester/walk_forward.py",
+      "lines": [65, 66],
+      "import": "from fincept_core.datasets.cv import Fold as _SharedFold, make_folds as _shared_make_folds",
+      "delegation": "full via _make_folds_local -> _shared_make_folds; public make_folds is a deprecated shim re-wrapping Pydantic Fold into local frozen-dataclass Fold",
+      "commit": "3360709"
+    },
+    {
+      "name": "services/quant_foundry/training_manifest.py",
+      "line": 63,
+      "import": "from fincept_core.datasets.cv import derive_walk_forward_window as _canonical_derive_walk_forward_window",
+      "delegation": "full — re-wraps into local WalkForwardWindow dataclass to preserve public surface",
+      "commit": "f038cc2"
+    }
+  ],
+  "tests": {
+    "test_cv.py": {
+      "make_folds_count": 14,
+      "derive_walk_forward_window_count": 7,
+      "total": 21,
+      "status": "PASS",
+      "commit": "77edc9a"
+    }
+  },
+  "duplicated_fold_math_remaining": false,
+  "backwards_compatibility": "preserved via deprecated shims (backtester) and thin re-wrappers (quant_foundry)"
+}
