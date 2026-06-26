@@ -26,6 +26,10 @@ from redis.asyncio import Redis
 
 from api.background import AlpacaScheduler, NewsScheduler
 from api.approved_roots import register_approved_roots_handler
+from api.settlements_poller import (
+    _poll_settlements_worker,
+    _settlements_worker_interval_seconds,
+)
 from api.routes import (
     backtest as backtest_route,
     control,
@@ -82,6 +86,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     quant_foundry_settlement_task: asyncio.Task[None] | None = None
     # --- Shadow dispatch wiring (Agent C) ---
     quant_foundry_shadow_dispatch_task: asyncio.Task[None] | None = None
+    # --- New settlements worker (fincept_core.datasets spine) ---
+    settlements_worker_task: asyncio.Task[None] | None = None
     poll_interval = _quant_foundry_poll_interval_seconds()
     if (
         quant_foundry_gateway.enabled
@@ -116,6 +122,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.quant_foundry_shadow_dispatch_task = (
             quant_foundry_shadow_dispatch_task
         )
+    # --- New settlements worker (fincept_core.datasets spine) ---
+    # Coexists with the quant_foundry settlement sweep above: the new
+    # worker writes to fincept_core.datasets.SettlementStore (keyed by
+    # agent_id, cost model v1.default) while the old sweep writes to
+    # quant_foundry.settlement.SettlementLedger (keyed by model_id,
+    # cost model cm-v1).  See api.settlements_poller for the full
+    # reconciliation strategy.  Runs regardless of gateway mode so the
+    # /models/{name}/outcomes route is fed even when quant_foundry is
+    # disabled; set SETTLEMENTS_WORKER_POLL_S=0 to disable.
+    settlements_worker_interval = _settlements_worker_interval_seconds()
+    if settlements_worker_interval > 0:
+        settlements_worker_task = asyncio.create_task(
+            _poll_settlements_worker(settlements_worker_interval)
+        )
+        app.state.settlements_worker_task = settlements_worker_task
     log.info("api.start", version=API_VERSION, redis_url=settings.REDIS_URL)
     try:
         yield
@@ -126,6 +147,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             quant_foundry_shadow_dispatch_task.cancel()
             try:
                 await quant_foundry_shadow_dispatch_task
+            except asyncio.CancelledError:
+                pass
+        # --- New settlements worker (fincept_core.datasets spine) ---
+        if settlements_worker_task is not None:
+            settlements_worker_task.cancel()
+            try:
+                await settlements_worker_task
             except asyncio.CancelledError:
                 pass
         # --- Settlement wiring (Agent A) ---

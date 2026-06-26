@@ -17,6 +17,7 @@ dependencies = [
   "pydantic>=2.7",
   "pyjwt>=2.9",
   "quant-foundry",
+  "settlements",
 ]
 
 [dependency-groups]
@@ -35,6 +36,7 @@ portfolio = { workspace = true }
 backtester = { workspace = true }
 oms = { workspace = true }
 quant-foundry = { workspace = true }
+settlements = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
