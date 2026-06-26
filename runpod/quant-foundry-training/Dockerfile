@@ -63,4 +63,5 @@ ENV QUANT_FOUNDRY_USE_REAL_TRAINER="false"
 ENV PYTHONPATH=/worker
 
 # RunPod's serverless loader calls handler(event).
-CMD ["python", "-u", "/worker/handler.py"]
+# Use ENTRYPOINT (not CMD) so RunPod's dockerArgs field can't override it.
+ENTRYPOINT ["python", "-u", "/worker/handler.py"]
