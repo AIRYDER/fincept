@@ -73,12 +73,8 @@ def build_dossier(
         "trial_count": extra_map.get("trial_count", 1),
         "training_metrics": dict(training_metrics),
         "status": extra_map.get("status", "candidate"),
-        "settlement_evidence_refs": list(
-            extra_map.get("settlement_evidence_refs", [])
-        ),
-        "shadow_prediction_refs": list(
-            extra_map.get("shadow_prediction_refs", [])
-        ),
+        "settlement_evidence_refs": list(extra_map.get("settlement_evidence_refs", [])),
+        "shadow_prediction_refs": list(extra_map.get("shadow_prediction_refs", [])),
         "blocking_issues": blocking,
         "registered_at_ns": None,
         "content_hash": "",
@@ -128,22 +124,14 @@ def build_calibration_sidecar(
         lo = i / n_buckets
         hi = (i + 1) / n_buckets
         if i < n_buckets - 1:
-            preds_in = [
-                p for p in val_predictions if lo <= p < hi
-            ]
+            preds_in = [p for p in val_predictions if lo <= p < hi]
             labels_in = [
-                lab
-                for p, lab in zip(val_predictions, val_labels, strict=True)
-                if lo <= p < hi
+                lab for p, lab in zip(val_predictions, val_labels, strict=True) if lo <= p < hi
             ]
         else:
-            preds_in = [
-                p for p in val_predictions if lo <= p <= hi
-            ]
+            preds_in = [p for p in val_predictions if lo <= p <= hi]
             labels_in = [
-                lab
-                for p, lab in zip(val_predictions, val_labels, strict=True)
-                if lo <= p <= hi
+                lab for p, lab in zip(val_predictions, val_labels, strict=True) if lo <= p <= hi
             ]
 
         count = len(preds_in)
@@ -164,8 +152,7 @@ def build_calibration_sidecar(
         ece += (count / total) * abs(mean_pred - mean_actual)
 
     brier = statistics.fmean(
-        (p - lab) ** 2
-        for p, lab in zip(val_predictions, val_labels, strict=True)
+        (p - lab) ** 2 for p, lab in zip(val_predictions, val_labels, strict=True)
     )
 
     return {"buckets": buckets, "ece": ece, "brier": brier}

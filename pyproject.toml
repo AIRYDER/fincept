@@ -43,6 +43,7 @@ orchestrator = { workspace = true }
 backtester = { workspace = true }
 strategy_host = { workspace = true }
 settlements = { workspace = true }
+news-impact-model = { workspace = true }
 
 [dependency-groups]
 dev = [

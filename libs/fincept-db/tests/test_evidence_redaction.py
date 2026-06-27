@@ -183,9 +183,7 @@ class TestRedactDictSensitiveFields:
         for name in SENSITIVE_FIELD_NAMES:
             d = {name: "some_secret_value"}
             result = redact_dict(d)
-            assert result.redacted[name] == "[REDACTED]", (
-                f"Field '{name}' was not redacted!"
-            )
+            assert result.redacted[name] == "[REDACTED]", f"Field '{name}' was not redacted!"
 
 
 class TestRedactDictRecursion:
@@ -210,10 +208,7 @@ class TestRedactDictRecursion:
             },
         }
         result = redact_dict(d)
-        assert (
-            result.redacted["level1"]["level2"][0]["level3"]["secret"]
-            == "[REDACTED]"
-        )
+        assert result.redacted["level1"]["level2"][0]["level3"]["secret"] == "[REDACTED]"
 
     def test_list_of_strings_redacted(self):
         d = {"urls": ["https://user:pass@host.com/api", "https://safe.com/api"]}

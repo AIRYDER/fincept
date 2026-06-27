@@ -248,7 +248,9 @@ def test_walk_forward_splits_embargo_is_noop() -> None:
     change any fold boundary -- the shared ``make_folds`` accepts it but
     the trainer's local logic still ignores it (preserved behavior)."""
     n_rows, n_folds, purge_bars = 10000, 5, 15
-    without = walk_forward_splits(n_rows, n_folds=n_folds, purge_bars=purge_bars, embargo_bars=0)
+    without = walk_forward_splits(
+        n_rows, n_folds=n_folds, purge_bars=purge_bars, embargo_bars=0
+    )
     with_embargo = walk_forward_splits(
         n_rows, n_folds=n_folds, purge_bars=purge_bars, embargo_bars=25
     )

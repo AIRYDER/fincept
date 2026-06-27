@@ -177,7 +177,9 @@ def test_evict_stale_removes_empty_symbols() -> None:
     """When all agents for a symbol are stale, the symbol key is removed."""
     cb = ConsensusBuilder(max_age_ns=10_000_000_000)
     cb.update(_pred(agent_id="a1", symbol="BTC-USD", ts_event=0, horizon_ns=0))
-    cb.update(_pred(agent_id="a2", symbol="ETH-USD", ts_event=50_000_000_000, horizon_ns=0))
+    cb.update(
+        _pred(agent_id="a2", symbol="ETH-USD", ts_event=50_000_000_000, horizon_ns=0)
+    )
 
     # At now=55s, BTC-USD's only agent is stale.
     evicted = cb.evict_stale(now_ns=55_000_000_000)
@@ -245,7 +247,9 @@ def test_eviction_does_not_affect_consensus_correctness() -> None:
     consensus() already filters)."""
     cb = ConsensusBuilder(max_age_ns=10_000_000_000)
     cb.update(_pred(agent_id="old", direction=1.0, ts_event=0, horizon_ns=0))
-    cb.update(_pred(agent_id="new", direction=-1.0, ts_event=50_000_000_000, horizon_ns=0))
+    cb.update(
+        _pred(agent_id="new", direction=-1.0, ts_event=50_000_000_000, horizon_ns=0)
+    )
 
     before = cb.consensus("BTC-USD", now_ns=55_000_000_000)
     cb.evict_stale(now_ns=55_000_000_000)

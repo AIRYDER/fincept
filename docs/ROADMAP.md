@@ -571,3 +571,45 @@ news-impact-only slices.
 4. Dry-run the RunPod gateway budget and callback safety path.
 5. Add route smoke for all `/quant-foundry/*` pages.
 6. Resume the prior shadow news-impact receipt and mock-route atlas queue.
+
+## 19. Automation Review Update - 2026-06-26 America/Chicago
+
+This pass reviewed local files only and did not use GitHub. The branch is
+`codex/portfolio-optimizer-core` at `d737124`, ahead of the 2026-06-23
+automation baseline `751d212`. The local tree still has untracked artifacts, but
+the clean commit history now contains a major remediation and reliability stack,
+not just speculative docs.
+
+### Changes observed locally since the last analysis
+
+| Area | Evidence | Roadmap response |
+|---|---|---|
+| Runtime hardening and service reliability | New local history includes `fincept-bus` DLQ/backoff/batch ACK work, Redis connection pooling, state persistence for kill switch/outstanding orders/target state, service stats heartbeats, entrypoint smoke tests, and callback ingestion extraction. | Treat reliability receipts as a first-class release gate alongside ML model receipts. |
+| RunPod and callback boundary | Commits since `751d212` pin RunPod container dependencies, validate handlers, consolidate hardcoded IDs, extract `GatewayCallbackMixin`, fix DLQ fields, and cap retry/backoff test behavior. | Add explicit untrusted-container and signed-callback tests before more GPU automation. |
+| Quant Foundry architecture docs | New untracked docs describe RunPod training architecture, dataset/data structure, the closed evidence loop, and seven model-defense layers. | Promote those docs into executable receipts: evidence-loop stage status and seven-layer defense receipt. |
+| Dashboard UI audit | `UI_AUDIT_2026-06-26.md` identifies undefined degraded `amber` tokens, token/spec conflict, radius drift, dead canonical components, reduced-motion gaps, primary/accent mismatch, and nav divergence. | Fix token/nav/a11y defects before expanding dashboard pages again. |
+| Swarm implementation analysis | `spec/SWARM_IMPLEMENTATION_ANALYSIS.md` explains the spec-driven paste loop and six-builder Quant Foundry swarm with file-disjoint tracks. | Convert swarm history into a review-slice ledger so the large local work can be reviewed safely. |
+| Worktree hygiene | Tracked dirty state remains `uv.lock`; untracked docs and local outputs include `.agents/`, new architecture/audit docs, `e2e_output.txt`, and `spec/SWARM_IMPLEMENTATION_ANALYSIS.md`. | Classify docs worth promoting separately from local output files; keep `uv.lock` tied to dependency evidence or revert plan. |
+
+### Roadmap refinement
+
+| Priority | Work | Actionable exit criteria |
+|---|---|---|
+| P0 | Evidence-loop receipt | `reports/quant-foundry/evidence-loop-<date>.md` records dataset manifest, dossier, shadow prediction, settlement, sentinel, tournament, promotion, branch, commit, and missing blockers for one model. |
+| P0 | RunPod trust-boundary tests | Training and inference handler tests prove no broker secrets, Redis stream writers, unsigned callbacks, or direct execution paths are available inside GPU containers. |
+| P0 | Callback reliability receipt | A local fixture proves invalid signature, duplicate callback, schema mismatch, handler exception, DLQ accounting, and retry backoff all produce distinct durable records. |
+| P1 | Dashboard token/nav remediation | `amber` degraded state is defined or remapped, primary/focus intent matches the chosen design spec, reduced-motion is handled, and nav route sets share one registry. |
+| P1 | Swarm review ledger | A generated Markdown report maps builder tracks/commits to file groups, tests, receipts, and unresolved blockers for review slicing. |
+| P1 | Dependency/artifact classification | `uv.lock`, new untracked docs, `.agents/`, and `e2e_output.txt` are classified as product docs, required dependency lock, generated output, or local-only artifact. |
+
+### Recommended next local sequence
+
+1. Promote the new architecture/audit docs that are intended to be durable, and
+   keep local outputs such as `e2e_output.txt` out of product review slices.
+2. Build the Quant Foundry evidence-loop receipt from the currently documented
+   RunPod/data/training/settlement/promotion stages.
+3. Add RunPod trust-boundary and callback reliability fixtures before increasing
+   autonomous dispatch or callback complexity.
+4. Fix the dashboard degraded-token/nav drift from `UI_AUDIT_2026-06-26.md`.
+5. Generate a swarm review ledger so the large local commit series can be
+   reviewed in service, dashboard, infra, docs, and generated-artifact slices.

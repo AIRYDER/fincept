@@ -578,3 +578,70 @@ limited-readiness blockers have dated proof.
 | Cost and callback security | Dry-run RunPod dispatch through budget and signature gates. | Cloud agency fails closed without spending or trusting bad callbacks. |
 | Operator route smoke | Probe every Quant Foundry dashboard route. | UI surfaces have load/degraded-state evidence. |
 | Review hygiene | Classify `uv.lock` and local artifacts before staging. | The next review slice is intentional and reproducible. |
+
+## Automation Priority Reset - 2026-06-26
+
+The next useful work is to convert the new Quant Foundry reliability, RunPod,
+and architecture-doc advances into executable receipts, while fixing dashboard
+state-signaling defects from the new UI audit. Keep the work local and
+review-sliced; do not treat the larger commit stack as one releasable unit.
+
+### 1. Build The Evidence-Loop Receipt
+
+- Goal: Create `reports/quant-foundry/evidence-loop-<date>.md` for one model id.
+- Why it matters: `docs/DEEP_DIVE_AND_CUTTING_EDGE.md` now defines the full
+  model trust loop; readiness should be proven by each stage, not inferred from
+  code volume.
+- Validation method:
+  - Record dataset manifest, model dossier, shadow prediction, settlement,
+    leakage/overfit sentinel, tournament score, promotion state, branch,
+    commit, skipped live dependencies, and blockers.
+
+### 2. Test The RunPod Trust Boundary
+
+- Goal: Prove training/inference containers are untrusted pure functions.
+- Why it matters: GPU containers must never receive broker credentials, Redis
+  writers, direct order paths, or unsigned callback authority.
+- Validation method:
+  - Add fixtures that fail if `ALPACA_*`, `FINCEPT_JWT_SECRET`, `REDIS_URL`,
+    stream producers, or unsigned callback paths are available to handlers.
+
+### 3. Receipt Callback Reliability
+
+- Goal: Exercise signed callback validation, duplicate/idempotent callback
+  handling, schema mismatch, handler exception, DLQ accounting, and retry
+  backoff.
+- Why it matters: Callback ingestion is now extracted and central enough to be a
+  trust boundary.
+- Validation method:
+  - One local command writes counts/reasons for accepted, rejected, retried, and
+    dead-lettered callbacks without logging secrets or raw signed payloads.
+
+### 4. Fix Dashboard State-Signaling Defects
+
+- Goal: Repair undefined degraded `amber` classes, align primary/focus accent
+  intent, add reduced-motion handling, and unify nav route registry.
+- Why it matters: Stale/degraded warnings and route reachability are functional
+  operator signals, not cosmetic polish.
+- Validation method:
+  - Add a design-token test for defined classes and a nav registry test proving
+    all dashboard routes are reachable from the canonical route set.
+
+### 5. Generate The Swarm Review Ledger
+
+- Goal: Convert `spec/SWARM_IMPLEMENTATION_ANALYSIS.md` into a review ledger.
+- Why it matters: The local change stack spans service code, dashboard routes,
+  RunPod containers, AWS/Railway infra, docs, reports, and local artifacts.
+- Validation method:
+  - The ledger groups files by builder/track/slice, names tests already run, and
+    labels unresolved blockers before any staging or commit work.
+
+## Next Skills To Deepen - 2026-06-26
+
+| Skill | First exercise | Done when |
+|---|---|---|
+| Evidence-loop governance | Write the model lifecycle receipt for one model. | Every trust stage has pass/fail/blocker evidence. |
+| GPU boundary security | Test RunPod handlers for secret and side-effect isolation. | Untrusted containers cannot access execution authority. |
+| Callback reliability engineering | Receipt accepted/rejected/retried/DLQ callback paths. | Operators can diagnose callback failures without secret leakage. |
+| Dashboard safety UX | Fix degraded-state tokens and route registry drift. | Warning states and route reachability are mechanically verified. |
+| Multi-agent review hygiene | Generate the swarm review ledger. | Large parallel-agent output can be reviewed in intentional slices. |

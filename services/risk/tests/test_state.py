@@ -79,7 +79,11 @@ def _make_fake_async_redis(*, stored_state: dict | None = None) -> MagicMock:
     """
     fake = MagicMock()
     fake.connection_pool = MagicMock()
-    fake.connection_pool.connection_kwargs = {"host": "localhost", "port": 6379, "db": 0}
+    fake.connection_pool.connection_kwargs = {
+        "host": "localhost",
+        "port": 6379,
+        "db": 0,
+    }
     return fake
 
 
@@ -226,4 +230,3 @@ def test_state_survives_restart_simulation() -> None:
 
     # State should be restored to engaged=True.
     assert state2.engaged is True
-

@@ -155,7 +155,9 @@ def _build_gateway(tmp_path, *, secret: str) -> QuantFoundryGateway:
     return gateway, inference_client
 
 
-def _create_inference_job(gateway: QuantFoundryGateway, inference_client: RecordingRunPodClient, job_id: str) -> str:
+def _create_inference_job(
+    gateway: QuantFoundryGateway, inference_client: RecordingRunPodClient, job_id: str
+) -> str:
     gateway.create_job(
         job_id=job_id,
         job_type="inference",
@@ -197,9 +199,7 @@ def test_no_compat_sign_path(tmp_path, monkeypatch) -> None:
     receipts = gateway.poll_runpod_results()
 
     # The poller must fail closed — never sign on the Fincept side.
-    assert calls == [], (
-        f"poller must never call sign_callback on the Fincept side; got {calls}"
-    )
+    assert calls == [], f"poller must never call sign_callback on the Fincept side; got {calls}"
     assert receipts[0]["ok"] is False
     assert receipts[0]["error_code"] == "missing_runpod_callback_fields"
     assert gateway.outbox.get(job_id).status == JobStatus.FAILED
@@ -255,9 +255,7 @@ def test_bad_signature_rejected(tmp_path) -> None:
 
     inference_client.statuses[runpod_job_id] = {
         "status": "COMPLETED",
-        "output": _signed_inference_output(
-            job_id, secret=secret, signature_override="0" * 64
-        ),
+        "output": _signed_inference_output(job_id, secret=secret, signature_override="0" * 64),
     }
 
     receipts = gateway.poll_runpod_results()

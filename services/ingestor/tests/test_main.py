@@ -28,10 +28,10 @@ def test_main_has_main_entrypoint() -> None:
     sig = inspect.signature(main)
     # main() should accept no required args (it reads from argparse/env).
     required = [
-        p for p in sig.parameters.values()
-        if p.default is inspect.Parameter.empty and p.kind not in (
-            inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD
-        )
+        p
+        for p in sig.parameters.values()
+        if p.default is inspect.Parameter.empty
+        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     assert not required, f"main() has required params: {required}"
 

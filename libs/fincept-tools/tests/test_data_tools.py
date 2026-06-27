@@ -373,7 +373,6 @@ async def test_get_features_returns_decoded_hash() -> None:
     fake_redis.aclose = AsyncMock()
 
     with patch("fincept_tools.data.tools.get_redis", return_value=fake_redis):
-
         tool = GetFeaturesTool()
         result = await tool(GetFeaturesInput(symbol="BTC-USD"))
 
@@ -389,7 +388,6 @@ async def test_get_features_filters_by_requested_names() -> None:
     fake_redis.aclose = AsyncMock()
 
     with patch("fincept_tools.data.tools.get_redis", return_value=fake_redis):
-
         tool = GetFeaturesTool()
         result = await tool(GetFeaturesInput(symbol="BTC-USD", feature_names=["a", "c"]))
 
@@ -404,7 +402,6 @@ async def test_get_features_empty_when_no_data() -> None:
     fake_redis.aclose = AsyncMock()
 
     with patch("fincept_tools.data.tools.get_redis", return_value=fake_redis):
-
         tool = GetFeaturesTool()
         result = await tool(GetFeaturesInput(symbol="NEW-SYM"))
 
@@ -415,8 +412,9 @@ async def test_get_features_empty_when_no_data() -> None:
 
 @pytest.mark.asyncio
 async def test_get_features_redis_failure_returns_typed_error() -> None:
-    with patch("fincept_tools.data.tools.get_redis", side_effect=ConnectionRefusedError("no redis")):
-
+    with patch(
+        "fincept_tools.data.tools.get_redis", side_effect=ConnectionRefusedError("no redis")
+    ):
         tool = GetFeaturesTool()
         result = await tool(GetFeaturesInput(symbol="X"))
 

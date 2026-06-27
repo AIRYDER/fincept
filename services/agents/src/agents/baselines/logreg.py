@@ -73,9 +73,10 @@ def fit_logreg_baseline(
         weights -= lr * grad_w
         bias -= lr * grad_b
         eps = 1e-12
-        loss = -float(
-            np.sum(y * np.log(probs + eps) + (1 - y) * np.log(1 - probs + eps))
-        ) / n_samples
+        loss = (
+            -float(np.sum(y * np.log(probs + eps) + (1 - y) * np.log(1 - probs + eps)))
+            / n_samples
+        )
         loss_history.append(loss)
     return LogRegBaseline(
         weights=weights,

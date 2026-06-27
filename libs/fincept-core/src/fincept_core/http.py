@@ -121,7 +121,12 @@ async def http_request(
     for attempt in range(1, max(1, max_attempts) + 1):
         try:
             resp = await client.request(method, url, **kwargs)
-        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
+        except (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+        ) as exc:
             last_exc = exc
         else:
             if resp.status_code not in RETRYABLE_STATUSES:

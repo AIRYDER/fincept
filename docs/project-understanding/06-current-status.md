@@ -234,3 +234,26 @@ This pass reviewed local files only and did not use GitHub. The branch is
   dashboard, and generated/local artifacts in one review story.
 - The prior shadow news-impact safety queue still matters; it should not be
   hidden by the larger Quant Foundry work.
+
+## Automation Review Update - 2026-06-26
+
+This pass reviewed local files only and did not use GitHub. The branch is
+`codex/portfolio-optimizer-core` at `d737124`, newer than the 2026-06-23
+baseline `751d212`.
+
+| Area | Current local evidence | Status |
+|---|---|---|
+| Quant Foundry reliability | Recent commits add DLQ/backoff fixes, callback ingestion extraction, signed callback hardening, service smoke tests, heartbeat stats, Redis-backed state persistence, and RunPod dependency/handler fixes. | The platform now needs reliability and trust-boundary receipts, not just feature inventory. |
+| Evidence-loop docs | `docs/RUNPOD_TRAINING_ARCHITECTURE.md`, `docs/DATASETS_AND_DATA_STRUCTURE.md`, and `docs/DEEP_DIVE_AND_CUTTING_EDGE.md` document the dispatch/train/callback/score loop, PIT dataset layers, and seven model-defense layers. | These should become executable receipts before any stronger readiness claim. |
+| Dashboard quality | `UI_AUDIT_2026-06-26.md` reports broken degraded color tokens, conflicting design directions, dead canonical components, reduced-motion gaps, and route-nav divergence. | Treat UI token/nav remediation as functional work because degraded/stale states lose visual meaning. |
+| Swarm provenance | `spec/SWARM_IMPLEMENTATION_ANALYSIS.md` documents the spec-driven and multi-agent build model. | Useful as provenance, but it should be converted into a review-slice ledger before staging large changes. |
+| Hygiene boundary | `uv.lock` remains tracked dirty; `.agents/`, new docs, `e2e_output.txt`, and swarm/audit docs are untracked. | Classify what is durable documentation versus generated/local output before commit prep. |
+
+### Current risk notes
+
+- The local codebase is much more capable than the June 23 snapshot, but live
+  capital, live hosted, and GPU-spend claims still need dated receipts.
+- Callback trust, budget enforcement, and untrusted GPU containers are the main
+  agency boundaries to test next.
+- The dashboard audit includes functional defects: warning/degraded state colors
+  and route reachability should be fixed before more UI expansion.

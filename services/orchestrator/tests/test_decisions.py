@@ -9,7 +9,11 @@ import fakeredis.aioredis
 import pytest
 
 from fincept_core.schemas import OrderType, Side, TimeInForce, Venue
-from orchestrator.decisions import TARGET_STATE_KEY, TargetState, build_decision_and_intent
+from orchestrator.decisions import (
+    TARGET_STATE_KEY,
+    TargetState,
+    build_decision_and_intent,
+)
 
 
 # ---------------------------------------------------------------------------

@@ -59,9 +59,7 @@ async def test_http_request_retries_on_5xx_then_succeeds() -> None:
 
 @pytest.mark.asyncio
 async def test_http_request_retries_on_connect_error() -> None:
-    transport = _MockTransport(
-        [httpx.ConnectError("boom"), {"ok": True}]
-    )
+    transport = _MockTransport([httpx.ConnectError("boom"), {"ok": True}])
     async with httpx.AsyncClient(transport=transport) as client:
         resp = await http_request(client, "GET", "http://x/y", max_attempts=3)
     assert resp.status_code == 200
@@ -97,9 +95,7 @@ async def test_http_request_propagates_request_id_header() -> None:
 
     transport = _Capturing()
     async with httpx.AsyncClient(transport=transport) as client:
-        await http_request(
-            client, "GET", "http://x/y", request_id="rid-123", max_attempts=1
-        )
+        await http_request(client, "GET", "http://x/y", request_id="rid-123", max_attempts=1)
     assert captured.get("x-request-id") == "rid-123"
 
 

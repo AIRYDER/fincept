@@ -163,9 +163,7 @@ class SettlementRecord(BaseModel):
     def _spread_bps_sanity_bound(cls, v: float) -> float:
         """Reject absurd spread values (> 100 bps = 1% is a sanity ceiling)."""
         if v > 100.0:
-            raise ValueError(
-                f"cost_breakdown_spread_bps={v} exceeds sanity bound of 100 bps"
-            )
+            raise ValueError(f"cost_breakdown_spread_bps={v} exceeds sanity bound of 100 bps")
         return v
 
     @model_validator(mode="after")

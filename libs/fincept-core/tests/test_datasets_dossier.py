@@ -133,9 +133,7 @@ def test_build_dossier_round_trip_json_safe_and_shape() -> None:
     assert dossier["status"] == "candidate"
     assert dossier["registered_at_ns"] is None
     assert dossier["content_hash"] == ""
-    assert dossier["blocking_issues"] == [
-        {"code": "missing_feature", "feature": "mom_z_240m"}
-    ]
+    assert dossier["blocking_issues"] == [{"code": "missing_feature", "feature": "mom_z_240m"}]
     assert dossier["training_metrics"] == metrics
 
     # Must be JSON-safe (round-trip with default encoder).
@@ -182,9 +180,7 @@ def test_calibration_buckets_structure_and_perfect_brier() -> None:
     """
     preds = [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
     labels = [0, 0, 1, 1, 0, 1]
-    out = build_calibration_sidecar(
-        val_predictions=preds, val_labels=labels, n_buckets=10
-    )
+    out = build_calibration_sidecar(val_predictions=preds, val_labels=labels, n_buckets=10)
     assert set(out.keys()) == {"buckets", "ece", "brier"}
     assert out["brier"] == pytest.approx(0.0, abs=1e-9)
     # ECE is also zero when every populated bucket has mean_pred == mean_actual.
@@ -202,9 +198,7 @@ def test_calibration_ece_well_calibrated_approx_005() -> None:
     rng = random.Random(20240626)
     preds = [rng.random() for _ in range(1000)]
     labels = [1 if rng.random() < p else 0 for p in preds]
-    out = build_calibration_sidecar(
-        val_predictions=preds, val_labels=labels, n_buckets=10
-    )
+    out = build_calibration_sidecar(val_predictions=preds, val_labels=labels, n_buckets=10)
     # Well-calibrated -> ECE small.  Allow up to 0.15 for sampling noise.
     assert out["ece"] < 0.15
     # Brier for calibrated predictions ~ E[p(1-p)] which for Uniform(0,1) is 1/6.
@@ -222,34 +216,26 @@ def test_calibration_brier_skewed_048() -> None:
     So: 600 samples with p=0.6, y=1 and 400 samples with p=0.98, y=0 -- all
     predictions > 0.5, 60% true positives, Brier ~= 0.48 within +-0.02.
     """
-    p_neg = 0.96 ** 0.5  # sqrt(0.96) ~= 0.9798
+    p_neg = 0.96**0.5  # sqrt(0.96) ~= 0.9798
     preds = [0.6] * 600 + [p_neg] * 400
     labels = [1] * 600 + [0] * 400
-    out = build_calibration_sidecar(
-        val_predictions=preds, val_labels=labels, n_buckets=10
-    )
+    out = build_calibration_sidecar(val_predictions=preds, val_labels=labels, n_buckets=10)
     assert out["brier"] == pytest.approx(0.48, abs=0.02)
 
 
 def test_calibration_empty_inputs_no_exception() -> None:
     """Empty inputs return the empty-result shape without raising."""
-    out = build_calibration_sidecar(
-        val_predictions=[], val_labels=[], n_buckets=10
-    )
+    out = build_calibration_sidecar(val_predictions=[], val_labels=[], n_buckets=10)
     assert out == {"buckets": [], "ece": 0.0, "brier": 0.0}
 
 
 def test_calibration_length_mismatch_raises() -> None:
     """Length mismatch between predictions and labels raises ValueError."""
     with pytest.raises(ValueError, match="same length"):
-        build_calibration_sidecar(
-            val_predictions=[0.1, 0.2, 0.3], val_labels=[0, 1], n_buckets=10
-        )
+        build_calibration_sidecar(val_predictions=[0.1, 0.2, 0.3], val_labels=[0, 1], n_buckets=10)
 
 
 def test_calibration_n_buckets_must_be_positive() -> None:
     """A non-positive ``n_buckets`` is rejected."""
     with pytest.raises(ValueError, match="n_buckets"):
-        build_calibration_sidecar(
-            val_predictions=[0.5], val_labels=[1], n_buckets=0
-        )
+        build_calibration_sidecar(val_predictions=[0.5], val_labels=[1], n_buckets=0)

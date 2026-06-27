@@ -360,9 +360,7 @@ class CallbackProcessor:
 
     # --- internals ---
 
-    def _maybe_publish_paper(
-        self, preds: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _maybe_publish_paper(self, preds: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Check each shadow prediction's model for paper-approved status.
 
         If the paper bridge is enabled, the model is ``paper_approved``, and
@@ -420,9 +418,7 @@ class CallbackProcessor:
                         "calibration_tag": "paper-bridge",
                     }
                     try:
-                        stream_id = self.prediction_publisher.publish_prediction(
-                            prediction_event
-                        )
+                        stream_id = self.prediction_publisher.publish_prediction(prediction_event)
                         published.append(
                             {
                                 "model_id": model_id,

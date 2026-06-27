@@ -18,6 +18,7 @@ dependencies = [
   "pyjwt>=2.9",
   "quant-foundry",
   "settlements",
+  "news-impact-model",
 ]
 
 [dependency-groups]
@@ -37,6 +38,7 @@ backtester = { workspace = true }
 oms = { workspace = true }
 quant-foundry = { workspace = true }
 settlements = { workspace = true }
+news-impact-model = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

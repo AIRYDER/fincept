@@ -51,6 +51,7 @@ except ImportError:  # pragma: no cover - fincept-core present in-workspace
     def get_logger(name: str) -> Any:  # type: ignore[misc]
         return _logging.getLogger(name)
 
+
 try:
     from fincept_core.storage import StorageBackend, get_storage_backend
 except ImportError:  # pragma: no cover - fincept-core always present in-workspace

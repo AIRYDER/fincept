@@ -233,3 +233,34 @@ still relevant, but it is no longer the only active proof surface.
 | Cloud cost control | Dry-run the gateway budget guard and RunPod dispatch path. | GPU jobs fail closed under budget and kill-switch policy with auditable receipts. |
 | Causal model explainability | Surface the causal market memory graph in a read-only dashboard panel. | Operators can inspect why a model/signal is trusted without creating an execution path. |
 | Review-slice hygiene | Classify `uv.lock`, generated reports, local tool folders, and Quant Foundry source slices before staging. | The next review can split docs, service code, dashboard pages, infra, and local artifacts cleanly. |
+
+## Automation Feature Additions - 2026-06-26
+
+The local branch is now `codex/portfolio-optimizer-core` at `d737124`, a large
+local advance beyond the 2026-06-23 `751d212` baseline. The new evidence is no
+longer only Quant Foundry implementation volume: it includes RunPod dependency
+pinning and handler validation, gateway callback extraction, DLQ/backoff fixes,
+service entrypoint smoke tests, heartbeat/service stats, Redis persistence for
+stateful trading controls, AWS/Railway hygiene work, and new local docs for the
+RunPod training architecture, dataset structure, cutting-edge model path, swarm
+implementation model, and dashboard UI audit.
+
+| Feature | First build step | Acceptance check |
+|---|---|---|
+| Evidence-loop command center | Add a `/quant-foundry/evidence-loop` read-only page that stitches `FeatureLakeManifest`, `ModelDossier`, `ShadowPrediction`, `SettlementRecord`, sentinel output, tournament score, and promotion state into one chronological view. | A fixture model renders every loop stage, missing stages show fail-closed blocker text, and no action button can promote without the existing promotion endpoint gate. |
+| Seven-layer model defense receipt | Turn the seven defense layers from `docs/DEEP_DIVE_AND_CUTTING_EDGE.md` into a receipt generator under `reports/quant-foundry/`. | One command records PIT proof, as-of universe, purged+embargoed folds, leakage sentinel, PBO, DSR/bootstrap p-value, and drift sentinel status for a model id. |
+| RunPod untrusted-container contract test | Add a test that asserts training/inference handlers cannot access broker env, Redis URL, order streams, or unsigned callback paths. | `runpod/quant-foundry-training` and `runpod/quant-foundry-inference` fail tests if secrets or execution side effects cross the container boundary. |
+| Callback DLQ observability panel | Surface `CallbackInbox`, callback rejection rate, DLQ reason counts, retry backoff state, and last valid signature timestamp in a dashboard/admin panel. | Invalid signature, duplicate callback, schema mismatch, and handler exception fixtures all produce distinct operator-visible counts without leaking payload secrets. |
+| UI token remediation sprint | Fix the undefined `amber` degraded token, reconcile cobalt/orange primary intent, and create one nav-route registry consumed by both `nav-tabs.tsx` and `sidebar.tsx`. | Design-token tests fail on undefined color classes, all degraded states render visibly, and every dashboard route is reachable from the canonical nav registry. |
+| Swarm-to-review slice ledger | Convert `spec/SWARM_IMPLEMENTATION_ANALYSIS.md` into a generated review ledger that maps builder tracks to changed files, tests, receipts, and unresolved blockers. | The next local review can split Quant Foundry service code, RunPod containers, dashboard routes, infra, docs, and generated artifacts without manual archaeology. |
+
+## Next Skills To Deepen - 2026-06-26
+
+| Skill | First exercise | Done when |
+|---|---|---|
+| Evidence-loop product design | Build the read-only model lifecycle command center. | Operators can inspect model trust from dataset to promotion blocker in one surface. |
+| Statistical ML governance | Generate the seven-layer defense receipt for one model. | Model readiness is based on recorded leakage, overfit, luck, and drift checks. |
+| Cloud trust-boundary security | Test RunPod containers as untrusted pure functions. | GPU code cannot see broker secrets or write execution streams. |
+| Reliability operations | Add callback DLQ and backoff observability. | Failed callbacks are diagnosable by reason, retry state, and signature status. |
+| Design-system enforcement | Repair dashboard tokens and nav registry drift. | UI warning states and route reachability are mechanically protected. |
+| Swarm review operations | Generate a builder-track review ledger. | Parallel-agent output becomes reviewable in intentional slices. |

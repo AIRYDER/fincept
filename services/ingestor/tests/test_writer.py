@@ -329,15 +329,11 @@ async def test_backpressure_with_concurrent_feed_during_slow_flush() -> None:
     ):
         mock_trades.side_effect = slow_write_trades
 
-        # Feed 3 trades to trigger flush (batch_size=3).
-        for seq in range(3):
-            await writer.handle(_trade(seq))
-        # handle() for the 3rd trade triggers flush, which blocks.
-
-        # Start a background task that feeds events during the flush.
         feeder = asyncio.create_task(feed_during_flush())
 
-        # Wait for the feeder to complete (it also unblocks the flush).
+        for seq in range(3):
+            await writer.handle(_trade(seq))
+
         await feeder
 
         # The flush has completed, buffer was cleared, then the feeder
@@ -352,4 +348,5 @@ async def test_backpressure_with_concurrent_feed_during_slow_flush() -> None:
         # via concurrent access (which we simulated above by directly
         # appending to the buffer).
         # Verify the buffer state.
+        assert mock_trades.await_count == 1
         assert len(writer._trades) == 0  # Flush cleared it.

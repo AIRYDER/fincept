@@ -29,6 +29,7 @@ from fincept_tools.errors import ToolBackendError
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
 from fincept_tools.registry import register
 
+
 # Annualisation factors by frequency — delegates to the shared
 # fincept_core.clock.bars_per_year_for_freq so all services use the
 # same mapping (supports 5m, 15m, and arbitrary N+unit frequencies).

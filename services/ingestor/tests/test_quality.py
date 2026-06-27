@@ -379,7 +379,15 @@ async def test_eviction_removes_inactive_entries() -> None:
     )
 
     # Record a trade — sets _last_ts, _last_seq.
-    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    await monitor.on_trade(
+        _trade(
+            Venue.BINANCE,
+            "BTC-USDT",
+            seq=1,
+            ts_event=clk.now_ns,
+            ts_recv=clk.now_ns,
+        )
+    )
     assert monitor.tracked_symbols == 1
 
     # Advance clock past retention period.
@@ -404,7 +412,15 @@ async def test_eviction_preserves_active_entries() -> None:
         staleness_budget_ns=10,
     )
 
-    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    await monitor.on_trade(
+        _trade(
+            Venue.BINANCE,
+            "BTC-USDT",
+            seq=1,
+            ts_event=clk.now_ns,
+            ts_recv=clk.now_ns,
+        )
+    )
     clk.advance(5000)  # 5000 < 10000 retention
     await monitor.staleness_check()
 
@@ -424,10 +440,16 @@ async def test_eviction_cleans_all_three_dicts() -> None:
     )
 
     # Record a trade (sets _last_ts, _last_seq) and a snapshot (sets _last_top).
-    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
-    await monitor.on_book(
-        _snapshot(Venue.BINANCE, "BTC-USDT", bid="100", ask="101", ts_recv=0)
+    await monitor.on_trade(
+        _trade(
+            Venue.BINANCE,
+            "BTC-USDT",
+            seq=1,
+            ts_event=clk.now_ns,
+            ts_recv=clk.now_ns,
+        )
     )
+    await monitor.on_book(_snapshot(Venue.BINANCE, "BTC-USDT", bid="100", ask="101", ts_recv=0))
 
     assert len(monitor._last_ts) == 1
     assert len(monitor._last_seq) == 1
@@ -512,7 +534,15 @@ async def test_eviction_does_not_break_staleness_alert() -> None:
         staleness_budget_ns=10,
     )
 
-    await monitor.on_trade(_trade(Venue.BINANCE, "BTC-USDT", seq=1, ts_event=0, ts_recv=0))
+    await monitor.on_trade(
+        _trade(
+            Venue.BINANCE,
+            "BTC-USDT",
+            seq=1,
+            ts_event=clk.now_ns,
+            ts_recv=clk.now_ns,
+        )
+    )
     clk.advance(100)  # > staleness_budget (10) but < retention (10000)
     await monitor.staleness_check()
 

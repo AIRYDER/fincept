@@ -95,9 +95,7 @@ class ApprovedRoots:
                 "no_roots",
                 "approved roots must not be empty (fail-closed)",
             )
-        self._roots: tuple[pathlib.Path, ...] = tuple(
-            _canonical_root(r) for r in roots
-        )
+        self._roots: tuple[pathlib.Path, ...] = tuple(_canonical_root(r) for r in roots)
         self._extra_dev_roots: tuple[pathlib.Path, ...] = tuple(
             _canonical_root(r) for r in extra_dev_roots
         )
@@ -166,9 +164,7 @@ class ApprovedRoots:
                 return root
         return None
 
-    def _reject_symlinks(
-        self, inside: pathlib.Path, raw: pathlib.Path
-    ) -> None:
+    def _reject_symlinks(self, inside: pathlib.Path, raw: pathlib.Path) -> None:
         # Anchor the raw candidate so we walk real filesystem entries.
         literal = raw if raw.is_absolute() else (pathlib.Path.cwd() / raw)
         inside_resolved = inside.resolve(strict=False)
@@ -220,7 +216,5 @@ def default_approved_roots() -> ApprovedRoots:
     """
     raw = os.environ.get(_ENV_VAR, "")
     parts = [p.strip() for p in raw.split(",") if p.strip()]
-    roots: list[pathlib.Path | str] = list(parts) if parts else list(
-        _DEFAULT_ROOTS
-    )
+    roots: list[pathlib.Path | str] = list(parts) if parts else list(_DEFAULT_ROOTS)
     return ApprovedRoots(roots=roots)

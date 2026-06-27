@@ -20,7 +20,11 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from fincept_core.datasets import ApprovedRoots, ApprovedRootsError, default_approved_roots
+from fincept_core.datasets import (
+    ApprovedRoots,
+    ApprovedRootsError,
+    default_approved_roots,
+)
 
 # Uniform machine-readable code surfaced in every approved-roots
 # violation response body.  The underlying ``ApprovedRootsError.code``

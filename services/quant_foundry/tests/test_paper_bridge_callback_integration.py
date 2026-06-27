@@ -13,32 +13,24 @@ These tests verify that:
    succeeded).
 6. The receipt includes paper_published info when predictions are published.
 
-These tests use in-memory stubs — no Redis, no filesystem.
+These tests use in-memory stubs and tmp_path-backed callback payloads.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
-
-import pytest
 
 from quant_foundry.callbacks import (
     CallbackProcessor,
-    ShadowLedgerStub,
     DossierStub,
+    ShadowLedgerStub,
 )
 from quant_foundry.dossier import DossierRecord, DossierStatus
-from quant_foundry.inbox import CallbackInbox, CallbackStatus
+from quant_foundry.inbox import CallbackInbox
 from quant_foundry.outbox import JobOutbox, JobStatus
-from quant_foundry.paper_bridge import BridgeConfig, BridgeStatus, PaperBridge
-from quant_foundry.schemas import (
-    Authority,
-    RunPodCallbackEnvelope,
-    ShadowPrediction,
-)
-from quant_foundry.signatures import sign_callback
+from quant_foundry.paper_bridge import BridgeConfig, PaperBridge
+from quant_foundry.schemas import RunPodCallbackEnvelope
 
 
 class FakeDossierLookup:
@@ -126,7 +118,7 @@ def _setup_processor(
     inbox = CallbackInbox(base_dir=base / "inbox")
 
     # Create a job in the outbox.
-    outbox.create(
+    outbox.enqueue(
         job_id="job-test-001",
         job_type="inference",
         idempotency_key="idem-001",
@@ -151,25 +143,25 @@ def _submit_callback(
     inbox: CallbackInbox,
     outbox: JobOutbox,
     envelope: RunPodCallbackEnvelope,
-    secret: str = "test-secret",
 ) -> dict[str, Any]:
-    """Submit a signed callback to the inbox and process it."""
     job_id = envelope.job_id
     payload = json.dumps(envelope.model_dump()).encode()
-    ts = int(time.time())
-    signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
 
-    # Record in inbox.
+    payload_dir = inbox.base_dir.parent / "payloads"
+    payload_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = job_id.replace(":", "_").replace("/", "_").replace("\\", "_")
+    payload_path = payload_dir / f"{safe_name}.json"
+    payload_path.write_bytes(payload)
+
     inbox.receive(
         job_id=job_id,
         idempotency_key="idem-001",
         signature_valid=True,
         payload=payload,
         worker_id="test-worker",
-        payload_ref=None,
+        payload_ref=str(payload_path),
     )
 
-    # Process.
     return processor.process(job_id)
 
 
@@ -194,9 +186,7 @@ class TestPaperBridgeRefusedNotPaperApproved:
 
     def test_shadow_approved_model_not_published(self, tmp_path):
         """A shadow_approved model should NOT be published to sig.predict."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper"))
         publisher = RecordingPublisher()
         dossier = _make_dossier(status=DossierStatus.SHADOW_APPROVED)
         lookup = FakeDossierLookup({"test-model-v1": dossier})
@@ -224,9 +214,7 @@ class TestPaperBridgePublishesPaperApproved:
 
     def test_paper_approved_model_published(self, tmp_path):
         """A paper_approved model should be published to sig.predict."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper"))
         publisher = RecordingPublisher()
         dossier = _make_dossier(status=DossierStatus.PAPER_APPROVED)
         lookup = FakeDossierLookup({"test-model-v1": dossier})
@@ -259,9 +247,7 @@ class TestPaperBridgePublishesPaperApproved:
 
     def test_multiple_predictions_mixed_models(self, tmp_path):
         """Only paper-approved models get published; others are skipped."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper"))
         publisher = RecordingPublisher()
         lookup = FakeDossierLookup(
             {
@@ -301,9 +287,7 @@ class TestPaperBridgeDisabled:
 
     def test_disabled_bridge_no_publish(self, tmp_path):
         """Even with a paper-approved model, a disabled bridge doesn't publish."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=False, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=False, runtime_mode="paper"))
         publisher = RecordingPublisher()
         dossier = _make_dossier(status=DossierStatus.PAPER_APPROVED)
         lookup = FakeDossierLookup({"test-model-v1": dossier})
@@ -330,9 +314,7 @@ class TestPaperBridgePublishFailure:
     def test_publish_failure_doesnt_fail_callback(self, tmp_path):
         """If the Redis publish fails, the callback should still succeed
         (shadow ledger store already succeeded)."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper"))
         publisher = RecordingPublisher()
         publisher.should_fail = True
         dossier = _make_dossier(status=DossierStatus.PAPER_APPROVED)
@@ -363,9 +345,7 @@ class TestPaperBridgeIdempotency:
 
     def test_already_processed_no_republish(self, tmp_path):
         """Processing the same callback twice should only publish once."""
-        bridge = PaperBridge(
-            config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper")
-        )
+        bridge = PaperBridge(config=BridgeConfig(allow_paper_bridge=True, runtime_mode="paper"))
         publisher = RecordingPublisher()
         dossier = _make_dossier(status=DossierStatus.PAPER_APPROVED)
         lookup = FakeDossierLookup({"test-model-v1": dossier})
@@ -384,7 +364,6 @@ class TestPaperBridgeIdempotency:
         assert receipt1["result"] == "processed"
         assert len(publisher.published) == 1
 
-        # Process again — should be idempotent.
         receipt2 = processor.process("job-test-001")
-        assert receipt2["result"] == "already_processed"
-        assert len(publisher.published) == 1  # No additional publish
+        assert receipt2["result"] == "already_terminal"
+        assert len(publisher.published) == 1

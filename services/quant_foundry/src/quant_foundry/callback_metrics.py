@@ -117,9 +117,7 @@ class CallbackMetricsStore:
         recording can catch ``OSError``.
         """
         if event not in _VALID_EVENTS:
-            raise ValueError(
-                f"event must be one of {sorted(_VALID_EVENTS)}; got {event!r}"
-            )
+            raise ValueError(f"event must be one of {sorted(_VALID_EVENTS)}; got {event!r}")
         if reason_code is not None and not isinstance(reason_code, str):
             raise TypeError("reason_code must be a str or None")
 

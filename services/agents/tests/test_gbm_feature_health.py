@@ -305,7 +305,9 @@ async def test_publish_loop_writes_feature_health_sidecar(
     assert fh_rows[0].aliased == []
 
 
-async def test_publish_loop_skips_sidecar_when_no_health(tmp_path: pathlib.Path) -> None:
+async def test_publish_loop_skips_sidecar_when_no_health(
+    tmp_path: pathlib.Path,
+) -> None:
     """If the agent exposes no last_feature_health, no sidecar row is
     written but the prediction is still published + recorded."""
     agent = _FakeAgent(FeatureHealth(missing=[], defaulted=[], aliased=[]))
@@ -418,9 +420,7 @@ async def test_publish_loop_writes_feature_snapshot(
     assert len(pred_rows) == 1
 
     # FeatureSnapshot was recorded and joins by prediction_id.
-    snapshots = snapshot_store.read_for_symbol(
-        "BTC-USD", agent_id="gbm_predictor.v1"
-    )
+    snapshots = snapshot_store.read_for_symbol("BTC-USD", agent_id="gbm_predictor.v1")
     assert len(snapshots) == 1
     snap = snapshots[0]
     assert snap.decision_time_ns == 1_700_000_000_000_000_000
@@ -502,9 +502,9 @@ async def test_feature_snapshot_write_failure_does_not_crash_inference(
     assert len(producer.published) == 1
     assert prediction_log.read(agent_id="gbm_predictor.v1")
     # The failure was logged as feature_snapshot_write_failed.
-    assert any(
-        event == "feature_snapshot_write_failed" for event, _ in warnings
-    ), f"expected feature_snapshot_write_failed warning, got: {warnings}"
+    assert any(event == "feature_snapshot_write_failed" for event, _ in warnings), (
+        f"expected feature_snapshot_write_failed warning, got: {warnings}"
+    )
 
 
 def test_feature_schema_hash_is_deterministic() -> None:

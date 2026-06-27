@@ -31,9 +31,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char hex SHA-256; got {value!r}")
     return value.lower()
 
 

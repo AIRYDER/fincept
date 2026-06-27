@@ -73,14 +73,10 @@ def test_relative_path_inside_data_root(
     rp = gate.resolve("data/captures/btc.parquet")
     assert isinstance(rp, ResolvedPath)
     assert rp.inside_root == data_root.resolve(strict=False)
-    assert rp.path == (data_root / "captures" / "btc.parquet").resolve(
-        strict=False
-    )
+    assert rp.path == (data_root / "captures" / "btc.parquet").resolve(strict=False)
 
 
-def test_absolute_path_inside_data_root(
-    data_root: pathlib.Path, gate: ApprovedRoots
-) -> None:
+def test_absolute_path_inside_data_root(data_root: pathlib.Path, gate: ApprovedRoots) -> None:
     """An absolute path under an approved root resolves cleanly."""
     candidate = data_root / "captures" / "btc.parquet"
     rp = gate.resolve(str(candidate))
@@ -140,9 +136,7 @@ def test_dotdot_as_whole_path_rejected(
     assert exc.value.code == "traversal"
 
 
-def test_absolute_path_outside_root_rejected(
-    gate: ApprovedRoots, tmp_path: pathlib.Path
-) -> None:
+def test_absolute_path_outside_root_rejected(gate: ApprovedRoots, tmp_path: pathlib.Path) -> None:
     """``/etc/passwd`` (or a tmp-path analog) is rejected as outside."""
     outside = tmp_path / "etc" / "passwd"
     outside.parent.mkdir(parents=True)

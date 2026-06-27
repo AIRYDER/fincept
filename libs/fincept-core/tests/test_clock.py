@@ -1,4 +1,10 @@
-from fincept_core.clock import FrozenClock, MonotonicClock, bars_per_year_for_freq, iso_to_ns, ns_to_iso
+from fincept_core.clock import (
+    FrozenClock,
+    MonotonicClock,
+    bars_per_year_for_freq,
+    iso_to_ns,
+    ns_to_iso,
+)
 
 
 def test_monotonic_clock_returns_int_ns():

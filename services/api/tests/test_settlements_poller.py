@@ -15,21 +15,27 @@ import pathlib
 import pytest
 
 
-def test_settlements_worker_interval_seconds_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settlements_worker_interval_seconds_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("SETTLEMENTS_WORKER_POLL_S", raising=False)
     from api.settlements_poller import _settlements_worker_interval_seconds
 
     assert _settlements_worker_interval_seconds() == 60.0
 
 
-def test_settlements_worker_interval_seconds_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settlements_worker_interval_seconds_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SETTLEMENTS_WORKER_POLL_S", "12.5")
     from api.settlements_poller import _settlements_worker_interval_seconds
 
     assert _settlements_worker_interval_seconds() == 12.5
 
 
-def test_settlements_worker_interval_seconds_zero_disables(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settlements_worker_interval_seconds_zero_disables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SETTLEMENTS_WORKER_POLL_S", "0")
     from api.settlements_poller import _settlements_worker_interval_seconds
 
@@ -68,7 +74,9 @@ async def test_poller_calls_tick_with_correct_paths_and_market_source(
 
     captured: dict[str, object] = {}
 
-    async def fake_tick(now_ns, *, predictions_dir, settlements_dir, market_data_source):
+    async def fake_tick(
+        now_ns, *, predictions_dir, settlements_dir, market_data_source
+    ):
         captured["now_ns"] = now_ns
         captured["predictions_dir"] = predictions_dir
         captured["settlements_dir"] = settlements_dir
@@ -114,7 +122,9 @@ async def test_poller_swallows_tick_failure_and_continues(
 
     call_count = 0
 
-    async def failing_tick(now_ns, *, predictions_dir, settlements_dir, market_data_source):
+    async def failing_tick(
+        now_ns, *, predictions_dir, settlements_dir, market_data_source
+    ):
         nonlocal call_count
         call_count += 1
         raise RuntimeError("boom")
@@ -153,7 +163,9 @@ async def test_poller_logs_settled_count_when_records_returned(
     monkeypatch.setenv("PREDICTIONS_DIR", str(tmp_path / "preds"))
     monkeypatch.setenv("SETTLEMENTS_DIR", str(tmp_path / "settle"))
 
-    async def fake_tick(now_ns, *, predictions_dir, settlements_dir, market_data_source):
+    async def fake_tick(
+        now_ns, *, predictions_dir, settlements_dir, market_data_source
+    ):
         return ["record-1", "record-2"]
 
     async def fake_market_source(symbol, ts1, ts2):
@@ -202,7 +214,9 @@ async def test_poller_logs_warning_on_tick_failure(
     monkeypatch.setenv("PREDICTIONS_DIR", str(tmp_path / "preds"))
     monkeypatch.setenv("SETTLEMENTS_DIR", str(tmp_path / "settle"))
 
-    async def failing_tick(now_ns, *, predictions_dir, settlements_dir, market_data_source):
+    async def failing_tick(
+        now_ns, *, predictions_dir, settlements_dir, market_data_source
+    ):
         raise RuntimeError("boom")
 
     async def fake_market_source(symbol, ts1, ts2):
@@ -238,6 +252,8 @@ async def test_poller_logs_warning_on_tick_failure(
     except asyncio.CancelledError:
         pass
 
-    fail_events = [kw for ev, kw in warning_calls if ev == "settlements.worker_poll_failed"]
+    fail_events = [
+        kw for ev, kw in warning_calls if ev == "settlements.worker_poll_failed"
+    ]
     assert fail_events, "poller should have logged settlements.worker_poll_failed"
     assert any("RuntimeError" in str(kw.get("error", "")) for kw in fail_events)

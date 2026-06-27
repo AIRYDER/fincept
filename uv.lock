@@ -30,6 +30,7 @@ members = [
     "fincept-tools",
     "ingestor",
     "jobs",
+    "news-impact-model",
     "oms",
     "orchestrator",
     "portfolio",
@@ -144,6 +145,7 @@ dependencies = [
     { name = "fincept-core" },
     { name = "fincept-db" },
     { name = "fincept-tools" },
+    { name = "news-impact-model" },
     { name = "oms" },
     { name = "portfolio" },
     { name = "pydantic" },
@@ -173,6 +175,7 @@ requires-dist = [
     { name = "fincept-core", editable = "libs/fincept-core" },
     { name = "fincept-db", editable = "libs/fincept-db" },
     { name = "fincept-tools", editable = "libs/fincept-tools" },
+    { name = "news-impact-model", editable = "experiments/news-impact-model" },
     { name = "oms", editable = "services/oms" },
     { name = "portfolio", editable = "services/portfolio" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -783,6 +786,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fakeredis" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -803,6 +807,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fakeredis", specifier = ">=2.21" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
@@ -1540,6 +1545,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/a2/6e/371856a3fb9d31ca8
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/7b/2c79738432f5c924bef5071f933bcc9efd0473bac3b4aa584a6f7c1c8df8/mypy_extensions-1.1.0-py3-none-any.whl", hash = "sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505", size = 4963, upload-time = "2025-04-22T14:54:22.983Z" },
 ]
+
+[[package]]
+name = "news-impact-model"
+version = "0.1.0"
+source = { editable = "experiments/news-impact-model" }
 
 [[package]]
 name = "nodeenv"
@@ -2355,6 +2365,7 @@ source = { editable = "services/quant_foundry" }
 dependencies = [
     { name = "fincept-core" },
     { name = "httpx" },
+    { name = "lightgbm" },
     { name = "pydantic" },
 ]
 
@@ -2370,6 +2381,7 @@ dev = [
 requires-dist = [
     { name = "fincept-core", editable = "libs/fincept-core" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "lightgbm", specifier = ">=4.0" },
     { name = "pydantic", specifier = ">=2.7" },
 ]
 

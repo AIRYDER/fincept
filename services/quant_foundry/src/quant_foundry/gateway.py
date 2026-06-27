@@ -640,9 +640,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         if self._promotion_queue is None:
             from quant_foundry.promotion import PromotionGate
 
-            min_settled = int(
-                os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10")
-            )
+            min_settled = int(os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10"))
             gate = PromotionGate(min_settled_count=min_settled)
             self._promotion_queue = PromotionReviewQueue(gate=gate)
         return self._promotion_queue
@@ -1001,9 +999,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         if self._promotion_gate is None:
             from quant_foundry.promotion import PromotionGate
 
-            min_settled = int(
-                os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10")
-            )
+            min_settled = int(os.environ.get("QUANT_FOUNDRY_PROMOTION_MIN_SETTLED", "10"))
             self._promotion_gate = PromotionGate(min_settled_count=min_settled)
         return self._promotion_gate
 

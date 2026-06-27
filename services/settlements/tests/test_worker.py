@@ -285,7 +285,9 @@ def test_qa_pending_data_retry_yields_settled(tmp_path: pathlib.Path) -> None:
     assert statuses == ["pending_data", "settled"]
 
 
-def test_qa_pending_data_retry_still_missing_no_duplicate(tmp_path: pathlib.Path) -> None:
+def test_qa_pending_data_retry_still_missing_no_duplicate(
+    tmp_path: pathlib.Path,
+) -> None:
     """Retry while data is still missing does not append a second pending row."""
     pred_dir = tmp_path / "predictions"
     sett_dir = tmp_path / "settlements"

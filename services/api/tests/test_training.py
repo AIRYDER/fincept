@@ -134,7 +134,12 @@ def patched_training(
     approved = ApprovedRoots(roots=[], extra_dev_roots=[tmp_path])
     monkeypatch.setattr("api.routes.models._get_approved_roots", lambda: approved)
 
-    yield {"runs_dir": runs_dir, "models_dir": models_dir, "store": store, "tmp_path": tmp_path}
+    yield {
+        "runs_dir": runs_dir,
+        "models_dir": models_dir,
+        "store": store,
+        "tmp_path": tmp_path,
+    }
 
 
 def _input_parquet(

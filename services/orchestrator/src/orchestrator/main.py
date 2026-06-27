@@ -63,7 +63,9 @@ def _make_price_handler(prices: LivePrices) -> Any:
     return handler
 
 
-def _make_prediction_handler(router: OrchestratorRouter, *, consensus: ConsensusBuilder) -> Any:
+def _make_prediction_handler(
+    router: OrchestratorRouter, *, consensus: ConsensusBuilder
+) -> Any:
     async def handler(event: Event) -> None:
         # Exact event-type match, like the OMS - guards against future
         # signal types accidentally landing on STREAM_SIG_PREDICT.
@@ -234,6 +236,7 @@ async def run(stop: asyncio.Event) -> None:
             handler=_make_regime_handler(router, universe=list(settings.UNIVERSE)),
         )
     )
+
     def orchestrator_stats() -> dict[str, Any]:
         """Collect orchestrator metrics for heartbeat."""
         return {

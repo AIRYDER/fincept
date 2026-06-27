@@ -68,7 +68,9 @@ class CrossFeatures:
         if r is not None:
             self._bench_rets.append(r)
 
-    def on_symbol_ret(self, symbol: str, r: float | None, *, ts_event: int = 0) -> dict[str, float | None]:
+    def on_symbol_ret(
+        self, symbol: str, r: float | None, *, ts_event: int = 0
+    ) -> dict[str, float | None]:
         """Append a symbol return and return all (beta, corr) for that symbol."""
         cap = self._bench_rets.maxlen
         d = self._sym_rets.setdefault(symbol, deque(maxlen=cap))

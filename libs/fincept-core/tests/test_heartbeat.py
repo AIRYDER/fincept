@@ -26,9 +26,7 @@ async def test_beat_periodically_writes_then_deletes_on_cancel() -> None:
     redis: Any = _make_redis()
     try:
         # Start the heartbeat task.
-        task = asyncio.create_task(
-            beat_periodically(redis, "test-svc", interval_sec=1, ttl_sec=5)
-        )
+        task = asyncio.create_task(beat_periodically(redis, "test-svc", interval_sec=1, ttl_sec=5))
         # Poll for the key to appear (up to 2 seconds).
         key = f"{HEARTBEAT_PREFIX}test-svc"
         found = False
@@ -96,6 +94,7 @@ async def test_stats_callback_exception_does_not_break_heartbeat() -> None:
     """If stats_callback raises, heartbeat should still write (plain ts)."""
     redis: Any = _make_redis()
     try:
+
         def failing_callback() -> dict[str, Any]:
             raise RuntimeError("stats collection failed")
 

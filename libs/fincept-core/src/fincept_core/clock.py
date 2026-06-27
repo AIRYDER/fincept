@@ -47,11 +47,11 @@ def iso_to_ns(iso: str) -> int:
 
 # Common frequencies with precomputed annualization factors.
 _COMMON_BARS_PER_YEAR: dict[str, int] = {
-    "1m": 365 * 24 * 60,      # 525,600
-    "5m": 365 * 24 * 12,      # 105,120
-    "15m": 365 * 24 * 4,      # 35,040
-    "1h": 365 * 24,           # 8,760
-    "1d": 252,                # 252 trading days
+    "1m": 365 * 24 * 60,  # 525,600
+    "5m": 365 * 24 * 12,  # 105,120
+    "15m": 365 * 24 * 4,  # 35,040
+    "1h": 365 * 24,  # 8,760
+    "1d": 252,  # 252 trading days
 }
 
 _MINUTES_PER_YEAR = 525_600

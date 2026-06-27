@@ -216,7 +216,9 @@ async def test_outcomes_since_ns_filters_predictions(
     assert r_all.status_code == 200
     # ts_recorded is not in the outcome shape, but we can read it
     # from the log directly to find a cutoff.
-    all_preds = log.read(agent_id="gbm_predictor.v1", model_name="gbm_predictor", limit=100)
+    all_preds = log.read(
+        agent_id="gbm_predictor.v1", model_name="gbm_predictor", limit=100
+    )
     # Sort newest-first (read already does this); pick the 3rd newest.
     cutoff = all_preds[2].ts_recorded
 

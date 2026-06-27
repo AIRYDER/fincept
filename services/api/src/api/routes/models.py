@@ -963,9 +963,7 @@ async def get_outcomes(
     # malformed JSONL lines, so a corrupt settlement log never takes
     # the route down.
     settlements = _get_settlement_store().read_for_agent(agent_id=agent_id)
-    settlement_by_pid: dict[str, Any] = {
-        s.prediction_id: s for s in settlements
-    }
+    settlement_by_pid: dict[str, Any] = {s.prediction_id: s for s in settlements}
 
     outcomes = [
         build_evidence_receipt(
