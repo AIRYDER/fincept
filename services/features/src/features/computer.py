@@ -113,6 +113,6 @@ class FeatureComputer:
             self._vol.pop(sym, None)
             self._last_seen.pop(sym, None)
         # Also evict from cross features.
-        cross_evicted = self._cross.evict_stale(now_ns=ref, retention_ns=self._state_retention_ns)
+        self._cross.evict_stale(now_ns=ref, retention_ns=self._state_retention_ns)
         self._evicted_count += len(evict)
         return len(evict)

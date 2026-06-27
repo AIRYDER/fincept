@@ -54,6 +54,8 @@ import time
 import uuid
 from typing import Any
 
+from fincept_core.naming import validate_name as _validate_name
+
 # --------------------------------------------------------------------------- #
 # Configuration                                                              #
 # --------------------------------------------------------------------------- #
@@ -61,10 +63,6 @@ from typing import Any
 
 def _default_predictions_dir() -> pathlib.Path:
     return pathlib.Path(os.environ.get("PREDICTIONS_DIR", "data/predictions"))
-
-
-# Name validation is shared across all stores via fincept_core.naming.
-from fincept_core.naming import validate_name as _validate_name
 
 
 def _validate_agent_id(agent_id: str) -> None:

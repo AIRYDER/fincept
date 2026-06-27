@@ -53,6 +53,7 @@ import pathlib
 from typing import Any
 
 from fincept_core.datasets.schemas import FeatureSnapshot
+from fincept_core.naming import validate_name as _validate_name
 
 # --------------------------------------------------------------------------- #
 # Configuration                                                               #
@@ -61,12 +62,6 @@ from fincept_core.datasets.schemas import FeatureSnapshot
 
 def _default_snapshots_dir() -> pathlib.Path:
     return pathlib.Path(os.environ.get("FEATURE_SNAPSHOTS_DIR", "data/feature_snapshots"))
-
-
-# Reject agent ids that could escape the snapshots dir or break a path
-# join.  This is the SAME allow-list as
-# Name validation is shared across all stores via fincept_core.naming.
-from fincept_core.naming import validate_name as _validate_name
 
 
 def _validate_agent_id(agent_id: str) -> None:

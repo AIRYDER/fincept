@@ -49,6 +49,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from fincept_core.naming import validate_name as _validate_name
+
 # --------------------------------------------------------------------------- #
 # Configuration                                                              #
 # --------------------------------------------------------------------------- #
@@ -68,12 +70,6 @@ DEFAULT_COST_MODEL: dict[str, float] = {
 
 def _default_settlements_dir() -> pathlib.Path:
     return pathlib.Path(os.environ.get("SETTLEMENTS_DIR", "data/settlements"))
-
-
-# Reject agent ids that could escape the settlements dir or break a
-# path join.  This is the SAME allow-list as
-# Name validation is shared across all stores via fincept_core.naming.
-from fincept_core.naming import validate_name as _validate_name
 
 
 def _validate_agent_id(agent_id: str) -> None:

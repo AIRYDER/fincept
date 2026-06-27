@@ -12,11 +12,9 @@ from __future__ import annotations
 
 from fincept_db.evidence_redaction import (
     SENSITIVE_FIELD_NAMES,
-    RedactionResult,
     redact_dict,
     redact_string,
 )
-
 
 # ---------------------------------------------------------------------------
 # redact_string — individual pattern tests

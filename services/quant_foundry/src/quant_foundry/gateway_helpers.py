@@ -17,7 +17,6 @@ from typing import Any
 
 from quant_foundry.feature_lake import FeatureRow, FeatureValue
 
-
 # ---------------------------------------------------------------------------
 # Alpha Genome helpers
 # ---------------------------------------------------------------------------

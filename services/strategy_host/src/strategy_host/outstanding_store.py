@@ -21,7 +21,6 @@ in practice by the strategy's order rate).
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from redis.asyncio import Redis

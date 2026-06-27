@@ -107,7 +107,7 @@ class RedisPredictionPublisher:
         the async Producer so consumers see identical message format.
         """
         from fincept_bus.streams import STREAM_SIG_PREDICT, RETENTION
-        from fincept_core.events import Event, make_event, serialize
+        from fincept_core.events import make_event, serialize
         from fincept_core.clock import now_ns
         from fincept_core.ids import new_id
 

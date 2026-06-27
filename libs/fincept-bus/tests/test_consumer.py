@@ -10,7 +10,13 @@ import pytest
 from fakeredis.aioredis import FakeRedis
 from redis.exceptions import ResponseError
 
-from fincept_bus.consumer import Consumer, _dlq_stream
+from fincept_bus.consumer import (
+    BACKOFF_FACTOR,
+    BACKOFF_MAX_MS,
+    Consumer,
+    _backoff_idle_ms,
+    _dlq_stream,
+)
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_MD_TRADES
 from fincept_bus.types import ConsumerGroupName, StreamID
@@ -559,9 +565,6 @@ async def test_successful_handler_acks_normally_with_dlq_enabled(
 # ---------------------------------------------------------------------------
 # Retry backoff tests
 # ---------------------------------------------------------------------------
-
-
-from fincept_bus.consumer import _backoff_idle_ms, BACKOFF_FACTOR, BACKOFF_MAX_MS
 
 
 def test_backoff_first_attempt_no_increase() -> None:

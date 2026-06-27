@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
 
 def test_main_module_imports_cleanly() -> None:
     from orchestrator import main as main_mod

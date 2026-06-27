@@ -331,7 +331,7 @@ class Consumer:
             if pending:
                 return int(pending[0].get("times_delivered", 1))
         except Exception:
-            pass
+            return 1
         return 1
 
     async def _move_to_dlq(

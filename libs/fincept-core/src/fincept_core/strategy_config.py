@@ -53,6 +53,8 @@ import pathlib
 import time
 from typing import Any
 
+from fincept_core.naming import BAD_NAME_CHARS as _BAD_NAME_CHARS
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,10 +71,6 @@ def _default_configs_dir() -> pathlib.Path:
     Override via ``$STRATEGIES_DIR`` for tests / containers.
     """
     return pathlib.Path(os.environ.get("STRATEGIES_DIR", "strategies"))
-
-
-# Name validation is shared across all stores via fincept_core.naming.
-from fincept_core.naming import BAD_NAME_CHARS as _BAD_NAME_CHARS
 
 
 class StrategyConfigError(ValueError):

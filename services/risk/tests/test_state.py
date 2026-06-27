@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fincept_core.schemas import AlertEvent
 from risk.state import KILL_SWITCH_STATE_KEY, KillSwitchState
 

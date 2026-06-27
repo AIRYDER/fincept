@@ -86,8 +86,8 @@ from fincept_core.schemas import (
     Position,
 )
 from fincept_core.strategy_config import StrategyConfig
-from strategy_host.outstanding_store import OutstandingOrderStore
 from strategy_host.model_resolver import resolve_active_model_dir
+from strategy_host.outstanding_store import OutstandingOrderStore
 from strategy_host.runtime import LiveStrategyContext
 
 log = get_logger(__name__)

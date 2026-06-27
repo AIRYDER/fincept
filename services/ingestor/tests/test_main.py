@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
 
 def test_main_module_imports_cleanly() -> None:
     """The main module must import without errors (no import-time crashes)."""

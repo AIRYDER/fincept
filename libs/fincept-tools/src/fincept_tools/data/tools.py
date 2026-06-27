@@ -23,10 +23,8 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import Field
-from redis.asyncio import Redis
 from sqlalchemy import or_, select
 
-from fincept_core.config import get_settings
 from fincept_core.schemas import Position
 from fincept_db.bars import read_bars
 from fincept_db.engine import session_scope

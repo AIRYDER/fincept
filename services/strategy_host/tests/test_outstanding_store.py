@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 from fakeredis.aioredis import FakeRedis
-
-from fincept_core.schemas import OrderIntent, OrderType, Side, TimeInForce, Venue
 from strategy_host.outstanding_store import (
     OUTSTANDING_KEY_TEMPLATE,
     OutstandingOrderStore,
 )
+
+from fincept_core.schemas import OrderIntent, OrderType, Side, TimeInForce, Venue
 
 
 def _intent(*, order_id: str = "ord-1", strategy_id: str = "strat-1") -> OrderIntent:

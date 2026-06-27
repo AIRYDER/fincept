@@ -17,10 +17,8 @@ Live execution is gated until Phase H.  Every tool checks
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
 
 from pydantic import Field
-from redis.asyncio import Redis
 
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_ORDERS
@@ -37,8 +35,8 @@ from fincept_core.schemas import (
     Venue,
 )
 from fincept_tools.errors import PaperOnlyExec, ToolBackendError
-from fincept_tools.redis_client import get_redis
 from fincept_tools.protocol import BaseTool, ToolInput, ToolOutput
+from fincept_tools.redis_client import get_redis
 from fincept_tools.registry import register
 
 
