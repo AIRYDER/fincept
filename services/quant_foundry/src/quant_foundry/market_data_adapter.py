@@ -153,12 +153,12 @@ def _fetch_alpaca_bars_sync(
     """
     try:
         import asyncio
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         import httpx
 
-        start_iso = datetime.fromtimestamp(start_ns / 1_000_000_000, tz=datetime.UTC)
-        end_iso = datetime.fromtimestamp(end_ns / 1_000_000_000, tz=datetime.UTC)
+        start_iso = datetime.fromtimestamp(start_ns / 1_000_000_000, tz=UTC)
+        end_iso = datetime.fromtimestamp(end_ns / 1_000_000_000, tz=UTC)
         start_str = start_iso.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_str = end_iso.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -201,9 +201,9 @@ def _fetch_alpaca_bars_sync(
 
 def _iso_to_ns(iso_str: str) -> int:
     """Convert an ISO-8601 timestamp string to nanoseconds since epoch."""
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.UTC)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp() * 1_000_000_000)

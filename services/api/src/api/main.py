@@ -76,7 +76,7 @@ class RedisPredictionPublisher:
         # The async Redis client is passed for URL extraction; the sync
         # client is created on first publish to avoid blocking the event
         # loop at construction time.
-        self._redis_url: str | None = None
+        self._redis_url = "redis://localhost:6379/0"
         # Extract URL from the async client's connection pool.
         try:
             pool = redis.connection_pool

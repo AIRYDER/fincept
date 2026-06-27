@@ -357,7 +357,8 @@ class Consumer:
         # be preserved in the DLQ entry for debugging/replay.
         import json
 
-        raw_messages = await self.redis.xrange(stream, min=message_id, max=message_id)
+        message_id_text = self._to_text(message_id)
+        raw_messages = await self.redis.xrange(stream, min=message_id_text, max=message_id_text)
         fields: dict[Any, Any] = {}
         if raw_messages:
             # xrange returns [(message_id, {field: value, ...}), ...]
@@ -371,7 +372,7 @@ class Consumer:
         }
         dlq_entry = {
             "original_stream": stream,
-            "original_message_id": self._to_text(message_id),
+            "original_message_id": message_id_text,
             "error_reason": error_reason[:500],  # Truncate long errors
             "times_delivered": str(times_delivered),
             "moved_at_ns": str(now_ns()),

@@ -17,6 +17,8 @@ the check at runtime, and an empty approved-roots list raises
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -47,7 +49,7 @@ def get_approved_roots() -> ApprovedRoots:
 
 
 async def approved_roots_exception_handler(
-    request: Request, exc: ApprovedRootsError
+    request: Request, exc: Exception
 ) -> JSONResponse:
     """Map :class:`ApprovedRootsError` to the uniform 422 body.
 
@@ -57,10 +59,11 @@ async def approved_roots_exception_handler(
     The approved-roots list is never echoed (the message from
     ``ApprovedRootsError`` is already scrubbed upstream).
     """
+    approved_exc = cast(ApprovedRootsError, exc)
     return JSONResponse(
         status_code=422,
-        content={"detail": str(exc), "code": VIOLATION_CODE},
-        headers={"X-Approved-Roots-Code": exc.code},
+        content={"detail": str(approved_exc), "code": VIOLATION_CODE},
+        headers={"X-Approved-Roots-Code": approved_exc.code},
     )
 
 

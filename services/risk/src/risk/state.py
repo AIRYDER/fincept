@@ -98,9 +98,10 @@ class KillSwitchState:
             try:
                 raw = sync_client.get(KILL_SWITCH_STATE_KEY)
                 if raw is not None:
-                    if isinstance(raw, bytes):
-                        raw = raw.decode("utf-8")
-                    payload = json.loads(raw)
+                    raw_text = (
+                        raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+                    )
+                    payload = json.loads(raw_text)
                     self._engaged = bool(payload.get("engaged", True))
                     log.info(
                         "risk.kill_switch.restored_from_redis",

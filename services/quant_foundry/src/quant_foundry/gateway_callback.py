@@ -14,13 +14,31 @@ self.inbox, self.processor, self.callback_secret, self.base_dir.
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from quant_foundry.signatures import verify_callback
+
+if TYPE_CHECKING:
+    import pathlib
+
+    from quant_foundry.callback_metrics import CallbackMetricsStore
+    from quant_foundry.callbacks import CallbackProcessor
+    from quant_foundry.inbox import CallbackInbox
+    from quant_foundry.outbox import JobOutbox
 
 
 class GatewayCallbackMixin:
     """Callback ingestion methods — extracted from QuantFoundryGateway."""
+
+    if TYPE_CHECKING:
+        enabled: bool
+        outbox: JobOutbox
+        inbox: CallbackInbox
+        processor: CallbackProcessor
+        callback_secret: str
+        base_dir: pathlib.Path
+
+        def callback_metrics_store(self) -> CallbackMetricsStore: ...
 
     # --- callback ingestion (HMAC auth, NOT bearer) ---
 
