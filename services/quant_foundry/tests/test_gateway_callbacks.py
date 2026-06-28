@@ -284,3 +284,54 @@ def test_ts_skew_rejected(tmp_path) -> None:
     assert receipts[0]["ok"] is False
     assert receipts[0]["error_code"] == "bad_signature"
     assert gateway.outbox.get(job_id).status != JobStatus.COMPLETED
+
+
+def test_callback_cleans_up_worker_status_file(tmp_path) -> None:
+    """A successful callback removes the worker status file from the volume.
+
+    After ``receive_callback`` processes a signed callback and transitions
+    the outbox to COMPLETED, the ``{job_id}.json`` status file under
+    ``worker_status_dir`` must be deleted (best-effort cleanup so files do
+    not accumulate indefinitely).
+    """
+    import json as _json
+
+    secret = "status-cleanup-secret"
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    inference_client = RecordingRunPodClient(endpoint_id="infer-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"inference": inference_client},
+        worker_status_dir=status_dir,
+    )
+    job_id = "infer-statuscleanup-1"
+    _create_inference_job(gateway, inference_client, job_id)
+
+    # Write a worker status file as the worker would.
+    status_path = status_dir / f"{job_id}.json"
+    status_path.write_text(
+        _json.dumps(
+            {"job_id": job_id, "status": "running", "heartbeat_at": time.time()}
+        ),
+        encoding="utf-8",
+    )
+    assert status_path.is_file()
+
+    output = _signed_inference_output(job_id, secret=secret)
+    receipt = gateway.receive_callback(
+        job_id=job_id,
+        payload=output["callback_payload"].encode("utf-8"),
+        signature=output["callback_signature"],
+        ts=output["callback_ts"],
+        worker_id="runpod-inference",
+    )
+
+    assert receipt["ok"] is True
+    assert receipt["outbox_status"] == "completed"
+    # The status file must have been removed by the cleanup.
+    assert not status_path.exists()

@@ -592,3 +592,119 @@ def test_detect_stale_workers_skips_corrupt_files(tmp_path: Any) -> None:
     )
     assert gateway.heartbeats() == []
     assert gateway.detect_stale_workers() == []
+
+
+# ---------------------------------------------------------------------------
+# sweep_stale_workers — auto-fail stale RUNNING jobs
+# ---------------------------------------------------------------------------
+
+
+def _write_status_file(
+    status_dir: Any, job_id: str, *, status: str, heartbeat_at: float
+) -> None:
+    import json as _json
+
+    (status_dir / f"{job_id}.json").write_text(
+        _json.dumps(
+            {"job_id": job_id, "status": status, "heartbeat_at": heartbeat_at}
+        ),
+        encoding="utf-8",
+    )
+
+
+def _make_runpod_gateway(
+    tmp_path: Any, *, status_dir: Any, stale_threshold_seconds: float = 60.0
+) -> QuantFoundryGateway:
+    return QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+        worker_status_dir=status_dir,
+        stale_threshold_seconds=stale_threshold_seconds,
+    )
+
+
+def test_sweep_stale_workers_fails_running_jobs(tmp_path: Any) -> None:
+    """sweep_stale_workers() marks RUNNING stale jobs as FAILED."""
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    gateway = _make_runpod_gateway(tmp_path, status_dir=status_dir)
+
+    job_id = "stale-sweep-1"
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key="idem-stale-sweep",
+        request_payload=_training_payload(job_id),
+    )
+    # The dispatcher transitions the job to RUNNING; confirm and write a
+    # stale heartbeat file.
+    assert gateway.outbox.get(job_id).status == JobStatus.RUNNING
+    _write_status_file(
+        status_dir, job_id, status="training", heartbeat_at=1000.0
+    )
+
+    receipts = gateway.sweep_stale_workers()
+
+    assert len(receipts) == 1
+    assert receipts[0]["job_id"] == job_id
+    assert receipts[0]["error_code"] == "worker_heartbeat_stale"
+    rec = gateway.outbox.get(job_id)
+    assert rec.status == JobStatus.FAILED
+    assert rec.error_code == "worker_heartbeat_stale"
+    assert "heartbeat stale" in rec.error_summary
+
+
+def test_sweep_stale_workers_skips_completed_jobs(tmp_path: Any) -> None:
+    """sweep_stale_workers() does not touch terminal outbox jobs."""
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    gateway = _make_runpod_gateway(tmp_path, status_dir=status_dir)
+
+    # A completed job with a stale heartbeat file.
+    done_job = "stale-done-1"
+    gateway.create_job(
+        job_id=done_job,
+        job_type="training",
+        idempotency_key="idem-stale-done",
+        request_payload=_training_payload(done_job),
+    )
+    gateway.outbox.update_status(done_job, JobStatus.COMPLETED)
+    _write_status_file(
+        status_dir, done_job, status="training", heartbeat_at=1000.0
+    )
+
+    # A failed job with a stale heartbeat file.
+    failed_job = "stale-failed-1"
+    gateway.create_job(
+        job_id=failed_job,
+        job_type="training",
+        idempotency_key="idem-stale-failed",
+        request_payload=_training_payload(failed_job),
+    )
+    gateway.outbox.update_status(failed_job, JobStatus.FAILED)
+    _write_status_file(
+        status_dir, failed_job, status="training", heartbeat_at=1000.0
+    )
+
+    receipts = gateway.sweep_stale_workers()
+
+    assert receipts == []
+    assert gateway.outbox.get(done_job).status == JobStatus.COMPLETED
+    assert gateway.outbox.get(failed_job).status == JobStatus.FAILED
+
+
+def test_sweep_stale_workers_no_status_dir(tmp_path: Any) -> None:
+    """sweep_stale_workers() returns [] when no status dir is configured."""
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+    )
+    assert gateway.sweep_stale_workers() == []

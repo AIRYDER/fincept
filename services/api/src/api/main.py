@@ -173,6 +173,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "quant_foundry_settlement",
             _poll_quant_foundry_settlement(quant_foundry_gateway, settlement_interval),
         )
+    stale_worker_interval = _quant_foundry_stale_worker_interval_seconds()
+    if quant_foundry_gateway.enabled and stale_worker_interval > 0:
+        tm.add_task(
+            "quant_foundry_stale_worker",
+            _poll_quant_foundry_stale_workers(
+                quant_foundry_gateway, stale_worker_interval
+            ),
+        )
     shadow_dispatch_interval = _quant_foundry_shadow_dispatch_interval_seconds()
     if quant_foundry_gateway.enabled and shadow_dispatch_interval > 0:
         tm.add_task(
@@ -296,6 +304,32 @@ async def _poll_quant_foundry_settlement(
         except Exception as exc:
             log.warning(
                 "quant_foundry.settlement_poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+
+# --- Stale worker sweep wiring ---
+
+
+def _quant_foundry_stale_worker_interval_seconds() -> float:
+    raw = os.environ.get("QUANT_FOUNDRY_STALE_WORKER_INTERVAL_SECONDS", "30")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 30.0
+
+
+async def _poll_quant_foundry_stale_workers(
+    gateway: QuantFoundryGateway,
+    interval_seconds: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(gateway.sweep_stale_workers)
+        except Exception as exc:
+            log.warning(
+                "quant_foundry.stale_worker_poll_failed",
                 error=f"{type(exc).__name__}: {exc}",
             )
 

@@ -31,6 +31,7 @@ import {
   FlaskConical,
   Gauge,
   Ghost,
+  HeartPulse,
   Inbox as InboxIcon,
   Layers,
   Send,
@@ -157,6 +158,12 @@ const SUB_PAGES = [
     label: "Shadow Health",
     description: "Read-only aggregate of the shadow prediction surface.",
     icon: Ghost,
+  },
+  {
+    href: "/quant-foundry/workers",
+    label: "Worker Health",
+    description: "RunPod worker heartbeat status and stale worker detection.",
+    icon: HeartPulse,
   },
 ] as const;
 

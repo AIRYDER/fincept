@@ -671,6 +671,58 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 stale.append(rec)
         return stale
 
+    def sweep_stale_workers(self) -> list[dict[str, Any]]:
+        """Auto-fail outbox jobs whose worker heartbeat has gone stale.
+
+        Calls :meth:`detect_stale_workers` and, for each stale record whose
+        ``job_id`` exists in the outbox and is still ``RUNNING``, transitions
+        the job to ``FAILED`` with ``error_code="worker_heartbeat_stale"`` and
+        an ``error_summary`` describing how old the heartbeat is. Jobs that are
+        already terminal (completed/failed) or absent from the outbox are
+        skipped.
+
+        Returns a list of receipt dicts (one per stale job that was failed).
+        """
+        if not self.enabled or self._worker_status_dir is None:
+            return []
+        import time as _time
+
+        now = _time.time()
+        receipts: list[dict[str, Any]] = []
+        for rec in self.detect_stale_workers():
+            job_id = rec.get("job_id")
+            if not isinstance(job_id, str):
+                continue
+            ob_rec = self.outbox.get(job_id)
+            if ob_rec is None:
+                continue
+            if ob_rec.status != JobStatus.RUNNING:
+                continue
+            hb = rec.get("heartbeat_at")
+            age_seconds = (now - hb) if isinstance(hb, (int, float)) else None
+            error_summary = (
+                f"worker heartbeat stale ({age_seconds:.0f}s old, "
+                f"threshold={self._stale_threshold_seconds:.0f}s)"
+                if age_seconds is not None
+                else "worker heartbeat stale (no heartbeat_at timestamp)"
+            )
+            self.outbox.update_status(
+                job_id,
+                JobStatus.FAILED,
+                error_code="worker_heartbeat_stale",
+                error_summary=error_summary,
+            )
+            receipts.append(
+                {
+                    "job_id": job_id,
+                    "ok": False,
+                    "error_code": "worker_heartbeat_stale",
+                    "error_summary": error_summary,
+                    "heartbeat_age_seconds": age_seconds,
+                }
+            )
+        return receipts
+
     # --- job lifecycle ---
 
     def create_job(

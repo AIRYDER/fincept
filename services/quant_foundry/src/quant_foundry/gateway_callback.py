@@ -37,6 +37,7 @@ class GatewayCallbackMixin:
         processor: CallbackProcessor
         callback_secret: str
         base_dir: pathlib.Path
+        _worker_status_dir: pathlib.Path | None
 
         def callback_metrics_store(self) -> CallbackMetricsStore: ...
 
@@ -135,6 +136,13 @@ class GatewayCallbackMixin:
         proc_receipt = self.processor.process(job_id)
         with contextlib.suppress(OSError):
             metrics.record("accepted", reason_code=None)
+        # Best-effort cleanup of the worker status file now that the
+        # callback has been processed.  This prevents status files from
+        # accumulating indefinitely on the network volume.
+        if self._worker_status_dir is not None:
+            with contextlib.suppress(OSError):
+                _status_path = self._worker_status_dir / f"{job_id}.json"
+                _status_path.unlink(missing_ok=True)
         return {
             "enabled": True,
             "ok": True,

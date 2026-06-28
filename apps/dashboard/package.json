@@ -35,7 +35,8 @@
     "test:quant-foundry-tournament": "node scripts/run-quant-foundry-tournament-tests.cjs",
     "test:quant-foundry-promotion": "node scripts/run-quant-foundry-promotion-tests.cjs",
     "test:quant-foundry-shadow": "node scripts/run-quant-foundry-shadow-tests.cjs",
-    "test:quant-foundry": "node scripts/run-quant-foundry-jobs-tests.cjs && node scripts/run-quant-foundry-models-tests.cjs && node scripts/run-quant-foundry-tournament-tests.cjs && node scripts/run-quant-foundry-promotion-tests.cjs && node scripts/run-quant-foundry-shadow-tests.cjs",
+    "test:quant-foundry-workers": "node scripts/run-quant-foundry-workers-tests.cjs",
+    "test:quant-foundry": "node scripts/run-quant-foundry-jobs-tests.cjs && node scripts/run-quant-foundry-models-tests.cjs && node scripts/run-quant-foundry-tournament-tests.cjs && node scripts/run-quant-foundry-promotion-tests.cjs && node scripts/run-quant-foundry-shadow-tests.cjs && node scripts/run-quant-foundry-workers-tests.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
