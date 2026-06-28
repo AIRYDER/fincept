@@ -286,7 +286,7 @@ def main() -> int:
     )
 
     print(f"\n  {'Rank':<5} {'Config':<15} {'Seed':<6} {'Acc':>8} {'Sharpe':>8} {'PBO':>6} {'DSR':>8} {'Brier':>8} {'BestIter':>8}")
-    print(f"  {'─'*5} {'─'*15} {'─'*6} {'─'*8} {'─'*8} {'─'*6} {'─'*8} {'─'*8} {'─'*8}")
+    print(f"  {'-'*5} {'-'*15} {'-'*6} {'-'*8} {'-'*8} {'-'*6} {'-'*8} {'-'*8} {'-'*8}")
 
     for i, r in enumerate(completed):
         meta = r.get("meta", {})
