@@ -26,17 +26,46 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
-from quant_foundry.runpod_training import (
+# Add the shared RunPod utilities to sys.path so we can import
+# worker_status. In the container the shared module may be at different
+# paths (sibling to the handler, or under /app/runpod/shared). For local
+# testing it's under runpod/shared relative to the repo root.
+_shared_paths = [
+    os.path.join(os.path.dirname(__file__), "..", "shared"),
+    os.path.join(os.path.dirname(__file__), "shared"),
+    "/app/runpod/shared",
+]
+for _p in _shared_paths:
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+
+try:
+    from worker_status import clear_status, write_heartbeat, write_status
+except ImportError:  # pragma: no cover - fallback if shared module missing
+    # Best-effort: define no-op stubs so the handler still runs even if
+    # the worker_status module is unavailable (e.g. older container image).
+    def write_status(*args, **kwargs):  # type: ignore[no-redef]
+        pass
+
+    def write_heartbeat(*args, **kwargs):  # type: ignore[no-redef]
+        pass
+
+    def clear_status(*args, **kwargs):  # type: ignore[no-redef]
+        pass
+
+from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
     TrainingFailure,
 )
-from quant_foundry.schemas import RunPodTrainingRequest
-from quant_foundry.signatures import sign_callback
+from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
+from quant_foundry.signatures import sign_callback  # noqa: E402
 
 
 def _get_callback_secret() -> str:
@@ -119,6 +148,26 @@ def _build_trainer() -> Any:
     return LocalTrainer()
 
 
+def _heartbeat_during_training(
+    job_id: str, interval: float = 10.0
+) -> threading.Event:
+    """Start a background heartbeat thread. Returns a stop event.
+
+    The thread writes a heartbeat status file every ``interval`` seconds
+    so the gateway can detect stale/crashed workers. The caller must
+    ``set()`` the returned event to stop the thread.
+    """
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(interval):
+            write_heartbeat(job_id)
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    return stop
+
+
 def handler(event: dict[str, Any]) -> dict[str, Any]:
     """RunPod serverless handler entrypoint.
 
@@ -171,20 +220,38 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         csv_path.write_text(inline_csv, encoding="utf-8")
         req = req.model_copy(update={"dataset_manifest_ref": str(csv_path)})
 
+    # Worker-side status file: mark the job as started so the gateway
+    # can detect crashed workers via stale heartbeat_at timestamps.
+    write_status(req.job_id, "started")
+
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
         trainer=_build_trainer(),
         deadline_seconds=_get_deadline_seconds(),
     )
 
+    # Background heartbeat thread: writes a heartbeat status file every
+    # 10s while training runs. If the container crashes, the gateway
+    # detects a stale heartbeat_at and marks the job as failed.
+    heartbeat_stop = _heartbeat_during_training(req.job_id)
     try:
         result = handler.handle(req)
     except TrainingFailure as exc:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code=exc.error_code,
+            error_summary=exc.error_summary,
+        )
         return {
             "error_code": exc.error_code,
             "error_summary": exc.error_summary,
             "job_id": req.job_id,
         }
+    finally:
+        heartbeat_stop.set()
+
+    write_status(req.job_id, "completed", artifact_id=result.artifact_id)
 
     return {
         "job_id": req.job_id,

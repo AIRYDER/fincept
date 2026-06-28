@@ -494,3 +494,31 @@ model through the real gate, enable paper bridge, run 30 days.
 | Broker sandbox credentials | Operational | ⏳ Pending (Phase 12) |
 | First real promotion through the gate | Operational | ⏳ Pending (after 30-day run) |
 | Paper bridge enabled against real model | Operational | ⏳ Pending (after promotion) |
+
+---
+
+## 5. Update 2026-06-27 — Pipeline Runnability Proven
+
+### B1 — Promotion pipeline runnable end-to-end
+- **Previous:** PARTIALLY RESOLVED (endpoints exist, no model promoted)
+- **Current:** PARTIALLY RESOLVED (pipeline proven runnable via `scripts/run_e2e_promotion_pipeline.py`)
+- **Evidence:** The script trains a model, creates a dossier, submits to the promotion gate, and runs the sentinel. The pipeline works end-to-end with synthetic data. A real model trained on real data still needs to be promoted.
+- **Script:** `scripts/run_e2e_promotion_pipeline.py`
+
+### B7 — Sentinel runnable
+- **Previous:** OPEN (no promoted model family)
+- **Current:** PARTIALLY RESOLVED (sentinel runs on synthetic dossier)
+- **Evidence:** `LeakageOverfitSentinel` successfully processes a dossier created by the pipeline script. The sentinel's code path is proven. A real dossier from a real promoted model is still needed.
+- **Script:** `scripts/run_e2e_promotion_pipeline.py`
+
+### B8 — Settlement history seeded
+- **Previous:** PARTIALLY RESOLVED (worker exists, no history)
+- **Current:** PARTIALLY RESOLVED (synthetic history seeded, sentinel processes it)
+- **Evidence:** `scripts/seed_settlement_history.py` generates synthetic predictions + settlements, writes them to the stores, and the sentinel processes them. Real market data history is still needed.
+- **Script:** `scripts/seed_settlement_history.py`
+
+### Remaining operational gaps
+- B4 (no production deployment): UNCHANGED — infra task
+- B5 (no broker credentials): UNCHANGED — config task
+- A real model trained on real data must be promoted through the gate
+- Real RunPod containers must be rebuilt with ML deps and re-run

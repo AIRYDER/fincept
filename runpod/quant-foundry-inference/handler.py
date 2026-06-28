@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from typing import Any
 
@@ -33,6 +34,33 @@ _quant_foundry_paths = [
 for _p in _quant_foundry_paths:
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
+
+# Add the shared RunPod utilities to sys.path so we can import
+# worker_status. In the container the shared module may be at different
+# paths (sibling to the handler, or under /app/runpod/shared). For local
+# testing it's under runpod/shared relative to the repo root.
+_shared_paths = [
+    os.path.join(os.path.dirname(__file__), "..", "shared"),
+    os.path.join(os.path.dirname(__file__), "shared"),
+    "/app/runpod/shared",
+]
+for _p in _shared_paths:
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+
+try:
+    from worker_status import clear_status, write_heartbeat, write_status
+except ImportError:  # pragma: no cover - fallback if shared module missing
+    # Best-effort: define no-op stubs so the handler still runs even if
+    # the worker_status module is unavailable (e.g. older container image).
+    def write_status(*args, **kwargs):  # type: ignore[no-redef]
+        pass
+
+    def write_heartbeat(*args, **kwargs):  # type: ignore[no-redef]
+        pass
+
+    def clear_status(*args, **kwargs):  # type: ignore[no-redef]
+        pass
 
 from quant_foundry.real_inference import RealInferenceEngine  # noqa: E402
 from quant_foundry.schemas import RunPodInferenceRequest  # noqa: E402
@@ -96,6 +124,27 @@ def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
         "canary": True,
         "nonce": nonce,
     }
+
+
+def _heartbeat_during_inference(
+    job_id: str, interval: float = 5.0
+) -> threading.Event:
+    """Start a background heartbeat thread. Returns a stop event.
+
+    Inference is faster than training, so a shorter interval (5s) is
+    used. The thread writes a heartbeat status file every ``interval``
+    seconds so the gateway can detect stale/crashed workers. The caller
+    must ``set()`` the returned event to stop the thread.
+    """
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(interval):
+            write_heartbeat(job_id)
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    return stop
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
@@ -179,10 +228,27 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         engine = RealInferenceEngine(enabled=enabled)
     else:
         engine = ShadowInferenceEngine(enabled=enabled)
+
+    # Worker-side status file: mark the job as inferring so the gateway
+    # can detect crashed workers via stale heartbeat_at timestamps.
+    write_status(request.job_id, "inferring")
+
+    # Background heartbeat thread: writes a heartbeat status file every
+    # 5s while inference runs. If the container crashes, the gateway
+    # detects a stale heartbeat_at and marks the job as failed.
+    heartbeat_stop = _heartbeat_during_inference(request.job_id)
     try:
         result = engine.run(request=request, snapshot=snapshot, model_id=model_id)
         callback_payload = result.callback.model_dump_json().encode("utf-8")
         callback_ts = int(time.time())
+        write_status(
+            request.job_id,
+            "completed",
+            extra={
+                "callback_ts": callback_ts,
+                "latency_ms": result.latency_ms,
+            },
+        )
         return {
             "job_id": request.job_id,
             "callback_payload": callback_payload.decode("utf-8"),
@@ -198,6 +264,12 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "latency_ms": result.latency_ms,
         }
     except InferenceDisabledError as e:
+        write_status(
+            request.job_id,
+            "failed",
+            error_code="inference_disabled",
+            error_summary=str(e),
+        )
         return {
             "error_code": "inference_disabled",
             "error_summary": str(e),
@@ -208,6 +280,12 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         # Catch-all: any unhandled exception returns a structured error
         # envelope instead of crashing the RunPod worker.
+        write_status(
+            request.job_id,
+            "failed",
+            error_code="inference_failed",
+            error_summary=str(exc),
+        )
         return {
             "error_code": "inference_failed",
             "error_summary": str(exc),
@@ -215,6 +293,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "callback": None,
             "predictions": [],
         }
+    finally:
+        heartbeat_stop.set()
 
 
 if __name__ == "__main__":

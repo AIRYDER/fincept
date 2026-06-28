@@ -91,12 +91,13 @@ def test_get_ingester_returns_correct_function() -> None:
     assert get_ingester("news_events") is ingest_news_events
     assert get_ingester("macro_indicators") is ingest_macro_indicators
 
-    # Registry must contain all three.
-    assert set(VENDOR_INGESTERS.keys()) == {
+    # Registry must contain at least the three local ingesters.
+    # (Vendor API adapters may add more entries.)
+    assert {
         "equity_bars",
         "news_events",
         "macro_indicators",
-    }
+    }.issubset(set(VENDOR_INGESTERS.keys()))
 
 
 def test_get_ingester_rejects_unknown_vendor() -> None:
