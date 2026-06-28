@@ -26,9 +26,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
-# NOTE: fincept_core is intentionally NOT copied. real_trainer.py imports it
-# lazily behind try/except, so it is optional for the baked-in image.
 COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
+
+# Copy fincept_core.datasets — needed for fincept_core.datasets.cv.make_folds
+# (canonical walk-forward fold math used by RealLightGBMTrainer).
+# We copy only the datasets subpackage + its deps (naming, prediction_log,
+# schemas) to avoid pulling in redis, pydantic-settings, etc.
+COPY libs/fincept-core/src/fincept_core/datasets/ /worker/fincept_core/datasets/
+COPY libs/fincept-core/src/fincept_core/naming.py /worker/fincept_core/naming.py
+COPY libs/fincept-core/src/fincept_core/prediction_log.py /worker/fincept_core/prediction_log.py
+COPY libs/fincept-core/src/fincept_core/schemas.py /worker/fincept_core/schemas.py
+COPY libs/fincept-core/src/fincept_core/errors.py /worker/fincept_core/errors.py
+COPY libs/fincept-core/src/fincept_core/clock.py /worker/fincept_core/clock.py
+COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
+# Create a minimal __init__.py that only imports the datasets subpackage
+# (avoids importing storage/heartbeat which need redis/pydantic-settings).
+RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
