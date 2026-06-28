@@ -1,0 +1,149 @@
+"""
+quant_foundry.modules.sentiment.llm_openai — OpenAI LLM sentiment provider.
+
+Scores media items for sentiment using OpenAI's chat completion API.
+Uses ``httpx`` directly (no SDK dependency) to match the existing
+``news_vendor.py`` pattern.  The API key is read from ``OPENAI_API_KEY``.
+
+The prompt asks the model to return a JSON object with ``score`` (in
+[-1, 1]) and ``confidence`` (in [0, 1]).  This is the social-text arm
+of the FinBERT + LLM hybrid — OpenAI is better at sarcasm/slang than
+FinBERT.
+
+This module is registered as ``sentiment:llm-openai:1.0.0``.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Any
+
+from quant_foundry.modules.registry import (
+    MediaItem,
+    ModuleInfo,
+    SentimentResult,
+    register_module,
+)
+
+#: Default model for sentiment scoring.
+DEFAULT_MODEL = "gpt-4o-mini"
+
+#: Default API base URL.
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+#: System prompt for sentiment scoring.
+_SYSTEM_PROMPT = (
+    "You are a financial sentiment analyzer. Given a social media post "
+    "or news headline about a stock, return a JSON object with two fields: "
+    '"score" (a float in [-1, 1] where -1 is very bearish, 0 is neutral, '
+    "1 is very bullish) and \"confidence\" (a float in [0, 1] indicating "
+    "how confident you are in the assessment). "
+    "Return ONLY the JSON object, no other text."
+)
+
+
+@register_module(
+    "sentiment",
+    "llm-openai",
+    "1.0.0",
+    default_config={
+        "model": DEFAULT_MODEL,
+        "base_url": DEFAULT_BASE_URL,
+        "timeout": 30.0,
+        "max_tokens": 100,
+    },
+)
+class OpenAISentiment:
+    """OpenAI LLM sentiment provider.
+
+    Scores each :class:`MediaItem` by sending the headline + body to
+    OpenAI's chat completion API and parsing the JSON response.
+
+    Requires ``OPENAI_API_KEY`` env var to be set.
+    """
+
+    info: ModuleInfo
+
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.config = config or {}
+        self.model: str = self.config.get("model", DEFAULT_MODEL)
+        self.base_url: str = self.config.get("base_url", DEFAULT_BASE_URL)
+        self.timeout: float = self.config.get("timeout", 30.0)
+        self.max_tokens: int = self.config.get("max_tokens", 100)
+
+    def _get_api_key(self) -> str:
+        key = os.environ.get("OPENAI_API_KEY", "")
+        if not key:
+            raise ValueError(
+                "OPENAI_API_KEY is not set. Set it in the environment "
+                "or RunPod container env."
+            )
+        return key
+
+    def score(self, items: list[MediaItem]) -> list[SentimentResult]:
+        """Score media items using OpenAI chat completions."""
+        import httpx
+
+        try:
+            api_key = self._get_api_key()
+        except ValueError:
+            # API key missing — return neutral for all items
+            return [
+                SentimentResult(item_id=item.item_id, provider="openai", score=0.0, confidence=0.0)
+                for item in items
+            ]
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        results: list[SentimentResult] = []
+        for item in items:
+            try:
+                payload = {
+                    "model": self.model,
+                    "max_tokens": self.max_tokens,
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": item.text[:2000]},
+                    ],
+                }
+                with httpx.Client(timeout=self.timeout) as client:
+                    resp = client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    body = resp.json()
+
+                content = body["choices"][0]["message"]["content"].strip()
+                parsed = json.loads(content)
+                score = float(parsed.get("score", 0.0))
+                confidence = float(parsed.get("confidence", 0.5))
+
+                # Clamp to valid ranges
+                score = max(-1.0, min(1.0, score))
+                confidence = max(0.0, min(1.0, confidence))
+
+                results.append(SentimentResult(
+                    item_id=item.item_id,
+                    provider="openai",
+                    score=round(score, 6),
+                    confidence=round(confidence, 6),
+                ))
+            except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError, TypeError):
+                # On any error, return neutral with zero confidence
+                results.append(SentimentResult(
+                    item_id=item.item_id,
+                    provider="openai",
+                    score=0.0,
+                    confidence=0.0,
+                ))
+
+        return results
+
+
+__all__ = ["OpenAISentiment"]

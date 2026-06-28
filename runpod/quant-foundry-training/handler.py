@@ -173,6 +173,105 @@ def _get_deadline_seconds() -> int:
         return 600
 
 
+def _handle_ingest_media_sentiment(input_data: dict[str, Any]) -> dict[str, Any]:
+    """Handle a media-sentiment dataset ingestion task.
+
+    Builds a media-sentiment-price dataset on the worker using the
+    modular dataset system, writes the parquet + manifest + receipt +
+    quality report to the network volume, and returns the paths + manifest
+    hash so a subsequent training job can consume the dataset via
+    ``dataset_manifest_ref``.
+
+    This task bypasses the training pipeline entirely — it only builds
+    the dataset.  A separate training job (with ``dataset_manifest_ref``
+    pointing at the manifest written by this task) does the actual
+    training.
+    """
+    dataset_id = input_data.get("dataset_id", "")
+    if not dataset_id:
+        return {
+            "error_code": "bad_request",
+            "error_summary": "ingest_media_sentiment requires dataset_id",
+            "job_id": input_data.get("job_id"),
+        }
+
+    start_ns = input_data.get("start_ns")
+    end_ns = input_data.get("end_ns")
+    if not isinstance(start_ns, int) or not isinstance(end_ns, int):
+        return {
+            "error_code": "bad_request",
+            "error_summary": "ingest_media_sentiment requires start_ns and end_ns as integers",
+            "job_id": input_data.get("job_id"),
+        }
+
+    output_dir = input_data.get("output_dir", "")
+    if not output_dir:
+        return {
+            "error_code": "bad_request",
+            "error_summary": "ingest_media_sentiment requires output_dir",
+            "job_id": input_data.get("job_id"),
+        }
+
+    # Resolve volume path
+    output_dir = resolve_volume_path(output_dir)
+
+    # Module selections (with defaults)
+    universe_module = input_data.get("universe_module", "universe:sp500:1.0.0")
+    source_module = input_data.get("source_module", "source:newsapi:1.0.0")
+    sentiment_module = input_data.get("sentiment_module", "sentiment:finbert:1.0.0")
+    feature_modules = input_data.get(
+        "feature_modules",
+        ["feature:per-event-type:1.0.0", "feature:per-year:1.0.0"],
+    )
+    label_module = input_data.get("label_module", "label:abnormal-return:1.0.0")
+    price_join_module = input_data.get("price_join_module", "price_join:alpaca-bars:1.0.0")
+    n_folds = input_data.get("n_folds", 3)
+    module_config = input_data.get("config", {})
+
+    try:
+        from quant_foundry.modules import DatasetComposer, load_all_modules
+
+        load_all_modules()
+
+        composer = DatasetComposer(
+            universe=universe_module,
+            source=source_module,
+            sentiment=sentiment_module,
+            features=feature_modules,
+            label=label_module,
+            price_join=price_join_module,
+            config=module_config,
+        )
+
+        result = composer.build(
+            output_dir=Path(output_dir),
+            dataset_id=dataset_id,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            n_folds=n_folds,
+        )
+    except Exception as exc:
+        return {
+            "error_code": "ingestion_failed",
+            "error_summary": str(exc),
+            "job_id": input_data.get("job_id"),
+        }
+
+    return {
+        "task": "ingest_media_sentiment",
+        "dataset_id": dataset_id,
+        "parquet_path": str(result.parquet_path),
+        "manifest_path": str(result.manifest_path),
+        "receipt_path": str(result.receipt_path),
+        "quality_path": str(result.quality_path),
+        "row_count": result.manifest.row_count,
+        "manifest_hash": result.manifest.manifest_hash(),
+        "feature_schema_hash": result.manifest.feature_schema_hash,
+        "label_schema_hash": result.manifest.label_schema_hash,
+        "status": "ok",
+    }
+
+
 def _build_trainer(n_folds: int = 3) -> Any:
     """Select the trainer based on the QUANT_FOUNDRY_USE_REAL_TRAINER env var.
 
@@ -323,6 +422,28 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "exists": True,
             "files": files,
         }
+
+    # Media sentiment dataset ingestion task: build a media-sentiment-price
+    # dataset on the worker using the modular dataset system, then write
+    # the parquet + manifest to the network volume for a subsequent
+    # training job to consume via dataset_manifest_ref.
+    #
+    # Input fields (handler-level extensions, not in the schema):
+    #   task: "ingest_media_sentiment"
+    #   dataset_id: "media-sentiment-price-2023" (unique dataset ID)
+    #   start_ns: 1672531200000000000 (start time in nanoseconds)
+    #   end_ns: 1704067200000000000 (end time in nanoseconds)
+    #   universe_module: "universe:sp500:1.0.0" (optional, default sp500)
+    #   source_module: "source:newsapi:1.0.0" (optional, default newsapi)
+    #   sentiment_module: "sentiment:finbert:1.0.0" (optional)
+    #   feature_modules: ["feature:per-event-type:1.0.0", "feature:per-year:1.0.0"]
+    #   label_module: "label:abnormal-return:1.0.0" (optional)
+    #   price_join_module: "price_join:alpaca-bars:1.0.0" (optional)
+    #   output_dir: "/workspace/datasets/media-sentiment-price-2023"
+    #   n_folds: 3 (optional, default 3)
+    #   config: {...} (optional per-module config overrides)
+    if input_data.get("task") == "ingest_media_sentiment":
+        return _handle_ingest_media_sentiment(input_data)
 
     # Support inline dataset for E2E testing: if the input includes
     # ``inline_dataset_csv``, write it to a temp file and override the
