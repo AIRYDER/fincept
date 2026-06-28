@@ -57,11 +57,9 @@ ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA}
 # No broker credentials, no Redis, no trading env vars.
 # Only the callback secret is required (injected at runtime).
 ENV QUANT_FOUNDRY_CALLBACK_SECRET=""
-ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="600"
-# Set QUANT_FOUNDRY_USE_REAL_TRAINER=true to use RealLightGBMTrainer
-# (real LightGBM training with walk-forward validation). Default is
-# false (LocalTrainer stub) for backward-compatible contract proofs.
-ENV QUANT_FOUNDRY_USE_REAL_TRAINER="false"
+ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800"
+# Use RealLightGBMTrainer (real LightGBM training with walk-forward validation).
+ENV QUANT_FOUNDRY_USE_REAL_TRAINER="true"
 ENV PYTHONPATH=/worker
 
 # Create a non-root user for defense-in-depth. RunPod serverless workers

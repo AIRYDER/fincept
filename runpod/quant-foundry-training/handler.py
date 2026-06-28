@@ -194,6 +194,65 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     if input_data.get("task") == "callback_secret_canary":
         return _handle_canary(input_data)
 
+    # Volume write task: write a data chunk to the network volume.
+    # This bypasses training entirely and is used to stage large datasets
+    # on the persistent network volume at /workspace/.
+    # Input fields (all handler-level extensions, not in the schema):
+    #   task: "write_volume"
+    #   volume_path: "/workspace/dataset.csv" (target path)
+    #   chunk_data: "<csv chunk text>" (the data to write)
+    #   chunk_mode: "write" | "append" (write = overwrite, append = add)
+    if input_data.get("task") == "write_volume":
+        volume_path = input_data.get("volume_path", "")
+        chunk_data = input_data.get("chunk_data", "")
+        chunk_mode = input_data.get("chunk_mode", "write")
+        if not volume_path or not chunk_data:
+            return {
+                "error_code": "bad_request",
+                "error_summary": "write_volume requires volume_path and chunk_data",
+                "job_id": input_data.get("job_id"),
+            }
+        from pathlib import Path as _Path
+
+        target = _Path(volume_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if chunk_mode == "append":
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(chunk_data)
+        else:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(chunk_data)
+        size = target.stat().st_size
+        return {
+            "task": "write_volume",
+            "volume_path": str(target),
+            "chunk_mode": chunk_mode,
+            "file_size_bytes": size,
+            "file_size_mb": round(size / 1024 / 1024, 2),
+            "status": "ok",
+        }
+
+    # Volume read task: check if a file exists on the network volume.
+    if input_data.get("task") == "stat_volume":
+        volume_path = input_data.get("volume_path", "")
+        from pathlib import Path as _Path
+
+        target = _Path(volume_path)
+        if target.exists():
+            return {
+                "task": "stat_volume",
+                "volume_path": str(target),
+                "exists": True,
+                "file_size_bytes": target.stat().st_size,
+                "file_size_mb": round(target.stat().st_size / 1024 / 1024, 2),
+            }
+        return {
+            "task": "stat_volume",
+            "volume_path": str(target),
+            "exists": False,
+            "file_size_bytes": 0,
+        }
+
     # Support inline dataset for E2E testing: if the input includes
     # ``inline_dataset_csv``, write it to a temp file and override the
     # dataset_manifest_ref. This avoids needing a network volume or S3

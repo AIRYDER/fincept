@@ -57,6 +57,16 @@ except ImportError:  # pragma: no cover - fincept-core always present in-workspa
     StorageBackend = None  # type: ignore[assignment,misc]
     get_storage_backend = None  # type: ignore[assignment]
 
+# Canonical walk-forward fold math (single shared home — see
+# ``fincept_core.datasets.cv``). Delegating here keeps Path B (RunPod real
+# trainer) consistent with Path A (agents.gbm_predictor.train) and the
+# backtester, and applies the purge gap that prevents forward-return label
+# leakage between train and validation windows.
+try:
+    from fincept_core.datasets import make_folds as _make_folds
+except ImportError:  # pragma: no cover - fincept-core always present in-workspace
+    _make_folds = None  # type: ignore[assignment]
+
 
 @dataclass
 class RealLightGBMTrainer:
@@ -79,6 +89,11 @@ class RealLightGBMTrainer:
 
     should_fail: bool = False
     n_folds: int = 3
+    # Default annualization factor for backward compat with callers that
+    # never set ``bar_seconds``. The Sharpe is now annualized from
+    # ``bar_seconds`` (read from ``extra_constraints``) when available —
+    # see ``_resolve_periods_per_year``. This field is only used as the
+    # fallback when no bar-frequency info is present on the request.
     annualization_factor: int = 252
     storage_backend: Any = None
 
@@ -199,6 +214,15 @@ class RealLightGBMTrainer:
                 "win_rate": str(metrics["win_rate"]),
                 "max_drawdown": str(metrics["max_drawdown"]),
                 "sharpe_ratio": str(metrics["sharpe_ratio"]),
+                # F3: record the PBO/DSR method so an operator inspecting
+                # the dossier knows these are heuristics, not the academic
+                # Bailey & Lopez de Prado figures (the tournament computes
+                # the real DSR via significance.deflated_sharpe_ratio).
+                "pbo_method": metrics.get("pbo_method", "fold_overfit_ratio"),
+                "deflated_sharpe_method": metrics.get(
+                    "deflated_sharpe_method",
+                    "sharpe_times_1_minus_fold_overfit_ratio",
+                ),
             },
         )
 
@@ -207,12 +231,13 @@ class RealLightGBMTrainer:
     # --- dataset loading -------------------------------------------------
 
     def _resolve_path(self, ref: str) -> Path:
-        """Resolve a dataset reference (file:// URI, s3:// URI, or plain path) to a Path.
+        """Resolve a dataset reference (file://, s3://, http(s):// URI, or plain path) to a Path.
 
         For ``s3://`` URIs, the configured ``storage_backend`` (or the factory
         singleton) is used to download the object to a temp file, which is
-        returned. For ``file://`` URIs and bare paths, behavior is unchanged
-        (backward compat).
+        returned. For ``http://`` and ``https://`` URIs, the file is downloaded
+        to a temp file via ``urllib.request``. For ``file://`` URIs and bare
+        paths, behavior is unchanged (backward compat).
         """
         parsed = urlparse(ref)
         # A single-letter scheme is a Windows drive letter (e.g. "C:\\path"),
@@ -226,6 +251,24 @@ class RealLightGBMTrainer:
             return Path(path)
         elif parsed.scheme == "":
             return Path(ref)
+        elif parsed.scheme in ("http", "https"):
+            import tempfile
+            import urllib.request
+
+            suffix = ""
+            if parsed.path.endswith(".parquet"):
+                suffix = ".parquet"
+            elif parsed.path.endswith(".csv"):
+                suffix = ".csv"
+            tmp_path = Path(tempfile.mktemp(prefix="qf_http_", suffix=suffix))
+            try:
+                urllib.request.urlretrieve(ref, str(tmp_path))
+            except Exception as exc:
+                raise TrainingFailure(
+                    error_code="dataset_download_failed",
+                    error_summary=f"failed to download HTTP dataset {ref!r}: {exc}",
+                ) from exc
+            return tmp_path
         elif parsed.scheme == "s3":
             backend = self.storage_backend
             if backend is None and get_storage_backend is not None:
@@ -385,6 +428,147 @@ class RealLightGBMTrainer:
             return int(ss["n_estimators"][0])
         return 100
 
+    # --- bar frequency + annualization (F1 fix) -------------------------
+
+    def _resolve_bar_seconds(self, extra_constraints: dict[str, str]) -> int:
+        """Resolve the bar frequency in seconds from ``extra_constraints``.
+
+        Defaults to 60 (1-minute bars), matching the platform's primary
+        use case (crypto microstructure on 1-minute bars). The
+        ``RunPodTrainingRequest`` schema has no dedicated ``bar_seconds``
+        field, so it is carried through ``extra_constraints`` by the
+        dispatch path (see ``local_training_dispatch.py``).
+        """
+        raw = extra_constraints.get("bar_seconds")
+        if raw is None:
+            return 60
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return 60
+        return v if v > 0 else 60
+
+    def _resolve_periods_per_year(self, extra_constraints: dict[str, str]) -> int:
+        """Resolve the annualization factor (periods per year) for Sharpe.
+
+        Resolution order:
+        1. Explicit ``annualization_periods_per_year`` in
+           ``extra_constraints`` (e.g. ``252`` for US-equity daily bars,
+           ``12`` for monthly). Use this for non-24/7 markets.
+        2. Derived from ``bar_seconds`` assuming a 24/7 market (the
+           platform default — crypto): ``seconds_per_year / bar_seconds``.
+        3. Fallback to the trainer's ``annualization_factor`` field
+           (default 252) for backward compat with callers that never
+           set bar-frequency info.
+
+        Before this fix the trainer hardcoded ``sqrt(252)`` on per-bar
+        returns, understating Sharpe by ~45x for 1-minute crypto bars
+        (see docs/TRAINING_ANALYSIS.md finding F1).
+        """
+        explicit = extra_constraints.get("annualization_periods_per_year")
+        if explicit is not None:
+            try:
+                v = int(explicit)
+                if v > 0:
+                    return v
+            except (TypeError, ValueError):
+                pass
+        bar_seconds = self._resolve_bar_seconds(extra_constraints)
+        seconds_per_year = 365 * 24 * 60 * 60  # 31_536_000 (24/7 market)
+        return seconds_per_year // bar_seconds
+
+    # --- walk-forward fold math (F2 + F4 fix) ---------------------------
+
+    def _resolve_horizon_bars(self, extra_constraints: dict[str, str]) -> int:
+        """Resolve the forward-return horizon in bars from ``extra_constraints``.
+
+        Defaults to 15, matching the platform default
+        (``agents.gbm_predictor.train --horizon-bars 15``).
+        """
+        raw = extra_constraints.get("horizon_bars")
+        if raw is None:
+            return 15
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return 15
+        return v if v > 0 else 15
+
+    def _resolve_purge_bars(
+        self,
+        horizon_bars: int,
+        extra_constraints: dict[str, str],
+    ) -> int:
+        """Resolve the purge gap in bars between train end and val start.
+
+        The purge gap prevents forward-return label leakage: a training
+        row at time ``t`` has a label that depends on prices at
+        ``t + horizon_bars``, so the last ``horizon_bars`` training rows
+        have labels that overlap the validation window unless a gap is
+        enforced.
+
+        Resolution order:
+        1. Explicit ``purge_bars`` in ``extra_constraints``.
+        2. Default to ``horizon_bars`` (matches Path A behavior where
+           ``--purge-bars -1`` means "use --horizon-bars").
+        """
+        raw = extra_constraints.get("purge_bars")
+        if raw is None:
+            return horizon_bars
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return horizon_bars
+        return v if v >= 0 else horizon_bars
+
+    def _build_walk_forward_folds(
+        self,
+        n_rows: int,
+        purge_bars: int,
+        n_folds: int,
+    ) -> list[Any]:
+        """Build expanding-window walk-forward folds with a purge gap.
+
+        Delegates to the canonical ``fincept_core.datasets.cv.make_folds``
+        so Path B (RunPod real trainer) and Path A
+        (``agents.gbm_predictor.train``) share identical fold math. This
+        fixes both:
+
+        - F2: the purge gap (``val_start - train_end >= purge_bars``) is
+          now enforced, preventing forward-return label leakage.
+        - F4: the fold boundaries now match the canonical utility, so a
+          bug fix in ``make_folds`` propagates to both paths.
+
+        The fold sizing (``min_train``, ``fold_size``) preserves the
+        previous Path B layout when ``purge_bars == 0`` so existing
+        artifact hashes remain comparable for datasets trained without a
+        purge gap. When ``purge_bars > 0`` the ``fold_size`` is shrunk to
+        make room for the purge budget so the folds still fit in
+        ``n_rows`` (the canonical ``make_folds`` requires
+        ``train_min + n_folds*(purge + val) <= n``).
+
+        Returns a list of ``fincept_core.datasets.cv.Fold`` objects.
+        """
+        if _make_folds is None:  # pragma: no cover - fincept-core always present
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="fincept_core.datasets.cv.make_folds not available",
+            )
+        min_train = max(10, n_rows // (n_folds + 2))
+        # Shrink fold_size to make room for the purge budget so the folds
+        # fit in n_rows. Without this, make_folds raises ValueError for
+        # small datasets whenever purge_bars > 0.
+        purge_budget = n_folds * purge_bars
+        fold_size = max(5, (n_rows - min_train - purge_budget) // n_folds)
+        return _make_folds(
+            n_rows,
+            n_folds=n_folds,
+            train_min_bars=min_train,
+            val_bars=fold_size,
+            purge_bars=purge_bars,
+            embargo_bars=0,
+        )
+
     # --- walk-forward validation -----------------------------------------
 
     def _walk_forward_validate(
@@ -396,10 +580,21 @@ class RealLightGBMTrainer:
         deadline_ns: int,
         req: RunPodTrainingRequest,
     ) -> dict[str, Any]:
-        """Walk-forward validation with expanding window.
+        """Walk-forward validation with expanding window + purge gap.
 
-        For each fold, trains on all data before the fold and validates on
-        the fold. Collects out-of-sample predictions for metric computation.
+        For each fold, trains on all data before the fold (minus a purge
+        gap) and validates on the fold. Collects out-of-sample predictions
+        for metric computation.
+
+        The purge gap (``val_start - train_end >= purge_bars``) prevents
+        forward-return label leakage: a training row at time ``t`` has a
+        label that depends on prices at ``t + horizon_bars``, so without
+        a gap the last ``horizon_bars`` training rows leak into validation.
+        See docs/TRAINING_ANALYSIS.md finding F2.
+
+        Fold boundaries are delegated to the canonical
+        ``fincept_core.datasets.cv.make_folds`` (fixing F4 — Path B now
+        matches Path A and the backtester).
         """
         import lightgbm as lgb
         import numpy as np
@@ -415,8 +610,26 @@ class RealLightGBMTrainer:
         X_s = X[order]
         y_s = y[order]
 
-        min_train = max(10, n // (self.n_folds + 2))
-        fold_size = max(5, (n - min_train) // self.n_folds)
+        # Resolve the purge gap from the request. Default = horizon_bars
+        # (matches Path A: ``--purge-bars -1`` means "use --horizon-bars").
+        horizon_bars = self._resolve_horizon_bars(req.extra_constraints)
+        purge_bars = self._resolve_purge_bars(horizon_bars, req.extra_constraints)
+
+        # Canonical fold math (F2 + F4 fix). make_folds raises ValueError
+        # if the dataset is too small for the requested folds + purge; we
+        # translate that to a TrainingFailure so the handler returns a
+        # safe terminal status.
+        try:
+            folds = self._build_walk_forward_folds(
+                n_rows=n,
+                purge_bars=purge_bars,
+                n_folds=self.n_folds,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="insufficient_data",
+                error_summary=str(exc),
+            ) from exc
 
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
@@ -426,16 +639,16 @@ class RealLightGBMTrainer:
         fold_train_acc: list[float] = []
         fold_val_acc: list[float] = []
 
-        for fold in range(self.n_folds):
+        for fold in folds:
             if time.time_ns() >= deadline_ns:
                 raise TrainingFailure(
                     error_code="timeout",
-                    error_summary=f"training deadline breached during fold {fold}",
+                    error_summary=f"training deadline breached during fold {fold.index}",
                 )
 
-            train_end = min_train + fold * fold_size
-            val_start = train_end
-            val_end = min(val_start + fold_size, n)
+            train_end = fold.train_end
+            val_start = fold.val_start
+            val_end = fold.val_end
 
             if val_start >= n or val_end <= val_start:
                 break
@@ -477,11 +690,14 @@ class RealLightGBMTrainer:
         preds_arr = np.array(all_preds, dtype=np.float64)
         labels_arr = np.array(all_labels, dtype=np.float64)
 
+        periods_per_year = self._resolve_periods_per_year(req.extra_constraints)
+
         return self._compute_metrics(
             preds_arr,
             labels_arr,
             fold_train_acc,
             fold_val_acc,
+            periods_per_year=periods_per_year,
         )
 
     # --- metric computation ----------------------------------------------
@@ -492,8 +708,35 @@ class RealLightGBMTrainer:
         all_labels: Any,
         fold_train_acc: list[float],
         fold_val_acc: list[float],
+        *,
+        periods_per_year: int | None = None,
     ) -> dict[str, Any]:
-        """Compute real evaluation metrics from out-of-sample predictions."""
+        """Compute real evaluation metrics from out-of-sample predictions.
+
+        Args:
+            periods_per_year: annualization factor for the Sharpe ratio
+                (``sqrt(periods_per_year)``). When ``None``, falls back to
+                the trainer's ``annualization_factor`` field (backward
+                compat). When provided, the Sharpe is annualized correctly
+                for the bar frequency — e.g. ``525_600`` for 1-minute
+                crypto bars (24/7), not ``252`` (daily equities). See
+                docs/TRAINING_ANALYSIS.md finding F1.
+
+        PBO / deflated_sharpe note (F3):
+            The ``pbo`` field is a **fold-level overfit ratio** — the
+            fraction of folds where val accuracy was below train accuracy.
+            It is NOT the academic Bailey & Lopez de Prado Probability of
+            Backtest Overfitting (which requires combinatorially purged
+            cross-validation across multiple strategy configurations).
+            The schema field name ``pbo`` is kept for backward compat
+            with the tournament/leaderboard/promotion pipeline; the
+            method is recorded in the returned dict as ``pbo_method`` so
+            an operator inspecting the dossier knows what was computed.
+            The tournament's own DSR
+            (``quant_foundry.significance.deflated_sharpe_ratio``) is the
+            real Bailey & Lopez de Prado DSR and is NOT affected by this
+            crude heuristic.
+        """
         import numpy as np
 
         pred_binary = (all_preds > 0.5).astype(np.float64)
@@ -527,10 +770,14 @@ class RealLightGBMTrainer:
         returns = positions * (2 * all_labels - 1)
         win_rate = float(np.mean(returns > 0))
 
+        # F1 fix: annualize using the bar-frequency-derived factor, not
+        # the hardcoded 252 (daily). For 1-minute crypto bars this is
+        # sqrt(525_600) ~ 725 instead of sqrt(252) ~ 15.9.
+        ann_factor = periods_per_year if periods_per_year is not None else self.annualization_factor
         std_returns = float(np.std(returns))
         if std_returns > 0:
             sharpe = float(
-                np.mean(returns) / std_returns * np.sqrt(self.annualization_factor),
+                np.mean(returns) / std_returns * np.sqrt(ann_factor),
             )
         else:
             sharpe = 0.0
@@ -540,15 +787,18 @@ class RealLightGBMTrainer:
         drawdowns = cumulative - running_max
         max_drawdown = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
 
+        # F3: this is a fold-level overfit ratio, NOT the academic PBO.
+        # The schema field name ``pbo`` is kept for backward compat; the
+        # method is recorded below as ``pbo_method``.
         if fold_train_acc and fold_val_acc:
             overfit_count = sum(
                 1 for t, v in zip(fold_train_acc, fold_val_acc, strict=False) if v < t
             )
-            pbo = float(overfit_count / len(fold_train_acc))
+            fold_overfit_ratio = float(overfit_count / len(fold_train_acc))
         else:
-            pbo = 0.5
+            fold_overfit_ratio = 0.5
 
-        deflated_sharpe = sharpe * (1.0 - pbo)
+        deflated_sharpe = sharpe * (1.0 - fold_overfit_ratio)
 
         return {
             "training_metrics": {
@@ -559,8 +809,10 @@ class RealLightGBMTrainer:
                 "max_drawdown": max_drawdown,
                 "win_rate": win_rate,
             },
-            "pbo": pbo,
+            "pbo": fold_overfit_ratio,
             "deflated_sharpe": deflated_sharpe,
+            "pbo_method": "fold_overfit_ratio",
+            "deflated_sharpe_method": "sharpe_times_1_minus_fold_overfit_ratio",
             "brier_score": brier,
             "win_rate": win_rate,
             "max_drawdown": max_drawdown,
