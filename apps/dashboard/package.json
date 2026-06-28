@@ -30,6 +30,12 @@
     "test:mock-badge": "node scripts/run-mock-badge-tests.cjs",
     "test:signal-card": "node scripts/run-signal-card-tests.cjs",
     "test:trading-chart": "node scripts/run-trading-chart-tests.cjs",
+    "test:quant-foundry-jobs": "node scripts/run-quant-foundry-jobs-tests.cjs",
+    "test:quant-foundry-models": "node scripts/run-quant-foundry-models-tests.cjs",
+    "test:quant-foundry-tournament": "node scripts/run-quant-foundry-tournament-tests.cjs",
+    "test:quant-foundry-promotion": "node scripts/run-quant-foundry-promotion-tests.cjs",
+    "test:quant-foundry-shadow": "node scripts/run-quant-foundry-shadow-tests.cjs",
+    "test:quant-foundry": "node scripts/run-quant-foundry-jobs-tests.cjs && node scripts/run-quant-foundry-models-tests.cjs && node scripts/run-quant-foundry-tournament-tests.cjs && node scripts/run-quant-foundry-promotion-tests.cjs && node scripts/run-quant-foundry-shadow-tests.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

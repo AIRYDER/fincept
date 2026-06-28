@@ -13,6 +13,7 @@ Endpoints:
   GET  /quant-foundry/health                  health state (auth required)
   GET  /quant-foundry/health/runpod-canary    callback-secret canary (auth required)
   GET  /quant-foundry/heartbeats              worker heartbeats (auth required)
+  GET  /quant-foundry/worker-health           worker health + stale detection (auth required)
 
 Security invariants (non-negotiable):
 - Operator endpoints require bearer JWT (api.auth.require_user).
@@ -276,6 +277,36 @@ async def heartbeats(
 ) -> list[dict[str, Any]]:
     gw = _require_gateway(request)
     return gw.heartbeats()
+
+
+@router.get("/worker-health")
+async def worker_health(
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Aggregate worker health: heartbeats + stale worker detection.
+
+    Bearer-auth. Returns a JSON-safe dict surfacing the configured worker
+    status directory, staleness threshold, current heartbeats, and the
+    subset of heartbeats flagged as stale by ``gateway.detect_stale_workers()``.
+    Returns 503 when the gateway is absent (default disabled state). When
+    the gateway is present but no ``worker_status_dir`` is configured, the
+    endpoint reports a safe disabled state (enabled, empty lists, null
+    path) and never raises. Never returns secrets.
+    """
+    gw = _require_gateway(request)
+    heartbeats = gw.heartbeats()
+    stale_workers = gw.detect_stale_workers()
+    status_dir = gw._worker_status_dir
+    return {
+        "enabled": gw.enabled,
+        "worker_status_dir": str(status_dir) if status_dir is not None else None,
+        "stale_threshold_seconds": gw._stale_threshold_seconds,
+        "heartbeats": heartbeats,
+        "stale_workers": stale_workers,
+        "stale_count": len(stale_workers),
+        "total_workers": len(heartbeats),
+    }
 
 
 # --- callback endpoint (HMAC auth, NOT bearer) ------------------------------

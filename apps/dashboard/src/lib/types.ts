@@ -1453,3 +1453,33 @@ export interface QuantFoundryShadowHealth {
   readonly prediction_count: number;
   readonly settled_count: number;
 }
+
+/**
+ * A single worker status record read from the gateway's worker status
+ * directory ({worker_status_dir}/*.json). Mirrors the dict shape written
+ * by the RunPod worker heartbeat loop.
+ */
+export interface QuantFoundryWorkerStatus {
+  readonly job_id: string;
+  readonly status: string;
+  readonly heartbeat_at: number;
+  readonly updated_at: number;
+  readonly error_code?: string;
+  readonly error_summary?: string;
+  readonly artifact_id?: string;
+}
+
+/**
+ * Aggregate worker health surfaced by GET /quant-foundry/worker-health.
+ * Combines the full heartbeat list with the stale-worker subset so the
+ * dashboard can render stale worker alerts without a second round-trip.
+ */
+export interface QuantFoundryWorkerHealth {
+  readonly enabled: boolean;
+  readonly worker_status_dir: string | null;
+  readonly stale_threshold_seconds: number;
+  readonly heartbeats: readonly QuantFoundryWorkerStatus[];
+  readonly stale_workers: readonly QuantFoundryWorkerStatus[];
+  readonly stale_count: number;
+  readonly total_workers: number;
+}

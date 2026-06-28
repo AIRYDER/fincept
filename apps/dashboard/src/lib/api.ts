@@ -68,6 +68,7 @@ import type {
   QuantFoundryPromotionReview,
   QuantFoundryPromotionReceiptResponse,
   QuantFoundryShadowHealth,
+  QuantFoundryWorkerHealth,
   QuantFoundrySubmitPromotionBody,
   QuantFoundrySubmitPromotionResponse,
   QuantFoundryApprovePromotionBody,
@@ -789,6 +790,8 @@ export const api = {
     ),
   quantFoundryShadowHealth: (token: string | null) =>
     request<QuantFoundryShadowHealth>("/quant-foundry/shadow/health", token),
+  quantFoundryWorkerHealth: (token: string | null) =>
+    request<QuantFoundryWorkerHealth>("/quant-foundry/worker-health", token),
 
   // --- quant-foundry promotion POST (Agent B) -----------------------------
   quantFoundrySubmitPromotion: (

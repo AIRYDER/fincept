@@ -1,6 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./src/*"],
+      "next/navigation": ["./src/test/mocks/next-navigation.mjs"],
+      "next/link": ["./src/test/mocks/next-link.mjs"]
+    }
   }
 }
