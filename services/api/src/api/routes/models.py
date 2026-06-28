@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from fincept_core.datasets import (
     ApprovedRoots,
+    FeatureSnapshotStore,
     SettlementStore,
     build_evidence_receipt,
     default_approved_roots,
@@ -80,6 +81,23 @@ def _get_settlement_store() -> SettlementStore:
     directory.
     """
     return SettlementStore()
+
+
+# Lazy singleton for the feature-snapshot store.  Unlike the settlement
+# store, the snapshot store keeps an in-memory seen-cache that benefits
+# from reuse across requests, so we hold a single process-wide instance.
+_snapshot_store: FeatureSnapshotStore | None = None
+
+
+def _get_snapshot_store() -> FeatureSnapshotStore:
+    """Return the process-wide :class:`FeatureSnapshotStore`.
+
+    Tests monkey-patch this function to inject a fixture-rooted store.
+    """
+    global _snapshot_store
+    if _snapshot_store is None:
+        _snapshot_store = FeatureSnapshotStore()
+    return _snapshot_store
 
 
 # Default agent_id when the dashboard hits /models/promote/* without
@@ -547,15 +565,15 @@ async def get_runs(
 ) -> dict[str, Any]:
     """List training runs, newest first.
 
-    ``status`` filters to a single state (queued/running/completed/failed).
-    ``limit`` caps the response payload (1..200) so a long history
-    doesn't blow up the dashboard JSON.
+    ``status`` filters to a single state (queued/running/completed/failed/
+    resumable_failed).  ``limit`` caps the response payload (1..200) so a
+    long history doesn't blow up the dashboard JSON.
     """
     if limit <= 0 or limit > 200:
         raise HTTPException(status_code=400, detail="limit must be in [1, 200]")
     runs = get_store().list_runs()
     if status is not None:
-        if status not in ("queued", "running", "completed", "failed"):
+        if status not in ("queued", "running", "completed", "failed", "resumable_failed"):
             raise HTTPException(status_code=400, detail=f"invalid status: {status}")
         runs = [r for r in runs if r.status == status]
     runs = runs[:limit]
@@ -565,6 +583,7 @@ async def get_runs(
         "queued": sum(1 for r in runs if r.status == "queued"),
         "completed": sum(1 for r in runs if r.status == "completed"),
         "failed": sum(1 for r in runs if r.status == "failed"),
+        "resumable_failed": sum(1 for r in runs if r.status == "resumable_failed"),
     }
     return {
         "runs": [r.to_payload() for r in runs],
@@ -588,6 +607,36 @@ async def get_run_detail(
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     log_tail = store.get_log_tail(run_id)
     return run.to_payload(log_tail=log_tail)
+
+
+@router.post("/runs/{run_id}/resume", status_code=202)
+async def post_resume_run(
+    run_id: str,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Re-launch a ``resumable_failed`` training run.
+
+    A run becomes ``resumable_failed`` when the API restarts while the
+    subprocess was still alive (the OS-level process handle is lost on
+    restart).  This endpoint re-queues the same training request with a
+    fresh subprocess and a ``resume_token`` so the operator can trace
+    the resume lineage.
+
+    Returns 202 (Accepted): the subprocess starts in the background; the
+    UI polls ``GET /models/runs/{id}`` for status.  A run that is not in
+    the ``resumable_failed`` state is rejected with 409.
+    """
+    try:
+        run = await get_store().resume_run(run_id)
+    except TrainingValidationError as exc:
+        msg = str(exc)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg) from exc
+        if "not resumable" in msg:
+            raise HTTPException(status_code=409, detail=msg) from exc
+        status = 429 if "in flight" in msg else 400
+        raise HTTPException(status_code=status, detail=msg) from exc
+    return run.to_payload()
 
 
 # --------------------------------------------------------------------------- #
@@ -965,14 +1014,20 @@ async def get_outcomes(
     settlements = _get_settlement_store().read_for_agent(agent_id=agent_id)
     settlement_by_pid: dict[str, Any] = {s.prediction_id: s for s in settlements}
 
-    outcomes = [
-        build_evidence_receipt(
-            prediction=pred,
-            settlement=settlement_by_pid.get(pred.id),
-            feature_snapshot=None,
+    snapshot_store = _get_snapshot_store()
+    outcomes = []
+    for pred in predictions:
+        snapshot = snapshot_store.read_by_prediction_id(
+            pred.id,
+            agent_id=pred.agent_id,
         )
-        for pred in predictions
-    ]
+        outcomes.append(
+            build_evidence_receipt(
+                prediction=pred,
+                settlement=settlement_by_pid.get(pred.id),
+                feature_snapshot=snapshot,
+            )
+        )
 
     return {
         "model": name,

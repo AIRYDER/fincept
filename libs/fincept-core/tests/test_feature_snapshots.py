@@ -210,3 +210,76 @@ def test_read_for_symbol_bad_symbol_raises(tmp_path: pathlib.Path) -> None:
         store.read_for_symbol("", agent_id="agent-a")
     with pytest.raises(ValueError):
         store.read_for_symbol("AAPL", agent_id="agent-a", limit=0)
+
+
+# --------------------------------------------------------------------------- #
+# read_by_prediction_id                                                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_read_by_prediction_id_returns_matching_snapshot(
+    tmp_path: pathlib.Path,
+) -> None:
+    """read_by_prediction_id returns the snapshot for the given id."""
+    store = FeatureSnapshotStore(root=tmp_path)
+    snap_a = _snapshot(decision_time_ns=1_000_000_000)
+    snap_b = _snapshot(decision_time_ns=2_000_000_000)
+
+    store.append_if_missing("pred-0001", snap_a, agent_id="agent-a")
+    store.append_if_missing("pred-0002", snap_b, agent_id="agent-a")
+
+    out = store.read_by_prediction_id("pred-0001", agent_id="agent-a")
+    assert out is not None
+    assert out == snap_a
+
+    out = store.read_by_prediction_id("pred-0002", agent_id="agent-a")
+    assert out is not None
+    assert out == snap_b
+
+
+def test_read_by_prediction_id_returns_none_when_missing(
+    tmp_path: pathlib.Path,
+) -> None:
+    """read_by_prediction_id returns None when no match is found."""
+    store = FeatureSnapshotStore(root=tmp_path)
+    store.append_if_missing(
+        "pred-0001", _snapshot(), agent_id="agent-a"
+    )
+
+    assert store.read_by_prediction_id("pred-9999", agent_id="agent-a") is None
+
+
+def test_read_by_prediction_id_returns_none_when_file_missing(
+    tmp_path: pathlib.Path,
+) -> None:
+    """read_by_prediction_id returns None when the agent file doesn't exist."""
+    store = FeatureSnapshotStore(root=tmp_path)
+    assert store.read_by_prediction_id("pred-0001", agent_id="agent-a") is None
+
+
+def test_read_by_prediction_id_empty_prediction_id_returns_none(
+    tmp_path: pathlib.Path,
+) -> None:
+    """an empty prediction_id short-circuits to None."""
+    store = FeatureSnapshotStore(root=tmp_path)
+    assert store.read_by_prediction_id("", agent_id="agent-a") is None
+
+
+def test_read_by_prediction_id_skips_malformed_lines(
+    tmp_path: pathlib.Path,
+) -> None:
+    """a malformed line is skipped and does not prevent a later match."""
+    store = FeatureSnapshotStore(root=tmp_path)
+    good = _snapshot(decision_time_ns=1_000_000_000)
+    store.append_if_missing("pred-0001", good, agent_id="agent-a")
+
+    path = store._path("agent-a")
+    with path.open("a", encoding="utf-8") as f:
+        f.write("{not valid json\n")
+
+    snap_b = _snapshot(decision_time_ns=2_000_000_000)
+    store.append_if_missing("pred-0002", snap_b, agent_id="agent-a")
+
+    out = store.read_by_prediction_id("pred-0002", agent_id="agent-a")
+    assert out is not None
+    assert out == snap_b

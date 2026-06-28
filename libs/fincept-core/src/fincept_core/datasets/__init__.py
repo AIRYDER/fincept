@@ -40,6 +40,12 @@ from fincept_core.prediction_log import PredictionRow
 from .approved_roots import ApprovedRoots, ApprovedRootsError, default_approved_roots
 from .dossier import build_calibration_sidecar, build_dossier
 from .feature_snapshot import FeatureSnapshotStore
+from .schema_compat import (
+    SchemaCompatResult,
+    SchemaIncompatibilityError,
+    assert_feature_schema_compatible,
+    check_feature_schema_compatibility,
+)
 from .schemas import (
     ArtifactManifest,
     DatasetManifest,
@@ -147,13 +153,17 @@ __all__ = [
     "FeatureSnapshot",
     "FeatureSnapshotStore",
     "Fold",
+    "SchemaCompatResult",
+    "SchemaIncompatibilityError",
     "SettlementError",
     "SettlementRecord",
     "SettlementStore",
     "WalkForwardWindow",
+    "assert_feature_schema_compatible",
     "build_calibration_sidecar",
     "build_dossier",
     "build_evidence_receipt",
+    "check_feature_schema_compatibility",
     "default_approved_roots",
     "derive_walk_forward_window",
     "fold_iter_to_dicts",

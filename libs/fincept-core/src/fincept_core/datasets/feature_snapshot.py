@@ -261,6 +261,35 @@ class FeatureSnapshotStore:
         rows.sort(key=lambda s: s.decision_time_ns, reverse=True)
         return rows[:limit]
 
+    def read_by_prediction_id(
+        self,
+        prediction_id: str,
+        *,
+        agent_id: str,
+    ) -> FeatureSnapshot | None:
+        """Return the snapshot for a specific prediction_id, or None.
+
+        Scans the agent's snapshot file for the matching prediction_id.
+        Returns None if the file doesn't exist or no match is found.
+        """
+        if not prediction_id:
+            return None
+        path = self._path(agent_id)
+        if not path.is_file():
+            return None
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                decoded = _decode_line(line)
+                if decoded is None:
+                    continue
+                pid, snapshot = decoded
+                if pid == prediction_id:
+                    return snapshot
+        return None
+
     # ------------------------------------------------------------------ #
     # Internal helpers                                                   #
     # ------------------------------------------------------------------ #

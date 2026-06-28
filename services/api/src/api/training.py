@@ -47,6 +47,7 @@ Concurrency
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -59,6 +60,8 @@ import sys
 import time
 import uuid
 from typing import Any, Callable
+
+from fincept_core.datasets import default_approved_roots
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +149,7 @@ class TrainingRequest:
 class TrainingRun:
     run_id: str
     request: TrainingRequest
-    status: str  # queued | running | completed | failed
+    status: str  # queued | running | completed | failed | resumable_failed
     created_at: float
     started_at: float | None
     finished_at: float | None
@@ -156,6 +159,11 @@ class TrainingRun:
     record_path: str
     error: str | None = None
     pid: int | None = None
+    heartbeat_at: float | None = None
+    dataset_id: str | None = None
+    manifest_hash: str | None = None
+    artifact_manifest_path: str | None = None
+    resume_token: str | None = None
 
     def to_payload(self, *, log_tail: list[str] | None = None) -> dict[str, Any]:
         """Serialize for the API.  ``log_tail`` is read on demand."""
@@ -176,6 +184,11 @@ class TrainingRun:
             "log_path": self.log_path,
             "error": self.error,
             "request": dataclasses.asdict(self.request),
+            "heartbeat_at": self.heartbeat_at,
+            "dataset_id": self.dataset_id,
+            "manifest_hash": self.manifest_hash,
+            "artifact_manifest_path": self.artifact_manifest_path,
+            "resume_token": self.resume_token,
         }
         if log_tail is not None:
             payload["log_tail"] = log_tail
@@ -220,6 +233,11 @@ def _load_record(path: pathlib.Path) -> TrainingRun | None:
             record_path=str(path),
             error=data.get("error"),
             pid=data.get("pid"),
+            heartbeat_at=data.get("heartbeat_at"),
+            dataset_id=data.get("dataset_id"),
+            manifest_hash=data.get("manifest_hash"),
+            artifact_manifest_path=data.get("artifact_manifest_path"),
+            resume_token=data.get("resume_token"),
         )
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.warning("dropping malformed run record %s: %s", path.name, exc)
@@ -248,10 +266,27 @@ def _validate_model_name(name: str) -> None:
 
 
 def _validate_input_path(input_path: str) -> pathlib.Path:
-    """The trainer reads a parquet file; refuse anything outside the repo
-    root or with a ``..`` component (defence-in-depth even though the
-    operator is trusted)."""
-    p = pathlib.Path(input_path)
+    """The trainer reads a parquet file; refuse anything outside the
+    approved roots (data/ directory, repo root) or with a ``..``
+    component (defence-in-depth even though the operator is trusted).
+
+    Mirrors the backtest route's :meth:`ApprovedRoots.resolve` gate so a
+    caller that bypasses the route layer (e.g. a direct store call)
+    still can't escape ``data/`` or the repo root.  ``resolve()``
+    rejects ``..`` components, symlink escapes, and out-of-root paths;
+    an :class:`ApprovedRootsError` is converted to
+    :class:`TrainingValidationError` so the function's contract (single
+    exception type) is preserved for direct store callers.
+    """
+    from fincept_core.datasets.approved_roots import ApprovedRootsError
+
+    try:
+        resolved = default_approved_roots().resolve(input_path)
+    except ApprovedRootsError as exc:
+        raise TrainingValidationError(
+            f"input path rejected: {exc.code}"
+        ) from exc
+    p = resolved.path
     if not p.is_file():
         raise TrainingValidationError(f"input path not found: {input_path}")
     return p
@@ -438,6 +473,45 @@ class TrainingStore:
             task.add_done_callback(self._forget_task(run_id))
             return run
 
+    def heartbeat(self, run_id: str) -> bool:
+        """Update heartbeat_at for a run. Returns True if run exists."""
+        run = self._runs.get(run_id)
+        if run is None:
+            return False
+        run.heartbeat_at = time.time()
+        _persist(run)
+        return True
+
+    async def resume_run(self, run_id: str) -> TrainingRun:
+        """Re-launch a resumable_failed run with the same request."""
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise TrainingValidationError(f"run not found: {run_id}")
+            if run.status != "resumable_failed":
+                raise TrainingValidationError(
+                    f"run {run_id} is not resumable (status={run.status})"
+                )
+            running = sum(
+                1 for r in self._runs.values() if r.status in ("queued", "running")
+            )
+            if running >= self._max_concurrent:
+                raise TrainingValidationError(
+                    f"already {running} run(s) in flight; max is {self._max_concurrent}"
+                )
+            run.status = "queued"
+            run.started_at = None
+            run.finished_at = None
+            run.exit_code = None
+            run.error = None
+            run.pid = None
+            run.resume_token = f"resume-{uuid.uuid4().hex[:8]}"
+            _persist(run)
+            task = asyncio.create_task(self._run_subprocess(run))
+            self._tasks[run_id] = task
+            task.add_done_callback(self._forget_task(run_id))
+            return run
+
     # ------ internals ------------------------------------------------- #
 
     def _forget_task(self, run_id: str) -> Callable[[asyncio.Task[None]], None]:
@@ -455,11 +529,13 @@ class TrainingStore:
                 continue
             if run.status in ("queued", "running"):
                 # Process state is gone with the previous interpreter;
-                # mark these as failed so the UI doesn't show a fake
-                # "still running" forever.
-                run.status = "failed"
+                # mark these as resumable_failed so the UI doesn't show a
+                # fake "still running" forever and the operator can
+                # re-launch the run with the same request.
+                run.status = "resumable_failed"
                 run.error = (
-                    "api restarted while this run was active; subprocess state lost"
+                    "api restarted while this run was active; "
+                    "subprocess state lost (resumable)"
                 )
                 run.finished_at = run.finished_at or time.time()
                 _persist(run)
@@ -503,7 +579,19 @@ class TrainingStore:
                 run.started_at = time.time()
                 run.pid = proc.pid
                 _persist(run)
-                exit_code = await asyncio.to_thread(proc.wait)
+
+                async def _heartbeat_loop() -> None:
+                    while proc.poll() is None:
+                        self.heartbeat(run.run_id)
+                        await asyncio.sleep(5.0)
+
+                heartbeat_task = asyncio.create_task(_heartbeat_loop())
+                try:
+                    exit_code = await asyncio.to_thread(proc.wait)
+                finally:
+                    heartbeat_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await heartbeat_task
         except (OSError, asyncio.CancelledError, Exception) as exc:
             run.status = "failed"
             run.finished_at = time.time()

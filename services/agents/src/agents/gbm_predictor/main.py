@@ -420,6 +420,7 @@ async def run(
                     current_shadow_agent,
                     prediction_log=prediction_log,
                     model_name=initial_shadow_dir.name,
+                    feature_snapshot_store=feature_snapshot_store,
                 )
             )
             current_shadow_dir = initial_shadow_dir
@@ -528,6 +529,7 @@ async def run(
                             current_shadow_agent,
                             prediction_log=prediction_log,
                             model_name=new_shadow_dir.name,
+                            feature_snapshot_store=feature_snapshot_store,
                         )
                     )
                     log.info(
@@ -678,6 +680,7 @@ async def _shadow_loop(
     *,
     prediction_log: PredictionLog,
     model_name: str,
+    feature_snapshot_store: FeatureSnapshotStore | None = None,
 ) -> None:
     """Run a shadow agent's inference loop -- record only, never publish.
 
@@ -695,7 +698,7 @@ async def _shadow_loop(
     async for event_payload in agent.run():
         if not isinstance(event_payload, Prediction):
             continue
-        prediction_log.append(
+        pred_row = prediction_log.append(
             agent_id=event_payload.agent_id,
             model_name=model_name,
             ts_event=event_payload.ts_event,
@@ -704,6 +707,40 @@ async def _shadow_loop(
             direction=event_payload.direction,
             confidence=event_payload.confidence,
         )
+        if feature_snapshot_store is not None and pred_row is not None:
+            feature_vector = getattr(agent, "last_feature_vector", None)
+            frame_ts = getattr(agent, "last_feature_frame_ts", None)
+            feature_names = getattr(agent, "_features", None)
+            if (
+                feature_vector is not None
+                and frame_ts is not None
+                and feature_names is not None
+            ):
+                try:
+                    feature_row = FeatureRow(
+                        symbol=event_payload.symbol,
+                        ts=frame_ts,
+                        features=dict(feature_vector),
+                    )
+                    snapshot = FeatureSnapshot(
+                        decision_time_ns=event_payload.ts_event,
+                        rows=[feature_row],
+                        feature_schema_hash=_compute_feature_schema_hash(
+                            list(feature_names)
+                        ),
+                    )
+                    feature_snapshot_store.append_if_missing(
+                        pred_row.id,
+                        snapshot,
+                        agent_id=event_payload.agent_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "feature_snapshot_write_failed",
+                        agent_id=event_payload.agent_id,
+                        symbol=event_payload.symbol,
+                        error=str(exc),
+                    )
         log.info(
             "gbm.shadow.pred",
             symbol=event_payload.symbol,

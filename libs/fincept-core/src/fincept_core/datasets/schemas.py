@@ -78,6 +78,7 @@ class DatasetManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: int = 1
+    feature_schema_version: int = 1
     dataset_id: str
     feature_schema_hash: str
     label_schema_hash: str
@@ -135,6 +136,7 @@ class ArtifactManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: int = 1
+    feature_schema_version: int = 1
     artifact_id: str
     sha256: str
     size_bytes: int
@@ -203,6 +205,7 @@ class FeatureSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: int = 1
+    feature_schema_version: int = 1
     decision_time_ns: int
     rows: list[FeatureRow]
     feature_schema_hash: str

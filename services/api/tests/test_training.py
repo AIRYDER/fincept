@@ -130,9 +130,13 @@ def patched_training(
     )
 
     # Admit the tmp_path as an extra dev root so test-created input
-    # files pass the approved-root gate.
+    # files pass the approved-root gate.  The route layer reads
+    # ``api.routes.models._get_approved_roots`` while the store layer
+    # (``_validate_input_path``) reads ``api.training.default_approved_roots``
+    # directly, so both must be patched for direct store calls to work.
     approved = ApprovedRoots(roots=[], extra_dev_roots=[tmp_path])
     monkeypatch.setattr("api.routes.models._get_approved_roots", lambda: approved)
+    monkeypatch.setattr("api.training.default_approved_roots", lambda: approved)
 
     yield {
         "runs_dir": runs_dir,
@@ -298,7 +302,9 @@ class TestValidation:
             num_boost_round=500,
             early_stopping_rounds=30,
         )
-        with pytest.raises(TrainingValidationError, match="not found"):
+        # The approved-roots gate rejects the path before the is_file()
+        # check fires, so the error message is "rejected" not "not found".
+        with pytest.raises(TrainingValidationError, match="rejected"):
             _validate_request(req)
 
 
@@ -399,12 +405,13 @@ class TestStoreLifecycle:
         assert replayed.status == "completed"
         assert replayed.request.model_name == req.model_name
 
-    def test_running_run_marked_failed_on_reload(
+    def test_running_run_marked_resumable_failed_on_reload(
         self, tmp_path: pathlib.Path, patched_training, stub_trainer_cmd: list[str]
     ) -> None:
         """If a record on disk says status=running but the process is
-        gone (api restarted), the new store boots it as 'failed' so the
-        UI doesn't show a phantom in-flight job forever."""
+        gone (api restarted), the new store boots it as
+        'resumable_failed' so the UI doesn't show a phantom in-flight
+        job forever and the operator can re-launch it."""
         from api.training import TrainingStore
 
         runs_dir = patched_training["runs_dir"]
@@ -441,8 +448,9 @@ class TestStoreLifecycle:
         )
         run = fresh.get("stale")
         assert run is not None
-        assert run.status == "failed"
+        assert run.status == "resumable_failed"
         assert "api restarted" in (run.error or "")
+        assert "resumable" in (run.error or "")
 
     def test_malformed_record_dropped(
         self, patched_training, stub_trainer_cmd: list[str]
@@ -458,6 +466,143 @@ class TestStoreLifecycle:
         )
         # Did not crash, did not appear in the listing.
         assert all(r.run_id != "broken" for r in fresh.list_runs())
+
+    @pytest.mark.asyncio
+    async def test_resume_run_relaunches_resumable_failed(
+        self, tmp_path: pathlib.Path, patched_training, stub_trainer_cmd: list[str]
+    ) -> None:
+        """A resumable_failed run can be re-launched via resume_run; it
+        returns to queued and eventually completes."""
+        from api.training import TrainingStore
+
+        runs_dir = patched_training["runs_dir"]
+        models_dir = patched_training["models_dir"]
+        record = runs_dir / "resumable.json"
+        record.write_text(
+            json.dumps(
+                {
+                    "run_id": "resumable",
+                    "status": "resumable_failed",
+                    "created_at": 1.0,
+                    "started_at": 1.0,
+                    "finished_at": 2.0,
+                    "exit_code": None,
+                    "out_dir": str(models_dir / "m"),
+                    "log_path": str(runs_dir / "resumable.log"),
+                    "request": {
+                        "model_name": "m",
+                        "input_path": str(_input_parquet(tmp_path)),
+                        "horizon_bars": 15,
+                        "bar_seconds": 60,
+                        "cv_folds": 0,
+                        "purge_bars": -1,
+                        "embargo_bars": 0,
+                        "num_boost_round": 5,
+                        "early_stopping_rounds": 5,
+                    },
+                }
+            )
+        )
+        fresh = TrainingStore(
+            runs_dir=runs_dir,
+            models_dir=models_dir,
+            max_concurrent=1,
+            trainer_cmd=stub_trainer_cmd,
+        )
+        run = fresh.get("resumable")
+        assert run is not None
+        assert run.status == "resumable_failed"
+
+        resumed = await fresh.resume_run("resumable")
+        assert resumed.status == "queued"
+        assert resumed.resume_token is not None
+        assert resumed.resume_token.startswith("resume-")
+        assert resumed.started_at is None
+        assert resumed.finished_at is None
+        assert resumed.error is None
+
+        terminal = await _wait_terminal(fresh, "resumable")
+        assert terminal.status == "completed"
+        assert terminal.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_resume_run_rejects_non_resumable(
+        self, tmp_path: pathlib.Path, patched_training
+    ) -> None:
+        """resume_run raises TrainingValidationError for a run that is
+        not in the resumable_failed state."""
+        from api.training import TrainingValidationError
+
+        store = patched_training["store"]
+        req = _build_request(_input_parquet(tmp_path))
+        run = await store.start_run(req)
+        await _wait_terminal(store, run.run_id)
+        # Run is now 'completed' -- not resumable.
+        with pytest.raises(TrainingValidationError, match="not resumable"):
+            await store.resume_run(run.run_id)
+
+    @pytest.mark.asyncio
+    async def test_resume_run_rejects_unknown_run(self, patched_training) -> None:
+        """resume_run raises TrainingValidationError for a missing run."""
+        from api.training import TrainingValidationError
+
+        store = patched_training["store"]
+        with pytest.raises(TrainingValidationError, match="not found"):
+            await store.resume_run("does-not-exist")
+
+    def test_heartbeat_updates_heartbeat_at(
+        self, tmp_path: pathlib.Path, patched_training, stub_trainer_cmd: list[str]
+    ) -> None:
+        """heartbeat() sets heartbeat_at on the run and returns True;
+        returns False for an unknown run."""
+        from api.training import TrainingStore
+
+        runs_dir = patched_training["runs_dir"]
+        models_dir = patched_training["models_dir"]
+        record = runs_dir / "hb.json"
+        record.write_text(
+            json.dumps(
+                {
+                    "run_id": "hb",
+                    "status": "completed",
+                    "created_at": 1.0,
+                    "started_at": 1.0,
+                    "finished_at": 2.0,
+                    "exit_code": 0,
+                    "out_dir": str(models_dir / "m"),
+                    "log_path": str(runs_dir / "hb.log"),
+                    "request": {
+                        "model_name": "m",
+                        "input_path": "x.parquet",
+                        "horizon_bars": 15,
+                        "bar_seconds": 60,
+                        "cv_folds": 0,
+                        "purge_bars": -1,
+                        "embargo_bars": 0,
+                        "num_boost_round": 5,
+                        "early_stopping_rounds": 5,
+                    },
+                }
+            )
+        )
+        fresh = TrainingStore(
+            runs_dir=runs_dir,
+            models_dir=models_dir,
+            trainer_cmd=stub_trainer_cmd,
+        )
+        run = fresh.get("hb")
+        assert run is not None
+        assert run.heartbeat_at is None
+
+        ok = fresh.heartbeat("hb")
+        assert ok is True
+        reloaded = fresh.get("hb")
+        assert reloaded is not None
+        assert reloaded.heartbeat_at is not None
+        assert reloaded.heartbeat_at > 0
+
+        # Unknown run returns False.
+        assert fresh.heartbeat("no-such-run") is False
 
 
 # --------------------------------------------------------------------------- #

@@ -28,24 +28,37 @@ def patched_stores(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ):
-    """Redirect both the prediction log and settlement store at tmp dirs.
+    """Redirect prediction log, settlement store, and snapshot store at tmp dirs.
 
-    Yields a dict with the two store instances so each test can
+    Yields a dict with the three store instances so each test can
     pre-populate them with the rows it cares about.
     """
-    from fincept_core.datasets import SettlementStore
+    from fincept_core.datasets import (
+        FeatureSnapshotStore,
+        SettlementStore,
+    )
     from fincept_core.prediction_log import PredictionLog
 
     predictions_dir = tmp_path / "predictions"
     settlements_dir = tmp_path / "settlements"
+    snapshots_dir = tmp_path / "feature_snapshots"
     log = PredictionLog(predictions_dir=predictions_dir)
     settlement_store = SettlementStore(root=settlements_dir)
+    snapshot_store = FeatureSnapshotStore(root=snapshots_dir)
 
     monkeypatch.setattr("api.routes.models._get_prediction_log", lambda: log)
     monkeypatch.setattr(
         "api.routes.models._get_settlement_store", lambda: settlement_store
     )
-    return {"log": log, "settlements": settlement_store, "tmp_path": tmp_path}
+    monkeypatch.setattr(
+        "api.routes.models._get_snapshot_store", lambda: snapshot_store
+    )
+    return {
+        "log": log,
+        "settlements": settlement_store,
+        "snapshots": snapshot_store,
+        "tmp_path": tmp_path,
+    }
 
 
 def _seed_predictions(
@@ -319,3 +332,70 @@ async def test_outcomes_rejects_out_of_range_limit(
         headers=auth_headers,
     )
     assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Feature snapshots                                                           #
+# --------------------------------------------------------------------------- #
+
+
+async def test_outcomes_includes_feature_schema_hash_when_snapshot_exists(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    patched_stores,
+) -> None:
+    """When a feature snapshot is recorded for a prediction, the outcome
+    carries the snapshot's ``feature_schema_hash``."""
+    from fincept_core.datasets import FeatureRow, FeatureSnapshot
+
+    log = patched_stores["log"]
+    snapshot_store = patched_stores["snapshots"]
+
+    preds = _seed_predictions(log, n=2)
+    # Record a snapshot only for the first prediction.
+    schemash = "b" * 64
+    snapshot = FeatureSnapshot(
+        decision_time_ns=preds[0].ts_event,
+        rows=[
+            FeatureRow(
+                symbol=preds[0].symbol,
+                ts=preds[0].ts_event,
+                features={"f1": 1.0},
+            )
+        ],
+        feature_schema_hash=schemash,
+    )
+    snapshot_store.append_if_missing(
+        preds[0].id,
+        snapshot,
+        agent_id="gbm_predictor.v1",
+    )
+
+    r = await client.get("/models/gbm_predictor/outcomes", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2
+
+    by_pid = {o["prediction_id"]: o for o in body["outcomes"]}
+    # The prediction with a snapshot carries the schema hash.
+    assert by_pid[preds[0].id]["feature_schema_hash"] == schemash
+    # The prediction without a snapshot does not carry the key.
+    assert "feature_schema_hash" not in by_pid[preds[1].id]
+
+
+async def test_outcomes_no_snapshot_key_when_absent(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    patched_stores,
+) -> None:
+    """When no feature snapshot exists for any prediction, the
+    ``feature_schema_hash`` key is absent from every outcome."""
+    log = patched_stores["log"]
+    _seed_predictions(log, n=3)
+
+    r = await client.get("/models/gbm_predictor/outcomes", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 3
+    for o in body["outcomes"]:
+        assert "feature_schema_hash" not in o

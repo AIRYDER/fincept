@@ -86,9 +86,11 @@ print("done")
         trainer_cmd=[sys.executable, str(script)],
     )
 
-    # Admit tmp_path as an extra dev root.
+    # Admit tmp_path as an extra dev root.  Patch both the route-level
+    # gate and the store-level gate so direct store calls also work.
     approved = ApprovedRoots(roots=[], extra_dev_roots=[tmp_path])
     monkeypatch.setattr("api.routes.models._get_approved_roots", lambda: approved)
+    monkeypatch.setattr("api.training.default_approved_roots", lambda: approved)
 
     yield {"store": store, "tmp_path": tmp_path}
 
