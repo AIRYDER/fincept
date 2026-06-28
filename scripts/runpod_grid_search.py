@@ -33,7 +33,12 @@ KEY = os.environ["RUNPOD_API_KEY"]
 EP = os.environ["RUNPOD_TRAINING_ENDPOINT_ID"]
 BASE_URL = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
 CALLBACK_SECRET = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
-VOLUME_PATH = "/runpod-volume/datasets/deep_real/dataset_full.csv"
+import argparse as _argparse
+_arg = _argparse.ArgumentParser()
+_arg.add_argument("--dataset", default="/runpod-volume/datasets/deep_real/dataset_full.csv")
+_arg.add_argument("--tag", default="grid")
+_args, _ = _arg.parse_known_args()
+VOLUME_PATH = _args.dataset
 OUTPUT_PREFIX = "/runpod-volume/runs"
 
 # ─── Grid definition ──────────────────────────────────────────────────────
@@ -167,7 +172,7 @@ def main() -> int:
     jobs = []
     for config_name, config_params in HYPERPARAM_CONFIGS.items():
         for seed in SEEDS:
-            job_id = f"grid-{config_name}-s{seed}-{int(time.time())}"
+            job_id = f"{_args.tag}-{config_name}-s{seed}-{int(time.time())}"
             job_input = {
                 "schema_version": 1,
                 "job_id": job_id,
