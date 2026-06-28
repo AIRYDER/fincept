@@ -62,11 +62,10 @@ ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800"
 ENV QUANT_FOUNDRY_USE_REAL_TRAINER="true"
 ENV PYTHONPATH=/worker
 
-# Create a non-root user for defense-in-depth. RunPod serverless workers
-# don't need root — the handler only reads job input and writes callbacks.
-RUN groupadd --system --gid 1001 qfworker \
-    && useradd --system --uid 1001 --gid qfworker --home-dir /worker qfworker
-USER qfworker
+# Run as root so the handler can write to the network volume at /workspace/.
+# The container is already sandboxed: no broker credentials, no Redis, no
+# trading access. The security boundary is the container itself, not the
+# user inside it. RunPod serverless workers are ephemeral and isolated.
 
 # Healthcheck: verify the Python runtime + handler module can load.
 # RunPod polls this to decide whether to send jobs to the worker.

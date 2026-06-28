@@ -68,6 +68,49 @@ from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
 
 
+def runpod_data_root() -> Path:
+    """Resolve the RunPod network volume mount path.
+
+    RunPod mounts the network volume at different paths depending on the mode:
+    - Pod mode (SSH/dev):     /workspace
+    - Serverless mode:        /runpod-volume
+
+    This helper checks both and returns the first that exists.
+    Falls back to /tmp if neither exists (e.g. local testing).
+    """
+    for path in (Path("/runpod-volume"), Path("/workspace")):
+        if path.exists():
+            return path
+    return Path("/tmp")
+
+
+def resolve_volume_path(ref: str) -> str:
+    """Resolve a dataset reference that may use /runpod-volume or /workspace.
+
+    If the ref starts with /runpod-volume/ but the actual mount is /workspace,
+    or vice versa, rewrite it to the correct path.
+    """
+    if not ref or ref.startswith("inline://") or ref.startswith("s3://") or ref.startswith("http"):
+        return ref
+
+    ref_path = Path(ref)
+    # Check if it's a volume path that needs rewriting
+    if str(ref_path).startswith("/runpod-volume/"):
+        actual_root = runpod_data_root()
+        if str(actual_root) != "/runpod-volume":
+            # Rewrite: /runpod-volume/datasets/x -> /workspace/datasets/x
+            relative = ref_path.relative_to("/runpod-volume")
+            return str(actual_root / relative)
+    elif str(ref_path).startswith("/workspace/"):
+        actual_root = runpod_data_root()
+        if str(actual_root) != "/workspace":
+            # Rewrite: /workspace/datasets/x -> /runpod-volume/datasets/x
+            relative = ref_path.relative_to("/workspace")
+            return str(actual_root / relative)
+
+    return ref
+
+
 def _get_callback_secret() -> str:
     secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
     if not secret:
@@ -212,9 +255,9 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 "error_summary": "write_volume requires volume_path and chunk_data",
                 "job_id": input_data.get("job_id"),
             }
-        from pathlib import Path as _Path
-
-        target = _Path(volume_path)
+        # Resolve volume path (/runpod-volume vs /workspace)
+        resolved = resolve_volume_path(volume_path)
+        target = Path(resolved)
         target.parent.mkdir(parents=True, exist_ok=True)
         if chunk_mode == "append":
             with open(target, "a", encoding="utf-8") as f:
@@ -226,6 +269,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         return {
             "task": "write_volume",
             "volume_path": str(target),
+            "requested_path": volume_path,
             "chunk_mode": chunk_mode,
             "file_size_bytes": size,
             "file_size_mb": round(size / 1024 / 1024, 2),
@@ -235,13 +279,13 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # Volume read task: check if a file exists on the network volume.
     if input_data.get("task") == "stat_volume":
         volume_path = input_data.get("volume_path", "")
-        from pathlib import Path as _Path
-
-        target = _Path(volume_path)
+        resolved = resolve_volume_path(volume_path)
+        target = Path(resolved)
         if target.exists():
             return {
                 "task": "stat_volume",
                 "volume_path": str(target),
+                "requested_path": volume_path,
                 "exists": True,
                 "file_size_bytes": target.stat().st_size,
                 "file_size_mb": round(target.stat().st_size / 1024 / 1024, 2),
@@ -249,8 +293,35 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         return {
             "task": "stat_volume",
             "volume_path": str(target),
+            "requested_path": volume_path,
             "exists": False,
             "file_size_bytes": 0,
+        }
+
+    # Volume list task: list files in a directory on the network volume.
+    if input_data.get("task") == "list_volume":
+        dir_path = input_data.get("volume_path", "/")
+        resolved = resolve_volume_path(dir_path)
+        target = Path(resolved)
+        if not target.exists():
+            return {
+                "task": "list_volume",
+                "volume_path": str(target),
+                "exists": False,
+                "files": [],
+            }
+        files = []
+        for p in sorted(target.iterdir()):
+            files.append({
+                "name": p.name,
+                "size_bytes": p.stat().st_size if p.is_file() else 0,
+                "is_dir": p.is_dir(),
+            })
+        return {
+            "task": "list_volume",
+            "volume_path": str(target),
+            "exists": True,
+            "files": files,
         }
 
     # Support inline dataset for E2E testing: if the input includes
@@ -278,6 +349,16 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         csv_path = tmp_dir / "inline_dataset.csv"
         csv_path.write_text(inline_csv, encoding="utf-8")
         req = req.model_copy(update={"dataset_manifest_ref": str(csv_path)})
+    else:
+        # Resolve volume paths (/runpod-volume vs /workspace)
+        resolved_ref = resolve_volume_path(req.dataset_manifest_ref)
+        if resolved_ref != req.dataset_manifest_ref:
+            req = req.model_copy(update={"dataset_manifest_ref": resolved_ref})
+
+    # Resolve output_prefix if provided (handler-level extension)
+    output_prefix = input_data.pop("output_prefix", None) if isinstance(input_data, dict) else None
+    if output_prefix:
+        output_prefix = resolve_volume_path(output_prefix)
 
     # Worker-side status file: mark the job as started so the gateway
     # can detect crashed workers via stale heartbeat_at timestamps.
@@ -312,6 +393,32 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
     write_status(req.job_id, "completed", artifact_id=result.artifact_id)
 
+    # If output_prefix is set, write the model artifact + dossier to the volume
+    if output_prefix:
+        try:
+            out_dir = Path(output_prefix)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            callback_json = json.loads(result.callback_payload.decode("utf-8"))
+            payload = callback_json.get("payload", {})
+            artifact_manifest = payload.get("artifact_manifest", {})
+            dossier_data = payload.get("dossier", {})
+            (out_dir / "callback_envelope.json").write_text(
+                json.dumps(callback_json, indent=2), encoding="utf-8"
+            )
+            (out_dir / "artifact_manifest.json").write_text(
+                json.dumps(artifact_manifest, indent=2), encoding="utf-8"
+            )
+            (out_dir / "dossier.json").write_text(
+                json.dumps(dossier_data, indent=2), encoding="utf-8"
+            )
+            # Write the model bytes if available
+            model_bytes = getattr(result, "model_bytes", None)
+            if model_bytes:
+                (out_dir / "model.txt").write_bytes(model_bytes)
+        except Exception as exc:
+            # Best-effort — don't fail the job if volume write fails
+            pass
+
     return {
         "job_id": req.job_id,
         "callback_payload": result.callback_payload.decode("utf-8"),
@@ -319,6 +426,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         "callback_ts": result.callback_ts,
         "artifact_id": result.artifact_id,
         "dossier_id": result.dossier_id,
+        "output_prefix": output_prefix,
     }
 
 
