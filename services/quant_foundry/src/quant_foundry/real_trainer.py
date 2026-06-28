@@ -214,6 +214,8 @@ class RealLightGBMTrainer:
                 "win_rate": str(metrics["win_rate"]),
                 "max_drawdown": str(metrics["max_drawdown"]),
                 "sharpe_ratio": str(metrics["sharpe_ratio"]),
+                "avg_best_iteration": str(metrics.get("avg_best_iteration", "n/a")),
+                "fold_best_iterations": str(metrics.get("fold_best_iterations", [])),
                 # F3: record the PBO/DSR method so an operator inspecting
                 # the dossier knows these are heuristics, not the academic
                 # Bailey & Lopez de Prado figures (the tournament computes
@@ -408,6 +410,12 @@ class RealLightGBMTrainer:
             "bagging_freq": 5,
             "min_data_in_leaf": 5,
             "force_col_wise": True,
+            # Regularization defaults (can be overridden via search_space)
+            "lambda_l1": 0.0,
+            "lambda_l2": 0.0,
+            "min_split_gain": 0.0,
+            "path_smooth": 0.0,
+            "extra_trees": False,
         }
 
         ss = req.search_space
@@ -419,6 +427,24 @@ class RealLightGBMTrainer:
             params["max_depth"] = int(ss["max_depth"][0])
         if ss.get("min_data_in_leaf"):
             params["min_data_in_leaf"] = int(ss["min_data_in_leaf"][0])
+        if ss.get("feature_fraction"):
+            params["feature_fraction"] = float(ss["feature_fraction"][0])
+        if ss.get("bagging_fraction"):
+            params["bagging_fraction"] = float(ss["bagging_fraction"][0])
+        if ss.get("bagging_freq"):
+            params["bagging_freq"] = int(ss["bagging_freq"][0])
+        if ss.get("lambda_l1"):
+            params["lambda_l1"] = float(ss["lambda_l1"][0])
+        if ss.get("lambda_l2"):
+            params["lambda_l2"] = float(ss["lambda_l2"][0])
+        if ss.get("min_split_gain"):
+            params["min_split_gain"] = float(ss["min_split_gain"][0])
+        if ss.get("path_smooth"):
+            params["path_smooth"] = float(ss["path_smooth"][0])
+        if ss.get("extra_trees"):
+            params["extra_trees"] = bool(ss["extra_trees"][0])
+        if ss.get("num_threads"):
+            params["num_threads"] = int(ss["num_threads"][0])
 
         return params
 
@@ -634,10 +660,18 @@ class RealLightGBMTrainer:
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
 
+        # Early stopping: if early_stopping_rounds is set in search_space,
+        # use validation-based early stopping to prevent overfitting.
+        early_stopping_rounds = None
+        es_val = req.search_space.get("early_stopping_rounds")
+        if es_val:
+            early_stopping_rounds = int(es_val[0])
+
         all_preds: list[float] = []
         all_labels: list[float] = []
         fold_train_acc: list[float] = []
         fold_val_acc: list[float] = []
+        fold_best_iterations: list[int] = []
 
         for fold in folds:
             if time.time_ns() >= deadline_ns:
@@ -663,11 +697,30 @@ class RealLightGBMTrainer:
 
             train_set = lgb.Dataset(X_train, label=y_train)
 
-            model = lgb.train(
-                params,
-                train_set,
-                num_boost_round=n_estimators,
-            )
+            if early_stopping_rounds and len(X_val) > 0:
+                val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
+                callbacks = [
+                    lgb.early_stopping(
+                        stopping_rounds=early_stopping_rounds,
+                        verbose=False,
+                    ),
+                    lgb.log_evaluation(period=0),
+                ]
+                model = lgb.train(
+                    params,
+                    train_set,
+                    num_boost_round=n_estimators,
+                    valid_sets=[val_set],
+                    callbacks=callbacks,
+                )
+                fold_best_iterations.append(model.best_iteration)
+            else:
+                model = lgb.train(
+                    params,
+                    train_set,
+                    num_boost_round=n_estimators,
+                )
+                fold_best_iterations.append(n_estimators)
 
             train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
             train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
@@ -692,13 +745,22 @@ class RealLightGBMTrainer:
 
         periods_per_year = self._resolve_periods_per_year(req.extra_constraints)
 
-        return self._compute_metrics(
+        result = self._compute_metrics(
             preds_arr,
             labels_arr,
             fold_train_acc,
             fold_val_acc,
             periods_per_year=periods_per_year,
         )
+        result["fold_best_iterations"] = fold_best_iterations
+        result["avg_best_iteration"] = (
+            sum(fold_best_iterations) / len(fold_best_iterations)
+            if fold_best_iterations
+            else n_estimators
+        )
+        # Store for final model training (use avg best iteration)
+        self._last_avg_best_iteration = result["avg_best_iteration"]
+        return result
 
     # --- metric computation ----------------------------------------------
 
@@ -830,11 +892,24 @@ class RealLightGBMTrainer:
         seed: int,
         req: RunPodTrainingRequest,
     ) -> Any:
-        """Train the final LightGBM model on all available data."""
+        """Train the final LightGBM model on all available data.
+
+        If early stopping was used during walk-forward validation, use the
+        average best iteration across folds as the number of boosting rounds
+        for the final model. This prevents the final model from overfitting
+        by training too many rounds on the full dataset.
+        """
         import lightgbm as lgb
 
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
+
+        # Use avg_best_iteration from walk-forward if early stopping was used
+        es_val = req.search_space.get("early_stopping_rounds")
+        if es_val and hasattr(self, "_last_avg_best_iteration"):
+            avg_iter = self._last_avg_best_iteration
+            if avg_iter and avg_iter > 10:
+                n_estimators = int(avg_iter)
 
         train_set = lgb.Dataset(X, label=y)
         model = lgb.train(

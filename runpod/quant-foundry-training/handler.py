@@ -173,7 +173,7 @@ def _get_deadline_seconds() -> int:
         return 600
 
 
-def _build_trainer() -> Any:
+def _build_trainer(n_folds: int = 3) -> Any:
     """Select the trainer based on the QUANT_FOUNDRY_USE_REAL_TRAINER env var.
 
     When ``QUANT_FOUNDRY_USE_REAL_TRAINER=true``, use ``RealLightGBMTrainer``
@@ -187,7 +187,7 @@ def _build_trainer() -> Any:
     if use_real:
         from quant_foundry.real_trainer import RealLightGBMTrainer
 
-        return RealLightGBMTrainer()
+        return RealLightGBMTrainer(n_folds=n_folds)
     return LocalTrainer()
 
 
@@ -334,6 +334,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # Pop handler-level extensions BEFORE schema validation (schema forbids extra fields)
     inline_csv = input_data.pop("inline_dataset_csv", None)
     output_prefix = input_data.pop("output_prefix", None)
+    n_folds = input_data.pop("n_folds", 3)
 
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
@@ -367,7 +368,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
-        trainer=_build_trainer(),
+        trainer=_build_trainer(n_folds=int(n_folds) if n_folds else 3),
         deadline_seconds=_get_deadline_seconds(),
     )
 
