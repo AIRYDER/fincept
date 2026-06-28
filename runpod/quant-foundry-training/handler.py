@@ -331,7 +331,9 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # RunPodTrainingRequest schema — it is a handler-level extension, so
     # we must pop it from the input BEFORE schema validation (the schema
     # forbids extra fields).
+    # Pop handler-level extensions BEFORE schema validation (schema forbids extra fields)
     inline_csv = input_data.pop("inline_dataset_csv", None)
+    output_prefix = input_data.pop("output_prefix", None)
 
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
@@ -356,7 +358,6 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             req = req.model_copy(update={"dataset_manifest_ref": resolved_ref})
 
     # Resolve output_prefix if provided (handler-level extension)
-    output_prefix = input_data.pop("output_prefix", None) if isinstance(input_data, dict) else None
     if output_prefix:
         output_prefix = resolve_volume_path(output_prefix)
 

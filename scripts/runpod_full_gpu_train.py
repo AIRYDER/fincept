@@ -32,7 +32,10 @@ KEY = os.environ["RUNPOD_API_KEY"]
 EP = os.environ["RUNPOD_TRAINING_ENDPOINT_ID"]
 BASE_URL = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
 CALLBACK_SECRET = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
-VOLUME_PATH = "/workspace/dataset_full.csv"
+# Serverless mounts the network volume at /runpod-volume/
+# The handler's resolve_volume_path() will rewrite this to /workspace/ if needed
+VOLUME_PATH = "/runpod-volume/datasets/deep_real/dataset_full.csv"
+OUTPUT_PREFIX = "/runpod-volume/runs"
 CHUNK_SIZE = 7 * 1024 * 1024  # 7 MB per chunk (under 10MB RunPod limit)
 
 
@@ -97,78 +100,27 @@ def main() -> int:
     print("RUNPOD FULL GPU TRAINING PIPELINE")
     print("=" * 70)
     print(f"  Endpoint: {EP}")
-    print(f"  Volume path: {VOLUME_PATH}")
+    print(f"  Dataset:  {VOLUME_PATH}")
+    print(f"  Output:   {OUTPUT_PREFIX}")
 
-    # 1. Load dataset
+    # 1. Verify dataset exists on the network volume
     print(f"\n{'=' * 70}")
-    print("STEP 1: LOAD DATASET")
-    print("=" * 70)
-
-    dataset_dir = _REPO_ROOT / "data" / "datasets" / "deep_real"
-    parquet_files = list(dataset_dir.glob("*.parquet"))
-    if not parquet_files:
-        print("ERROR: no dataset parquet found")
-        return 1
-
-    parquet_path = parquet_files[0]
-    print(f"  Dataset: {parquet_path.name}")
-
-    import pyarrow.parquet as pq
-
-    table = pq.read_table(str(parquet_path))
-    df = table.to_pandas()
-    df = df.sort_values("decision_time")
-    print(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
-
-    csv_text = df.to_csv(index=False)
-    total_size = len(csv_text)
-    print(f"  CSV size: {total_size:,} bytes ({total_size / 1024 / 1024:.1f} MB)")
-
-    # 2. Upload dataset in chunks via write_volume
-    print(f"\n{'=' * 70}")
-    print("STEP 2: UPLOAD DATASET TO NETWORK VOLUME")
-    print("=" * 70)
-
-    n_chunks = math.ceil(total_size / CHUNK_SIZE)
-    print(f"  Chunks: {n_chunks} (each up to {CHUNK_SIZE / 1024 / 1024:.0f} MB)")
-
-    for i in range(n_chunks):
-        start = i * CHUNK_SIZE
-        end = min(start + CHUNK_SIZE, total_size)
-        chunk = csv_text[start:end]
-        mode = "write" if i == 0 else "append"
-
-        print(f"\n  Chunk {i + 1}/{n_chunks} ({len(chunk):,} bytes, mode={mode})")
-        job_id = dispatch_job({
-            "task": "write_volume",
-            "volume_path": VOLUME_PATH,
-            "chunk_data": chunk,
-            "chunk_mode": mode,
-        })
-        output = poll_job(job_id, timeout=120)
-        if output.get("status") == "ok":
-            print(f"  File size: {output.get('file_size_mb')} MB")
-        else:
-            print(f"  ERROR: {output}")
-            return 1
-
-    # 3. Verify upload
-    print(f"\n{'=' * 70}")
-    print("STEP 3: VERIFY UPLOAD")
+    print("STEP 1: VERIFY DATASET ON NETWORK VOLUME")
     print("=" * 70)
 
     job_id = dispatch_job({"task": "stat_volume", "volume_path": VOLUME_PATH})
-    output = poll_job(job_id, timeout=60)
+    output = poll_job(job_id, timeout=120)
     if output.get("exists"):
         print(f"  File exists: {output.get('volume_path')}")
         print(f"  Size: {output.get('file_size_mb')} MB ({output.get('file_size_bytes'):,} bytes)")
     else:
-        print(f"  ERROR: file not found on volume!")
+        print(f"  ERROR: dataset not found on volume!")
+        print(f"  Run scripts/runpod_s3_upload.py first to upload the dataset.")
         return 1
 
-    # 4. Dispatch training job
+    # 2. Dispatch training job
     print(f"\n{'=' * 70}")
-    print("STEP 4: DISPATCH TRAINING JOB (full 46K rows)")
+    print("STEP 2: DISPATCH TRAINING JOB (full 46K rows from network volume)")
     print("=" * 70)
 
     train_job_id = f"runpod-full-gpu-{int(time.time())}"
@@ -190,25 +142,28 @@ def main() -> int:
             "horizon_bars": "5",
             "purge_bars": "5",
         },
+        # Handler-level extension: write results to the network volume
+        "output_prefix": f"{OUTPUT_PREFIX}/{train_job_id}",
     }
 
     print(f"  job_id: {train_job_id}")
     print(f"  dataset: {VOLUME_PATH}")
+    print(f"  output:  {job_input['output_prefix']}")
     print(f"  model: 500 trees, 127 leaves, depth 8, lr=0.01")
 
     runpod_job_id = dispatch_job(job_input)
     print(f"  RunPod job: {runpod_job_id}")
 
-    # 5. Poll for completion
+    # 3. Poll for completion
     print(f"\n{'=' * 70}")
-    print("STEP 5: POLL FOR COMPLETION")
+    print("STEP 3: POLL FOR COMPLETION")
     print("=" * 70)
 
     output = poll_job(runpod_job_id, timeout=1800)  # 30 min deadline
 
-    # 6. Parse results
+    # 4. Parse results
     print(f"\n{'=' * 70}")
-    print("STEP 6: TRAINING RESULTS")
+    print("STEP 4: TRAINING RESULTS")
     print("=" * 70)
 
     callback_payload_str = output.get("callback_payload", "")
@@ -219,6 +174,7 @@ def main() -> int:
     if not callback_payload_str:
         print(f"  ERROR: no callback payload in output")
         print(f"  Output keys: {list(output.keys())}")
+        print(f"  Full output: {json.dumps(output, indent=2, default=str)[:500]}")
         return 1
 
     envelope = json.loads(callback_payload_str)
@@ -228,9 +184,9 @@ def main() -> int:
     metrics = dossier.get("training_metrics", {})
     meta = dossier.get("metadata", {})
 
-    # 7. Verify HMAC
+    # 5. Verify HMAC
     print(f"\n{'=' * 70}")
-    print("STEP 7: VERIFY HMAC SIGNATURE")
+    print("STEP 5: VERIFY HMAC SIGNATURE")
     print("=" * 70)
 
     from quant_foundry.signatures import verify_callback
@@ -244,9 +200,9 @@ def main() -> int:
     )
     print(f"  Signature valid: {sig_valid}")
 
-    # 8. Display results
+    # 6. Display results
     print(f"\n{'=' * 70}")
-    print("STEP 8: FULL RESULTS")
+    print("STEP 6: FULL RESULTS")
     print("=" * 70)
 
     print(f"\n  Artifact:")
@@ -273,7 +229,7 @@ def main() -> int:
     print(f"    pbo:               {dossier.get('pbo', 'n/a')}")
     print(f"    deflated_sharpe:   {dossier.get('deflated_sharpe', 'n/a')}")
 
-    # 9. Save results
+    # 7. Save results locally
     results_dir = _REPO_ROOT / "data" / "runpod_full_gpu_training" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     (results_dir / "callback_envelope.json").write_text(
@@ -289,6 +245,16 @@ def main() -> int:
         json.dumps(output, indent=2, default=str), encoding="utf-8"
     )
     print(f"\n  Results saved: {results_dir}")
+
+    # 8. Also check if results were written to the volume
+    if output.get("output_prefix"):
+        print(f"\n  Results on volume: {output['output_prefix']}")
+        # List the output directory
+        list_job = dispatch_job({"task": "list_volume", "volume_path": output["output_prefix"]})
+        list_output = poll_job(list_job, timeout=60, quiet=True)
+        if list_output.get("exists"):
+            for f in list_output.get("files", []):
+                print(f"    {f['name']}: {f['size_bytes']:,} bytes")
 
     print(f"\n{'=' * 70}")
     print(f"FULL GPU TRAINING COMPLETE")
