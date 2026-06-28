@@ -560,17 +560,20 @@ await store.resume_run(run_id)
 
 ### What's NOT done (future work)
 
-1. **RunPod worker-side durability** — the handler.py in
+1. **RunPod worker-side durability** — ~~the handler.py in
    `runpod/quant-foundry-training/` does not yet write a status file
-   or heartbeat to `/runpod-volume/`. The gateway polls RunPod API
-   status (pull-based), but there's no worker-side heartbeat file.
-   Insertion points are documented in the Scout report.
+   or heartbeat to `/runpod-volume/`.~~ **RESOLVED**: Both training and
+   inference handlers now write status files + heartbeats via
+   `runpod/shared/worker_status.py`. The gateway reads status files via
+   `heartbeats()` and `detect_stale_workers()` when
+   `QUANT_FOUNDRY_WORKER_STATUS_DIR` is configured. Status validation
+   enforces allowed values. **Remaining operational gap**: mount the
+   RunPod network volume at the configured path in production.
 
-2. **Schema compat check at inference load time** — the
+2. **Schema compat check at inference load time** — ~~the
    `assert_feature_schema_compatible()` function exists but is not
-   yet called in `GBMPredictor.setup()` or the inference worker. The
-   golden E2E test calls it explicitly, but production inference
-   doesn't yet enforce it.
+   yet called in `GBMPredictor.setup()`~~ **RESOLVED**: Wired into
+   `GBMPredictor.setup()` via `_check_schema_compatibility()`.
 
 3. **Real data at scale** — the `data_ingestion/` module provides the
    ingestion functions, but no real vendor data has been ingested
@@ -579,11 +582,13 @@ await store.resume_run(run_id)
    these ingesters to actual data sources (Alpaca API, news vendors,
    FRED macro data).
 
-4. **Quality report in the manifest** — the `DatasetQualityReport` is
+4. **Quality report in the manifest** — ~~the `DatasetQualityReport` is
    written as a sidecar (`dataset.quality.json`) but is not yet
-   embedded in or referenced by the `FeatureLakeManifest`. A future
-   change could add a `quality_report_hash` field to the manifest so
-   the quality report is content-addressed alongside the dataset.
+   embedded in or referenced by the `FeatureLakeManifest`.~~ **RESOLVED**:
+   `FeatureLakeManifest` now has a `quality_report_hash` field included
+   in the canonical payload. All three ingestion pipelines (equities,
+   macro, news) compute the quality report first, then embed its hash
+   via `model_copy` before writing the manifest.
 
 5. **The 3 failed training runs in `data/training_runs/`** still have
    status `failed` (they were written before this session's changes).

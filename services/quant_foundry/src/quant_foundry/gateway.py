@@ -158,6 +158,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         runpod_clients: Mapping[str, Any] | None = None,
         paper_bridge: PaperBridge | None = None,
         prediction_publisher: Any | None = None,
+        worker_status_dir: pathlib.Path | str | None = None,
+        stale_threshold_seconds: float = 60.0,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -168,6 +170,10 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         self.budget_guard = budget_guard
         self._paper_bridge = paper_bridge
         self._prediction_publisher = prediction_publisher
+        self._worker_status_dir = (
+            pathlib.Path(worker_status_dir) if worker_status_dir is not None else None
+        )
+        self._stale_threshold_seconds = stale_threshold_seconds
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -362,6 +368,18 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         if allow_paper_bridge:
             paper_bridge = PaperBridge()
 
+        # Worker status directory: in production, the RunPod network volume
+        # is mounted at this path so the gateway can scan worker status files
+        # and detect stale/crashed workers. Defaults to None (disabled).
+        worker_status_dir = os.environ.get("QUANT_FOUNDRY_WORKER_STATUS_DIR", "")
+        stale_threshold_str = os.environ.get(
+            "QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS", "60",
+        )
+        try:
+            stale_threshold = float(stale_threshold_str)
+        except ValueError:
+            stale_threshold = 60.0
+
         return cls(
             enabled=enabled,
             mode=mode,
@@ -371,6 +389,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             budget_guard=budget_guard,
             runpod_clients=runpod_clients,
             paper_bridge=paper_bridge,
+            worker_status_dir=worker_status_dir or None,
+            stale_threshold_seconds=stale_threshold,
         )
 
     # --- health / state ---
@@ -603,13 +623,53 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         }
 
     def heartbeats(self) -> list[dict[str, Any]]:
-        """Worker heartbeats. In local_mock mode there are no external
-        workers, so this returns an empty list (the mock worker is
-        implicit). The future RunPod path populates this from the inbox /
-        a heartbeat stream."""
-        if not self.enabled:
+        """Worker heartbeats from the RunPod status files.
+
+        In local_mock mode (or when no ``worker_status_dir`` is configured),
+        returns an empty list — the mock worker is implicit. In RunPod mode
+        with a mounted status directory, scans ``{worker_status_dir}/*.json``
+        and returns all status records.
+        """
+        if not self.enabled or self._worker_status_dir is None:
             return []
-        return []
+        import json as _json
+
+        status_dir = self._worker_status_dir
+        if not status_dir.is_dir():
+            return []
+        results: list[dict[str, Any]] = []
+        for path in sorted(status_dir.glob("*.json")):
+            try:
+                results.append(_json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, _json.JSONDecodeError):
+                continue
+        return results
+
+    def detect_stale_workers(self) -> list[dict[str, Any]]:
+        """Detect workers whose heartbeat is older than the staleness threshold.
+
+        Returns a list of status records for jobs in an active state
+        (``started``, ``training``, ``inferring``, ``running``) whose
+        ``heartbeat_at`` timestamp is older than
+        ``self._stale_threshold_seconds``. Returns an empty list if no
+        status directory is configured or no stale workers are found.
+        """
+        if not self.enabled or self._worker_status_dir is None:
+            return []
+        import time as _time
+
+        now = _time.time()
+        stale: list[dict[str, Any]] = []
+        for rec in self.heartbeats():
+            status = rec.get("status", "")
+            if status not in {"started", "training", "inferring", "running"}:
+                continue
+            hb = rec.get("heartbeat_at")
+            if not isinstance(hb, (int, float)):
+                continue
+            if (now - hb) > self._stale_threshold_seconds:
+                stale.append(rec)
+        return stale
 
     # --- job lifecycle ---
 

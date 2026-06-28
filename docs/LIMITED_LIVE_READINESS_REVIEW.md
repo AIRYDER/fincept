@@ -522,3 +522,97 @@ model through the real gate, enable paper bridge, run 30 days.
 - B5 (no broker credentials): UNCHANGED — config task
 - A real model trained on real data must be promoted through the gate
 - Real RunPod containers must be rebuilt with ML deps and re-run
+
+---
+
+## 6. Update 2026-06-27 — Dataset System Audit + Worker Durability Wiring
+
+### Dataset System Audit (this session)
+
+A thorough audit of the dataset system was conducted, covering all
+modules in `libs/fincept-core/src/fincept_core/datasets/` and
+`services/quant_foundry/src/quant_foundry/data_ingestion/`.
+
+**Bugs fixed:**
+- **sys.path resolution bug** in `equities.py` and `news.py`: both used
+  `parents[4]` to find the repo root, but `parents[4]` resolves to
+  `services/` not the repo root. Direct package imports failed with
+  `ModuleNotFoundError`. Fixed to `parents[5]`. Tests passed before only
+  because pytest's conftest masked the issue.
+
+**Gaps closed:**
+- **Quality report hash embedded in manifest** (item 4 from the
+  hardening v1 follow-up list): `FeatureLakeManifest` now has a
+  `quality_report_hash` field included in the canonical payload. All
+  three ingestion pipelines (equities, macro, news) compute the quality
+  report first, then embed its hash via `model_copy` before writing the
+  manifest. This makes the manifest tamper-evidently linked to its
+  quality report.
+
+**Verified as already correct:**
+- Schema versioning: `feature_schema_version` present on
+  `DatasetManifest`, `ArtifactManifest`, and `FeatureSnapshot`.
+- Schema compat check: `assert_feature_schema_compatible()` wired into
+  `GBMPredictor.setup()` via `_check_schema_compatibility()`.
+- Evidence spine: `FeatureSnapshotStore` wired into prediction flow,
+  `build_evidence_receipt()` handles `feature_schema_hash`, golden E2E
+  smoke test passes.
+- All `__init__.py` re-exports complete, no circular imports, no
+  TODO/FIXME/HACK comments.
+- 2811 tests passing, lint clean.
+
+### RunPod Worker Durability — Gateway Wiring (this session)
+
+The worker-side durability code (atomic writes, heartbeats, lifecycle
+coverage in both handlers) was verified as correct. However, the
+**gateway never consumed the status files** — the durability system
+was orphaned. This has been fixed:
+
+**Fixed:**
+- **GAP-1 (gateway doesn't read status files)**: `heartbeats()` method
+  in `gateway.py` now scans `QUANT_FOUNDRY_WORKER_STATUS_DIR/*.json`
+  and returns all status records. New `detect_stale_workers()` method
+  identifies jobs with stale heartbeats.
+- **GAP-2 (no staleness detection)**: `detect_stale_workers()` compares
+  `heartbeat_at` against `QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS`
+  (default 60s). Only active jobs (started/training/inferring/running)
+  are considered — completed/failed jobs are never stale.
+- **BUG-1 (no status validation)**: `write_status()` now validates
+  status values against an allowed set and raises `ValueError` for
+  invalid values.
+- New `list_statuses()` and `detect_stale()` functions in
+  `worker_status.py`.
+- 12 new tests (8 for worker_status, 4 for gateway).
+- Updated `DATASET_RUNTIME_HARDENING_v1.md` to reflect resolved items.
+
+**Remaining operational gap:** Mount the RunPod network volume at
+`QUANT_FOUNDRY_WORKER_STATUS_DIR` in production so the gateway can
+read worker status files.
+
+### TASK-1002 — Causal Market Memory Graph: CONFIRMED COMPLETE
+
+Investigation confirmed that TASK-1002 was **completed by Builder 6**
+on 2026-06-23 (commit `808e7ab`). The module
+`services/quant_foundry/src/quant_foundry/causal_graph.py` (160 lines)
+is fully implemented with 12 TDD tests, frozen Pydantic models, and
+research-only design (not wired to gateway/API/dashboard — intentional
+per spec). No action needed.
+
+### Updated Blocker Status (2026-06-27)
+
+| Blocker | Previous | Current | Resolution |
+|---|---|---|---|
+| B1 — No promoted model family | PARTIALLY RESOLVED | UNCHANGED | Pipeline proven runnable with synthetic data; real model still needed |
+| B2 — Shadow inference stub-only | CODE RESOLVED | UNCHANGED | Real inference engine implemented; container rebuild pending |
+| B3 — Paper bridge never enabled | PARTIALLY RESOLVED | UNCHANGED | Integration tests pass; never enabled against real model |
+| B4 — No production deployment | OPEN | UNCHANGED | Infra task |
+| B5 — No broker credentials | OPEN | UNCHANGED | Config task |
+| B6 — Real RunPod GPU never run | CODE RESOLVED (ops pending) | UNCHANGED | Containers need rebuild with ML deps |
+| B7 — Sentinel un-runnable | PARTIALLY RESOLVED | UNCHANGED | Sentinel runs on synthetic dossier; real dossier needed |
+| B8 — Settled history is empty | PARTIALLY RESOLVED | UNCHANGED | Synthetic history seeded; real market data history needed |
+
+**Verdict unchanged: NOT READY.** All code gaps from the dataset audit
+and worker durability review are now closed. Remaining work is
+operational only: deploy production infrastructure, configure broker
+credentials, rebuild RunPod containers, run 30-day shadow inference,
+promote a real model, enable paper bridge.

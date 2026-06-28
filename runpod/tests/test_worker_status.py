@@ -33,6 +33,8 @@ if os.path.isdir(_SHARED_DIR):
 import worker_status  # noqa: E402
 from worker_status import (  # noqa: E402
     clear_status,
+    detect_stale,
+    list_statuses,
     read_status,
     write_heartbeat,
     write_status,
@@ -239,3 +241,95 @@ def test_status_file_is_valid_json(status_dir: Path) -> None:
     # Should parse without error.
     parsed: dict[str, Any] = json.loads(raw)
     assert parsed["foo"] == "bar"
+
+
+# ---------------------------------------------------------------------------
+# Status validation
+# ---------------------------------------------------------------------------
+
+
+def test_write_status_rejects_invalid_status(status_dir: Path) -> None:
+    """write_status raises ValueError for invalid status values."""
+    with pytest.raises(ValueError, match="invalid status"):
+        write_status("job-bad", "not_a_real_status")
+
+
+def test_write_status_accepts_all_valid_statuses(status_dir: Path) -> None:
+    """All documented status values are accepted."""
+    for s in ("started", "training", "inferring", "running", "completed", "failed"):
+        write_status(f"job-{s}", s)
+        rec = read_status(f"job-{s}")
+        assert rec is not None
+        assert rec["status"] == s
+
+
+# ---------------------------------------------------------------------------
+# list_statuses
+# ---------------------------------------------------------------------------
+
+
+def test_list_statuses_returns_all_records(status_dir: Path) -> None:
+    """list_statuses returns all status files in the directory."""
+    write_status("job-a", "started")
+    write_status("job-b", "completed")
+    write_status("job-c", "failed", error_code="boom")
+    records = list_statuses()
+    job_ids = {r["job_id"] for r in records}
+    assert job_ids == {"job-a", "job-b", "job-c"}
+
+
+def test_list_statuses_empty_dir(status_dir: Path) -> None:
+    """list_statuses returns empty list for empty directory."""
+    assert list_statuses() == []
+
+
+def test_list_statuses_skips_corrupt_files(status_dir: Path) -> None:
+    """list_statuses silently skips corrupt JSON files."""
+    write_status("job-good", "started")
+    (status_dir / "job-bad.json").write_text("{broken", encoding="utf-8")
+    records = list_statuses()
+    assert len(records) == 1
+    assert records[0]["job_id"] == "job-good"
+
+
+# ---------------------------------------------------------------------------
+# detect_stale
+# ---------------------------------------------------------------------------
+
+
+def test_detect_stale_finds_old_heartbeats(status_dir: Path) -> None:
+    """detect_stale returns jobs with heartbeat older than threshold."""
+    write_status("job-stale", "training")
+    # Manually backdate the heartbeat.
+    path = status_dir / "job-stale.json"
+    data = json.loads(path.read_text())
+    data["heartbeat_at"] = 1000.0  # very old
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    stale = detect_stale(now=2000.0, threshold_seconds=60.0)
+    assert len(stale) == 1
+    assert stale[0]["job_id"] == "job-stale"
+
+
+def test_detect_stale_ignores_completed_jobs(status_dir: Path) -> None:
+    """detect_stale ignores completed/failed jobs even if heartbeat is old."""
+    write_status("job-done", "completed")
+    path = status_dir / "job-done.json"
+    data = json.loads(path.read_text())
+    data["heartbeat_at"] = 1000.0
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    stale = detect_stale(now=2000.0, threshold_seconds=60.0)
+    assert stale == []
+
+
+def test_detect_stale_ignores_fresh_heartbeats(status_dir: Path) -> None:
+    """detect_stale does not return jobs with fresh heartbeats."""
+    write_status("job-fresh", "training")
+    stale = detect_stale(now=None, threshold_seconds=60.0)
+    assert stale == []
+
+
+def test_detect_stale_empty_dir(status_dir: Path) -> None:
+    """detect_stale returns empty list for empty directory."""
+    assert detect_stale(now=2000.0, threshold_seconds=60.0) == []

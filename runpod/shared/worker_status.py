@@ -28,6 +28,11 @@ import pathlib
 import time
 from typing import Any
 
+# Allowed status values — enforced on every write_status() call.
+_VALID_STATUSES = frozenset(
+    {"started", "training", "inferring", "running", "completed", "failed"},
+)
+
 
 def _status_dir() -> pathlib.Path:
     """Return the status directory on the RunPod network volume."""
@@ -68,8 +73,14 @@ def write_status(
 ) -> None:
     """Write a status file for a job. Best-effort — never raises.
 
-    status is one of: "started", "training", "inferring", "completed", "failed".
+    status is one of: "started", "training", "inferring", "running",
+    "completed", "failed".  Invalid status values are rejected with
+    ``ValueError`` before any write is attempted.
     """
+    if status not in _VALID_STATUSES:
+        raise ValueError(
+            f"invalid status {status!r}; expected one of {sorted(_VALID_STATUSES)}",
+        )
     payload: dict[str, Any] = {
         "job_id": job_id,
         "status": status,
@@ -121,6 +132,51 @@ def read_status(job_id: str) -> dict[str, Any] | None:
         return None
 
 
+def list_statuses() -> list[dict[str, Any]]:
+    """Scan the status directory and return all status records.
+
+    Returns a list of parsed JSON dicts, one per status file. Corrupt
+    or unreadable files are silently skipped. Returns an empty list if
+    the status directory does not exist or is empty.
+    """
+    try:
+        status_dir = _status_dir()
+    except OSError:
+        return []
+    results: list[dict[str, Any]] = []
+    for path in sorted(status_dir.glob("*.json")):
+        try:
+            results.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return results
+
+
+def detect_stale(
+    *,
+    now: float | None = None,
+    threshold_seconds: float = 60.0,
+) -> list[dict[str, Any]]:
+    """Return status records whose heartbeat is older than *threshold_seconds*.
+
+    Only jobs in an active state (``started``, ``training``, ``inferring``,
+    ``running``) are considered — completed/failed jobs are never stale.
+    """
+    if now is None:
+        now = time.time()
+    stale: list[dict[str, Any]] = []
+    for rec in list_statuses():
+        status = rec.get("status", "")
+        if status not in {"started", "training", "inferring", "running"}:
+            continue
+        hb = rec.get("heartbeat_at")
+        if not isinstance(hb, (int, float)):
+            continue
+        if (now - hb) > threshold_seconds:
+            stale.append(rec)
+    return stale
+
+
 def clear_status(job_id: str) -> None:
     """Remove the status file for a job. Best-effort."""
     with contextlib.suppress(OSError):
@@ -129,6 +185,8 @@ def clear_status(job_id: str) -> None:
 
 __all__ = [
     "clear_status",
+    "detect_stale",
+    "list_statuses",
     "read_status",
     "write_heartbeat",
     "write_status",

@@ -485,3 +485,110 @@ def test_poll_records_durable_health_with_rejection(tmp_path) -> None:
     assert isinstance(rate2, float | int)
     assert rate2 > 0.0
     assert health2["circuit_breaker_state"] in _VALID_CIRCUIT_BREAKER_STATES
+
+
+# ---------------------------------------------------------------------------
+# Worker status file consumption (heartbeats + stale detection)
+# ---------------------------------------------------------------------------
+
+
+def test_heartbeats_empty_without_status_dir(tmp_path: Any) -> None:
+    """heartbeats() returns [] when no worker_status_dir is configured."""
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+    )
+    assert gateway.heartbeats() == []
+    assert gateway.detect_stale_workers() == []
+
+
+def test_heartbeats_reads_status_files(tmp_path: Any) -> None:
+    """heartbeats() reads JSON status files from the configured directory."""
+    import json as _json
+
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    # Write two status files.
+    (status_dir / "job-1.json").write_text(
+        _json.dumps({"job_id": "job-1", "status": "training", "heartbeat_at": 1000.0}),
+        encoding="utf-8",
+    )
+    (status_dir / "job-2.json").write_text(
+        _json.dumps({"job_id": "job-2", "status": "completed", "heartbeat_at": 2000.0}),
+        encoding="utf-8",
+    )
+
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+        worker_status_dir=status_dir,
+    )
+    hbs = gateway.heartbeats()
+    job_ids = {h["job_id"] for h in hbs}
+    assert job_ids == {"job-1", "job-2"}
+
+
+def test_detect_stale_workers_finds_old_heartbeats(tmp_path: Any) -> None:
+    """detect_stale_workers() returns only active jobs with old heartbeats."""
+    import json as _json
+
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    # Stale training job.
+    (status_dir / "job-stale.json").write_text(
+        _json.dumps(
+            {"job_id": "job-stale", "status": "training", "heartbeat_at": 1000.0},
+        ),
+        encoding="utf-8",
+    )
+    # Old but completed — should NOT be flagged stale.
+    (status_dir / "job-done.json").write_text(
+        _json.dumps(
+            {"job_id": "job-done", "status": "completed", "heartbeat_at": 1000.0},
+        ),
+        encoding="utf-8",
+    )
+
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+        worker_status_dir=status_dir,
+        stale_threshold_seconds=60.0,
+    )
+    # We can't control time.time() easily, but heartbeat_at=1000.0 is
+    # always in the past, so the job should be stale.
+    stale = gateway.detect_stale_workers()
+    stale_ids = {s["job_id"] for s in stale}
+    assert "job-stale" in stale_ids
+    assert "job-done" not in stale_ids
+
+
+def test_detect_stale_workers_skips_corrupt_files(tmp_path: Any) -> None:
+    """detect_stale_workers() silently skips corrupt JSON files."""
+    status_dir = tmp_path / "worker_status"
+    status_dir.mkdir(parents=True)
+    (status_dir / "corrupt.json").write_text("{broken", encoding="utf-8")
+
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret="secret",
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="t")},
+        worker_status_dir=status_dir,
+    )
+    assert gateway.heartbeats() == []
+    assert gateway.detect_stale_workers() == []
