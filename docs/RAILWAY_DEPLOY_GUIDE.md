@@ -152,13 +152,21 @@
 
 ### h. Configure RunPod endpoints
 
-Set these on the `api` service (non-secret — they are endpoint IDs, not keys):
+Set these on the `api` service. Endpoint IDs are **not secrets** but should
+not be committed to the repo — set them as Railway variables (not secrets)
+so they are visible in the dashboard but not in git history.
 
 | Variable | Value | Source |
 |---|---|---|
-| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `h2blqodcicxqyy` | RunPod serverless endpoint ID |
-| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `t31u1z426jy1ub` | RunPod serverless endpoint ID |
+| `RUNPOD_TRAINING_ENDPOINT_ID` | *(from RunPod dashboard)* | RunPod serverless endpoint ID for the training worker |
+| `RUNPOD_INFERENCE_ENDPOINT_ID` | *(from RunPod dashboard)* | RunPod serverless endpoint ID for the inference worker |
 | `QUANT_FOUNDRY_MODE` | `runpod_shadow` | Shadow dispatch (no sig.predict writes) |
+
+> **Deprecated names:** `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` and
+> `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` are read as fallbacks with a
+> DeprecationWarning, but the canonical `RUNPOD_TRAINING_ENDPOINT_ID` /
+> `RUNPOD_INFERENCE_ENDPOINT_ID` names are preferred. Migrate existing
+> dashboard setups to the canonical names.
 
 ### i. Set secrets
 
@@ -171,11 +179,16 @@ openssl rand -hex 32
 
 | Secret name | Purpose | How to set |
 |---|---|---|
-| `QUANT_FOUNDRY_CALLBACK_SECRET` | HMAC-validates RunPod → API callbacks | Railway dashboard → api → Variables → New Variable → paste value → mark **Secret** |
-| `QUANT_FOUNDRY_RUNPOD_API_KEY` | Authenticates API → RunPod job dispatch | Railway dashboard → api → Variables → New Variable → paste RunPod API key → mark **Secret** |
+| `QUANT_FOUNDRY_CALLBACK_SECRET` | HMAC-validates RunPod → API callbacks. **Must be identical** on Railway and RunPod endpoint templates. | Railway dashboard → api → Variables → New Variable → paste value → mark **Secret**. Also set in RunPod endpoint template env. |
+| `RUNPOD_API_KEY` | Authenticates API → RunPod job dispatch | Railway dashboard → api → Variables → New Variable → paste RunPod API key → mark **Secret** |
 
 > **Never** commit these to the repo. They exist only as `${{secrets.NAME}}`
 > placeholders in `railway-production.json`.
+>
+> **Callback secret parity:** after deploy, verify that Railway and RunPod
+> share the same callback secret by calling
+> `GET /quant-foundry/health/runpod-canary` (bearer-auth). A 200 with
+> `verified: true` proves both sides can sign/verify with the same secret.
 
 ### j. Deploy and verify health checks
 
@@ -217,15 +230,18 @@ openssl rand -hex 32
 | `QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS` | `60` | Settlement sweep interval |
 | `QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS` | `300` | Tournament sweep interval |
 | `QUANT_FOUNDRY_RUNPOD_POLL_INTERVAL_SECONDS` | `15` | RunPod result poll interval |
-| `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` | `h2blqodcicxqyy` | RunPod serverless endpoint ID |
-| `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` | `t31u1z426jy1ub` | RunPod serverless endpoint ID |
+| `RUNPOD_TRAINING_ENDPOINT_ID` | *(from RunPod dashboard)* | RunPod serverless endpoint ID (training) |
+| `RUNPOD_INFERENCE_ENDPOINT_ID` | *(from RunPod dashboard)* | RunPod serverless endpoint ID (inference) |
+| `RUNPOD_BASE_URL` | `https://api.runpod.ai/v2` | RunPod API base URL |
+| `RUNPOD_TIMEOUT_SECONDS` | `60` | HTTP request timeout for dispatch calls |
+| `RUNPOD_COST_PER_DISPATCH_CENTS` | `0` | Estimated cost per dispatch (budget guard) |
 
 ### RunPod + Secrets (SECRET — set in dashboard, never in repo)
 
 | Variable | Classification | Notes |
 |---|---|---|
-| `QUANT_FOUNDRY_CALLBACK_SECRET` | **SECRET** | HMAC for RunPod → API callbacks. `openssl rand -hex 32` |
-| `QUANT_FOUNDRY_RUNPOD_API_KEY` | **SECRET** | RunPod API key |
+| `QUANT_FOUNDRY_CALLBACK_SECRET` | **SECRET** | HMAC for RunPod → API callbacks. Must be identical on Railway and RunPod. `openssl rand -hex 32` |
+| `RUNPOD_API_KEY` | **SECRET** | RunPod API key |
 
 ### Dashboard
 

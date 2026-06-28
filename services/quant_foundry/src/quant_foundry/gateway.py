@@ -66,6 +66,9 @@ from quant_foundry.gateway_helpers import (
     decision_time_from_payload as _decision_time_from_payload,
 )
 from quant_foundry.gateway_helpers import (
+    env_first as _env_first,
+)
+from quant_foundry.gateway_helpers import (
     extract_callback_fields as _extract_callback_fields,
 )
 from quant_foundry.gateway_helpers import (
@@ -98,6 +101,7 @@ from quant_foundry.runpod_client import (
     BudgetGuard as DispatchBudgetGuard,
 )
 from quant_foundry.runpod_client import (
+    DispatchStatus,
     HttpRunPodClient,
     RunPodDispatcher,
 )
@@ -112,6 +116,26 @@ from quant_foundry.tournament_sweep import TournamentSweep
 # `sign_callback` is imported (not used at runtime) so the callback-security
 # test can monkey-patch this module's `sign_callback` attribute and assert the
 # poller never signs on the Fincept side — only `verify_callback` is allowed.
+
+
+class RunPodConfigError(RuntimeError):
+    """Raised when RunPod dispatch mode is enabled but required env vars
+    are missing. Fail-closed at startup so a misconfigured deploy cannot
+    silently degrade from "RunPod wired" to "RunPod dead".
+    """
+
+
+# Canonical RunPod env var names (single source of truth for from_env + health).
+_RUNPOD_API_KEY_ENV = "RUNPOD_API_KEY"
+_RUNPOD_API_KEY_LEGACY_ENV = "QUANT_FOUNDRY_RUNPOD_API_KEY"
+_RUNPOD_TRAINING_ENDPOINT_ENV = "RUNPOD_TRAINING_ENDPOINT_ID"
+_RUNPOD_TRAINING_ENDPOINT_LEGACY_ENV = "QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT"
+_RUNPOD_INFERENCE_ENDPOINT_ENV = "RUNPOD_INFERENCE_ENDPOINT_ID"
+_RUNPOD_INFERENCE_ENDPOINT_LEGACY_ENV = "QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT"
+_RUNPOD_BASE_URL_ENV = "RUNPOD_BASE_URL"
+_RUNPOD_TIMEOUT_ENV = "RUNPOD_TIMEOUT_SECONDS"
+_RUNPOD_COST_ENV = "RUNPOD_COST_PER_DISPATCH_CENTS"
+_CALLBACK_SECRET_ENV = "QUANT_FOUNDRY_CALLBACK_SECRET"
 
 
 class QuantFoundryGateway(GatewayCallbackMixin):
@@ -221,40 +245,87 @@ class QuantFoundryGateway(GatewayCallbackMixin):
     def from_env(cls, base_dir: pathlib.Path | str | None = None) -> QuantFoundryGateway:
         """Construct from env vars with spec defaults.
 
-        When ``QUANT_FOUNDRY_MODE=runpod``, reads the following additional
-        env vars to construct the HttpRunPodClient:
+        When ``QUANT_FOUNDRY_MODE`` is one of the runpod modes, reads the
+        following env vars to construct the HttpRunPodClient. Canonical
+        names are preferred; deprecated ``QUANT_FOUNDRY_RUNPOD_*`` names
+        are read as fallbacks (with a DeprecationWarning) so existing
+        Railway dashboard setups keep working during migration.
 
+        Canonical (preferred):
         - ``RUNPOD_API_KEY`` (required in runpod mode) — RunPod API key.
-        - ``RUNPOD_ENDPOINT_ID`` (required in runpod mode) — serverless
-          endpoint ID for the training or inference worker.
+        - ``RUNPOD_TRAINING_ENDPOINT_ID`` (required in runpod mode) —
+          serverless endpoint ID for the training worker.
+        - ``RUNPOD_INFERENCE_ENDPOINT_ID`` (required in runpod mode) —
+          serverless endpoint ID for the inference worker.
         - ``RUNPOD_BASE_URL`` (optional, default
           ``https://api.runpod.ai/v2``) — RunPod API base URL.
         - ``RUNPOD_TIMEOUT_SECONDS`` (optional, default ``30``) — HTTP
           request timeout for dispatch calls.
         - ``RUNPOD_COST_PER_DISPATCH_CENTS`` (optional, default ``0``) —
           estimated cost per dispatch for budget guard checks.
+
+        Deprecated fallbacks (read with a warning):
+        - ``QUANT_FOUNDRY_RUNPOD_API_KEY``
+        - ``QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT``
+        - ``QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT``
+
+        Fail-closed: when runpod mode is enabled but any required env var
+        is missing, raises ``RunPodConfigError`` with the list of missing
+        names. This prevents a silent deploy that looks healthy but
+        cannot dispatch.
         """
         enabled = os.environ.get("QUANT_FOUNDRY_ENABLED", "false").lower() == "true"
         mode = os.environ.get("QUANT_FOUNDRY_MODE", "local_mock")
         shadow_only = os.environ.get("QUANT_FOUNDRY_SHADOW_ONLY", "true").lower() == "true"
-        callback_secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
+        callback_secret = os.environ.get(_CALLBACK_SECRET_ENV, "")
         if base_dir is None:
             base_dir = os.environ.get("QUANT_FOUNDRY_BASE_DIR", "reports/quant-foundry")
         budget_guard = budget_from_env(pathlib.Path(base_dir) / "budget")
 
         runpod_clients: dict[str, HttpRunPodClient] = {}
         if _is_runpod_mode_value(mode):
-            api_key = os.environ.get("RUNPOD_API_KEY", "")
+            api_key = _env_first(
+                _RUNPOD_API_KEY_ENV,
+                _RUNPOD_API_KEY_LEGACY_ENV,
+            )
             legacy_endpoint_id = os.environ.get("RUNPOD_ENDPOINT_ID", "")
             training_endpoint_id = (
-                os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", "") or legacy_endpoint_id
+                _env_first(
+                    _RUNPOD_TRAINING_ENDPOINT_ENV,
+                    _RUNPOD_TRAINING_ENDPOINT_LEGACY_ENV,
+                )
+                or legacy_endpoint_id
             )
             inference_endpoint_id = (
-                os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "") or legacy_endpoint_id
+                _env_first(
+                    _RUNPOD_INFERENCE_ENDPOINT_ENV,
+                    _RUNPOD_INFERENCE_ENDPOINT_LEGACY_ENV,
+                )
+                or legacy_endpoint_id
             )
-            base_url = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
-            timeout_str = os.environ.get("RUNPOD_TIMEOUT_SECONDS", "30")
-            cost_str = os.environ.get("RUNPOD_COST_PER_DISPATCH_CENTS", "0")
+            base_url = os.environ.get(_RUNPOD_BASE_URL_ENV, "https://api.runpod.ai/v2")
+            timeout_str = os.environ.get(_RUNPOD_TIMEOUT_ENV, "30")
+            cost_str = os.environ.get(_RUNPOD_COST_ENV, "0")
+
+            # Fail-closed: required vars must be present in runpod mode.
+            missing: list[str] = []
+            if not api_key:
+                missing.append(_RUNPOD_API_KEY_ENV)
+            if not training_endpoint_id:
+                missing.append(_RUNPOD_TRAINING_ENDPOINT_ENV)
+            if not inference_endpoint_id:
+                missing.append(_RUNPOD_INFERENCE_ENDPOINT_ENV)
+            if not callback_secret:
+                missing.append(_CALLBACK_SECRET_ENV)
+            if missing:
+                raise RunPodConfigError(
+                    "RunPod dispatch mode is enabled (QUANT_FOUNDRY_MODE="
+                    f"{mode}) but required env vars are missing: "
+                    + ", ".join(missing)
+                    + ". Set them in the Railway dashboard or RunPod template "
+                    "environment. See docs/RAILWAY_DEPLOY_GUIDE.md."
+                )
+
             try:
                 timeout_s = float(timeout_str)
             except ValueError:
@@ -306,12 +377,15 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
     def health(self) -> dict[str, Any]:
         """Safe health state (no secrets)."""
+        runpod_config = self.runpod_config_status()
         return {
             "enabled": self.enabled,
             "mode": self.mode,
             "shadow_only": self.shadow_only,
             "job_count": len(self.outbox.list()) if self.enabled else 0,
             "runpod_wired": bool(self._runpod_dispatchers),
+            "runpod_config_valid": runpod_config["valid"],
+            "missing_env": runpod_config["missing_env"],
             "runpod_routes": {
                 job_type: _client_endpoint_id(client)
                 for job_type, client in self._runpod_clients.items()
@@ -322,6 +396,31 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 "publisher_wired": self._prediction_publisher is not None,
             },
         }
+
+    def runpod_config_status(self) -> dict[str, Any]:
+        """Return RunPod configuration validity without exposing secrets.
+
+        Returns ``{"valid": bool, "missing_env": list[str]}``. In
+        non-runpod modes, ``valid`` is always True and ``missing_env`` is
+        empty (RunPod config is irrelevant). In runpod modes, checks that
+        clients are wired for both training and inference and that the
+        callback secret is non-empty.
+
+        Never returns secret values — only the names of missing env vars.
+        """
+        if not self._is_runpod_mode():
+            return {"valid": True, "missing_env": []}
+        missing: list[str] = []
+        if "training" not in self._runpod_clients:
+            missing.append(_RUNPOD_TRAINING_ENDPOINT_ENV)
+        if "inference" not in self._runpod_clients:
+            missing.append(_RUNPOD_INFERENCE_ENDPOINT_ENV)
+        if not self.callback_secret:
+            missing.append(_CALLBACK_SECRET_ENV)
+        # API key presence is implied by client construction (from_env
+        # would have raised). For direct-construction tests, the client
+        # exists so the key was provided.
+        return {"valid": len(missing) == 0, "missing_env": missing}
 
     def runpod_health(self) -> dict[str, Any]:
         """Check RunPod endpoint health (only in runpod mode).
@@ -345,6 +444,162 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             "ok": ok,
             "status": "healthy" if ok else "error",
             "detail": details,
+        }
+
+    def runpod_canary(self, *, job_type: str = "training") -> dict[str, Any]:
+        """Dispatch a callback-secret canary job to a RunPod endpoint.
+
+        This proves that the RunPod worker and the API share the same
+        ``QUANT_FOUNDRY_CALLBACK_SECRET``. The API dispatches a canary
+        job with a random nonce; the worker signs the nonce-bearing
+        payload with its copy of the secret and returns it; the API
+        verifies the signature with its own copy.
+
+        This is a LIVE check — it dispatches a real (tiny) job to RunPod
+        and polls for completion. It does NOT touch the outbox or inbox;
+        the canary is a direct client → poll → verify round-trip.
+
+        Args:
+            job_type: which endpoint to canary ("training" or "inference").
+
+        Returns:
+            A receipt dict with ``ok``, ``verified``, ``job_type``,
+            ``nonce``, and ``detail``. Never raises — errors are
+            reported as ``ok=False`` with a detail string.
+        """
+        import secrets as _secrets
+
+        normalized = _normalize_job_type(job_type)
+        if not self._is_runpod_mode():
+            return {
+                "ok": False,
+                "verified": False,
+                "job_type": normalized,
+                "detail": "not in runpod mode",
+            }
+        client = self._runpod_clients.get(normalized)
+        if client is None:
+            return {
+                "ok": False,
+                "verified": False,
+                "job_type": normalized,
+                "detail": f"no RunPod client wired for job_type={normalized}",
+            }
+
+        nonce = _secrets.token_hex(16)
+        canary_job_id = f"canary:{normalized}:{nonce[:8]}"
+        canary_payload = {
+            "task": "callback_secret_canary",
+            "job_id": canary_job_id,
+            "nonce": nonce,
+        }
+
+        # Dispatch the canary job.
+        dispatch_result = client.dispatch(
+            job_id=canary_job_id,
+            request_payload=canary_payload,
+            budget_cents=None,
+        )
+        if dispatch_result.status != DispatchStatus.DISPATCHED:
+            return {
+                "ok": False,
+                "verified": False,
+                "job_type": normalized,
+                "nonce": nonce,
+                "detail": (
+                    f"dispatch failed: {dispatch_result.error_code} — "
+                    f"{dispatch_result.error_summary}"
+                ),
+            }
+        runpod_job_id = dispatch_result.runpod_job_id
+        if not runpod_job_id:
+            return {
+                "ok": False,
+                "verified": False,
+                "job_type": normalized,
+                "nonce": nonce,
+                "detail": "dispatch returned no runpod_job_id",
+            }
+
+        # Poll for completion (with a bounded retry loop).
+        import time as _time
+
+        max_poll_seconds = 60
+        poll_interval = 2.0
+        deadline = _time.time() + max_poll_seconds
+        while _time.time() < deadline:
+            try:
+                status = client.check_status(runpod_job_id)
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "verified": False,
+                    "job_type": normalized,
+                    "nonce": nonce,
+                    "runpod_job_id": runpod_job_id,
+                    "detail": f"status poll failed: {type(exc).__name__}: {exc}",
+                }
+            status_value = _runpod_status_value(status)
+            if status_value in {"IN_PROGRESS", "IN_QUEUE", "RUNNING", "PENDING"}:
+                _time.sleep(poll_interval)
+                continue
+            if status_value in {"FAILED", "CANCELLED", "CANCELED", "TIMED_OUT", "ERROR"}:
+                return {
+                    "ok": False,
+                    "verified": False,
+                    "job_type": normalized,
+                    "nonce": nonce,
+                    "runpod_job_id": runpod_job_id,
+                    "detail": f"RunPod job {status_value.lower()}: "
+                    f"{status.get('error') or status.get('message') or status_value}",
+                }
+            if status_value not in {"COMPLETED", "SUCCEEDED", "SUCCESS"}:
+                return {
+                    "ok": False,
+                    "verified": False,
+                    "job_type": normalized,
+                    "nonce": nonce,
+                    "runpod_job_id": runpod_job_id,
+                    "detail": f"unknown RunPod status: {status_value}",
+                }
+            # Completed — extract callback fields from the output.
+            output = status.get("output")
+            callback_fields = _extract_callback_fields(
+                output if output is not None else status
+            )
+            if callback_fields is None:
+                return {
+                    "ok": False,
+                    "verified": False,
+                    "job_type": normalized,
+                    "nonce": nonce,
+                    "runpod_job_id": runpod_job_id,
+                    "detail": "canary completed but no callback fields in output",
+                }
+            payload_text, signature, callback_ts = callback_fields
+            # Verify the signature with the API's own callback secret.
+            verified = verify_callback(
+                payload_text.encode("utf-8"),
+                signature,
+                secret=self.callback_secret,
+                ts=callback_ts,
+                job_id=canary_job_id,
+            )
+            return {
+                "ok": verified,
+                "verified": verified,
+                "job_type": normalized,
+                "nonce": nonce,
+                "runpod_job_id": runpod_job_id,
+                "detail": "signature verified" if verified else "signature verification failed",
+            }
+        return {
+            "ok": False,
+            "verified": False,
+            "job_type": normalized,
+            "nonce": nonce,
+            "runpod_job_id": runpod_job_id,
+            "detail": f"canary job did not complete within {max_poll_seconds}s",
         }
 
     def heartbeats(self) -> list[dict[str, Any]]:

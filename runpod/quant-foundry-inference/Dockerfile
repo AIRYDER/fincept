@@ -56,6 +56,10 @@ ENV QUANT_FOUNDRY_MODE=runpod_shadow
 # Default is false (ShadowInferenceEngine stub) for backward-compatible
 # contract proofs.
 ENV QUANT_FOUNDRY_USE_REAL_INFERENCE="false"
+# Callback secret placeholder — must be injected at runtime via the
+# RunPod template environment. Empty default matches the training
+# container; the handler fails closed if it is not set.
+ENV QUANT_FOUNDRY_CALLBACK_SECRET=""
 ENV PYTHONPATH=/app
 
 # Create a non-root user for defense-in-depth.

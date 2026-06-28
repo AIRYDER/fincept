@@ -11,6 +11,7 @@ Endpoints:
   GET  /quant-foundry/jobs/{job_id}           job detail (auth required)
   POST /quant-foundry/callbacks/runpod        callback endpoint (HMAC auth)
   GET  /quant-foundry/health                  health state (auth required)
+  GET  /quant-foundry/health/runpod-canary    callback-secret canary (auth required)
   GET  /quant-foundry/heartbeats              worker heartbeats (auth required)
 
 Security invariants (non-negotiable):
@@ -244,6 +245,28 @@ async def health(
     if gw is None:
         return {"enabled": False, "mode": "local_mock", "detail": "not configured"}
     return gw.health()
+
+
+@router.get("/health/runpod-canary")
+async def runpod_canary(
+    request: Request,
+    job_type: str = Query(default="training"),
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Dispatch a callback-secret canary job to a RunPod endpoint.
+
+    Bearer-auth. This is a LIVE check — it dispatches a tiny job to the
+    RunPod serverless endpoint, polls for completion, and verifies the
+    HMAC signature of the returned callback payload using the API's own
+    ``QUANT_FOUNDRY_CALLBACK_SECRET``. This proves that the Railway API
+    and the RunPod worker share the same callback secret.
+
+    Returns 503 when the gateway is absent (default disabled state).
+    Returns a receipt dict with ``ok``, ``verified``, ``job_type``,
+    ``nonce``, and ``detail``. Never returns secret values.
+    """
+    gw = _require_gateway(request)
+    return gw.runpod_canary(job_type=job_type)
 
 
 @router.get("/heartbeats")

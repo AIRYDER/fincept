@@ -79,20 +79,23 @@
 
 ## 8. RunPod Connectivity
 
-- [ ] `QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT` set: `h2blqodcicxqyy`
-- [ ] `QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT` set: `t31u1z426jy1ub`
-- [ ] `QUANT_FOUNDRY_RUNPOD_API_KEY` set (SECRET — not in logs)
+- [ ] `RUNPOD_TRAINING_ENDPOINT_ID` set (from RunPod dashboard — not committed to repo)
+- [ ] `RUNPOD_INFERENCE_ENDPOINT_ID` set (from RunPod dashboard — not committed to repo)
+- [ ] `RUNPOD_API_KEY` set (SECRET — not in logs)
+- [ ] `GET /quant-foundry/health` returns `runpod_config_valid: true` and `missing_env: []`
+- [ ] `GET /quant-foundry/health/runpod-canary` returns `verified: true` (proves Railway + RunPod share the same callback secret)
 - [ ] Test dispatch: a shadow inference job was accepted by RunPod
-- [ ] Callback endpoint reachable from RunPod (HMAC validated with
-      `QUANT_FOUNDRY_CALLBACK_SECRET`)
+- [ ] Polled callback signature verified (no `bad_signature` or `missing_runpod_callback_fields` errors)
 
 ## 9. Secrets Hygiene
 
 - [ ] `QUANT_FOUNDRY_CALLBACK_SECRET` set as Secret in Railway dashboard
-- [ ] `QUANT_FOUNDRY_RUNPOD_API_KEY` set as Secret in Railway dashboard
+- [ ] `QUANT_FOUNDRY_CALLBACK_SECRET` set identically in RunPod endpoint templates
+- [ ] `RUNPOD_API_KEY` set as Secret in Railway dashboard
 - [ ] No secret value appears in any API response body
 - [ ] No secret value appears in any log line
 - [ ] No secret value appears in the repo or `railway-production.json`
+- [ ] No production RunPod endpoint IDs committed to the repo
 - [ ] `FINCEPT_ALPACA_API_KEY` is **NOT** set (paper-only)
 - [ ] `FINCEPT_ALPACA_API_SECRET` is **NOT** set (paper-only)
 - [ ] `FINCEPT_BINANCE_API_SECRET` is **NOT** set

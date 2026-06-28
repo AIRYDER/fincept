@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ from quant_foundry.runpod_training import (
     TrainingFailure,
 )
 from quant_foundry.schemas import RunPodTrainingRequest
+from quant_foundry.signatures import sign_callback
 
 
 def _get_callback_secret() -> str:
@@ -49,6 +51,46 @@ def _get_callback_secret() -> str:
             "Set it in the RunPod template environment or container env."
         )
     return secret
+
+
+def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
+    """Handle a callback-secret canary job.
+
+    The canary is a minimal round-trip that proves the RunPod worker and
+    the API share the same ``QUANT_FOUNDRY_CALLBACK_SECRET``. The API
+    dispatches a canary job with a random nonce; the worker signs the
+    nonce-bearing payload and returns it. The API verifies the signature.
+
+    This is NOT a training job — it bypasses the training pipeline
+    entirely and returns immediately.
+    """
+    job_id = input_data.get("job_id") or "canary-unknown"
+    nonce = input_data.get("nonce") or ""
+    callback_payload = json.dumps(
+        {
+            "schema_version": 1,
+            "job_id": job_id,
+            "worker_id": "runpod-canary",
+            "result_type": "callback_secret_canary",
+            "payload": {"nonce": nonce},
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    callback_ts = int(time.time())
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=_get_callback_secret(),
+        ts=callback_ts,
+        job_id=job_id,
+    )
+    return {
+        "job_id": job_id,
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+        "canary": True,
+        "nonce": nonce,
+    }
 
 
 def _get_deadline_seconds() -> int:
@@ -96,6 +138,12 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "error_summary": "event['input'] must be a dict matching RunPodTrainingRequest",
             "job_id": None,
         }
+
+    # Callback-secret canary: bypasses the training pipeline entirely.
+    # The API dispatches this to verify that the worker shares the same
+    # QUANT_FOUNDRY_CALLBACK_SECRET. See gateway.runpod_canary().
+    if input_data.get("task") == "callback_secret_canary":
+        return _handle_canary(input_data)
 
     # Support inline dataset for E2E testing: if the input includes
     # ``inline_dataset_csv``, write it to a temp file and override the

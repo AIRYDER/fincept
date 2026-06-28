@@ -6,7 +6,10 @@
     "FINCEPT_OMS_ROUTER=sim (in-process PaperFiller, no broker)",
     "No broker credentials (ALPACA_API_KEY / ALPACA_API_SECRET) are set on Railway",
     "All secrets use ${{secrets.NAME}} placeholders — set them in the Railway dashboard, never in the repo",
-    "RunPod GPU workloads run externally; Railway hosts the API + Dashboard control plane only"
+    "RunPod GPU workloads run externally; Railway hosts the API + Dashboard control plane only",
+    "RunPod env vars use canonical RUNPOD_* names (RUNPOD_API_KEY, RUNPOD_TRAINING_ENDPOINT_ID, RUNPOD_INFERENCE_ENDPOINT_ID); deprecated QUANT_FOUNDRY_RUNPOD_* names are read as fallbacks with a warning",
+    "No production RunPod endpoint IDs are committed to the repo — they are ${{secrets.*}} placeholders set in the Railway dashboard",
+    "QUANT_FOUNDRY_CALLBACK_SECRET must be identical on Railway and RunPod; verify with GET /quant-foundry/health/runpod-canary after deploy"
   ],
   "services": {
     "postgres": {
@@ -48,9 +51,12 @@
         "QUANT_FOUNDRY_MODE": "runpod_shadow",
         "QUANT_FOUNDRY_BASE_DIR": "/data/quant-foundry",
         "QUANT_FOUNDRY_CALLBACK_SECRET": "${{secrets.CALLBACK_SECRET}}",
-        "QUANT_FOUNDRY_RUNPOD_API_KEY": "${{secrets.RUNPOD_API_KEY}}",
-        "QUANT_FOUNDRY_RUNPOD_TRAINING_ENDPOINT": "h2blqodcicxqyy",
-        "QUANT_FOUNDRY_RUNPOD_INFERENCE_ENDPOINT": "t31u1z426jy1ub",
+        "RUNPOD_API_KEY": "${{secrets.RUNPOD_API_KEY}}",
+        "RUNPOD_TRAINING_ENDPOINT_ID": "${{secrets.RUNPOD_TRAINING_ENDPOINT_ID}}",
+        "RUNPOD_INFERENCE_ENDPOINT_ID": "${{secrets.RUNPOD_INFERENCE_ENDPOINT_ID}}",
+        "RUNPOD_BASE_URL": "https://api.runpod.ai/v2",
+        "RUNPOD_TIMEOUT_SECONDS": "60",
+        "RUNPOD_COST_PER_DISPATCH_CENTS": "0",
         "QUANT_FOUNDRY_SHADOW_DISPATCH_INTERVAL_SECONDS": "300",
         "QUANT_FOUNDRY_SETTLEMENT_INTERVAL_SECONDS": "60",
         "QUANT_FOUNDRY_TOURNAMENT_INTERVAL_SECONDS": "300",
@@ -84,13 +90,23 @@
     "secrets": [
       {
         "name": "CALLBACK_SECRET",
-        "purpose": "HMAC secret validating RunPod → API callback requests (quant_foundry callback endpoint). Generate with: openssl rand -hex 32",
-        "where_to_set": "Railway dashboard → API service → Variables → New Variable → mark as Secret"
+        "purpose": "HMAC secret validating RunPod → API callback requests (quant_foundry callback endpoint). Must be identical on both the Railway API and the RunPod endpoint templates. Generate with: openssl rand -hex 32",
+        "where_to_set": "Railway dashboard → API service → Variables → New Variable → mark as Secret. Also set in RunPod endpoint template env as QUANT_FOUNDRY_CALLBACK_SECRET."
       },
       {
         "name": "RUNPOD_API_KEY",
         "purpose": "RunPod API key for dispatching training/inference jobs from the API to the RunPod endpoints. Obtain from the RunPod dashboard.",
         "where_to_set": "Railway dashboard → API service → Variables → New Variable → mark as Secret"
+      },
+      {
+        "name": "RUNPOD_TRAINING_ENDPOINT_ID",
+        "purpose": "RunPod serverless endpoint ID for the training worker. Obtain from the RunPod dashboard (Endpoints page). Do not commit production endpoint IDs to the repo.",
+        "where_to_set": "Railway dashboard → API service → Variables → New Variable"
+      },
+      {
+        "name": "RUNPOD_INFERENCE_ENDPOINT_ID",
+        "purpose": "RunPod serverless endpoint ID for the inference worker. Obtain from the RunPod dashboard (Endpoints page). Do not commit production endpoint IDs to the repo.",
+        "where_to_set": "Railway dashboard → API service → Variables → New Variable"
       }
     ],
     "never_on_railway": [

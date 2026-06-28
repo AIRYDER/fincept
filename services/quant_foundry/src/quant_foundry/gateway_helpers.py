@@ -169,6 +169,42 @@ def is_runpod_mode_value(mode: str) -> bool:
     return mode in {"runpod", "runpod_research", "runpod_shadow"}
 
 
+# --- env var resolution (canonical + deprecated fallback) ------------------
+
+
+def env_first(primary: str, *fallbacks: str, default: str = "") -> str:
+    """Resolve an env var preferring the canonical name, falling back to
+    deprecated names with a warning.
+
+    Canonical names win if both are present. Deprecated fallbacks emit a
+    ``DeprecationWarning`` so operators can migrate without breakage, but
+    the migration path is visible in logs.
+
+    Args:
+        primary: the canonical env var name (read first).
+        *fallbacks: deprecated env var names, tried in order.
+        default: returned when neither primary nor any fallback is set.
+    """
+    import os
+    import warnings
+
+    value = os.environ.get(primary)
+    if value:
+        return value
+
+    for fallback in fallbacks:
+        value = os.environ.get(fallback)
+        if value:
+            warnings.warn(
+                f"Using deprecated env var {fallback!r}; please migrate to {primary!r}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return value
+
+    return default
+
+
 def normalize_job_type(job_type: str) -> str:
     return str(job_type).lower()
 

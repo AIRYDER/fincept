@@ -182,9 +182,19 @@ class HttpRunPodClient:
     returned in results, logs, or outbox records.
 
     Uses RunPod's async ``/run`` endpoint: the job is submitted and the
-    RunPod job ID is returned immediately. The actual result comes back
-    via the HMAC-signed callback endpoint
-    (``POST /quant-foundry/callbacks/runpod``), not via polling.
+    RunPod job ID is returned immediately. The actual result is retrieved
+    by polling ``/status/{job_id}`` (see ``check_status``). The RunPod
+    serverless worker embeds ``callback_payload``, ``callback_signature``,
+    and ``callback_ts`` in the job output; the API extracts these signed
+    callback fields from the polled status response and routes them
+    through the same callback processing path
+    (``gateway.receive_callback`` → ``verify_callback``).
+
+    The ``POST /quant-foundry/callbacks/runpod`` endpoint is NOT used by
+    normal RunPod serverless dispatch — RunPod does not push results to
+    it. It exists only for operator-initiated manual callback submission
+    or external webhook integrations. The polling path is the real
+    production path.
 
     Error classification:
     - HTTP 429, 502, 503, 504 → TRANSIENT_FAILURE (retryable)
