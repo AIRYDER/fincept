@@ -37,6 +37,9 @@ STOCKTWITS_BASE_URL = "https://api.stocktwits.com/api/2"
 #: Default subreddits to search.
 DEFAULT_MAX_PER_SYMBOL = 30
 
+#: Default maximum number of pages to fetch per symbol.
+DEFAULT_MAX_PAGES = 3
+
 
 @register_module(
     "source",
@@ -45,6 +48,7 @@ DEFAULT_MAX_PER_SYMBOL = 30
     default_config={
         "max_per_symbol": DEFAULT_MAX_PER_SYMBOL,
         "timeout": 30.0,
+        "max_pages": DEFAULT_MAX_PAGES,
     },
 )
 class StockTwitsSource:
@@ -57,6 +61,11 @@ class StockTwitsSource:
 
     Rate limits: 200 requests/hour per IP (no auth), 400/hour with
     client_id.  Set ``STOCKTWITS_CLIENT_ID`` env var for higher limits.
+
+    Pagination: uses the ``more.since`` cursor from the API response
+    to fetch up to ``max_pages`` pages per symbol (default 3).  When
+    ``max_pages=1``, behavior is identical to a single-page fetch
+    (backward compatible).
     """
 
     info: ModuleInfo
@@ -65,6 +74,7 @@ class StockTwitsSource:
         self.config = config or {}
         self.max_per_symbol: int = self.config.get("max_per_symbol", DEFAULT_MAX_PER_SYMBOL)
         self.timeout: float = self.config.get("timeout", 30.0)
+        self.max_pages: int = self.config.get("max_pages", DEFAULT_MAX_PAGES)
 
     def _get_client_id(self) -> str | None:
         return os.environ.get("STOCKTWITS_CLIENT_ID") or None
@@ -76,32 +86,46 @@ class StockTwitsSource:
         start_ns: int,
         end_ns: int,
     ) -> list[MediaItem]:
-        """Fetch StockTwits messages for the given symbols and time range."""
+        """Fetch StockTwits messages for the given symbols and time range.
+
+        Paginates per symbol using the ``more.since`` cursor from the
+        API response, fetching up to ``max_pages`` pages.
+        """
         import httpx
 
         client_id = self._get_client_id()
-        params: dict[str, str] = {"limit": str(min(self.max_per_symbol, 30))}
+        base_params: dict[str, str] = {"limit": str(min(self.max_per_symbol, 30))}
         if client_id:
-            params["client_id"] = client_id
+            base_params["client_id"] = client_id
 
         items: list[MediaItem] = []
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for sym in symbols:
-                try:
-                    resp = await client.get(
-                        f"{STOCKTWITS_BASE_URL}/streams/symbol/{sym}.json",
-                        params=params,
-                    )
-                    resp.raise_for_status()
-                    body = resp.json()
-                except (httpx.HTTPError, KeyError, ValueError):
-                    continue
+                params = dict(base_params)
+                for page in range(1, self.max_pages + 1):
+                    try:
+                        resp = await client.get(
+                            f"{STOCKTWITS_BASE_URL}/streams/symbol/{sym}.json",
+                            params=params,
+                        )
+                        resp.raise_for_status()
+                        body = resp.json()
+                    except (httpx.HTTPError, KeyError, ValueError):
+                        break
 
-                messages = body.get("messages", [])
-                for msg in messages[: self.max_per_symbol]:
-                    item = self._normalize_message(msg, sym)
-                    if item is not None and start_ns <= item.available_at_ns < end_ns:
-                        items.append(item)
+                    messages = body.get("messages", [])
+                    for msg in messages[: self.max_per_symbol]:
+                        item = self._normalize_message(msg, sym)
+                        if item is not None and start_ns <= item.available_at_ns < end_ns:
+                            items.append(item)
+
+                    # Extract the `since` cursor from the `more` field
+                    # for pagination.  Stop if no cursor or no messages.
+                    more = body.get("more") or {}
+                    since = more.get("since") if isinstance(more, dict) else None
+                    if not since or not messages:
+                        break
+                    params["since"] = str(since)
 
         return items
 
@@ -179,4 +203,4 @@ def _parse_iso_to_ns(iso_str: str) -> int:
     return int(parsed.timestamp() * 1_000_000_000)
 
 
-__all__ = ["StockTwitsSource", "STOCKTWITS_BASE_URL"]
+__all__ = ["StockTwitsSource", "STOCKTWITS_BASE_URL", "DEFAULT_MAX_PAGES"]

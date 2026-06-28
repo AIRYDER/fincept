@@ -45,6 +45,12 @@ REDDIT_BASE_URL = "https://www.reddit.com"
 #: Default posts per subreddit per fetch.
 DEFAULT_LIMIT = 25
 
+#: Default maximum number of pages to fetch per subreddit.
+DEFAULT_MAX_PAGES = 2
+
+#: Default number of comments to fetch per post (when fetch_comments=True).
+DEFAULT_MAX_COMMENTS_PER_POST = 5
+
 
 @register_module(
     "source",
@@ -56,6 +62,9 @@ DEFAULT_LIMIT = 25
         "timeout": 30.0,
         "delay_seconds": 1.0,  # delay between subreddit fetches
         "sort": "new",  # "new", "hot", "top"
+        "max_pages": DEFAULT_MAX_PAGES,
+        "fetch_comments": False,
+        "max_comments_per_post": DEFAULT_MAX_COMMENTS_PER_POST,
     },
 )
 class RedditSource:
@@ -65,6 +74,16 @@ class RedditSource:
     No authentication required for read-only access.  Set
     ``REDDIT_USER_AGENT`` env var to a descriptive user-agent string
     (Reddit's API guidelines require this).
+
+    Pagination: uses the ``after`` cursor from the Reddit JSON response
+    to fetch up to ``max_pages`` pages per subreddit (default 2).  When
+    ``max_pages=1``, behavior is identical to a single-page fetch
+    (backward compatible).
+
+    Comments: when ``fetch_comments=True``, the top N comments
+    (``max_comments_per_post``, default 5) are fetched for each post
+    via ``/r/{subreddit}/comments/{post_id}.json`` and converted into
+    separate MediaItem objects.
     """
 
     info: ModuleInfo
@@ -76,6 +95,11 @@ class RedditSource:
         self.timeout: float = self.config.get("timeout", 30.0)
         self.delay_seconds: float = self.config.get("delay_seconds", 1.0)
         self.sort: str = self.config.get("sort", "new")
+        self.max_pages: int = self.config.get("max_pages", DEFAULT_MAX_PAGES)
+        self.fetch_comments: bool = self.config.get("fetch_comments", False)
+        self.max_comments_per_post: int = self.config.get(
+            "max_comments_per_post", DEFAULT_MAX_COMMENTS_PER_POST,
+        )
 
     def _get_user_agent(self) -> str:
         return os.environ.get(

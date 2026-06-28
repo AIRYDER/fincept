@@ -141,6 +141,60 @@ class ComparisonReport:
                 "pbo": best.pbo,
             }
 
+    def significance_test(
+        self,
+        results_a: list[BenchmarkResult],
+        results_b: list[BenchmarkResult],
+        *,
+        n_bootstrap: int = 10000,
+        confidence: float = 0.95,
+    ) -> dict[str, Any]:
+        """Test whether two groups of benchmark results are significantly different.
+
+        Extracts the deflated Sharpe values from each list of results
+        (filtering out ``None`` values from failed runs) and computes a
+        bootstrap confidence interval for the difference in mean Sharpe
+        via :func:`bootstrap_sharpe_difference_ci`.
+
+        Args:
+            results_a: Benchmark results from config A (e.g. across
+                multiple seeds).
+            results_b: Benchmark results from config B.
+            n_bootstrap: Number of bootstrap resamples.
+            confidence: Confidence level for the CI.
+
+        Returns:
+            The dict from :func:`bootstrap_sharpe_difference_ci`, or an
+            error dict if there are too few valid Sharpe values in
+            either group (fewer than 2).
+        """
+        from quant_foundry.modules.benchmark.significance import (
+            bootstrap_sharpe_difference_ci,
+        )
+
+        sharpe_a = [r.deflated_sharpe for r in results_a if r.deflated_sharpe is not None]
+        sharpe_b = [r.deflated_sharpe for r in results_b if r.deflated_sharpe is not None]
+
+        if len(sharpe_a) < 2 or len(sharpe_b) < 2:
+            return {
+                "error": (
+                    f"insufficient valid Sharpe values: "
+                    f"A has {len(sharpe_a)}, B has {len(sharpe_b)} (need >= 2 each)"
+                ),
+                "mean_diff": None,
+                "std_diff": None,
+                "lower": None,
+                "upper": None,
+                "significant_at_5pct": False,
+            }
+
+        return bootstrap_sharpe_difference_ci(
+            sharpe_a,
+            sharpe_b,
+            n_bootstrap=n_bootstrap,
+            confidence=confidence,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
         return {
