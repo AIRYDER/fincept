@@ -82,7 +82,8 @@ def test_load_all_modules_registers_modules() -> None:
 
     # Check specific modules are registered
     assert "sentiment:naive-wordlist:1.0.0" in registry.list_by_category("sentiment")
-    assert "label:abnormal-return:1.0.0" in registry.list_by_category("label")
+    assert "label:abnormal-return:1.1.0" in registry.list_by_category("label")
+    assert "label:abnormal-return-v1:1.0.0" in registry.list_by_category("label")
     assert "feature:per-event-type:1.0.0" in registry.list_by_category("feature")
     assert "feature:per-year:1.0.0" in registry.list_by_category("feature")
     assert "universe:sp500:1.0.0" in registry.list_by_category("universe")
@@ -248,7 +249,7 @@ def test_abnormal_return_label_basic() -> None:
     )
 
     load_all_modules()
-    label_mod = ModuleRegistry.instance().create("label:abnormal-return:1.0.0")
+    label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
@@ -292,7 +293,7 @@ def test_abnormal_return_label_drops_no_history() -> None:
     )
 
     load_all_modules()
-    label_mod = ModuleRegistry.instance().create("label:abnormal-return:1.0.0")
+    label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
@@ -318,7 +319,7 @@ def test_abnormal_return_label_drops_no_history() -> None:
 
 def test_abnormal_return_beta_no_lookahead() -> None:
     """β must be estimated only from bars BEFORE the decision time."""
-    from quant_foundry.modules.labels.abnormal_return import _estimate_beta
+    from quant_foundry.modules.labels.abnormal_return import _estimate_beta_v1
     from quant_foundry.modules.registry import PriceBar
 
     NS_PER_DAY = 86_400_000_000_000
@@ -332,7 +333,7 @@ def test_abnormal_return_beta_no_lookahead() -> None:
     decision_time = start_ns + 200 * NS_PER_DAY
 
     # β should be computable (different seeds → non-zero variance)
-    beta = _estimate_beta(
+    beta = _estimate_beta_v1(
         asset_bars, bench_ts, bench_close, decision_time,
         window=252, min_window=60,
     )
@@ -571,7 +572,7 @@ def test_composer_end_to_end(tmp_path: pathlib.Path) -> None:
             source="source:mock-test:1.0.0",
             sentiment="sentiment:naive-wordlist:1.0.0",
             features=["feature:per-event-type:1.0.0", "feature:per-year:1.0.0"],
-            label="label:abnormal-return:1.0.0",
+            label="label:abnormal-return-v1:1.0.0",
             price_join="price_join:mock-test:1.0.0",
             config={
                 "universe:sp500:1.0.0": {"max_symbols": 3},

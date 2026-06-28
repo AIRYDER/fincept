@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
-from quant_foundry.modules.labels.abnormal_return import AbnormalReturnLabel
+from quant_foundry.modules.labels.abnormal_return import (
+    AbnormalReturnLabel,
+    AbnormalReturnLabelV1,
+)
 
-__all__ = ["AbnormalReturnLabel"]
+__all__ = ["AbnormalReturnLabel", "AbnormalReturnLabelV1"]
