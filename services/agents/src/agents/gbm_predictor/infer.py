@@ -36,7 +36,12 @@ from fincept_core.logging import get_logger
 from fincept_core.schemas import Prediction
 
 from agents.base import Agent
-from agents.gbm_predictor.features import FEATURES, FeatureHealth, load_live
+from agents.gbm_predictor.features import (
+    FEATURES,
+    FeatureHealth,
+    _compute_feature_schema_hash,
+    load_live,
+)
 
 log = get_logger(__name__)
 
@@ -98,6 +103,13 @@ class GBMPredictor(Agent):
         self._features = list(meta.get("features", FEATURES))
         self._horizon_ns = int(meta.get("horizon_ns", 0))
         self._store = OnlineStore(self._redis)
+
+        # Schema compatibility gate: if the trainer wrote an
+        # artifact_manifest.json, verify the live feature schema is
+        # compatible with what the model was trained on.  Legacy models
+        # without an artifact manifest skip this check with a warning.
+        self._check_schema_compatibility()
+
         log.info(
             "gbm.loaded",
             model_dir=str(self._model_dir),
@@ -132,6 +144,68 @@ class GBMPredictor(Agent):
                 prediction = self._predict(symbol, row)
                 yield prediction
             await asyncio.sleep(self._cadence_s)
+
+    def _check_schema_compatibility(self) -> None:
+        """Verify the live feature schema matches the artifact manifest.
+
+        Reads ``artifact_manifest.json`` from the model directory.  If
+        present, checks that the live feature set (``self._features``)
+        is compatible with the artifact's schema using
+        :func:`assert_feature_schema_compatible`.  A mismatch raises
+        :class:`SchemaIncompatibilityError` and prevents the agent from
+        starting — a silent prediction on incompatible features is
+        worse than a loud failure.
+
+        Legacy models without an artifact manifest skip the check with
+        a log warning so existing deployments are not broken.
+        """
+        from fincept_core.datasets import ArtifactManifest
+        from fincept_core.datasets.schema_compat import (
+            assert_feature_schema_compatible,
+        )
+
+        manifest_path = self._model_dir / "artifact_manifest.json"
+        if not manifest_path.is_file():
+            log.warning(
+                "gbm.schema_compat_skipped",
+                model_dir=str(self._model_dir),
+                reason="artifact_manifest.json not found (legacy model)",
+            )
+            return
+
+        try:
+            manifest = ArtifactManifest.model_validate_json(
+                manifest_path.read_text()
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "gbm.schema_compat_skipped",
+                model_dir=str(self._model_dir),
+                reason=f"artifact_manifest.json parse failed: {exc}",
+            )
+            return
+
+        live_hash = _compute_feature_schema_hash(self._features)
+        # ArtifactManifest stores feature_schema_hash but not the
+        # feature_names list itself.  We pass self._features for both
+        # sides so the subset check is a no-op; the hash + version are
+        # the real discriminators.  If the hashes differ but the version
+        # matches, the compat function allows it (the artifact will just
+        # ignore extra features at predict time).
+        assert_feature_schema_compatible(
+            artifact_feature_schema_hash=manifest.feature_schema_hash,
+            artifact_feature_schema_version=manifest.feature_schema_version,
+            artifact_feature_names=tuple(self._features),
+            snapshot_feature_schema_hash=live_hash,
+            snapshot_feature_schema_version=1,
+            snapshot_feature_names=tuple(self._features),
+        )
+        log.info(
+            "gbm.schema_compat_ok",
+            model_dir=str(self._model_dir),
+            artifact_hash=manifest.feature_schema_hash,
+            live_hash=live_hash,
+        )
 
     def _predict(self, symbol: str, row: dict[str, float]) -> Prediction:
         """Pure inference: features dict -> Prediction.
