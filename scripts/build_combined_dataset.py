@@ -860,8 +860,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     dataset_dir.mkdir(parents=True, exist_ok=True)
     parquet_path = dataset_dir / "combined_dataset.parquet"
 
-    # Build columns (exclude __symbol from output)
+    # Build columns (include symbol for downstream merging)
     columns = {"decision_time": [int(r["decision_time"]) for r in all_rows]}
+    columns["symbol"] = [str(r.get("__symbol", "")) for r in all_rows]
     for name in ALL_FEATURES:
         columns[name] = [float(r.get(name, 0.0)) for r in all_rows]
     columns["label"] = [float(r["label"]) for r in all_rows]
