@@ -23,6 +23,10 @@ from quant_foundry.modules.registry import (
     SentimentResult,
     register_module,
 )
+from quant_foundry.modules.sentiment.language import (
+    detect_language,
+    translate_prompt,
+)
 
 DEFAULT_MODEL = "MiniMax-Text-01"
 DEFAULT_BASE_URL = "https://api.minimax.chat/v1"
@@ -46,6 +50,7 @@ _SYSTEM_PROMPT = (
         "base_url": DEFAULT_BASE_URL,
         "timeout": 30.0,
         "max_tokens": 100,
+        "language": "auto",  # "auto" or an ISO 639-1 code (e.g. "zh")
     },
 )
 class MiniMaxSentiment:
@@ -55,6 +60,13 @@ class MiniMaxSentiment:
     MiniMax's chat completion API and parsing the JSON response.
 
     Requires ``MINIMAX_API_KEY`` env var to be set.
+
+    When ``language="auto"`` (default), each item's language is detected
+    and a language-appropriate prompt is used so the LLM analyzes
+    sentiment in the text's native language.  Set ``language`` to a
+    specific ISO 639-1 code to force that language.  The default
+    ``"auto"`` behavior is identical to the original English prompt for
+    English text (backward compatible).
     """
 
     info: ModuleInfo
@@ -65,6 +77,15 @@ class MiniMaxSentiment:
         self.base_url: str = self.config.get("base_url", DEFAULT_BASE_URL)
         self.timeout: float = self.config.get("timeout", 30.0)
         self.max_tokens: int = self.config.get("max_tokens", 100)
+        self.language: str = self.config.get("language", "auto")
+
+    def _system_prompt_for(self, text: str) -> str:
+        """Return the system prompt appropriate for the item's language."""
+        if self.language == "auto":
+            lang = detect_language(text)
+        else:
+            lang = self.language
+        return translate_prompt(lang)
 
     def _get_api_key(self) -> str:
         key = os.environ.get("MINIMAX_API_KEY", "")
@@ -95,11 +116,12 @@ class MiniMaxSentiment:
         results: list[SentimentResult] = []
         for item in items:
             try:
+                system_prompt = self._system_prompt_for(item.text)
                 payload = {
                     "model": self.model,
                     "max_tokens": self.max_tokens,
                     "messages": [
-                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": item.text[:2000]},
                     ],
                 }

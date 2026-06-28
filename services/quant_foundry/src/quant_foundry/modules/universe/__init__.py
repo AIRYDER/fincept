@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
-from quant_foundry.modules.universe.sp500 import SP500Universe
+from quant_foundry.modules.universe.sp500 import (
+    SP500PointInTimeUniverse,
+    SP500Universe,
+)
 
-__all__ = ["SP500Universe"]
+__all__ = ["SP500Universe", "SP500PointInTimeUniverse"]

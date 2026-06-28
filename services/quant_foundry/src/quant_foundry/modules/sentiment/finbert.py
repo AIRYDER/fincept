@@ -30,6 +30,10 @@ from quant_foundry.modules.registry import (
     SentimentResult,
     register_module,
 )
+from quant_foundry.modules.sentiment.language import detect_language
+from quant_foundry.modules.sentiment.naive_wordlist import (
+    NaiveWordlistMultilingualSentiment,
+)
 
 #: Default FinBERT model from HuggingFace.
 DEFAULT_MODEL = "yiyanghkust/finbert-tone"
@@ -51,6 +55,7 @@ _LABEL_TO_SCORE: dict[str, float] = {
         "batch_size": 32,
         "device": "auto",  # "auto", "cuda", "cpu"
         "cache_dir": None,  # set to a path to enable disk caching
+        "language": "auto",  # "auto", "en", or an ISO 639-1 code
     },
 )
 class FinBERTSentiment:
@@ -64,6 +69,13 @@ class FinBERTSentiment:
     Requires ``transformers`` and ``torch`` to be installed (available
     on RunPod GPU workers).  Raises :class:`ImportError` at score time
     if they're missing.
+
+    FinBERT is English-only.  When ``language="auto"`` (default) and a
+    media item is detected as non-English, the engine gracefully
+    degrades to the multilingual naive wordlist scorer for that item
+    (with the appropriate language's word list).  A warning is printed
+    when falling back.  Set ``language="en"`` to force FinBERT for all
+    text (the original behavior).
     """
 
     info: ModuleInfo
@@ -73,6 +85,7 @@ class FinBERTSentiment:
         self.model_name: str = self.config.get("model", DEFAULT_MODEL)
         self.batch_size: int = self.config.get("batch_size", 32)
         self.device: str = self.config.get("device", "auto")
+        self.language: str = self.config.get("language", "auto")
         self.cache_dir: pathlib.Path | None = (
             pathlib.Path(self.config["cache_dir"])
             if self.config.get("cache_dir")
@@ -82,6 +95,8 @@ class FinBERTSentiment:
         self._tokenizer = None  # lazy-loaded
         self._cache: dict[str, dict[str, float]] = {}
         self._cache_loaded = False
+        # Lazy fallback scorer for non-English text.
+        self._fallback: NaiveWordlistMultilingualSentiment | None = None
 
     def _load_cache(self) -> None:
         """Load the disk cache if cache_dir is set and not yet loaded."""
@@ -131,17 +146,42 @@ class FinBERTSentiment:
         self._model.to(self._device)
         self._model.eval()
 
+    def _get_fallback(self) -> NaiveWordlistMultilingualSentiment:
+        """Lazy-load the multilingual wordlist fallback scorer."""
+        if self._fallback is None:
+            self._fallback = NaiveWordlistMultilingualSentiment()
+        return self._fallback
+
+    def _is_english(self, item: MediaItem) -> bool:
+        """Determine whether an item should be scored by FinBERT.
+
+        When ``language="en"`` FinBERT handles everything (original
+        behavior).  When ``language="auto"`` we detect the text's
+        language and only use FinBERT for English.
+        """
+        if self.language == "en":
+            return True
+        if self.language == "auto":
+            return detect_language(item.text) == "en"
+        # A specific non-English code was forced → never use FinBERT.
+        return False
+
     def score(self, items: list[MediaItem]) -> list[SentimentResult]:
         """Score media items with FinBERT.
 
         Returns one :class:`SentimentResult` per item.  Cached items
         are returned from cache without re-running inference.
+
+        Non-English items (when ``language="auto"``) are routed to the
+        multilingual naive wordlist fallback scorer instead of FinBERT,
+        which is English-only.  A warning is printed on first fallback.
         """
         self._load_cache()
 
-        # Separate cached vs uncached items
+        # Separate items by route: FinBERT (English) vs wordlist fallback.
         results: list[SentimentResult | None] = [None] * len(items)
         to_score: list[tuple[int, MediaItem]] = []
+        fallback_items: list[tuple[int, MediaItem]] = []
 
         for i, item in enumerate(items):
             if item.item_id in self._cache:
@@ -152,13 +192,38 @@ class FinBERTSentiment:
                     score=cached["score"],
                     confidence=cached["confidence"],
                 )
-            else:
+                continue
+            if self._is_english(item):
                 to_score.append((i, item))
+            else:
+                fallback_items.append((i, item))
+
+        # --- Wordlist fallback for non-English items ---------------------- #
+        if fallback_items:
+            print(
+                f"[finbert] {len(fallback_items)} non-English item(s) "
+                "detected — falling back to multilingual naive wordlist "
+                "(FinBERT is English-only).",
+                flush=True,
+            )
+            scorer = self._get_fallback()
+            fb_results = scorer.score([item for _, item in fallback_items])
+            for (orig_idx, item), fb_result in zip(
+                fallback_items, fb_results, strict=True,
+            ):
+                # Re-tag the provider so callers know FinBERT routed it.
+                results[orig_idx] = SentimentResult(
+                    item_id=item.item_id,
+                    provider="finbert",
+                    score=fb_result.score,
+                    confidence=fb_result.confidence,
+                    metadata={**fb_result.metadata, "fallback": "naive-wordlist-ml"},
+                )
 
         if not to_score:
             return results  # type: ignore[return-value]
 
-        # Load model and run inference
+        # --- FinBERT inference for English items -------------------------- #
         self._load_model()
 
         import torch

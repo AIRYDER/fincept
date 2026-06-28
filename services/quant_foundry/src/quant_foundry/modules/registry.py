@@ -127,12 +127,15 @@ class SentimentResult:
     1 = very positive.  ``confidence`` is in ``[0, 1]``.  ``provider``
     identifies the sentiment engine (``"naive"``, ``"finbert"``,
     ``"openai"``, ``"anthropic"``, ``"xai"``, ``"minimax"``).
+    ``metadata`` is an optional dict for engine-specific extras (e.g.
+    the detected language code for multilingual engines).
     """
 
     item_id: str
     provider: str
     score: float
     confidence: float
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
