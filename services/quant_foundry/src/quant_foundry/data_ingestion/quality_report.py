@@ -18,6 +18,7 @@ following the same pattern as ``scripts/build_dataset_manifest.py``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -90,6 +91,20 @@ class DatasetQualityReport(BaseModel):
             sort_keys=True,
             indent=2,
         )
+
+    def quality_hash(self) -> str:
+        """Stable SHA-256 hex digest over the canonical report payload.
+
+        Used to embed a tamper-evident reference in the dataset manifest so
+        consumers can verify the manifest was produced alongside a specific
+        quality report.
+        """
+        payload = json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def write(self, path: Path) -> Path:
         """Write the report to *path* (parent dirs created) and return it."""

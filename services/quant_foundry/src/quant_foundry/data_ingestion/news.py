@@ -46,7 +46,7 @@ from quant_foundry.feature_lake import (
 # modifying it.  The experiment is a workspace member but not on the
 # quant_foundry import path, so add its src dir to sys.path.
 # ---------------------------------------------------------------------------
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[5]
 _NEWS_SRC = _REPO_ROOT / "experiments" / "news-impact-model" / "src"
 if str(_NEWS_SRC) not in sys.path:
     sys.path.insert(0, str(_NEWS_SRC))
@@ -312,6 +312,20 @@ def ingest_news_events(
 
     _write_news_parquet(data_rows, parquet_path)
 
+    # --- compute quality report then embed its hash in the manifest ------
+    quality_report = compute_quality_report(
+        parquet_path,
+        manifest,
+        feature_names=NEWS_FEATURE_NAMES,
+    )
+    quality_path = output_dir / f"{dataset_id}.quality.json"
+    quality_report.write(quality_path)
+
+    manifest = manifest.model_copy(
+        update={"quality_report_hash": quality_report.quality_hash()},
+    )
+
+    # --- write manifest + receipt ----------------------------------------
     import json
 
     body = json.loads(manifest.to_json())
@@ -324,15 +338,6 @@ def ingest_news_events(
     )
 
     receipt = export_receipt(manifest, availability, output_dir)
-
-    # --- compute + write quality report ---------------------------------
-    quality_report = compute_quality_report(
-        parquet_path,
-        manifest,
-        feature_names=NEWS_FEATURE_NAMES,
-    )
-    quality_path = output_dir / f"{dataset_id}.quality.json"
-    quality_report.write(quality_path)
 
     return IngestionResult(
         parquet_path=parquet_path,

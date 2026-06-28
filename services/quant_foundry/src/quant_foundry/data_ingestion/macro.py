@@ -265,12 +265,26 @@ def ingest_macro_indicators(
         MACRO_FEATURE_NAMES,
     )
 
-    # --- export parquet + manifest + receipt -----------------------------
+    # --- export parquet --------------------------------------------------
     parquet_path = output_dir / f"{dataset_id}.parquet"
     manifest_path = output_dir / f"{dataset_id}.manifest.json"
 
     _write_macro_parquet(data_rows, parquet_path)
 
+    # --- compute quality report then embed its hash in the manifest ------
+    quality_report = compute_quality_report(
+        parquet_path,
+        manifest,
+        feature_names=MACRO_FEATURE_NAMES,
+    )
+    quality_path = output_dir / f"{dataset_id}.quality.json"
+    quality_report.write(quality_path)
+
+    manifest = manifest.model_copy(
+        update={"quality_report_hash": quality_report.quality_hash()},
+    )
+
+    # --- write manifest + receipt ----------------------------------------
     body = json.loads(manifest.to_json())
     body["availability"] = json.loads(availability.to_json())
     body["feature_names"] = list(MACRO_FEATURE_NAMES)
@@ -281,15 +295,6 @@ def ingest_macro_indicators(
     )
 
     receipt = export_receipt(manifest, availability, output_dir)
-
-    # --- compute + write quality report ---------------------------------
-    quality_report = compute_quality_report(
-        parquet_path,
-        manifest,
-        feature_names=MACRO_FEATURE_NAMES,
-    )
-    quality_path = output_dir / f"{dataset_id}.quality.json"
-    quality_report.write(quality_path)
 
     return IngestionResult(
         parquet_path=parquet_path,

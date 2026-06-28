@@ -32,7 +32,7 @@ from quant_foundry.feature_lake import export_receipt
 # Import the shared pipeline from scripts/build_dataset_manifest.py without
 # modifying it.  scripts/ is not a package, so prepend it to sys.path.
 # ---------------------------------------------------------------------------
-_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[4] / "scripts"
+_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[5] / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -196,15 +196,13 @@ def ingest_equity_bars(
             "(need >= 20 warmup + label horizon days of history per symbol).",
         )
 
-    # --- export parquet + manifest + receipt -----------------------------
+    # --- export parquet --------------------------------------------------
     parquet_path = output_dir / f"{dataset_id}.parquet"
     manifest_path = output_dir / f"{dataset_id}.manifest.json"
 
     write_dataset_parquet(data_rows, parquet_path)
-    write_manifest_json(manifest, availability, manifest_path)
-    receipt = export_receipt(manifest, availability, output_dir)
 
-    # --- compute + write quality report ---------------------------------
+    # --- compute quality report then embed its hash in the manifest ------
     quality_report = compute_quality_report(
         parquet_path,
         manifest,
@@ -212,6 +210,16 @@ def ingest_equity_bars(
     )
     quality_path = output_dir / f"{dataset_id}.quality.json"
     quality_report.write(quality_path)
+
+    # Re-emit the manifest with the quality report hash so consumers can
+    # verify the manifest was produced alongside this specific quality report.
+    manifest = manifest.model_copy(
+        update={"quality_report_hash": quality_report.quality_hash()},
+    )
+
+    # --- write manifest + receipt ----------------------------------------
+    write_manifest_json(manifest, availability, manifest_path)
+    receipt = export_receipt(manifest, availability, output_dir)
 
     return IngestionResult(
         parquet_path=parquet_path,

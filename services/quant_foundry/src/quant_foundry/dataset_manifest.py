@@ -124,6 +124,7 @@ class FeatureLakeManifest(BaseModel):
     folds: PurgedFoldSpec
     pit_proof_verified: bool
     source_vintage_refs: list[str] = Field(default_factory=list)
+    quality_report_hash: str | None = None
 
     # --- hashing ---------------------------------------------------------
 
@@ -141,6 +142,7 @@ class FeatureLakeManifest(BaseModel):
             "folds": self.folds.model_dump(mode="json"),
             "pit_proof_verified": self.pit_proof_verified,
             "source_vintage_refs": list(self.source_vintage_refs),
+            "quality_report_hash": self.quality_report_hash,
         }
 
     def manifest_hash(self) -> str:
