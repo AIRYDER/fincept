@@ -83,13 +83,12 @@ CONSUMER_GROUP = "oms"
 
 
 async def _audit_intent(intent: OrderIntent, *, actor: str) -> None:
-    with contextlib.suppress(Exception):
-        await audit.append(
-            actor=actor,
-            event_type="oms.intent",
-            payload=intent.model_dump(mode="json"),
-            correlation_id=intent.order_id,
-        )
+    await audit.safe_append(
+        actor=actor,
+        event_type="oms.intent",
+        payload=intent.model_dump(mode="json"),
+        correlation_id=intent.order_id,
+    )
 
 
 async def _publish_result(
@@ -101,25 +100,23 @@ async def _publish_result(
     """Publish each Order state to ord.orders + Fill to ord.fills + audit."""
     for order in result.order_states:
         await producer.publish(STREAM_ORDERS, Event(type="order", payload=order))
-        with contextlib.suppress(Exception):
-            await audit.append(
-                actor=actor,
-                event_type="oms.state",
-                payload={
-                    "status": order.status.value,
-                    "order": order.model_dump(mode="json"),
-                },
-                correlation_id=order.order_id,
-            )
+        await audit.safe_append(
+            actor=actor,
+            event_type="oms.state",
+            payload={
+                "status": order.status.value,
+                "order": order.model_dump(mode="json"),
+            },
+            correlation_id=order.order_id,
+        )
     if result.fill is not None:
         await producer.publish(STREAM_FILLS, Event(type="fill", payload=result.fill))
-        with contextlib.suppress(Exception):
-            await audit.append(
-                actor=actor,
-                event_type="oms.fill",
-                payload=result.fill.model_dump(mode="json"),
-                correlation_id=result.fill.order_id,
-            )
+        await audit.safe_append(
+            actor=actor,
+            event_type="oms.fill",
+            payload=result.fill.model_dump(mode="json"),
+            correlation_id=result.fill.order_id,
+        )
 
 
 def _make_price_handler(prices: LivePrices) -> Any:

@@ -63,6 +63,7 @@ from backtester.ingest import (  # noqa: E402
     parse_alpaca_bars_payload,
     parse_yfinance_daily_frame,
 )
+from fincept_core.config import get_settings  # noqa: E402
 from fincept_core.schemas import AssetClass, BarEvent, Venue  # noqa: E402
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets"
@@ -206,22 +207,21 @@ def fetch_yfinance_daily(
 def _resolve_source(arg_source: str) -> str:
     if arg_source != "auto":
         return arg_source
-    has_alpaca = bool(
-        os.environ.get("FINCEPT_ALPACA_API_KEY")
-        and os.environ.get("FINCEPT_ALPACA_API_SECRET")
-    ) or bool(
-        os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_API_SECRET")
-    )
-    return "alpaca" if has_alpaca else "yfinance"
+    key, secret = _alpaca_credentials_or_none()
+    return "alpaca" if key and secret else "yfinance"
+
+
+def _alpaca_credentials_or_none() -> tuple[str | None, str | None]:
+    """Resolve Alpaca creds via ``Settings`` (canonical ``FINCEPT_`` prefix),
+    falling back to the deprecated unprefixed ``ALPACA_*`` env vars."""
+    settings = get_settings()
+    key = settings.ALPACA_API_KEY or os.environ.get("ALPACA_API_KEY")
+    secret = settings.ALPACA_API_SECRET or os.environ.get("ALPACA_API_SECRET")
+    return key, secret
 
 
 def _alpaca_credentials() -> tuple[str, str]:
-    key = os.environ.get("FINCEPT_ALPACA_API_KEY") or os.environ.get(
-        "ALPACA_API_KEY"
-    )
-    secret = os.environ.get("FINCEPT_ALPACA_API_SECRET") or os.environ.get(
-        "ALPACA_API_SECRET"
-    )
+    key, secret = _alpaca_credentials_or_none()
     if not key or not secret:
         raise SystemExit(
             "Alpaca credentials not set. Export FINCEPT_ALPACA_API_KEY and "

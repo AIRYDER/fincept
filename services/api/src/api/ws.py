@@ -22,7 +22,7 @@ or REST endpoints for backfill).
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 from typing import Any
 
 import jwt
@@ -37,6 +37,8 @@ from fincept_bus.streams import (
 )
 from fincept_core.config import get_settings
 from fincept_core.events import deserialize
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -55,16 +57,14 @@ BLOCK_MS = 1_000  # how long XREAD blocks waiting for new messages
 async def _authenticate(ws: WebSocket) -> dict[str, Any] | None:
     """Verify the bearer token from the ``Authorization`` header.
 
-    WebSocket clients can't easily send custom headers in browsers, so
-    we also accept the token via ``?token=...`` query string as a
-    fallback.  Returns the decoded claims, or None if unauthenticated.
+    Returns the decoded claims, or None if unauthenticated.  We do NOT
+    accept the token via ``?token=...`` query string because web servers
+    log query strings in access logs, which would leak the JWT.
     """
-    token: str | None = None
     auth = ws.headers.get("authorization")
-    if auth and auth.lower().startswith("bearer "):
-        token = auth.split(" ", 1)[1].strip()
-    if token is None:
-        token = ws.query_params.get("token")
+    if not auth or not auth.lower().startswith("bearer "):
+        return None
+    token = auth.split(" ", 1)[1].strip()
     if not token:
         return None
     try:
@@ -155,5 +155,7 @@ async def stream(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        with contextlib.suppress(Exception):
+        try:
             await redis.aclose()  # type: ignore[attr-defined]
+        except Exception:
+            _log.warning("ws.redis_close_failed", exc_info=True)

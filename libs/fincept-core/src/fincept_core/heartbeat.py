@@ -37,13 +37,15 @@ When no callback is provided, the value is just the timestamp string
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
 
 from redis.asyncio import Redis
+
+_log = logging.getLogger(__name__)
 
 HEARTBEAT_PREFIX = "service:heartbeat:"
 DEFAULT_INTERVAL_SEC = 10
@@ -96,10 +98,16 @@ async def beat_periodically(
             await asyncio.sleep(interval_sec)
     except asyncio.CancelledError:
         # Best-effort cleanup so the dashboard immediately reflects
-        # graceful shutdown.  Swallow errors - the TTL will catch it
-        # if Redis is unreachable here.
-        with contextlib.suppress(Exception):
+        # graceful shutdown.  Log errors instead of silencing them so
+        # operators can detect a Redis outage during shutdown.
+        try:
             await redis.delete(key)
+        except Exception:
+            _log.warning(
+                "heartbeat.cleanup_failed",
+                extra={"key": key},
+                exc_info=True,
+            )
         raise
 
 

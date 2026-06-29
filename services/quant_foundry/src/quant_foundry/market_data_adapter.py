@@ -15,9 +15,10 @@ calling ``SettlementLedger.settle()``.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+from .gateway_helpers import env_first
 
 
 @dataclass(frozen=True)
@@ -115,14 +116,17 @@ class BarDataAdapter:
 def alpaca_reader_from_env() -> Callable[[str, int, int], list[PricePoint]] | None:
     """Build an Alpaca bar reader from env vars, or return None.
 
-    Reads ``ALPACA_API_KEY`` and ``ALPACA_API_SECRET``. When both are
+    Reads ``FINCEPT_ALPACA_API_KEY`` and ``FINCEPT_ALPACA_API_SECRET``
+    (canonical, via the ``Settings`` env prefix); falls back to the
+    deprecated unprefixed ``ALPACA_API_KEY`` / ``ALPACA_API_SECRET``
+    names with a ``DeprecationWarning``. When both key and secret are
     present, returns a sync callable that fetches 1-min bars from
     Alpaca's data API and converts them to ``PricePoint`` objects.
     When either is missing, returns ``None`` (settlement falls back
     to ``fincept_db.bars`` only).
     """
-    api_key = os.environ.get("ALPACA_API_KEY", "")
-    api_secret = os.environ.get("ALPACA_API_SECRET", "")
+    api_key = env_first("FINCEPT_ALPACA_API_KEY", "ALPACA_API_KEY")
+    api_secret = env_first("FINCEPT_ALPACA_API_SECRET", "ALPACA_API_SECRET")
     if not api_key or not api_secret:
         return None
 

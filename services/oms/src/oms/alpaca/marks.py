@@ -23,7 +23,7 @@ indefinitely.  Consumers should treat a missing mark as
 
 from __future__ import annotations
 
-import contextlib
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -32,6 +32,8 @@ from redis.asyncio import Redis
 from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
 from fincept_db.provider_data import build_alpaca_mark_record, write_provider_data
+
+_log = logging.getLogger(__name__)
 
 #: Default TTL in seconds.  Override at process level via
 #: ``Settings.MARK_TTL_SEC`` if the operator wants a longer window.
@@ -55,10 +57,18 @@ async def write_mark(redis: Redis[Any], symbol: str, price: Decimal) -> None:
         pipe.hset(key, mapping={"px": str(price), "ts_ns": str(ts)})
         pipe.expire(key, ttl)
         await pipe.execute()
-    # Provider evidence for freshness receipts (TASK-0205). Best-effort.
-    with contextlib.suppress(Exception):
+    # Provider evidence for freshness receipts (TASK-0205). Best-effort:
+    # a failure here must not break the mark write, but it must be
+    # visible so operators can detect a provider-data outage.
+    try:
         rec = build_alpaca_mark_record(symbol=symbol, price=price, ts_ns=ts)
         await write_provider_data([rec])
+    except Exception:
+        _log.warning(
+            "alpaca.marks.provider_data_failed",
+            extra={"symbol": symbol},
+            exc_info=True,
+        )
 
 
 async def read_mark(redis: Redis[Any], symbol: str) -> Decimal | None:

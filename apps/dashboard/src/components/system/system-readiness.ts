@@ -150,7 +150,7 @@ export interface SystemReadinessInput {
 // ---------------------------------------------------------------------------
 
 export const REQUIRED_ENV_VARS: Array<{ name: string; description: string }> = [
-  { name: "FINCEPT_API_URL", description: "Fincept API base URL (default http://127.0.0.1:8010)" },
+  { name: "NEXT_PUBLIC_API_URL", description: "Fincept API base URL (default http://127.0.0.1:8010)" },
   { name: "REDIS_URL", description: "Redis Streams URL (default redis://127.0.0.1:6379)" },
 ];
 
