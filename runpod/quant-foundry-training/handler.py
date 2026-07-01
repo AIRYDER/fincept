@@ -24,6 +24,8 @@ RunPod protocol:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -32,7 +34,9 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 # Add the shared RunPod utilities to sys.path so we can import
 # worker_status. In the container the shared module may be at different
@@ -105,6 +109,14 @@ from quant_foundry.data_ingestion.quality_report import (  # noqa: E402
     validate_quality_policy,
 )
 
+# Phase 1 / T-1.2: artifact writer interface. Pydantic v2 is used for
+# the typed write result (frozen=True, extra='forbid' — audit integrity /
+# fail-closed). The writer protocol decouples the handler from the
+# storage backend so canary/research/production runs can use different
+# backends (volume path, presigned object upload, or a fake in-memory
+# writer for tests) behind a single contract.
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+
 
 def runpod_data_root() -> Path:
     """Resolve the RunPod network volume mount path.
@@ -161,6 +173,453 @@ def _get_callback_secret() -> str:
             "Set it in the RunPod template environment or container env."
         )
     return secret
+
+
+# --- Phase 1 / T-1.2: artifact writer interface ----------------------------
+#
+# A typed, backend-agnostic artifact writer contract. The handler no
+# longer writes artifacts inline; instead it selects a writer based on
+# the run mode and available inputs:
+#
+# - ``VolumeArtifactWriter``: writes to a RunPod network volume path
+#   (canary/operator fallback). Returns a ``file://`` URI.
+# - ``PresignedUploadArtifactWriter``: uploads artifact bytes via HTTP
+#   PUT to a presigned URL (production path). Returns the presigned URL
+#   as the artifact URI.
+# - ``FakeArtifactWriter``: computes the expected sha256 without
+#   actually writing (testing). Returns a synthetic ``artifact://fake/``
+#   URI.
+#
+# Every writer returns an :class:`ArtifactWriteResult` carrying the
+# artifact URI, sha256, size, format, and a write receipt (HMAC over the
+# URI+sha+size+format). The handler signs the artifact metadata with the
+# callback secret so the trusted-side verifier can authenticate it.
+#
+# Security invariants (fail-closed):
+# - Disallowed URI schemes (``http://``, ``ftp://``, arbitrary schemes)
+#   are rejected with a signed failure envelope.
+# - Writer failure produces a signed failure callback with
+#   ``error_code="artifact_write_failed"``.
+# - Written bytes are re-hashed and compared to the declared sha256
+#   (byte-for-byte verification — a mismatch is a terminal failure).
+
+
+# Allowed URI schemes for artifact locations. ``file://`` is the volume
+# path; ``https://`` is the presigned object upload path (TLS required —
+# ``http://`` is rejected as insecure). ``artifact://`` is the synthetic
+# fake-writer URI used only for tests. Any other scheme is rejected
+# (fail-closed) so a writer cannot smuggle an artifact to an unapproved
+# location.
+_ALLOWED_ARTIFACT_URI_SCHEMES: frozenset[str] = frozenset(
+    {"file", "https", "artifact"},
+)
+
+
+class ArtifactWriteResult(BaseModel):
+    """Typed result of an artifact write (Phase 1 / T-1.2).
+
+    Frozen + ``extra='forbid'`` (audit integrity). Carries the artifact
+    URI, sha256, size, format, and a write receipt (HMAC-SHA256 over the
+    canonical ``uri|sha256|size|format`` string, signed with the callback
+    secret). The trusted-side verifier re-computes the receipt to detect
+    tampering with the artifact metadata.
+
+    Fields:
+        artifact_uri: declared location of the persisted artifact
+            (``file://``, ``https://``, or ``artifact://fake/...``).
+        artifact_sha256: SHA-256 hex (64 lowercase chars) of the
+            artifact bytes.
+        artifact_size_bytes: byte length of the artifact (> 0).
+        artifact_format: serialisation format (``"pickle"``, ...).
+        write_receipt: HMAC-SHA256 hex over
+            ``artifact_uri|artifact_sha256|artifact_size_bytes|artifact_format``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    artifact_uri: str
+    artifact_sha256: str
+    artifact_size_bytes: int
+    artifact_format: str
+    write_receipt: str
+
+    def verify_receipt(self, *, secret: str) -> bool:
+        """Recompute the write receipt and compare (constant-time).
+
+        Returns ``True`` iff the recomputed HMAC matches the stored
+        receipt. Used by the trusted-side verifier to authenticate the
+        artifact metadata (fail-closed — never raises on a mismatch).
+        """
+        if not isinstance(secret, str) or not secret:
+            return False
+        canonical = "|".join(
+            [
+                self.artifact_uri,
+                self.artifact_sha256,
+                str(self.artifact_size_bytes),
+                self.artifact_format,
+            ]
+        ).encode("utf-8")
+        expected = hmac.new(
+            secret.encode("utf-8"), canonical, hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, self.write_receipt)
+
+
+def _sign_artifact_metadata(
+    *,
+    artifact_uri: str,
+    artifact_sha256: str,
+    artifact_size_bytes: int,
+    artifact_format: str,
+    secret: str,
+) -> str:
+    """Sign artifact metadata (URI + sha256 + size + format) with HMAC.
+
+    The canonical payload is ``artifact_uri|artifact_sha256|size|format``
+    (pipe-delimited, no JSON wrapping — deterministic and compact). The
+    trusted-side verifier re-computes this to authenticate the artifact
+    metadata independent of the callback signature.
+    """
+    canonical = "|".join(
+        [
+            artifact_uri,
+            artifact_sha256,
+            str(artifact_size_bytes),
+            artifact_format,
+        ]
+    ).encode("utf-8")
+    return hmac.new(
+        secret.encode("utf-8"), canonical, hashlib.sha256,
+    ).hexdigest()
+
+
+def _validate_artifact_uri_scheme(uri: str) -> None:
+    """Validate that ``uri`` uses an allowed artifact URI scheme.
+
+    Allowed: ``file``, ``https``, ``artifact`` (fake writer).
+    Disallowed: ``http`` (insecure), ``ftp``, and any arbitrary scheme.
+
+    Raises :class:`ValueError` (fail-closed) on a disallowed scheme so
+    the handler can translate it into a signed failure envelope.
+    """
+    if not uri or not uri.strip():
+        raise ValueError("artifact URI must be non-empty")
+    parsed = urlparse(uri)
+    scheme = (parsed.scheme or "").lower()
+    if not scheme:
+        raise ValueError(
+            f"artifact URI has no scheme (allowed: "
+            f"{sorted(_ALLOWED_ARTIFACT_URI_SCHEMES)}): {uri!r}"
+        )
+    if scheme not in _ALLOWED_ARTIFACT_URI_SCHEMES:
+        raise ValueError(
+            f"disallowed artifact URI scheme {scheme!r} "
+            f"(allowed: {sorted(_ALLOWED_ARTIFACT_URI_SCHEMES)}): {uri!r}"
+        )
+
+
+class ArtifactWriter(Protocol):
+    """Protocol for artifact writers (Phase 1 / T-1.2).
+
+    Every writer persists (or simulates persisting) artifact bytes and
+    returns an :class:`ArtifactWriteResult` with the URI, sha256, size,
+    format, and a signed write receipt. Writers fail closed: a write
+    failure raises so the handler can emit a signed failure envelope.
+    """
+
+    def write_artifact(
+        self,
+        model_bytes: bytes,
+        artifact_id: str,
+        artifact_format: str,
+    ) -> ArtifactWriteResult: ...
+
+
+class VolumeArtifactWriter:
+    """Write artifact bytes to a RunPod network volume path.
+
+    Writes to ``{output_dir}/model.pkl`` (where ``output_dir`` is the
+    resolved volume path), computes the sha256 + size after the write,
+    re-reads the written bytes to verify they match the declared hash
+    (byte-for-byte, fail-closed), and returns a ``file://`` URI.
+
+    Also writes the callback envelope, artifact manifest, and dossier
+    JSON sidecars alongside the model so the trusted-side verifier can
+    audit the full result without re-running training.
+
+    Args:
+        output_dir: resolved volume directory to write into.
+        callback_payload_bytes: the signed callback envelope JSON bytes
+            (written as ``callback_envelope.json`` sidecar).
+        artifact_manifest_dict: the artifact manifest dict (written as
+            ``artifact_manifest.json`` sidecar).
+        dossier_dict: the dossier dict (written as ``dossier.json``
+            sidecar).
+        callback_secret: HMAC secret for signing the write receipt.
+    """
+
+    def __init__(
+        self,
+        *,
+        output_dir: Path,
+        callback_payload_bytes: bytes,
+        artifact_manifest_dict: dict[str, Any],
+        dossier_dict: dict[str, Any],
+        callback_secret: str,
+    ) -> None:
+        self._output_dir = output_dir
+        self._callback_payload_bytes = callback_payload_bytes
+        self._artifact_manifest_dict = artifact_manifest_dict
+        self._dossier_dict = dossier_dict
+        self._callback_secret = callback_secret
+
+    def write_artifact(
+        self,
+        model_bytes: bytes,
+        artifact_id: str,
+        artifact_format: str,
+    ) -> ArtifactWriteResult:
+        if not model_bytes:
+            raise ValueError(
+                "VolumeArtifactWriter cannot write empty artifact bytes "
+                "(fail closed)"
+            )
+        out_dir = self._output_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Write JSON sidecars (best-effort audit trail on the volume).
+        try:
+            callback_json = json.loads(self._callback_payload_bytes.decode("utf-8"))
+            (out_dir / "callback_envelope.json").write_text(
+                json.dumps(callback_json, indent=2), encoding="utf-8",
+            )
+            (out_dir / "artifact_manifest.json").write_text(
+                json.dumps(self._artifact_manifest_dict, indent=2),
+                encoding="utf-8",
+            )
+            (out_dir / "dossier.json").write_text(
+                json.dumps(self._dossier_dict, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            # Sidecar write failures are non-fatal — the model artifact
+            # is the contract-critical write. Re-raise only if the model
+            # write itself fails (below).
+            pass
+
+        # Write the model artifact bytes (contract-critical).
+        model_path = out_dir / "model.pkl"
+        model_path.write_bytes(model_bytes)
+
+        # Compute sha256 + size from the bytes we are about to declare.
+        sha = hashlib.sha256(model_bytes).hexdigest()
+        size = len(model_bytes)
+
+        # Verify the written bytes match the declared hash (fail-closed):
+        # re-read the file and re-hash. A mismatch means the volume
+        # corrupted the write (bit flip, truncation, concurrent writer).
+        written = model_path.read_bytes()
+        written_sha = hashlib.sha256(written).hexdigest()
+        if written_sha != sha or len(written) != size:
+            raise ValueError(
+                "artifact sha256/size mismatch after volume write: "
+                f"declared sha={sha} size={size}, "
+                f"written sha={written_sha} size={len(written)}"
+            )
+
+        uri = model_path.as_uri()
+        _validate_artifact_uri_scheme(uri)
+        receipt = _sign_artifact_metadata(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            secret=self._callback_secret,
+        )
+        return ArtifactWriteResult(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            write_receipt=receipt,
+        )
+
+
+class PresignedUploadArtifactWriter:
+    """Upload artifact bytes to a presigned object store URL (production).
+
+    Accepts a presigned URL (passed via the handler input) and uploads
+    the artifact bytes via HTTP PUT. Computes the sha256 + size before
+    upload, verifies the upload succeeded (HTTP 200), and returns the
+    presigned URL as the artifact URI.
+
+    The presigned URL MUST use ``https://`` (TLS required — ``http://``
+    is rejected by :func:`_validate_artifact_uri_scheme`). The trusted
+    side fetches the artifact from the same URL to re-verify the hash.
+
+    Args:
+        presigned_url: the presigned PUT URL for the artifact object.
+        callback_secret: HMAC secret for signing the write receipt.
+    """
+
+    def __init__(
+        self,
+        *,
+        presigned_url: str,
+        callback_secret: str,
+    ) -> None:
+        # Validate the scheme up front (fail-closed before any network
+        # I/O — reject http://, ftp://, and arbitrary schemes).
+        _validate_artifact_uri_scheme(presigned_url)
+        self._presigned_url = presigned_url
+        self._callback_secret = callback_secret
+
+    def write_artifact(
+        self,
+        model_bytes: bytes,
+        artifact_id: str,
+        artifact_format: str,
+    ) -> ArtifactWriteResult:
+        if not model_bytes:
+            raise ValueError(
+                "PresignedUploadArtifactWriter cannot upload empty "
+                "artifact bytes (fail closed)"
+            )
+        sha = hashlib.sha256(model_bytes).hexdigest()
+        size = len(model_bytes)
+
+        # Upload via HTTP PUT with the raw artifact bytes as the body.
+        # The presigned URL encodes the object key + signature; we do
+        # not add extra auth headers (the signature is in the URL).
+        req = Request(
+            self._presigned_url,
+            data=model_bytes,
+            method="PUT",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        try:
+            with urlopen(req, timeout=120) as resp:  # noqa: S310 - presigned URL is operator-provided
+                status = getattr(resp, "status", None) or resp.getcode()
+                if status != 200:
+                    raise ValueError(
+                        f"presigned upload failed: HTTP {status} "
+                        f"(expected 200) for {self._presigned_url}"
+                    )
+        except ValueError:
+            # Re-raise validation errors (HTTP status mismatch) as-is.
+            raise
+        except Exception as exc:
+            # Network / connection / timeout failure → fail closed.
+            raise ValueError(
+                f"presigned artifact upload failed: {exc}"
+            ) from exc
+
+        uri = self._presigned_url
+        _validate_artifact_uri_scheme(uri)
+        receipt = _sign_artifact_metadata(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            secret=self._callback_secret,
+        )
+        return ArtifactWriteResult(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            write_receipt=receipt,
+        )
+
+
+class FakeArtifactWriter:
+    """In-memory fake writer for testing (Phase 1 / T-1.2).
+
+    Computes the expected sha256 + size WITHOUT actually writing the
+    bytes anywhere. Returns a synthetic ``artifact://fake/{artifact_id}``
+    URI. Used by canary tests and unit tests that need to exercise the
+    writer contract without a volume or network.
+
+    Args:
+        callback_secret: HMAC secret for signing the write receipt.
+    """
+
+    def __init__(self, *, callback_secret: str) -> None:
+        self._callback_secret = callback_secret
+
+    def write_artifact(
+        self,
+        model_bytes: bytes,
+        artifact_id: str,
+        artifact_format: str,
+    ) -> ArtifactWriteResult:
+        if not model_bytes:
+            raise ValueError(
+                "FakeArtifactWriter cannot hash empty artifact bytes "
+                "(fail closed)"
+            )
+        sha = hashlib.sha256(model_bytes).hexdigest()
+        size = len(model_bytes)
+        uri = f"artifact://fake/{artifact_id}"
+        _validate_artifact_uri_scheme(uri)
+        receipt = _sign_artifact_metadata(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            secret=self._callback_secret,
+        )
+        return ArtifactWriteResult(
+            artifact_uri=uri,
+            artifact_sha256=sha,
+            artifact_size_bytes=size,
+            artifact_format=artifact_format,
+            write_receipt=receipt,
+        )
+
+
+def _build_artifact_write_failure_callback(
+    *,
+    job_id: str,
+    error_summary: str,
+) -> dict[str, Any]:
+    """Build a signed artifact-write failure envelope (Phase 1 / T-1.2).
+
+    When an artifact write fails (volume I/O error, presigned upload
+    failure, URI scheme rejection, or sha mismatch after write), the
+    handler emits this signed failure envelope so the dispatcher /
+    trusted verifier can authenticate the failure (it is not a silent
+    drop). The envelope carries ``error_code="artifact_write_failed"``
+    and is HMAC-signed with ``QUANT_FOUNDRY_CALLBACK_SECRET``.
+    """
+    callback_payload_dict = {
+        "schema_version": 1,
+        "job_id": job_id,
+        "worker_id": "runpod-artifact-writer",
+        "result_type": "artifact_write_failed",
+        "payload": {
+            "error_code": "artifact_write_failed",
+            "error_summary": error_summary,
+        },
+    }
+    callback_payload = json.dumps(
+        callback_payload_dict, sort_keys=True,
+    ).encode("utf-8")
+    callback_ts = int(time.time())
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=_get_callback_secret(),
+        ts=callback_ts,
+        job_id=job_id,
+    )
+    return {
+        "error_code": "artifact_write_failed",
+        "error_summary": error_summary,
+        "job_id": job_id,
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+    }
 
 
 def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
@@ -1517,6 +1976,14 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     inline_csv = input_data.pop("inline_dataset_csv", None)
     output_prefix = input_data.pop("output_prefix", None)
     n_folds = input_data.pop("n_folds", 3)
+    # Phase 1 / T-1.2: presigned object upload URL for the production
+    # artifact writer. When present, the handler uses
+    # ``PresignedUploadArtifactWriter`` to upload the model artifact via
+    # HTTP PUT to the presigned URL (TLS required — ``http://`` is
+    # rejected by the writer's URI scheme validation). When absent, the
+    # handler falls back to ``VolumeArtifactWriter`` (if output_prefix is
+    # set) or ``FakeArtifactWriter`` (canary tests with no persistence).
+    presigned_artifact_url = input_data.pop("presigned_artifact_url", None)
     # Phase 3 / T-2.2: manifest-first dataset loading. When present,
     # ``dataset_load_spec`` is a dict with manifest_uri + expected hashes.
     # The handler fetches + verifies the manifest and data BEFORE training
@@ -1821,64 +2288,135 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 }
             model_bytes = typed_artifact.model_bytes
 
-    # If output_prefix is set, persist the model artifact + dossier to the
-    # network volume. Fail the job if the artifact write fails or the sha
-    # does not match (acceptance: artifact sha mismatch fails; fail the
-    # job if artifact write fails).
+    # --- Phase 1 / T-1.2: persist the artifact via the writer interface -----
+    # Select a writer backend based on the available inputs + run mode:
+    #   - presigned_artifact_url → PresignedUploadArtifactWriter (prod)
+    #   - output_prefix → VolumeArtifactWriter (canary/operator fallback)
+    #   - neither → FakeArtifactWriter (canary tests, no persistence)
+    # The writer returns an ArtifactWriteResult with URI/sha256/size/format
+    # + a signed write receipt. Writer failure (volume I/O, upload failure,
+    # URI scheme rejection, sha mismatch after write) produces a signed
+    # failure envelope (fail-closed — never a silent drop).
     artifact_uri: str | None = None
-    if output_prefix:
-        if typed_artifact is None or not model_bytes:
-            return {
-                "error_code": "artifact_missing",
-                "error_summary": (
-                    "output_prefix set but no artifact bytes to write "
-                    "(fail closed)"
-                ),
-                "job_id": req.job_id,
-            }
-        try:
-            out_dir = Path(output_prefix)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            callback_json = json.loads(result.callback_payload.decode("utf-8"))
-            payload = callback_json.get("payload", {})
-            artifact_manifest = payload.get("artifact_manifest", {})
-            dossier_data = payload.get("dossier", {})
-            (out_dir / "callback_envelope.json").write_text(
-                json.dumps(callback_json, indent=2), encoding="utf-8"
-            )
-            (out_dir / "artifact_manifest.json").write_text(
-                json.dumps(artifact_manifest, indent=2), encoding="utf-8"
-            )
-            (out_dir / "dossier.json").write_text(
-                json.dumps(dossier_data, indent=2), encoding="utf-8"
-            )
-            # Write the model artifact bytes (typed field, not getattr).
-            model_path = out_dir / "model.pkl"
-            model_path.write_bytes(model_bytes)
-            # Verify the written bytes match the declared sha256. A
-            # mismatch is a terminal failure (acceptance: artifact sha
-            # mismatch fails).
-            if not typed_artifact.verify_bytes(model_bytes):
-                return {
-                    "error_code": "artifact_sha_mismatch",
-                    "error_summary": (
-                        "artifact sha256 mismatch: recomputed hash does not "
-                        f"match declared {typed_artifact.artifact_sha256}"
+    write_result: ArtifactWriteResult | None = None
+    callback_secret = _get_callback_secret()
+    if typed_artifact is not None and model_bytes:
+        # Resolve the callback payload sidecar dicts for the volume writer.
+        cb_json = json.loads(result.callback_payload.decode("utf-8"))
+        cb_payload = cb_json.get("payload", {})
+        artifact_manifest_dict = cb_payload.get("artifact_manifest", {})
+        dossier_dict = cb_payload.get("dossier", {})
+
+        # Select the writer backend.
+        writer: ArtifactWriter
+        if presigned_artifact_url:
+            # Production path: presigned object upload (TLS required).
+            try:
+                writer = PresignedUploadArtifactWriter(
+                    presigned_url=presigned_artifact_url,
+                    callback_secret=callback_secret,
+                )
+            except ValueError as exc:
+                # URI scheme rejection (e.g. http://, ftp://) → signed
+                # failure envelope (fail-closed).
+                write_status(
+                    req.job_id, "failed",
+                    error_code="artifact_write_failed",
+                    error_summary=str(exc),
+                )
+                return _build_artifact_write_failure_callback(
+                    job_id=req.job_id,
+                    error_summary=(
+                        f"disallowed presigned artifact URL: {exc}"
                     ),
-                    "job_id": req.job_id,
-                }
-            artifact_uri = model_path.as_uri()
+                )
+        elif output_prefix:
+            # Canary/operator fallback: volume path writer.
+            writer = VolumeArtifactWriter(
+                output_dir=Path(output_prefix),
+                callback_payload_bytes=result.callback_payload,
+                artifact_manifest_dict=artifact_manifest_dict,
+                dossier_dict=dossier_dict,
+                callback_secret=callback_secret,
+            )
+        else:
+            # No persistence target → fake writer (canary tests). Computes
+            # the expected sha256 without actually writing.
+            writer = FakeArtifactWriter(
+                callback_secret=callback_secret,
+            )
+
+        try:
+            write_result = writer.write_artifact(
+                model_bytes=model_bytes,
+                artifact_id=typed_artifact.artifact_id,
+                artifact_format=typed_artifact.artifact_format,
+            )
+        except ValueError as exc:
+            # Write failure (sha mismatch, URI scheme rejection, upload
+            # failure) → signed failure envelope (fail-closed).
+            write_status(
+                req.job_id, "failed",
+                error_code="artifact_write_failed",
+                error_summary=str(exc),
+            )
+            return _build_artifact_write_failure_callback(
+                job_id=req.job_id,
+                error_summary=f"artifact write failed: {exc}",
+            )
         except Exception as exc:
-            # Fail the job if the artifact write fails (no longer
-            # best-effort — an unverified/unpersisted artifact is a
-            # contract violation for production/research runs).
-            return {
-                "error_code": "artifact_write_failed",
-                "error_summary": f"failed to persist artifact to volume: {exc}",
-                "job_id": req.job_id,
-            }
+            # Unexpected write failure (volume I/O, network) → signed
+            # failure envelope (fail-closed — no silent drop).
+            write_status(
+                req.job_id, "failed",
+                error_code="artifact_write_failed",
+                error_summary=str(exc),
+            )
+            return _build_artifact_write_failure_callback(
+                job_id=req.job_id,
+                error_summary=f"artifact write failed: {exc}",
+            )
+
+        # Cross-check: the writer's declared sha256 must match the typed
+        # artifact's sha256 (computed from the same bytes). A mismatch
+        # means the writer corrupted the bytes or used a different input
+        # — fail closed.
+        if write_result.artifact_sha256 != typed_artifact.artifact_sha256:
+            write_status(
+                req.job_id, "failed",
+                error_code="artifact_sha_mismatch",
+                error_summary=(
+                    "artifact sha256 mismatch: writer declared "
+                    f"{write_result.artifact_sha256} but typed artifact "
+                    f"declared {typed_artifact.artifact_sha256}"
+                ),
+            )
+            return _build_artifact_write_failure_callback(
+                job_id=req.job_id,
+                error_summary=(
+                    "artifact sha256 mismatch: writer declared "
+                    f"{write_result.artifact_sha256} but typed artifact "
+                    f"declared {typed_artifact.artifact_sha256}"
+                ),
+            )
+        artifact_uri = write_result.artifact_uri
+    elif output_prefix or presigned_artifact_url:
+        # A persistence target was set but there are no artifact bytes —
+        # fail closed (a successful job with no artifact is a contract
+        # violation).
+        return {
+            "error_code": "artifact_missing",
+            "error_summary": (
+                "persistence target set but no artifact bytes to write "
+                "(fail closed)"
+            ),
+            "job_id": req.job_id,
+        }
 
     # Bind the artifact URI onto the typed result (immutable → rebuild).
+    # Also bind the signed write receipt so the trusted-side verifier can
+    # authenticate the artifact metadata independent of the callback
+    # signature (Phase 1 / T-1.2: worker signs returned artifact metadata).
     if typed_artifact is not None and artifact_uri is not None:
         typed_artifact = TypedArtifactResult(
             artifact_id=typed_artifact.artifact_id,
@@ -1968,7 +2506,10 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
     # Primary artifact dict (serialized TypedArtifactResult, without the
     # inline model_bytes — those are not JSON-safe and not part of the
-    # callback contract).
+    # callback contract). Includes the signed write receipt (Phase 1 /
+    # T-1.2) so the trusted-side verifier can authenticate the artifact
+    # metadata (URI + sha256 + size + format) independent of the callback
+    # signature.
     primary_artifact_dict: dict[str, Any] | None = None
     if typed_artifact is not None:
         primary_artifact_dict = {
@@ -1983,6 +2524,12 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "dataset_manifest_hash": typed_artifact.dataset_manifest_hash,
             "training_manifest_hash": typed_artifact.training_manifest_hash,
             "created_at": typed_artifact.created_at,
+            # Phase 1 / T-1.2: signed write receipt (HMAC over
+            # uri|sha256|size|format). Present when a writer persisted
+            # the artifact; None for inline-only canary runs.
+            "write_receipt": (
+                write_result.write_receipt if write_result is not None else None
+            ),
         }
 
     # GPU healthcheck dict (present only if a healthcheck ran for this
@@ -2038,8 +2585,17 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # Phase 1 / T-1.1: typed artifact result (uri/hash/size/format/
         # kind/loader_family + manifest hashes). Present on every
         # successful training job; the dispatcher/trusted verifier uses
-        # it to fetch + re-verify the artifact.
+        # it to fetch + re-verify the artifact. Includes the signed
+        # write receipt (Phase 1 / T-1.2) authenticating the metadata.
         "artifact_result": primary_artifact_dict,
+        # Phase 1 / T-1.2: artifact write receipt (HMAC over
+        # uri|sha256|size|format, signed with the callback secret). The
+        # trusted-side verifier re-computes this to authenticate the
+        # artifact metadata independent of the callback signature. None
+        # for inline-only canary runs (no writer persisted the artifact).
+        "artifact_write_receipt": (
+            write_result.write_receipt if write_result is not None else None
+        ),
         # Phase 1 / T-1.4: typed, HMAC-signed RunPodTrainingCallback.
         # The trusted side verifies the signature via
         # ``validate_callback()`` before trusting any field. Carries the
