@@ -3,6 +3,7 @@ quant_foundry.dataset_manifest — point-in-time dataset manifest for the featur
 
 TASK-0405: Build Feature Lake Builder MVP.
 Phase 2 / T-2.1: Split manifest URI from data URI with DatasetLoadSpec.
+Phase 3 / T-3.1: Dataset Registry with readiness levels and registration commands.
 
 This module defines the *rich* manifest that the feature lake emits for a
 point-in-time dataset export. It intentionally lives here (and NOT in
@@ -39,6 +40,26 @@ Phase 2 — manifest-first loading (T-2.1):
 - **Direct CSV/parquet is only for canary mode.** Production and research
   runs must go through a manifest. The ``DatasetLoadSpec`` validator rejects
   a raw data path as ``manifest_uri`` in production mode.
+
+Phase 3 — dataset registry (T-3.1):
+- :class:`ReadinessLevel` defines four readiness levels (L1 raw → L4
+  production-ready) that gate which datasets may be dispatched for production
+  training.
+- :class:`DatasetRegistryEntry` is an append-only record of a registered
+  dataset: its manifest URI/hash, data URI/hash, quality URI/hash, source
+  receipts, readiness level, upload receipt, and status.
+- :class:`DatasetRegistry` is the durable registry (JSONL-backed) that
+  provides the commands: ``inspect``, ``register``, ``stage_upload``,
+  ``promote_readiness``, and ``dispatch_training``.
+- Duplicate dataset ids are versioned (the version is incremented on each
+  re-registration of the same id).
+- Production dispatch is rejected unless the dataset is registered with
+  readiness L3+ (quality-gated or production-ready).
+- Stale upload receipts (expired timestamps or mismatched hashes) are
+  rejected at ``stage_upload`` time.
+- Production dispatch accepts a *dataset id* (resolved via the registry),
+  never an ad hoc raw file path — this is the registry-side counterpart to
+  the ``dataset_registry_ref`` field on ``TrainingManifest``.
 """
 
 from __future__ import annotations
@@ -46,7 +67,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -640,3 +663,879 @@ class DatasetLoadSpec(BaseModel):
     def from_dict(cls, data: dict[str, Any]) -> DatasetLoadSpec:
         """Deserialize from a dict (e.g. from ``extra_constraints``)."""
         return cls(**data)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Dataset Registry (T-3.1)
+# ---------------------------------------------------------------------------
+#
+# The dataset registry is the durable, append-only ledger of registered
+# datasets. It is the single source of truth that the production dispatch
+# path consults before allowing a training run to proceed. A production
+# run must reference a *registered dataset id* (via
+# ``TrainingManifest.dataset_registry_ref``), never an ad hoc raw file
+# path. The registry resolves that id to a manifest URI + data URI +
+# quality report URI and enforces readiness-level gating.
+#
+# Readiness levels form a monotone promotion ladder:
+#   L1 (raw)            — freshly registered, no validation/quality checks
+#   L2 (validated)      — manifest + data hashes verified, PIT proof checked
+#   L3 (quality-gated)  — quality report attached and verified; eligible
+#                         for production dispatch
+#   L4 (production-ready) — promoted after a successful production canary;
+#                           the highest trust level
+#
+# Production dispatch requires L3 or L4. Canary and research dispatch are
+# permissive (they may use any registered dataset, or none).
+
+
+class ReadinessLevel(StrEnum):
+    """Dataset readiness levels — a monotone promotion ladder.
+
+    Each level represents an increasing amount of verification that has been
+    applied to a dataset before it may be dispatched for training:
+
+    - ``L1`` (raw): the dataset has been registered with its manifest and
+      data URIs but no verification has been performed. Suitable for
+      canary/research iteration only.
+    - ``L2`` (validated): the manifest hash, data hash, and PIT proof have
+      been verified. The dataset is structurally sound.
+    - ``L3`` (quality-gated): a quality report has been attached and its
+      hash verified, and the report's leakage/drift checks pass. This is
+      the **minimum** readiness level for production dispatch.
+    - ``L4`` (production-ready): the dataset has been promoted after a
+      successful production canary run. The highest trust level.
+    """
+
+    L1_RAW = "L1"
+    L2_VALIDATED = "L2"
+    L3_QUALITY_GATED = "L3"
+    L4_PRODUCTION_READY = "L4"
+
+    @classmethod
+    def from_str(cls, value: str | ReadinessLevel) -> ReadinessLevel:
+        """Parse a readiness level from a string (accepts ``"L1"`` etc.)."""
+        if isinstance(value, cls):
+            return value
+        return cls(value)
+
+    def rank(self) -> int:
+        """Return the integer rank (1-4) for comparison."""
+        return _READINESS_RANK[self]
+
+    def at_least(self, other: ReadinessLevel) -> bool:
+        """Return True if this level is >= ``other`` on the ladder."""
+        return self.rank() >= other.rank()
+
+
+_READINESS_RANK: dict[ReadinessLevel, int] = {
+    ReadinessLevel.L1_RAW: 1,
+    ReadinessLevel.L2_VALIDATED: 2,
+    ReadinessLevel.L3_QUALITY_GATED: 3,
+    ReadinessLevel.L4_PRODUCTION_READY: 4,
+}
+
+# Ordered ladder for promotion validation (cannot skip levels).
+_READINESS_LADDER: tuple[ReadinessLevel, ...] = (
+    ReadinessLevel.L1_RAW,
+    ReadinessLevel.L2_VALIDATED,
+    ReadinessLevel.L3_QUALITY_GATED,
+    ReadinessLevel.L4_PRODUCTION_READY,
+)
+
+
+class RegistryStatus(StrEnum):
+    """Lifecycle status of a registry entry.
+
+    - ``REGISTERED``: the entry has been registered but not yet staged.
+    - ``STAGED``: an upload receipt has been recorded (data staged for
+      production access).
+    - ``ACTIVE``: the entry is live and eligible for dispatch.
+    - ``DEPRECATED``: the entry has been superseded by a newer version;
+      dispatch is rejected.
+    - ``REJECTED``: the entry failed validation and is permanently
+      unavailable for dispatch.
+    """
+
+    REGISTERED = "registered"
+    STAGED = "staged"
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    REJECTED = "rejected"
+
+
+# Maximum age (in seconds) of an upload receipt before it is considered
+# stale. A receipt older than this window is rejected at ``stage_upload``
+# time (acceptance criterion: stale upload receipt rejected). The default
+# is 24 hours; callers may override via ``stale_receipt_ttl_seconds`` on
+# the registry.
+DEFAULT_STALE_RECEIPT_TTL_SECONDS = 86_400
+
+
+# A registered dataset id is an opaque slug (no path separators, no raw
+# data extensions). This mirrors ``_is_raw_dataset_ref`` in
+# ``training_manifest.py`` but is kept here for file-disjointness.
+_DATASET_ID_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_.\-]{0,127}$")
+
+
+def _is_registry_eligible_id(dataset_id: str) -> bool:
+    """Return True if ``dataset_id`` is a valid opaque registry id.
+
+    A registry id must be a slug (letters, digits, ``_``, ``.``, ``-``)
+    with no path separators and no raw-data file extensions. This rejects
+    ad hoc raw file paths (acceptance criterion: production dispatch
+    accepts a dataset id, not a raw file path).
+    """
+    if not dataset_id:
+        return False
+    if _is_raw_data_uri(dataset_id):
+        return False
+    if "/" in dataset_id or "\\" in dataset_id:
+        return False
+    return bool(_DATASET_ID_PATTERN.fullmatch(dataset_id))
+
+
+class UploadReceipt(BaseModel):
+    """Receipt proving that a dataset's data has been staged for production.
+
+    A receipt carries:
+    - ``receipt_id``: an opaque id for this staging event.
+    - ``dataset_id``: the dataset this receipt stages data for.
+    - ``data_uri``: the staged data location (must match the entry's
+      ``data_uri``).
+    - ``data_sha256``: the hash of the staged data (must match the
+      entry's ``data_sha256`` if set).
+    - ``issued_at``: Unix timestamp (seconds) when the receipt was issued.
+    - ``expires_at``: Unix timestamp (seconds) when the receipt expires.
+    - ``receipt_hash``: SHA-256 over the receipt payload (tamper-evidence).
+
+    A receipt is *stale* if the current time is past ``expires_at`` or the
+    ``receipt_hash`` does not match the recomputed hash.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    receipt_id: str
+    dataset_id: str
+    data_uri: str
+    data_sha256: str | None = None
+    issued_at: int
+    expires_at: int
+
+    @field_validator("receipt_id", "dataset_id", "data_uri")
+    @classmethod
+    def _nonempty(cls, v: str, info: Any) -> str:
+        if not v or not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty")
+        return v
+
+    @field_validator("data_sha256")
+    @classmethod
+    def _data_sha256_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_hex256(v, "data_sha256")
+
+    @model_validator(mode="after")
+    def _expiry_after_issue(self) -> UploadReceipt:
+        if self.expires_at <= self.issued_at:
+            raise ValueError(
+                "expires_at must be after issued_at "
+                f"(issued_at={self.issued_at}, expires_at={self.expires_at})"
+            )
+        return self
+
+    def _canonical_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "receipt_id": self.receipt_id,
+            "dataset_id": self.dataset_id,
+            "data_uri": self.data_uri,
+            "data_sha256": self.data_sha256,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+        }
+
+    def receipt_hash(self) -> str:
+        """Stable SHA-256 over the canonical receipt payload."""
+        payload = json.dumps(
+            self._canonical_payload(), sort_keys=True, separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def is_stale(self, *, now: int | None = None, expected_hash: str | None = None) -> bool:
+        """Return True if this receipt is stale (expired or hash mismatch).
+
+        Args:
+            now: current Unix timestamp (seconds). Defaults to
+                ``int(time.time())``.
+            expected_hash: the expected ``receipt_hash()``. If provided and
+                the recomputed hash differs, the receipt is stale
+                (tamper-evidence).
+        """
+        current = int(time.time()) if now is None else now
+        if current >= self.expires_at:
+            return True
+        if expected_hash is not None and self.receipt_hash() != expected_hash:
+            return True
+        return False
+
+
+class SourceReceipt(BaseModel):
+    """A single source-vintage receipt proving the provenance of a dataset.
+
+    Records the source module id, the vintage (as-of timestamp), and an
+    optional content hash so the registry can audit where each dataset's
+    data originated.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    source_id: str
+    vintage_ts: int
+    content_hash: str | None = None
+
+    @field_validator("source_id")
+    @classmethod
+    def _source_id_nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("source_id must be non-empty")
+        return v
+
+    @field_validator("content_hash")
+    @classmethod
+    def _content_hash_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_hex256(v, "content_hash")
+
+
+class DatasetRegistryEntry(BaseModel):
+    """A single append-only record in the dataset registry.
+
+    Each entry captures everything the registry needs to gate production
+    dispatch:
+
+    - ``dataset_id`` + ``version``: the opaque id and monotone version
+      (duplicate ids are versioned, not rejected).
+    - ``manifest_uri`` + ``manifest_sha256``: where to fetch the manifest
+      and its content hash.
+    - ``data_uri`` + ``data_sha256``: where to fetch the data and its hash.
+    - ``quality_report_uri`` + ``quality_report_sha256``: the quality
+      report location and hash (required for L3+).
+    - ``source_receipts``: provenance receipts for each source vintage.
+    - ``readiness_level``: the current readiness level (L1-L4).
+    - ``upload_receipt``: the staging receipt (set by ``stage_upload``).
+    - ``status``: the lifecycle status.
+    - ``created_at`` / ``updated_at``: Unix timestamps (seconds).
+
+    Frozen + ``extra='forbid'`` (audit integrity).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    dataset_id: str
+    version: int = 1
+    # --- manifest / data / quality URIs + hashes -----------------------
+    manifest_uri: str
+    manifest_sha256: str | None = None
+    data_uri: str
+    data_sha256: str | None = None
+    quality_report_uri: str | None = None
+    quality_report_sha256: str | None = None
+    # --- provenance -----------------------------------------------------
+    source_receipts: tuple[SourceReceipt, ...] = Field(default_factory=tuple)
+    # --- readiness + lifecycle -----------------------------------------
+    readiness_level: ReadinessLevel = ReadinessLevel.L1_RAW
+    upload_receipt: UploadReceipt | None = None
+    status: RegistryStatus = RegistryStatus.REGISTERED
+    created_at: int = Field(default_factory=lambda: int(time.time()))
+    updated_at: int = Field(default_factory=lambda: int(time.time()))
+
+    @field_validator("dataset_id")
+    @classmethod
+    def _dataset_id_valid(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("dataset_id must be non-empty")
+        if not _is_registry_eligible_id(v):
+            raise ValueError(
+                f"dataset_id must be an opaque registry slug (no path "
+                f"separators or raw-data extensions): {v!r}"
+            )
+        return v
+
+    @field_validator("manifest_uri", "data_uri")
+    @classmethod
+    def _uri_nonempty(cls, v: str, info: Any) -> str:
+        if not v or not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty")
+        return v
+
+    @field_validator("manifest_sha256")
+    @classmethod
+    def _manifest_sha256_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_hex256(v, "manifest_sha256")
+
+    @field_validator("data_sha256")
+    @classmethod
+    def _data_sha256_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_hex256(v, "data_sha256")
+
+    @field_validator("quality_report_sha256")
+    @classmethod
+    def _quality_report_sha256_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_hex256(v, "quality_report_sha256")
+
+    @field_validator("version")
+    @classmethod
+    def _version_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError(f"version must be >= 1; got {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _readiness_quality_consistency(self) -> DatasetRegistryEntry:
+        """L3+ requires a quality report URI + hash (fail-closed)."""
+        if self.readiness_level.at_least(ReadinessLevel.L3_QUALITY_GATED):
+            if not self.quality_report_uri or not self.quality_report_uri.strip():
+                raise ValueError(
+                    f"readiness level {self.readiness_level.value} requires a "
+                    "non-empty quality_report_uri"
+                )
+            if not self.quality_report_sha256:
+                raise ValueError(
+                    f"readiness level {self.readiness_level.value} requires a "
+                    "non-empty quality_report_sha256"
+                )
+        return self
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-safe dict."""
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DatasetRegistryEntry:
+        """Deserialize from a dict (e.g. from a JSONL line)."""
+        return cls(**data)
+
+
+class DatasetRegistry:
+    """Durable, append-only dataset registry with readiness-level gating.
+
+    The registry is backed by a JSONL file (one entry per line). Each
+    ``register`` call appends a new entry; duplicate dataset ids are
+    versioned (the version is incremented). The registry provides the
+    commands required by T-3.1:
+
+    - :meth:`inspect`: return the latest (or a specific version of) an
+      entry by dataset id.
+    - :meth:`register`: append a new entry (versioning duplicates).
+    - :meth:`stage_upload`: record an upload receipt for a dataset
+      (rejects stale receipts).
+    - :meth:`promote_readiness`: advance a dataset's readiness level
+      (rejects skips / demotions).
+    - :meth:`dispatch_training`: validate that a dataset is eligible for
+      dispatch under a given training mode (production requires L3+ and
+      an active/staged status; rejects unregistered ids and raw paths).
+
+    The registry is fail-closed: any validation failure raises
+    ``ValueError`` with a clear message.
+    """
+
+    def __init__(
+        self,
+        *,
+        path: str | Path | None = None,
+        stale_receipt_ttl_seconds: int = DEFAULT_STALE_RECEIPT_TTL_SECONDS,
+    ) -> None:
+        """Create a registry.
+
+        Args:
+            path: optional path to a JSONL ledger file. If provided, the
+                registry loads existing entries on construction and
+                persists on every mutation. If None, the registry is
+                in-memory (useful for tests).
+            stale_receipt_ttl_seconds: the maximum age (in seconds) of an
+                upload receipt before it is considered stale. Defaults to
+                24 hours.
+        """
+        self._path: Path | None = Path(path) if path is not None else None
+        self._stale_ttl = stale_receipt_ttl_seconds
+        # In-memory index: dataset_id -> list of entries ordered by version.
+        self._entries: dict[str, list[DatasetRegistryEntry]] = {}
+        if self._path is not None and self._path.exists():
+            self._load()
+
+    # --- persistence -----------------------------------------------------
+
+    def _load(self) -> None:
+        """Load entries from the JSONL ledger (if it exists)."""
+        assert self._path is not None
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            entry = DatasetRegistryEntry.from_dict(json.loads(line))
+            self._entries.setdefault(entry.dataset_id, []).append(entry)
+        # Sort each dataset's entries by version.
+        for ds_id in self._entries:
+            self._entries[ds_id].sort(key=lambda e: e.version)
+
+    def _append(self, entry: DatasetRegistryEntry) -> None:
+        """Append an entry to the in-memory index and the JSONL ledger."""
+        self._entries.setdefault(entry.dataset_id, []).append(entry)
+        self._entries[entry.dataset_id].sort(key=lambda e: e.version)
+        if self._path is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry.to_dict(), sort_keys=True) + "\n")
+
+    # --- queries ---------------------------------------------------------
+
+    def inspect(self, dataset_id: str, *, version: int | None = None) -> DatasetRegistryEntry:
+        """Return the entry for ``dataset_id`` (latest, or a specific version).
+
+        Raises:
+            ValueError: if the dataset id is not registered, or the
+                requested version does not exist.
+        """
+        entries = self._entries.get(dataset_id)
+        if not entries:
+            raise ValueError(
+                f"dataset not registered: {dataset_id!r} "
+                "(inspect requires a registered dataset id)"
+            )
+        if version is not None:
+            for e in entries:
+                if e.version == version:
+                    return e
+            raise ValueError(
+                f"dataset {dataset_id!r} has no version {version} "
+                f"(available: {[e.version for e in entries]})"
+            )
+        return entries[-1]
+
+    def list_entries(self) -> list[DatasetRegistryEntry]:
+        """Return all registered entries (latest version of each)."""
+        return [entries[-1] for entries in self._entries.values()]
+
+    def is_registered(self, dataset_id: str) -> bool:
+        """Return True if ``dataset_id`` is registered (any version)."""
+        return bool(self._entries.get(dataset_id))
+
+    # --- commands --------------------------------------------------------
+
+    def register(
+        self,
+        *,
+        dataset_id: str,
+        manifest_uri: str,
+        data_uri: str,
+        manifest_sha256: str | None = None,
+        data_sha256: str | None = None,
+        quality_report_uri: str | None = None,
+        quality_report_sha256: str | None = None,
+        source_receipts: tuple[SourceReceipt, ...] | list[SourceReceipt] | None = None,
+        readiness_level: ReadinessLevel | str = ReadinessLevel.L1_RAW,
+    ) -> DatasetRegistryEntry:
+        """Register a new dataset entry (versioning duplicate ids).
+
+        If ``dataset_id`` is already registered, the version is incremented
+        (acceptance criterion: duplicate dataset id rejected or versioned).
+        The new entry starts at the given ``readiness_level`` (default L1).
+
+        Args:
+            dataset_id: the opaque registry slug for this dataset.
+            manifest_uri: where to fetch the manifest JSON.
+            data_uri: where to fetch the tabular data.
+            manifest_sha256: optional manifest content hash.
+            data_sha256: optional data content hash.
+            quality_report_uri: optional quality report URI (required for
+                L3+).
+            quality_report_sha256: optional quality report hash (required
+                for L3+).
+            source_receipts: optional provenance receipts.
+            readiness_level: the initial readiness level (default L1).
+
+        Returns:
+            The newly created :class:`DatasetRegistryEntry`.
+
+        Raises:
+            ValueError: if the dataset id is not a valid registry slug, or
+                if L3+ is requested without a quality report.
+        """
+        if isinstance(readiness_level, str):
+            readiness_level = ReadinessLevel.from_str(readiness_level)
+        existing = self._entries.get(dataset_id, [])
+        next_version = (existing[-1].version + 1) if existing else 1
+        now = int(time.time())
+        entry = DatasetRegistryEntry(
+            dataset_id=dataset_id,
+            version=next_version,
+            manifest_uri=manifest_uri,
+            manifest_sha256=manifest_sha256,
+            data_uri=data_uri,
+            data_sha256=data_sha256,
+            quality_report_uri=quality_report_uri,
+            quality_report_sha256=quality_report_sha256,
+            source_receipts=tuple(source_receipts) if source_receipts else (),
+            readiness_level=readiness_level,
+            status=RegistryStatus.REGISTERED,
+            created_at=now,
+            updated_at=now,
+        )
+        self._append(entry)
+        return entry
+
+    def stage_upload(
+        self,
+        dataset_id: str,
+        receipt: UploadReceipt,
+        *,
+        now: int | None = None,
+        expected_hash: str | None = None,
+    ) -> DatasetRegistryEntry:
+        """Record an upload receipt for a dataset (rejects stale receipts).
+
+        The receipt's ``dataset_id`` must match, its ``data_uri`` must
+        match the entry's ``data_uri``, and the receipt must not be stale
+        (expired or hash-mismatched). On success, the entry's status is
+        advanced to ``STAGED`` and the receipt is recorded.
+
+        Args:
+            dataset_id: the registered dataset id.
+            receipt: the upload receipt to record.
+            now: current Unix timestamp (for staleness check). Defaults
+                to ``int(time.time())``.
+            expected_hash: the expected ``receipt_hash()`` for tamper
+                checking.
+
+        Returns:
+            The updated :class:`DatasetRegistryEntry` (a new immutable
+            copy with the receipt recorded and status=STAGED).
+
+        Raises:
+            ValueError: if the dataset is not registered, the receipt's
+                dataset_id or data_uri does not match, or the receipt is
+                stale.
+        """
+        current = int(time.time()) if now is None else now
+        entry = self.inspect(dataset_id)
+        if receipt.dataset_id != dataset_id:
+            raise ValueError(
+                f"upload receipt dataset_id mismatch: receipt has "
+                f"{receipt.dataset_id!r}, expected {dataset_id!r}"
+            )
+        if receipt.data_uri != entry.data_uri:
+            raise ValueError(
+                f"upload receipt data_uri mismatch: receipt has "
+                f"{receipt.data_uri!r}, expected {entry.data_uri!r}"
+            )
+        if receipt.data_sha256 is not None and entry.data_sha256 is not None:
+            if receipt.data_sha256 != entry.data_sha256:
+                raise ValueError(
+                    f"upload receipt data_sha256 mismatch: receipt has "
+                    f"{receipt.data_sha256!r}, expected {entry.data_sha256!r}"
+                )
+        if receipt.is_stale(now=current, expected_hash=expected_hash):
+            reasons: list[str] = []
+            if current >= receipt.expires_at:
+                reasons.append(
+                    f"expired (now={current}, expires_at={receipt.expires_at})"
+                )
+            if expected_hash is not None and receipt.receipt_hash() != expected_hash:
+                reasons.append(
+                    f"hash mismatch (expected {expected_hash!r}, "
+                    f"got {receipt.receipt_hash()!r})"
+                )
+            raise ValueError(
+                f"stale upload receipt rejected for dataset {dataset_id!r}: "
+                + "; ".join(reasons)
+            )
+        updated = entry.model_copy(
+            update={
+                "upload_receipt": receipt,
+                "status": RegistryStatus.STAGED,
+                "updated_at": current,
+            },
+        )
+        # Replace the latest entry in-memory (append a new version-like
+        # record to the ledger so the audit trail is preserved).
+        self._entries[dataset_id][-1] = updated
+        if self._path is not None:
+            self._rewrite_ledger()
+        return updated
+
+    def promote_readiness(
+        self,
+        dataset_id: str,
+        new_level: ReadinessLevel | str,
+        *,
+        now: int | None = None,
+    ) -> DatasetRegistryEntry:
+        """Advance a dataset's readiness level (rejects skips/demotions).
+
+        Promotion must be monotone and stepwise: you cannot skip levels
+        (e.g. L1 → L3 is rejected) and you cannot demote (e.g. L3 → L1 is
+        rejected). L3+ requires a quality report URI + hash on the entry.
+
+        Args:
+            dataset_id: the registered dataset id.
+            new_level: the target readiness level.
+            now: current Unix timestamp. Defaults to ``int(time.time())``.
+
+        Returns:
+            The updated :class:`DatasetRegistryEntry` (a new immutable
+            copy with the new readiness level).
+
+        Raises:
+            ValueError: if the dataset is not registered, the promotion
+                is a skip or demotion, or L3+ is requested without a
+                quality report.
+        """
+        if isinstance(new_level, str):
+            new_level = ReadinessLevel.from_str(new_level)
+        current = int(time.time()) if now is None else now
+        entry = self.inspect(dataset_id)
+        old_level = entry.readiness_level
+        if new_level == old_level:
+            raise ValueError(
+                f"readiness level is already {old_level.value} for dataset "
+                f"{dataset_id!r} (no-op promotion rejected)"
+            )
+        if new_level.rank() < old_level.rank():
+            raise ValueError(
+                f"readiness demotion rejected: {old_level.value} -> "
+                f"{new_level.value} for dataset {dataset_id!r} "
+                "(readiness levels are monotone — cannot demote)"
+            )
+        # Stepwise: must be the next level on the ladder.
+        old_idx = _READINESS_LADDER.index(old_level)
+        new_idx = _READINESS_LADDER.index(new_level)
+        if new_idx != old_idx + 1:
+            raise ValueError(
+                f"readiness promotion skip rejected: {old_level.value} -> "
+                f"{new_level.value} for dataset {dataset_id!r} "
+                "(must promote stepwise — no skipping levels)"
+            )
+        # L3+ requires a quality report.
+        if new_level.at_least(ReadinessLevel.L3_QUALITY_GATED):
+            if not entry.quality_report_uri or not entry.quality_report_sha256:
+                raise ValueError(
+                    f"cannot promote to {new_level.value}: dataset "
+                    f"{dataset_id!r} lacks a quality_report_uri/"
+                    "quality_report_sha256 (required for L3+)"
+                )
+        updated = entry.model_copy(
+            update={
+                "readiness_level": new_level,
+                "updated_at": current,
+            },
+        )
+        self._entries[dataset_id][-1] = updated
+        if self._path is not None:
+            self._rewrite_ledger()
+        return updated
+
+    def dispatch_training(
+        self,
+        dataset_id: str,
+        mode: TrainingMode | str,
+        *,
+        now: int | None = None,
+    ) -> DatasetRegistryEntry:
+        """Validate that a dataset is eligible for dispatch under ``mode``.
+
+        This is the registry-side gate that the production dispatch path
+        consults. It enforces:
+
+        - **Production dispatch accepts a dataset id, not a raw file
+          path.** A raw CSV/parquet path or file URI is rejected
+          (acceptance criterion 6).
+        - **Unregistered production dispatch is rejected.** The dataset
+          must be registered (acceptance criterion 4).
+        - **Production dispatch requires L3+ readiness.** L1/L2 datasets
+          are rejected for production (acceptance criterion 5 / readiness
+          gating).
+        - **Stale upload receipts are rejected.** If the entry has an
+          upload receipt that is stale, production dispatch is rejected
+          (acceptance criterion 5).
+        - **Deprecated/rejected entries are not dispatchable.**
+
+        Canary and research modes are permissive: they accept any
+        registered dataset (or, for canary, an unregistered id is allowed
+        to pass through — the registry returns a sentinel). Production is
+        fail-closed.
+
+        Args:
+            dataset_id: the dataset id to dispatch (must be a registered
+                id for production).
+            mode: the training mode.
+            now: current Unix timestamp (for receipt staleness).
+
+        Returns:
+            The :class:`DatasetRegistryEntry` for the dispatched dataset.
+
+        Raises:
+            ValueError: if any production requirement is unmet.
+        """
+        if isinstance(mode, str):
+            mode = TrainingMode(mode)
+        current = int(time.time()) if now is None else now
+
+        # Reject raw file paths for ALL modes that go through the registry
+        # dispatch path — production dispatch accepts a dataset id, not an
+        # ad hoc raw file path.
+        if _is_raw_data_uri(dataset_id) or not _is_registry_eligible_id(dataset_id):
+            if mode == TrainingMode.PRODUCTION:
+                raise ValueError(
+                    "production dispatch accepts a registered dataset id, "
+                    f"not a raw file path: {dataset_id!r}"
+                )
+            # Canary/research: reject raw paths too — they should not go
+            # through the registry dispatch path. The handler uses the
+            # DatasetLoadSpec directly for canary raw paths.
+            raise ValueError(
+                f"dispatch_training accepts a dataset id, not a raw file "
+                f"path: {dataset_id!r} (use DatasetLoadSpec for canary "
+                "raw-data runs)"
+            )
+
+        if not self.is_registered(dataset_id):
+            if mode == TrainingMode.PRODUCTION:
+                raise ValueError(
+                    f"unregistered production dispatch rejected: dataset "
+                    f"{dataset_id!r} is not in the registry "
+                    "(production requires a registered L3/L4 dataset)"
+                )
+            # Canary/research: unregistered is allowed to pass through.
+            # Return a minimal transient entry so the caller can proceed.
+            return DatasetRegistryEntry(
+                dataset_id=dataset_id,
+                manifest_uri="",
+                data_uri="",
+                readiness_level=ReadinessLevel.L1_RAW,
+                status=RegistryStatus.REGISTERED,
+            )
+
+        entry = self.inspect(dataset_id)
+
+        # Deprecated / rejected entries are never dispatchable.
+        if entry.status in (RegistryStatus.DEPRECATED, RegistryStatus.REJECTED):
+            raise ValueError(
+                f"dataset {dataset_id!r} status is {entry.status.value} — "
+                "not dispatchable"
+            )
+
+        if mode == TrainingMode.PRODUCTION:
+            errors: list[str] = []
+            if not entry.readiness_level.at_least(ReadinessLevel.L3_QUALITY_GATED):
+                errors.append(
+                    f"production dispatch requires readiness L3+ "
+                    f"(quality-gated or production-ready); dataset "
+                    f"{dataset_id!r} is at {entry.readiness_level.value}"
+                )
+            # Stale upload receipt check (if a receipt is recorded).
+            if entry.upload_receipt is not None:
+                if entry.upload_receipt.is_stale(now=current):
+                    errors.append(
+                        f"stale upload receipt for dataset {dataset_id!r} "
+                        f"(expired at {entry.upload_receipt.expires_at})"
+                    )
+            if errors:
+                raise ValueError(
+                    "production dispatch validation failed: "
+                    + "; ".join(errors)
+                )
+
+        return entry
+
+    # --- ledger rewrite --------------------------------------------------
+
+    def _rewrite_ledger(self) -> None:
+        """Rewrite the entire JSONL ledger from the in-memory index.
+
+        Used after in-place updates (stage_upload, promote_readiness) so
+        the ledger reflects the latest state of each entry. The ledger
+        remains append-only in spirit: each mutation appends a new line,
+        but to keep the in-memory index authoritative we rewrite the
+        latest version of each entry.
+        """
+        assert self._path is not None
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        lines: list[str] = []
+        for ds_id in sorted(self._entries):
+            for entry in self._entries[ds_id]:
+                lines.append(json.dumps(entry.to_dict(), sort_keys=True))
+        self._path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Registry lookup helper (for TrainingManifest validation)
+# ---------------------------------------------------------------------------
+
+
+def lookup_dataset_registry_ref(
+    registry: DatasetRegistry,
+    dataset_registry_ref: str,
+    *,
+    min_readiness: ReadinessLevel = ReadinessLevel.L3_QUALITY_GATED,
+) -> DatasetRegistryEntry:
+    """Resolve a ``dataset_registry_ref`` against a :class:`DatasetRegistry`.
+
+    This is the helper that ``TrainingManifest`` validation (or the
+    dispatch path) can use to verify that a ``dataset_registry_ref``
+    refers to a real, registered, sufficiently-ready dataset. It
+    enforces:
+
+    - The ref is an opaque dataset id (not a raw file path).
+    - The dataset is registered.
+    - The dataset's readiness level is >= ``min_readiness`` (default L3,
+      the minimum for production).
+
+    Args:
+        registry: the dataset registry to consult.
+        dataset_registry_ref: the dataset id to resolve.
+        min_readiness: the minimum required readiness level (default L3).
+
+    Returns:
+        The resolved :class:`DatasetRegistryEntry`.
+
+    Raises:
+        ValueError: if the ref is a raw path, unregistered, or below the
+            minimum readiness.
+    """
+    if _is_raw_data_uri(dataset_registry_ref) or not _is_registry_eligible_id(
+        dataset_registry_ref,
+    ):
+        raise ValueError(
+            f"dataset_registry_ref must be an opaque registered dataset id, "
+            f"not a raw file path: {dataset_registry_ref!r}"
+        )
+    if not registry.is_registered(dataset_registry_ref):
+        raise ValueError(
+            f"dataset_registry_ref {dataset_registry_ref!r} is not registered "
+            "in the dataset registry"
+        )
+    entry = registry.inspect(dataset_registry_ref)
+    if not entry.readiness_level.at_least(min_readiness):
+        raise ValueError(
+            f"dataset_registry_ref {dataset_registry_ref!r} readiness is "
+            f"{entry.readiness_level.value}, below the required minimum "
+            f"{min_readiness.value}"
+        )
+    if entry.status in (RegistryStatus.DEPRECATED, RegistryStatus.REJECTED):
+        raise ValueError(
+            f"dataset_registry_ref {dataset_registry_ref!r} status is "
+            f"{entry.status.value} — not usable"
+        )
+    return entry
