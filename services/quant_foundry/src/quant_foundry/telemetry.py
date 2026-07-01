@@ -29,6 +29,7 @@ import json
 import math
 import pathlib
 import time
+import types
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -61,13 +62,23 @@ class GPUType(StrEnum):
 # 1 USD = 100 cents. These are conservative round-number estimates used
 # for *estimation* only; actual cost is recorded from the RunPod callback
 # when available. A GPU not in this table yields cost_unknown=True.
-GPU_PRICING: dict[str, int] = {
+#
+# Wrapped in ``types.MappingProxyType`` so the table is truly immutable
+# (a plain ``dict`` module-level constant could be mutated by accident,
+# which would silently change cost estimates for every caller). The
+# proxy preserves dict-like read access (``GPU_PRICING.get(...)``,
+# ``GPU_PRICING[k]``, ``k in GPU_PRICING``, iteration) while rejecting
+# writes with ``TypeError``.
+_GPU_PRICING_RAW: dict[str, int] = {
     GPUType.NVIDIA_RTX_4090.value: 44,  # ~$0.44/hr
     GPUType.NVIDIA_A100.value: 263,  # ~$2.63/hr
     GPUType.NVIDIA_H100.value: 393,  # ~$3.93/hr
     GPUType.NVIDIA_RTX_3090.value: 22,  # ~$0.22/hr
     GPUType.NVIDIA_T4.value: 16,  # ~$0.16/hr
 }
+GPU_PRICING: types.MappingProxyType[str, int] = types.MappingProxyType(
+    _GPU_PRICING_RAW
+)
 
 
 # --- timing phases --------------------------------------------------------- #
@@ -252,9 +263,18 @@ class CostTelemetry:
         ``GPU_PRICING`` (including ``GPUType.UNKNOWN``), returns
         ``(None, True)`` — the cost is UNKNOWN, never zero.
 
+        Lookup is by canonical ``GPUType`` enum value (the lowercase
+        string form, e.g. ``"nvidia_rtx_4090"``). The lookup itself is
+        case-sensitive against the canonical table keys. Callers that
+        only have a raw endpoint id (e.g. ``"RTX4090-training"``) should
+        first convert it with :func:`infer_gpu_type`, which performs a
+        case-insensitive substring match and returns the canonical
+        ``GPUType`` value suitable for this method.
+
         Args:
-            gpu_type: GPU type string (a ``GPUType`` value or a raw
-                string). Case-insensitive lookup via the enum values.
+            gpu_type: a canonical ``GPUType`` value string (or a raw
+                string that exactly matches a canonical key). Use
+                ``infer_gpu_type()`` to convert endpoint ids.
             duration_seconds: wall-clock duration of the job.
 
         Returns:
