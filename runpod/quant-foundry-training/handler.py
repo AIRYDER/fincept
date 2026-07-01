@@ -215,6 +215,56 @@ _ALLOWED_ARTIFACT_URI_SCHEMES: frozenset[str] = frozenset(
 )
 
 
+# --- Phase 4 / T-4.3: worker split (trainer vs dataset utility) -------------
+#
+# The single handler codebase now serves two distinct RunPod endpoints:
+#
+#   Trainer worker (this image, ``trainer-gpu-tree``):
+#       - train_model
+#       - gpu_healthcheck
+#       - callback_secret_canary
+#     Only these task types are dispatched on the trainer endpoint. Any
+#     other task is rejected with a signed failure envelope (fail-closed).
+#
+#   Dataset utility worker (separate endpoint, same codebase):
+#       - write_volume
+#       - stat_volume
+#       - list_volume
+#       - ingest_media_sentiment
+#     These tasks stage/list/verify datasets on the network volume. They
+#     do NOT need a GPU and are split out so the GPU trainer image is not
+#     idled on dataset I/O.
+#
+# Cross-routing is rejected by each worker's own allowlist:
+#   - A volume write (write_volume) sent to the trainer is rejected with
+#     ``error_code="task_not_supported_on_trainer"`` (see the gate at the
+#     top of :func:`handler`).
+#   - A training request (train_model) sent to the dataset worker is
+#     rejected by the dataset worker's own allowlist
+#     (``error_code="task_not_supported_on_dataset_worker"``). That
+#     rejection lives in the dataset worker's dispatch; this trainer
+#     handler documents it for operators but does not enforce it (the
+#     dataset worker enforces its own gate).
+#
+# The existing task implementations (write_volume, stat_volume,
+# list_volume, ingest_media_sentiment) are preserved in this file so the
+# dataset utility worker endpoint can run from the same codebase. They
+# are simply unreachable via the normal :func:`handler` dispatch on the
+# trainer image — they sit behind the allowlist gate below.
+
+# Tasks the trainer worker is permitted to dispatch.
+ALLOWED_TRAINER_TASKS: frozenset[str] = frozenset(
+    {"train_model", "gpu_healthcheck", "callback_secret_canary"},
+)
+
+# Dataset utility tasks that belong on the separate dataset worker
+# endpoint. Sent to the trainer, they are rejected with a signed failure
+# (fail-closed) so the dispatcher can authenticate the rejection.
+DATASET_UTILITY_TASKS: frozenset[str] = frozenset(
+    {"write_volume", "stat_volume", "list_volume", "ingest_media_sentiment"},
+)
+
+
 class ArtifactWriteResult(BaseModel):
     """Typed result of an artifact write (Phase 1 / T-1.2).
 
@@ -1817,6 +1867,62 @@ def _build_quality_gate_failure_callback(
     }
 
 
+def _build_task_rejection_callback(
+    *,
+    task_type: str | None,
+    error_code: str,
+    message: str,
+    job_id: str | None,
+) -> dict[str, Any]:
+    """Build a signed task-rejection envelope (Phase 4 / T-4.3).
+
+    When the trainer handler receives a task it is not permitted to
+    dispatch (a dataset utility task, or an entirely unknown task type),
+    it emits this signed failure envelope so the dispatcher can
+    authenticate the rejection — it is never a silent drop. The envelope
+    is HMAC-signed with ``QUANT_FOUNDRY_CALLBACK_SECRET`` via the existing
+    :func:`sign_callback` mechanism.
+
+    Args:
+        task_type: the rejected task string (may be ``None`` if absent).
+        error_code: ``"task_not_supported_on_trainer"`` for dataset
+            utility tasks, or ``"unknown_task_type"`` for anything else.
+        message: human-readable explanation + dispatch suggestion.
+        job_id: the job id from the input, if available.
+    """
+    resolved_job_id = job_id or "task-rejection-unknown"
+    callback_payload_dict = {
+        "schema_version": 1,
+        "job_id": resolved_job_id,
+        "worker_id": "runpod-trainer",
+        "result_type": error_code,
+        "payload": {
+            "error_code": error_code,
+            "task_type": task_type,
+            "message": message,
+        },
+    }
+    callback_payload = json.dumps(
+        callback_payload_dict, sort_keys=True,
+    ).encode("utf-8")
+    callback_ts = int(time.time())
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=_get_callback_secret(),
+        ts=callback_ts,
+        job_id=resolved_job_id,
+    )
+    return {
+        "error_code": error_code,
+        "error_summary": message,
+        "task_type": task_type,
+        "job_id": job_id,
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+    }
+
+
 def handler(event: dict[str, Any]) -> dict[str, Any]:
     """RunPod serverless handler entrypoint.
 
@@ -1836,6 +1942,54 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "error_summary": "event['input'] must be a dict matching RunPodTrainingRequest",
             "job_id": None,
         }
+
+    # Phase 4 / T-4.3: trainer worker task allowlist gate.
+    #
+    # This image is the GPU trainer (``trainer-gpu-tree``). It only
+    # dispatches the tasks in ``ALLOWED_TRAINER_TASKS``. Dataset utility
+    # tasks (volume writes/stats/listing, media-sentiment ingestion)
+    # belong on the separate dataset utility worker endpoint and are
+    # rejected here with a signed failure envelope so the dispatcher can
+    # authenticate the rejection (fail-closed — never a silent drop).
+    # Any task not in either set is an unknown task type and is likewise
+    # rejected with a signed failure.
+    #
+    # A request with no ``task`` field is an implicit training request
+    # (the original RunPod protocol: training is the default dispatch).
+    # We normalize ``None`` → ``"train_model"`` so the legacy training
+    # fallthrough below still works without every caller setting an
+    # explicit task field.
+    #
+    # The existing dataset-utility implementations below (write_volume,
+    # stat_volume, list_volume, ingest_media_sentiment) are preserved for
+    # the dataset worker endpoint (same codebase) but are unreachable via
+    # this trainer dispatch — they sit behind this gate.
+    task_type = input_data.get("task")
+    job_id = input_data.get("job_id")
+    if task_type in DATASET_UTILITY_TASKS:
+        return _build_task_rejection_callback(
+            task_type=task_type,
+            error_code="task_not_supported_on_trainer",
+            message=(
+                f"task {task_type!r} is a dataset utility task and is not "
+                f"supported on the trainer worker. Dispatch it to the "
+                f"dataset utility worker endpoint instead."
+            ),
+            job_id=job_id,
+        )
+    # ``None`` (no task field) is an implicit training request — allow it
+    # through to the training pipeline (do NOT reject as unknown).
+    if task_type is not None and task_type not in ALLOWED_TRAINER_TASKS:
+        return _build_task_rejection_callback(
+            task_type=task_type,
+            error_code="unknown_task_type",
+            message=(
+                f"unknown task type {task_type!r}. The trainer worker only "
+                f"supports {sorted(ALLOWED_TRAINER_TASKS)} (plus implicit "
+                f"training when no task field is set)."
+            ),
+            job_id=job_id,
+        )
 
     # Callback-secret canary: bypasses the training pipeline entirely.
     # The API dispatches this to verify that the worker shares the same
