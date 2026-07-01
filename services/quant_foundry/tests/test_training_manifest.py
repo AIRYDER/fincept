@@ -46,7 +46,6 @@ from quant_foundry.local_training_dispatch import (
 from quant_foundry.runpod_training import LocalTrainer
 from quant_foundry.schemas import Authority
 from quant_foundry.training_manifest import (
-    ModelFamily,
     TrainingManifest,
     derive_walk_forward_window,
 )
@@ -108,7 +107,7 @@ def _training_manifest(**overrides: object) -> TrainingManifest:
         "manifest_id": "tm-001",
         "feature_lake_manifest_ref": lake.dataset_id,
         "feature_lake_manifest_hash": lake.manifest_hash(),
-        "model_family": ModelFamily.GBM,
+        "model_family": "gbm",
         "hyperparameters": {
             "n_estimators": 100.0,
             "max_depth": 4.0,
@@ -137,7 +136,7 @@ class TestTrainingManifestSchema:
     def test_minimal_manifest_constructs(self) -> None:
         m = _training_manifest()
         assert m.schema_version == 1
-        assert m.model_family == ModelFamily.GBM
+        assert m.model_family == "gbm"
         assert len(m.content_hash) == 64
 
     def test_manifest_is_frozen(self) -> None:
@@ -411,6 +410,6 @@ class TestBuildTrainingManifest:
         )
         assert m.feature_lake_manifest_ref == lake.dataset_id
         assert m.feature_lake_manifest_hash == lake.manifest_hash()
-        assert m.model_family == ModelFamily.GBM
+        assert m.model_family == "gbm"
         assert m.random_seed == 7
         assert m.content_hash != ""
