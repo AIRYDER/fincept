@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, cast, runtime_checkable
 
+from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
 from quant_foundry.outbox import JobOutbox, JobStatus
 
 # --- dispatch status -------------------------------------------------------
@@ -374,6 +375,12 @@ class RunPodDispatcher:
         mode: "runpod" or "local_mock". When != "runpod", no calls.
         budget_guard: BudgetGuard — per-job + global monthly ceiling.
         max_dispatches_per_sweep: rate limit (max dispatches per sweep).
+        ledger: optional TrainingJobLedger (Phase 6 / T-6.1) — when
+            provided, the dispatcher records an audit trail of every
+            state transition, failure, retry, and cost event for each
+            job. When None, ledger tracking is disabled (backward
+            compat). The ledger is read-only with respect to the outbox:
+            it observes transitions but never drives them.
     """
 
     outbox: JobOutbox
@@ -382,6 +389,7 @@ class RunPodDispatcher:
     budget_guard: BudgetGuard = field(default_factory=lambda: BudgetGuard(monthly_budget_cents=0))
     max_dispatches_per_sweep: int | None = None
     endpoint_id: str | None = None
+    ledger: TrainingJobLedger | None = None
 
     def dispatch(
         self,
@@ -448,6 +456,15 @@ class RunPodDispatcher:
         self.outbox.update_status(job_id, JobStatus.DISPATCHING)
         self.outbox.update_status(job_id, JobStatus.DISPATCHED)
 
+        # Ledger: ensure a QUEUED row exists (created on first dispatch;
+        # on retries the row already exists so we reuse it). The ledger
+        # observes transitions but never drives them.
+        if self.ledger is not None:
+            lrec = self.ledger.get_by_outbox_id(job_id)
+            if lrec is None:
+                self.ledger.create_row(job_id)
+            self.ledger.update_state(job_id, JobLedgerState.DISPATCHED)
+
         # Call the RunPod client.
         start = time.time()
         result = self.client.dispatch(
@@ -481,6 +498,20 @@ class RunPodDispatcher:
                 runpod_job_id=result.runpod_job_id,
                 note=note,
             )
+            # Ledger: record runpod_job_id, transition to RUNPOD_RUNNING,
+            # and record cost + duration.
+            if self.ledger is not None:
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.RUNPOD_RUNNING,
+                    runpod_job_id=result.runpod_job_id,
+                )
+                if result.cost_cents > 0 or (result.duration_seconds or elapsed) > 0:
+                    self.ledger.record_cost(
+                        job_id,
+                        result.cost_cents,
+                        result.duration_seconds or elapsed,
+                    )
 
         # Classify transient vs terminal.
         if result.status == DispatchStatus.TRANSIENT_FAILURE:
@@ -492,6 +523,20 @@ class RunPodDispatcher:
                 error_summary=result.error_summary,
                 note="transient failure; queued for retry",
             )
+            # Ledger: record the failure (increments retries) and keep
+            # the row in a non-terminal state (back to QUEUED).
+            if self.ledger is not None:
+                self.ledger.record_failure(
+                    job_id,
+                    error_code=result.error_code or "transient_failure",
+                    error_message=result.error_summary or "",
+                    note="transient failure; queued for retry",
+                )
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.QUEUED,
+                    note="transient failure; queued for retry",
+                )
         elif result.status == DispatchStatus.TERMINAL_FAILURE:
             self.outbox.update_status(
                 job_id,
@@ -499,6 +544,19 @@ class RunPodDispatcher:
                 error_code=result.error_code,
                 error_summary=result.error_summary,
             )
+            # Ledger: record the failure and transition to FAILED.
+            if self.ledger is not None:
+                self.ledger.record_failure(
+                    job_id,
+                    error_code=result.error_code or "terminal_failure",
+                    error_message=result.error_summary or "",
+                    note="terminal failure",
+                )
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.FAILED,
+                    note="terminal failure",
+                )
 
         return result
 
