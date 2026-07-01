@@ -72,8 +72,11 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
+    SignedFailureEnvelope,
     TrainingFailure,
     build_callback,
+    build_failure_envelope,
+    verify_failure_envelope,
 )
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
@@ -696,44 +699,150 @@ def _build_security_preflight_failure_callback(
     signed failure so the dispatcher can authenticate the rejection (never a
     silent drop). The envelope carries ``error_code="security_preflight_failed"``
     and the redacted preflight result (no secret values are revealed).
+
+    Phase 5 / T-5.3: now returns a :class:`SignedFailureEnvelope` via
+    :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
+    compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
     """
-    resolved_job_id = job_id or "preflight-unknown"
+    error_message = (
+        preflight_result.preflight_error or "security preflight failed"
+    )
+    context: dict[str, str] = {
+        "job_id": job_id or "preflight-unknown",
+        "mode": preflight_result.mode,
+        "forbidden_vars_found": ",".join(
+            sorted(preflight_result.forbidden_vars_found)
+        ),
+    }
+    return _build_signed_failure(
+        error_code="security_preflight_failed",
+        error_message=error_message,
+        mode=preflight_result.mode,
+        context=context,
+        extra={
+            "preflight_result": preflight_result.model_dump(),
+        },
+    )
+
+
+# --- Phase 5 / T-5.3: signed failure envelope helper ------------------------
+#
+# ``_build_signed_failure`` wraps :func:`build_failure_envelope` and returns
+# the standardized handler response dict for ALL failure paths. The dict
+# carries:
+# - ``error``: the full :class:`SignedFailureEnvelope` as a dict (the new
+#   standardized contract — the trusted side verifies the HMAC signature
+#   via :func:`verify_failure_envelope` / :func:`validate_failure_envelope`).
+# - ``status``: ``"failed"`` (machine-readable terminal status).
+# - ``signed_failure``: ``True`` (flag so the dispatcher knows the failure
+#   is a signed envelope, not a bare error dict).
+# - Backward-compat keys: ``error_code``, ``error_summary``, ``job_id``,
+#   ``callback_payload``, ``callback_signature``, ``callback_ts`` (so
+#   existing callers that check for ``error_code`` / ``error_summary``
+#   keep working unchanged).
+#
+# The callback payload (signed via the existing ``sign_callback`` mechanism)
+# embeds the full signed failure envelope dict so the trusted side can
+# authenticate the failure through BOTH the legacy callback signature AND
+# the new envelope signature (defense in depth).
+
+
+def _build_signed_failure(
+    *,
+    error_code: str,
+    error_message: str,
+    mode: str,
+    context: dict[str, str],
+    runtime_fingerprint_hash: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a signed failure envelope and wrap it in a handler response dict.
+
+    This is the single entry point for ALL handler failure paths (Phase 5 /
+    T-5.3). It builds a :class:`SignedFailureEnvelope` (HMAC-signed context
+    hash), embeds it in the handler response under the ``"error"`` key, and
+    preserves backward compatibility with the existing ``error_code`` /
+    ``error_summary`` / ``callback_payload`` / ``callback_signature`` /
+    ``callback_ts`` keys.
+
+    Args:
+        error_code: machine-readable error code (e.g.
+            ``"security_preflight_failed"``, ``"task_not_allowed"``,
+            ``"quality_gate_failed"``, ``"dataset_load_error"``,
+            ``"training_error"``, ``"runtime_fingerprint_invalid"``).
+        error_message: human-readable failure description.
+        mode: the training mode (``"production"`` / ``"canary"`` /
+            ``"research"``).
+        context: key-value pairs describing the failure context
+            (job_id, task_id, dataset_id, gate_code, etc.).
+        runtime_fingerprint_hash: optional link to the signed runtime
+            fingerprint (T-5.2) active when the failure occurred.
+        extra: optional extra fields to merge into the response dict
+            (e.g. ``preflight_result``, ``quality_gate_result``,
+            ``gate_code``). These are NOT part of the signed envelope —
+            they are supplementary audit data.
+
+    Returns:
+        A handler response dict with the signed failure envelope + backward
+        compatibility keys.
+    """
+    secret = _get_callback_secret()
+    envelope = build_failure_envelope(
+        error_code=error_code,
+        error_message=error_message,
+        mode=mode,
+        context=context,
+        secret=secret,
+        worker_id="runpod-trainer",
+        runtime_fingerprint_hash=runtime_fingerprint_hash,
+    )
+    env_dict = envelope.model_dump()
+
+    # Build the callback payload (for backward compat with the existing
+    # sign_callback mechanism). The full signed failure envelope is
+    # embedded so the trusted side can authenticate through both paths.
+    job_id = context.get("job_id") or "failure-unknown"
     callback_payload_dict = {
         "schema_version": 1,
-        "job_id": resolved_job_id,
+        "job_id": job_id,
         "worker_id": "runpod-trainer",
-        "result_type": "security_preflight_failed",
+        "result_type": error_code,
         "payload": {
-            "error_code": "security_preflight_failed",
-            "message": preflight_result.preflight_error or "security preflight failed",
-            "mode": preflight_result.mode,
-            "forbidden_vars_found": list(preflight_result.forbidden_vars_found),
+            "error_code": error_code,
+            "error_message": error_message,
+            "mode": mode,
+            "signed_failure_envelope": env_dict,
         },
     }
     callback_payload = json.dumps(
         callback_payload_dict, sort_keys=True,
     ).encode("utf-8")
     callback_ts = int(time.time())
-    try:
-        callback_signature = sign_callback(
-            callback_payload,
-            secret=_get_callback_secret(),
-            ts=callback_ts,
-            job_id=resolved_job_id,
-        )
-    except Exception:
-        # If the callback secret itself is missing/unusable we still refuse
-        # to start (fail closed) — return an unsigned-but-explicit failure.
-        callback_signature = ""
-    return {
-        "error_code": "security_preflight_failed",
-        "error_summary": preflight_result.preflight_error or "security preflight failed",
-        "job_id": job_id,
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=secret,
+        ts=callback_ts,
+        job_id=job_id,
+    )
+
+    response: dict[str, Any] = {
+        # Phase 5 / T-5.3: signed failure envelope (the new contract).
+        "error": env_dict,
+        "status": "failed",
+        "signed_failure": True,
+        # Backward compatibility: existing callers check error_code /
+        # error_summary / job_id / callback_payload / callback_signature.
+        "error_code": error_code,
+        "error_summary": error_message,
+        "job_id": context.get("job_id"),
         "callback_payload": callback_payload.decode("utf-8"),
         "callback_signature": callback_signature,
         "callback_ts": callback_ts,
-        "preflight_result": preflight_result.model_dump(),
     }
+    # Merge any extra audit fields (not part of the signed envelope).
+    if extra:
+        response.update(extra)
+    return response
 
 
 class ArtifactWriteResult(BaseModel):
@@ -1112,35 +1221,21 @@ def _build_artifact_write_failure_callback(
     trusted verifier can authenticate the failure (it is not a silent
     drop). The envelope carries ``error_code="artifact_write_failed"``
     and is HMAC-signed with ``QUANT_FOUNDRY_CALLBACK_SECRET``.
+
+    Phase 5 / T-5.3: now returns a :class:`SignedFailureEnvelope` via
+    :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
+    compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
     """
-    callback_payload_dict = {
-        "schema_version": 1,
+    context: dict[str, str] = {
         "job_id": job_id,
-        "worker_id": "runpod-artifact-writer",
-        "result_type": "artifact_write_failed",
-        "payload": {
-            "error_code": "artifact_write_failed",
-            "error_summary": error_summary,
-        },
+        "stage": "artifact_write",
     }
-    callback_payload = json.dumps(
-        callback_payload_dict, sort_keys=True,
-    ).encode("utf-8")
-    callback_ts = int(time.time())
-    callback_signature = sign_callback(
-        callback_payload,
-        secret=_get_callback_secret(),
-        ts=callback_ts,
-        job_id=job_id,
+    return _build_signed_failure(
+        error_code="artifact_write_failed",
+        error_message=error_summary,
+        mode="production",
+        context=context,
     )
-    return {
-        "error_code": "artifact_write_failed",
-        "error_summary": error_summary,
-        "job_id": job_id,
-        "callback_payload": callback_payload.decode("utf-8"),
-        "callback_signature": callback_signature,
-        "callback_ts": callback_ts,
-    }
 
 
 def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
@@ -1207,28 +1302,46 @@ def _handle_ingest_media_sentiment(input_data: dict[str, Any]) -> dict[str, Any]
     """
     dataset_id = input_data.get("dataset_id", "")
     if not dataset_id:
-        return {
-            "error_code": "bad_request",
-            "error_summary": "ingest_media_sentiment requires dataset_id",
-            "job_id": input_data.get("job_id"),
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="bad_request",
+            error_message="ingest_media_sentiment requires dataset_id",
+            mode="canary",
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "task": "ingest_media_sentiment",
+                "stage": "dataset_id",
+            },
+        )
 
     start_ns = input_data.get("start_ns")
     end_ns = input_data.get("end_ns")
     if not isinstance(start_ns, int) or not isinstance(end_ns, int):
-        return {
-            "error_code": "bad_request",
-            "error_summary": "ingest_media_sentiment requires start_ns and end_ns as integers",
-            "job_id": input_data.get("job_id"),
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="bad_request",
+            error_message="ingest_media_sentiment requires start_ns and end_ns as integers",
+            mode="canary",
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "task": "ingest_media_sentiment",
+                "stage": "time_range",
+            },
+        )
 
     output_dir = input_data.get("output_dir", "")
     if not output_dir:
-        return {
-            "error_code": "bad_request",
-            "error_summary": "ingest_media_sentiment requires output_dir",
-            "job_id": input_data.get("job_id"),
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="bad_request",
+            error_message="ingest_media_sentiment requires output_dir",
+            mode="canary",
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "task": "ingest_media_sentiment",
+                "stage": "output_dir",
+            },
+        )
 
     # Resolve volume path
     output_dir = resolve_volume_path(output_dir)
@@ -1269,11 +1382,18 @@ def _handle_ingest_media_sentiment(input_data: dict[str, Any]) -> dict[str, Any]
             n_folds=n_folds,
         )
     except Exception as exc:
-        return {
-            "error_code": "ingestion_failed",
-            "error_summary": str(exc),
-            "job_id": input_data.get("job_id"),
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="ingestion_failed",
+            error_message=str(exc),
+            mode="canary",
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "task": "ingest_media_sentiment",
+                "dataset_id": dataset_id,
+                "stage": "ingestion",
+            },
+        )
 
     return {
         "task": "ingest_media_sentiment",
@@ -1631,15 +1751,24 @@ def _handle_gpu_healthcheck(input_data: dict[str, Any]) -> dict[str, Any]:
     # dispatcher must not route a production training job to this
     # worker.
     if mode == TrainingMode.PRODUCTION and not gpu_capable:
-        return {
-            "error_code": "gpu_required_production",
-            "error_summary": (
-                "production mode requires a GPU worker but gpu_capable=false "
-                "(local CPU training is not an acceptance substitute)"
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="gpu_required_production",
+            error_message=(
+                "production mode requires a GPU worker but "
+                "gpu_capable=false (local CPU training is not an "
+                "acceptance substitute)"
             ),
-            "job_id": job_id,
-            "gpu_healthcheck": asdict(result),
-        }
+            mode=mode.value,
+            context={
+                "job_id": job_id,
+                "stage": "gpu_healthcheck",
+                "gpu_capable": "false",
+            },
+            extra={
+                "gpu_healthcheck": asdict(result),
+            },
+        )
 
     # --- build the signed callback payload -------------------------------
     # The callback carries the full GPU runtime metadata so the
@@ -2293,49 +2422,39 @@ def _build_quality_gate_failure_callback(
     The callback payload is HMAC-signed with
     ``QUANT_FOUNDRY_CALLBACK_SECRET`` (same mechanism as training
     callbacks) so the dispatcher/trusted verifier can authenticate it.
+
+    Phase 5 / T-5.3: now returns a :class:`SignedFailureEnvelope` via
+    :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
+    compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
     """
     gate_code = (
         gate_result.failed_checks[0].check_name
         if gate_result.failed_checks
         else "unknown"
     )
-    callback_payload_dict = {
-        "schema_version": 1,
+    error_summary = (
+        f"quality gate failed (mode={mode.value}, "
+        f"policy={gate_result.policy_id}, gate={gate_code}): "
+        f"{len(gate_result.failed_checks)} check(s) failed"
+    )
+    context: dict[str, str] = {
         "job_id": job_id,
-        "worker_id": "runpod-quality-gate",
-        "result_type": "quality_gate_failed",
-        "payload": {
-            "error_code": "quality_gate_failed",
+        "mode": mode.value,
+        "policy_id": gate_result.policy_id,
+        "gate_code": gate_code,
+        "failed_check_count": str(len(gate_result.failed_checks)),
+    }
+    return _build_signed_failure(
+        error_code="quality_gate_failed",
+        error_message=error_summary,
+        mode=mode.value,
+        context=context,
+        extra={
             "gate_code": gate_code,
             "mode": mode.value,
             "quality_gate_result": _quality_gate_result_to_dict(gate_result),
         },
-    }
-    callback_payload = json.dumps(
-        callback_payload_dict, sort_keys=True,
-    ).encode("utf-8")
-    callback_ts = int(time.time())
-    callback_signature = sign_callback(
-        callback_payload,
-        secret=_get_callback_secret(),
-        ts=callback_ts,
-        job_id=job_id,
     )
-    return {
-        "error_code": "quality_gate_failed",
-        "error_summary": (
-            f"quality gate failed (mode={mode.value}, "
-            f"policy={gate_result.policy_id}, gate={gate_code}): "
-            f"{len(gate_result.failed_checks)} check(s) failed"
-        ),
-        "job_id": job_id,
-        "gate_code": gate_code,
-        "mode": mode.value,
-        "quality_gate_result": _quality_gate_result_to_dict(gate_result),
-        "callback_payload": callback_payload.decode("utf-8"),
-        "callback_signature": callback_signature,
-        "callback_ts": callback_ts,
-    }
 
 
 def _build_task_rejection_callback(
@@ -2354,6 +2473,10 @@ def _build_task_rejection_callback(
     is HMAC-signed with ``QUANT_FOUNDRY_CALLBACK_SECRET`` via the existing
     :func:`sign_callback` mechanism.
 
+    Phase 5 / T-5.3: now returns a :class:`SignedFailureEnvelope` via
+    :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
+    compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
+
     Args:
         task_type: the rejected task string (may be ``None`` if absent).
         error_code: ``"task_not_supported_on_trainer"`` for dataset
@@ -2361,37 +2484,20 @@ def _build_task_rejection_callback(
         message: human-readable explanation + dispatch suggestion.
         job_id: the job id from the input, if available.
     """
-    resolved_job_id = job_id or "task-rejection-unknown"
-    callback_payload_dict = {
-        "schema_version": 1,
-        "job_id": resolved_job_id,
-        "worker_id": "runpod-trainer",
-        "result_type": error_code,
-        "payload": {
-            "error_code": error_code,
-            "task_type": task_type,
-            "message": message,
-        },
-    }
-    callback_payload = json.dumps(
-        callback_payload_dict, sort_keys=True,
-    ).encode("utf-8")
-    callback_ts = int(time.time())
-    callback_signature = sign_callback(
-        callback_payload,
-        secret=_get_callback_secret(),
-        ts=callback_ts,
-        job_id=resolved_job_id,
-    )
-    return {
+    context: dict[str, str] = {
+        "job_id": job_id or "task-rejection-unknown",
+        "task_type": task_type or "none",
         "error_code": error_code,
-        "error_summary": message,
-        "task_type": task_type,
-        "job_id": job_id,
-        "callback_payload": callback_payload.decode("utf-8"),
-        "callback_signature": callback_signature,
-        "callback_ts": callback_ts,
     }
+    return _build_signed_failure(
+        error_code=error_code,
+        error_message=message,
+        mode="production",
+        context=context,
+        extra={
+            "task_type": task_type,
+        },
+    )
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
@@ -2408,11 +2514,17 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     """
     input_data = event.get("input") if isinstance(event, dict) else None
     if not isinstance(input_data, dict):
-        return {
-            "error_code": "bad_request",
-            "error_summary": "event['input'] must be a dict matching RunPodTrainingRequest",
-            "job_id": None,
-        }
+        # Phase 5 / T-5.3: signed failure envelope (mode unknown → canary,
+        # the most lenient default, matching _resolve_preflight_mode).
+        return _build_signed_failure(
+            error_code="bad_request",
+            error_message=(
+                "event['input'] must be a dict matching "
+                "RunPodTrainingRequest"
+            ),
+            mode="canary",
+            context={"job_id": "none", "stage": "input_parse"},
+        )
 
     # Phase 5 / T-5.1: handler-level SecurityPreflight (defense in depth).
     #
@@ -2506,11 +2618,17 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         chunk_data = input_data.get("chunk_data", "")
         chunk_mode = input_data.get("chunk_mode", "write")
         if not volume_path or not chunk_data:
-            return {
-                "error_code": "bad_request",
-                "error_summary": "write_volume requires volume_path and chunk_data",
-                "job_id": input_data.get("job_id"),
-            }
+            # Phase 5 / T-5.3: signed failure envelope.
+            return _build_signed_failure(
+                error_code="bad_request",
+                error_message="write_volume requires volume_path and chunk_data",
+                mode=preflight_mode.value,
+                context={
+                    "job_id": str(input_data.get("job_id") or "unknown"),
+                    "task": "write_volume",
+                    "stage": "write_volume_args",
+                },
+            )
         # Resolve volume path (/runpod-volume vs /workspace)
         resolved = resolve_volume_path(volume_path)
         target = Path(resolved)
@@ -2649,11 +2767,16 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
     except Exception as exc:
-        return {
-            "error_code": "schema_validation_failed",
-            "error_summary": str(exc),
-            "job_id": input_data.get("job_id"),
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="schema_validation_failed",
+            error_message=str(exc),
+            mode=preflight_mode.value,
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "stage": "schema_validation",
+            },
+        )
 
     # Phase 3 / T-2.2: manifest-first loading takes precedence over the
     # legacy inline/volume-path paths. When a load spec is provided, the
@@ -2679,11 +2802,18 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 error_code=exc.code,
                 error_summary=str(exc),
             )
-            return {
-                "error_code": exc.code,
-                "error_summary": str(exc),
-                "job_id": req.job_id,
-            }
+            # Phase 5 / T-5.3: signed failure envelope.
+            raw_mode = req.extra_constraints.get("training_mode") or "research"
+            return _build_signed_failure(
+                error_code="dataset_load_error",
+                error_message=str(exc),
+                mode=raw_mode,
+                context={
+                    "job_id": req.job_id,
+                    "dataset_error_code": exc.code,
+                    "dataset_manifest_ref": req.dataset_manifest_ref,
+                },
+            )
     elif isinstance(inline_csv, str) and inline_csv.strip():
         import tempfile
 
@@ -2764,11 +2894,17 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                         error_code=exc.code,
                         error_summary=str(exc),
                     )
-                    return {
-                        "error_code": exc.code,
-                        "error_summary": str(exc),
-                        "job_id": req.job_id,
-                    }
+                    # Phase 5 / T-5.3: signed failure envelope.
+                    return _build_signed_failure(
+                        error_code="quality_gate_failed",
+                        error_message=str(exc),
+                        mode=gate_mode.value,
+                        context={
+                            "job_id": req.job_id,
+                            "stage": "quality_report_fetch",
+                            "gate_error_code": exc.code,
+                        },
+                    )
                 # Advisory: log the warning (best-effort).
                 write_status(
                     req.job_id, "started",
@@ -2794,11 +2930,18 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                     error_code=exc.code,
                     error_summary=str(exc),
                 )
-                return {
-                    "error_code": exc.code,
-                    "error_summary": str(exc),
-                    "job_id": req.job_id,
-                }
+                # Phase 5 / T-5.3: signed failure envelope.
+                return _build_signed_failure(
+                    error_code="quality_gate_failed",
+                    error_message=str(exc),
+                    mode=gate_mode.value,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "quality_gate_policy",
+                        "gate_error_code": exc.code,
+                        "policy_id": quality_policy_id or "default",
+                    },
+                )
             write_status(
                 req.job_id, "started",
                 error_code=exc.code,
@@ -2879,11 +3022,18 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             error_code=exc.error_code,
             error_summary=exc.error_summary,
         )
-        return {
-            "error_code": exc.error_code,
-            "error_summary": exc.error_summary,
-            "job_id": req.job_id,
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        raw_mode = req.extra_constraints.get("training_mode") or "research"
+        return _build_signed_failure(
+            error_code="training_error",
+            error_message=exc.error_summary,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "training_error_code": exc.error_code,
+                "model_family": req.model_family,
+            },
+        )
     finally:
         heartbeat_stop.set()
 
@@ -2906,14 +3056,22 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # artifact (acceptance criterion: trainer success without
         # artifact fails).
         if typed_artifact is None or not model_bytes:
-            return {
-                "error_code": "artifact_missing",
-                "error_summary": (
-                    "successful training produced no typed artifact result "
-                    "(fail closed: artifact URI/hash/size required)"
+            # Phase 5 / T-5.3: signed failure envelope.
+            raw_mode = req.extra_constraints.get("training_mode") or "production"
+            return _build_signed_failure(
+                error_code="artifact_missing",
+                error_message=(
+                    "successful training produced no typed artifact "
+                    "result (fail closed: artifact URI/hash/size "
+                    "required)"
                 ),
-                "job_id": req.job_id,
-            }
+                mode=raw_mode,
+                context={
+                    "job_id": req.job_id,
+                    "stage": "artifact_resolve",
+                    "trainer": "real",
+                },
+            )
     else:
         # Canary / local-stub path: keep tiny inline bytes only for
         # canary tests (never persisted to a real artifact URI unless
@@ -2935,11 +3093,18 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                     loader_family="local-stub",
                 )
             except ValueError as exc:
-                return {
-                    "error_code": "artifact_missing",
-                    "error_summary": f"cannot build canary artifact result: {exc}",
-                    "job_id": req.job_id,
-                }
+                # Phase 5 / T-5.3: signed failure envelope.
+                raw_mode = req.extra_constraints.get("training_mode") or "canary"
+                return _build_signed_failure(
+                    error_code="artifact_missing",
+                    error_message=f"cannot build canary artifact result: {exc}",
+                    mode=raw_mode,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "canary_artifact_build",
+                        "trainer": "local",
+                    },
+                )
             model_bytes = typed_artifact.model_bytes
 
     # --- Phase 1 / T-1.2: persist the artifact via the writer interface -----
@@ -3058,14 +3223,20 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # A persistence target was set but there are no artifact bytes —
         # fail closed (a successful job with no artifact is a contract
         # violation).
-        return {
-            "error_code": "artifact_missing",
-            "error_summary": (
-                "persistence target set but no artifact bytes to write "
-                "(fail closed)"
+        # Phase 5 / T-5.3: signed failure envelope.
+        raw_mode = req.extra_constraints.get("training_mode") or "production"
+        return _build_signed_failure(
+            error_code="artifact_missing",
+            error_message=(
+                "persistence target set but no artifact bytes to "
+                "write (fail closed)"
             ),
-            "job_id": req.job_id,
-        }
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "artifact_persist_no_bytes",
+            },
+        )
 
     # Bind the artifact URI onto the typed result (immutable → rebuild).
     # Also bind the signed write receipt so the trusted-side verifier can
@@ -3209,11 +3380,16 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         # Fail closed: if the typed callback cannot be built, the job is
         # a contract violation. Return a safe terminal error.
-        return {
-            "error_code": "callback_build_failed",
-            "error_summary": f"failed to build typed callback: {exc}",
-            "job_id": req.job_id,
-        }
+        # Phase 5 / T-5.3: signed failure envelope.
+        return _build_signed_failure(
+            error_code="callback_build_failed",
+            error_message=f"failed to build typed callback: {exc}",
+            mode=cb_mode.value,
+            context={
+                "job_id": req.job_id,
+                "stage": "callback_build",
+            },
+        )
 
     return {
         "job_id": req.job_id,

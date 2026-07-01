@@ -2258,6 +2258,304 @@ def attach_runtime_fingerprint(
     return cb_dict
 
 
+# --- signed failure envelopes (Phase 5 / T-5.3) -----------------------------
+#
+# A standardized, HMAC-signed failure envelope so the trusted side
+# (dispatcher/gateway) can authenticate ANY failure emitted by the worker.
+# Every handler failure path returns a SignedFailureEnvelope so a failure
+# is never a silent drop — the dispatcher verifies the signature before
+# recording the FAILED transition (production: fail-closed; canary/research:
+# advisory).
+#
+# Design (matching the codebase Pydantic-v2 conventions):
+# - ``frozen=True`` + ``extra='forbid'`` (audit integrity / fail-closed).
+# - ``context_hash`` = SHA-256 of the canonical JSON of ``context`` (the
+#   key-value pairs describing the failure — task_id, dataset_id, gate_code,
+#   etc.). This binds the signature to the exact failure context.
+# - ``signature`` = HMAC-SHA256 over ``context_hash`` (signed with the
+#   callback secret). The trusted side recomputes both and compares
+#   constant-time.
+# - ``failed_at_ns`` is a nanosecond epoch timestamp (replay protection).
+# - ``runtime_fingerprint_hash`` optionally links the failure to the signed
+#   runtime fingerprint (T-5.2) that was active when the failure occurred.
+
+
+class SignedFailureEnvelope(BaseModel):
+    """Standardized, HMAC-signed failure envelope (Phase 5 / T-5.3).
+
+    Frozen + ``extra='forbid'`` (audit integrity). Every handler failure
+    path returns a :class:`SignedFailureEnvelope` (serialized to a dict in
+    the handler response under the ``"error"`` key) so the trusted side can
+    authenticate the failure — it is never a silent drop.
+
+    The ``context_hash`` is a SHA-256 over the canonical JSON of
+    ``context`` (the key-value pairs describing the failure). The
+    ``signature`` is an HMAC-SHA256 over ``context_hash`` (signed with the
+    callback secret). The trusted side recomputes both and compares
+    constant-time via :func:`verify_failure_envelope`.
+
+    Fields:
+        error_code: machine-readable error code (e.g.
+            ``"security_preflight_failed"``, ``"task_not_allowed"``,
+            ``"quality_gate_failed"``, ``"dataset_load_error"``,
+            ``"training_error"``, ``"runtime_fingerprint_invalid"``).
+        error_message: human-readable description of the failure.
+        mode: the training mode the failure occurred under
+            (``"production"`` / ``"canary"`` / ``"research"``).
+        context_hash: SHA-256 hex of the canonical JSON of ``context``.
+        context: key-value pairs describing the failure context
+            (task_id, dataset_id, gate_code, etc.). All values are
+            strings (canonical-JSON safe).
+        signature: HMAC-SHA256 hex over ``context_hash`` (signed with
+            the callback secret).
+        failed_at_ns: nanosecond epoch timestamp of the failure.
+        worker_id: optional worker identifier.
+        runtime_fingerprint_hash: optional link to the signed runtime
+            fingerprint (T-5.2) active when the failure occurred.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    error_code: str
+    error_message: str
+    mode: str
+    context_hash: str
+    context: dict[str, str] = Field(default_factory=dict)
+    signature: str
+    failed_at_ns: int
+    worker_id: str | None = None
+    runtime_fingerprint_hash: str | None = None
+
+    @field_validator("error_code")
+    @classmethod
+    def _error_code_nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("error_code must be non-empty")
+        return v
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("mode must be non-empty")
+        return v
+
+
+def _canonical_context_bytes(context: dict[str, str]) -> bytes:
+    """Return the canonical JSON bytes of a failure context dict.
+
+    Keys are sorted for determinism. Values are coerced to ``str`` so the
+    hash is stable regardless of how the caller constructed the context
+    (e.g. an ``int`` job_id vs a ``str`` job_id produce the same hash).
+    """
+    coerced = {str(k): str(v) for k, v in context.items()}
+    return json.dumps(
+        coerced, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _compute_context_hash(context: dict[str, str]) -> str:
+    """Compute the SHA-256 hex of the canonical JSON of a context dict."""
+    return hashlib.sha256(_canonical_context_bytes(context)).hexdigest()
+
+
+def build_failure_envelope(
+    *,
+    error_code: str,
+    error_message: str,
+    mode: str,
+    context: dict[str, str],
+    secret: str,
+    worker_id: str | None = None,
+    runtime_fingerprint_hash: str | None = None,
+) -> SignedFailureEnvelope:
+    """Build a signed :class:`SignedFailureEnvelope` (Phase 5 / T-5.3).
+
+    Computes ``context_hash`` = SHA-256(canonical_json(context)) and
+    ``signature`` = HMAC-SHA256(context_hash, secret), then returns the
+    frozen, signed envelope.
+
+    Args:
+        error_code: machine-readable error code.
+        error_message: human-readable failure description.
+        mode: the training mode (``"production"`` / ``"canary"`` /
+            ``"research"``).
+        context: key-value pairs describing the failure context
+            (task_id, dataset_id, gate_code, etc.).
+        secret: HMAC secret for signing (the callback secret).
+        worker_id: optional worker identifier.
+        runtime_fingerprint_hash: optional link to the signed runtime
+            fingerprint (T-5.2) active when the failure occurred.
+
+    Returns:
+        A frozen, signed :class:`SignedFailureEnvelope`.
+    """
+    context_hash = _compute_context_hash(context)
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        context_hash.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return SignedFailureEnvelope(
+        error_code=error_code,
+        error_message=error_message,
+        mode=mode,
+        context_hash=context_hash,
+        context={str(k): str(v) for k, v in context.items()},
+        signature=signature,
+        failed_at_ns=time.time_ns(),
+        worker_id=worker_id,
+        runtime_fingerprint_hash=runtime_fingerprint_hash,
+    )
+
+
+def verify_failure_envelope(
+    envelope: SignedFailureEnvelope | dict[str, Any],
+    *,
+    secret: str,
+) -> bool:
+    """Verify the context hash + HMAC signature of a failure envelope.
+
+    Recomputes the ``context_hash`` from ``envelope.context`` and the
+    HMAC signature over that hash, then compares both to the stored
+    values using :func:`hmac.compare_digest` (constant-time). Returns
+    ``True`` if both match, ``False`` otherwise (fail-closed — never
+    raises on a mismatch).
+
+    Args:
+        envelope: a :class:`SignedFailureEnvelope` or a dict that can be
+            parsed into one.
+        secret: the HMAC secret used at signing time.
+
+    Returns:
+        ``True`` if the context hash + signature are valid.
+    """
+    if isinstance(envelope, dict):
+        try:
+            envelope = SignedFailureEnvelope.model_validate(envelope)
+        except Exception:
+            return False
+    elif not isinstance(envelope, SignedFailureEnvelope):
+        return False
+    if not isinstance(secret, str) or not secret:
+        return False
+    if not envelope.signature or not envelope.context_hash:
+        return False
+    # Recompute the context hash from the stored context.
+    recomputed_hash = _compute_context_hash(envelope.context)
+    if not hmac.compare_digest(recomputed_hash, envelope.context_hash):
+        return False
+    # Recompute the HMAC signature over the context hash.
+    expected_sig = hmac.new(
+        secret.encode("utf-8"),
+        envelope.context_hash.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected_sig, envelope.signature)
+
+
+class FailureEnvelopeValidationResult(BaseModel):
+    """Result of :func:`validate_failure_envelope` (Phase 5 / T-5.3).
+
+    Frozen + ``extra='forbid'``. Carries the pass/fail verdict and the
+    list of warnings + errors so the trusted side can audit exactly why
+    a failure envelope was accepted/rejected.
+
+    Fields:
+        passed: ``True`` if the envelope is acceptable for the mode
+            (production fails closed on a signature mismatch;
+            canary/research warn but pass).
+        mode: the training mode the validation ran under.
+        warnings: human-readable warnings (non-fatal).
+        errors: human-readable errors (fatal for the mode).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passed: bool
+    mode: str
+    warnings: tuple[str, ...] = Field(default_factory=tuple)
+    errors: tuple[str, ...] = Field(default_factory=tuple)
+
+
+def validate_failure_envelope(
+    envelope: SignedFailureEnvelope | dict[str, Any],
+    *,
+    mode: TrainingMode,
+    secret: str,
+) -> FailureEnvelopeValidationResult:
+    """Validate a signed failure envelope in a mode-aware way (Phase 5 / T-5.3).
+
+    Acceptance criteria:
+    - **production**: FAILS (``passed=False``) if the signature does not
+      verify (fail-closed — a forged failure envelope is never accepted).
+    - **canary** / **research**: the signature is verified advisory — a
+      mismatch is logged as a warning but the envelope is still accepted
+      (``passed=True``). The envelope is always signed by the worker;
+      verification is advisory in permissive modes.
+
+    Args:
+        envelope: a :class:`SignedFailureEnvelope` or a dict.
+        mode: the training mode to validate under.
+        secret: the HMAC secret used at signing time.
+
+    Returns:
+        A :class:`FailureEnvelopeValidationResult`.
+    """
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    # Parse the envelope (fail-closed on a schema error).
+    if isinstance(envelope, dict):
+        try:
+            env = SignedFailureEnvelope.model_validate(envelope)
+        except Exception as exc:
+            return FailureEnvelopeValidationResult(
+                passed=False,
+                mode=mode.value,
+                warnings=(),
+                errors=(f"envelope schema validation failed: {exc}",),
+            )
+    elif isinstance(envelope, SignedFailureEnvelope):
+        env = envelope
+    else:
+        return FailureEnvelopeValidationResult(
+            passed=False,
+            mode=mode.value,
+            warnings=(),
+            errors=(
+                f"envelope must be a SignedFailureEnvelope or dict, got "
+                f"{type(envelope).__name__}",
+            ),
+        )
+
+    # Signature verification.
+    if not verify_failure_envelope(env, secret=secret):
+        msg = (
+            "failure envelope signature verification failed "
+            "(HMAC mismatch — possible tamper)"
+        )
+        if mode == TrainingMode.PRODUCTION:
+            errors.append(msg)
+        else:
+            warnings.append(msg)
+
+    # Mode-aware verdict.
+    if mode == TrainingMode.PRODUCTION:
+        passed = not errors
+    else:
+        # Canary/research: advisory — signature mismatch is a warning,
+        # not a fatal error.
+        passed = not errors
+
+    return FailureEnvelopeValidationResult(
+        passed=passed,
+        mode=mode.value,
+        warnings=tuple(warnings),
+        errors=tuple(errors),
+    )
+
+
 # --- local trainer ---------------------------------------------------------
 
 
