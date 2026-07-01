@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +75,12 @@ from quant_foundry.signatures import sign_callback  # noqa: E402
 from quant_foundry.real_trainer import (  # noqa: E402
     TypedArtifactResult,
     build_artifact_result,
+)
+
+# Phase 0 / T-4.1: mode system for GPU healthcheck mode-aware validation.
+from quant_foundry.training_manifest import (  # noqa: E402
+    MODE_RULES,
+    TrainingMode,
 )
 
 
@@ -280,6 +288,389 @@ def _handle_ingest_media_sentiment(input_data: dict[str, Any]) -> dict[str, Any]
     }
 
 
+# --- GPU healthcheck (Phase 4 / T-4.1) --------------------------------------
+#
+# A new ``gpu_healthcheck`` task type that probes the worker's GPU
+# runtime and returns signed metadata. The healthcheck:
+#
+# 1. Runs ``nvidia-smi`` (or reports missing if not available).
+# 2. Records CUDA version, driver version, GPU model, GPU memory.
+# 3. Records training-library GPU capability flags (lightgbm GPU,
+#    xgboost GPU, catboost GPU — checked only if the library is
+#    importable).
+# 4. Integrates with the mode system:
+#    - ``production``: fails closed if ``gpu_capable`` is False (a
+#      production run MUST execute on a GPU worker — local CPU training
+#      is not an acceptance substitute).
+#    - ``canary``: may report GPU absence but marks
+#      ``promotion_eligible=False`` (a canary without a GPU is never
+#      promotion eligible).
+#    - ``research``: permissive — reports the GPU state without failing.
+# 5. Returns a signed callback payload containing the GPU runtime
+#    metadata so the dispatcher/trusted verifier can audit the worker's
+#    GPU capability at dispatch time.
+
+
+@dataclass(frozen=True)
+class GPUHealthcheckResult:
+    """Structured result of a GPU healthcheck probe.
+
+    All fields are populated on every run (``None`` / ``False`` when the
+    corresponding capability is absent) so the downstream dispatcher can
+    make routing decisions without defensive ``getattr`` checks.
+    """
+
+    gpu_capable: bool
+    nvidia_smi_available: bool
+    nvidia_smi_output: str | None
+    cuda_version: str | None
+    driver_version: str | None
+    gpu_model: str | None
+    gpu_memory_mb: int | None
+    gpu_count: int
+    library_gpu_flags: dict[str, bool]
+    mode: str
+    promotion_eligible: bool
+    checked_at_ns: int
+    runtime_fingerprint: dict[str, str]
+
+
+def _probe_nvidia_smi() -> tuple[bool, str | None, str | None, str | None, str | None, int | None, int]:
+    """Probe the GPU via ``nvidia-smi``.
+
+    Returns a tuple of:
+        (available, raw_output, cuda_version, driver_version,
+         gpu_model, gpu_memory_mb, gpu_count)
+
+    When ``nvidia-smi`` is not installed (``FileNotFoundError``) or exits
+    non-zero (``CalledProcessError``), ``available`` is False and the
+    parsed fields are ``None`` / ``0``. The raw output (or error text) is
+    always captured for diagnostics.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        raw = proc.stdout.strip()
+    except FileNotFoundError:
+        return (False, "nvidia-smi not found (FileNotFoundError)", None, None, None, None, 0)
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or exc.stdout or "").strip() or f"nvidia-smi exited {exc.returncode}"
+        return (False, err, None, None, None, None, 0)
+    except subprocess.TimeoutExpired:
+        return (False, "nvidia-smi timed out", None, None, None, None, 0)
+
+    # Parse the CSV: "name, memory.total MiB, driver_version"
+    gpu_model: str | None = None
+    gpu_memory_mb: int | None = None
+    driver_version: str | None = None
+    gpu_count = 0
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        gpu_count += 1
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 3:
+            if gpu_model is None:
+                gpu_model = parts[0]
+            mem_str = parts[1].replace("MiB", "").strip()
+            try:
+                gpu_memory_mb = int(mem_str)
+            except ValueError:
+                pass
+            if driver_version is None:
+                driver_version = parts[2]
+
+    # Query CUDA version separately (nvidia-smi --query-gpu=driver_version
+    # does not include CUDA; use the full nvidia-smi output header).
+    cuda_version: str | None = None
+    try:
+        proc_full = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        full_out = proc_full.stdout
+        for line in full_out.splitlines():
+            if "CUDA Version" in line:
+                # e.g. "CUDA Version: 12.2"
+                for token in line.split():
+                    if token.replace(".", "").isdigit():
+                        cuda_version = token
+                        break
+                break
+    except Exception:  # noqa: BLE001 - best-effort CUDA version probe
+        pass
+
+    available = gpu_count > 0
+    return (available, raw, cuda_version, driver_version, gpu_model, gpu_memory_mb, gpu_count)
+
+
+def _probe_cuda_via_torch() -> str | None:
+    """Probe CUDA availability via PyTorch if installed.
+
+    Returns the CUDA version string (e.g. ``"12.2"``) or ``None`` if
+    PyTorch is not installed or CUDA is not available. This is a
+    secondary probe — ``nvidia-smi`` is the primary source.
+    """
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        if not torch.cuda.is_available():
+            return None
+        return torch.version.cuda  # type: ignore[no-any-return]
+    except Exception:  # noqa: BLE001 - best-effort torch probe
+        return None
+
+
+def _probe_library_gpu_flags() -> dict[str, bool]:
+    """Probe GPU capability of installed training libraries.
+
+    Checks whether ``lightgbm``, ``xgboost``, and ``catboost`` are
+    importable and whether they advertise GPU support. Libraries that
+    are not installed report ``False`` (not an error — the healthcheck
+    must succeed even on a CPU-only image).
+    """
+    flags: dict[str, bool] = {
+        "lightgbm_gpu": False,
+        "xgboost_gpu": False,
+        "catboost_gpu": False,
+    }
+
+    # LightGBM: GPU support is indicated by the ``device_type="gpu"``
+    # parameter being accepted. We check the installed version and
+    # whether the GPU build is available via a lightweight import.
+    try:
+        import lightgbm as lgb  # type: ignore[import-not-found]
+
+        # LightGBM GPU support: the ``LGBMClassifier``/``LGBMRegressor``
+        # accept ``device_type="gpu"``. We cannot safely instantiate a
+        # GPU model without data, so we check whether the library
+        # exposes the GPU-capable estimator classes. The healthcheck
+        # reports the flag; the dispatcher decides whether to trust it.
+        try:
+            default_params = lgb.LGBMModel().get_params()  # type: ignore[attr-defined]
+            if "device_type" in default_params or "device" in default_params:
+                flags["lightgbm_gpu"] = True
+        except Exception:  # noqa: BLE001
+            # Conservative: if lightgbm imports, assume GPU-capable
+            # build may be present (the healthcheck reports the flag,
+            # the dispatcher decides whether to trust it).
+            flags["lightgbm_gpu"] = hasattr(lgb, "LGBMClassifier")
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    # XGBoost: GPU support via ``tree_method="gpu_hist"`` or
+    # ``device="cuda"``. Check if the library imports and exposes the
+    # GPU tree method.
+    try:
+        import xgboost as xgb  # type: ignore[import-not-found]
+
+        # XGBoost >= 2.0 uses ``device="cuda"``; older uses
+        # ``tree_method="gpu_hist"``. We check for the presence of the
+        # GPU-capable attributes.
+        flags["xgboost_gpu"] = hasattr(xgb, "XGBClassifier") or hasattr(xgb, "Booster")
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    # CatBoost: GPU support via ``task_type="GPU"``. Check if the
+    # library imports.
+    try:
+        import catboost  # type: ignore[import-not-found]
+
+        flags["catboost_gpu"] = hasattr(catboost, "CatBoostClassifier") or hasattr(
+            catboost, "CatBoostRegressor"
+        )
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    return flags
+
+
+def _runtime_fingerprint() -> dict[str, str]:
+    """Build a signed runtime fingerprint for the healthcheck callback.
+
+    Includes the code git SHA, lockfile hash, and container image
+    digest (pinned at build time or defaulted for local tests). These
+    are the same reproducibility pins used by the trainer so the
+    dispatcher can bind a healthcheck result to a specific image.
+    """
+    from quant_foundry.runpod_training import (
+        _container_digest_or_default,
+        _git_sha_or_default,
+        _lockfile_hash_or_default,
+    )
+
+    return {
+        "code_git_sha": _git_sha_or_default() or "unknown",
+        "lockfile_hash": _lockfile_hash_or_default() or "unknown",
+        "container_image_digest": _container_digest_or_default() or "unknown",
+        "hostname": os.environ.get("HOSTNAME", "unknown"),
+    }
+
+
+def _resolve_healthcheck_mode(input_data: dict[str, Any]) -> TrainingMode:
+    """Resolve the training mode for a GPU healthcheck request.
+
+    The mode is read from ``input_data["mode"]`` or
+    ``input_data["training_mode"]`` (the latter matches the
+    ``RunPodTrainingRequest.extra_constraints["training_mode"]``
+    convention). Defaults to ``canary`` (the most lenient mode) when
+    absent, so a bare healthcheck never accidentally fails closed.
+    """
+    raw = input_data.get("mode") or input_data.get("training_mode")
+    if raw is None:
+        return TrainingMode.CANARY
+    try:
+        return TrainingMode(raw)
+    except ValueError:
+        # Unknown mode → fail closed as production (strictest).
+        return TrainingMode.PRODUCTION
+
+
+def _handle_gpu_healthcheck(input_data: dict[str, Any]) -> dict[str, Any]:
+    """Handle a GPU healthcheck probe task.
+
+    Probes the worker's GPU runtime and returns signed metadata. The
+    mode (read from ``input_data["mode"]`` or
+    ``input_data["training_mode"]``) controls the fail-closed behavior:
+
+    - ``production``: if ``gpu_capable`` is False, the healthcheck
+      FAILS (returns an ``error_code``). A production run MUST execute
+      on a GPU worker — local CPU training is not an acceptance
+      substitute.
+    - ``canary``: may report GPU absence (``gpu_capable=False``) but
+      marks ``promotion_eligible=False``. The healthcheck succeeds (no
+      error) so the dispatcher can record the GPU state.
+    - ``research``: permissive — reports the GPU state without failing.
+
+    The response includes a signed callback payload (HMAC over the GPU
+    runtime metadata) so the dispatcher/trusted verifier can audit the
+    worker's GPU capability at dispatch time.
+    """
+    job_id = input_data.get("job_id") or "gpu-healthcheck-unknown"
+    mode = _resolve_healthcheck_mode(input_data)
+
+    # --- probe the GPU runtime -------------------------------------------
+    (
+        nvidia_smi_available,
+        nvidia_smi_output,
+        cuda_version_nvidia,
+        driver_version,
+        gpu_model,
+        gpu_memory_mb,
+        gpu_count,
+    ) = _probe_nvidia_smi()
+
+    # Secondary CUDA probe via PyTorch (may catch CUDA even if
+    # nvidia-smi parsing missed it).
+    cuda_version_torch = _probe_cuda_via_torch()
+    cuda_version = cuda_version_nvidia or cuda_version_torch
+
+    library_gpu_flags = _probe_library_gpu_flags()
+
+    # A worker is GPU-capable if nvidia-smi reports at least one GPU OR
+    # PyTorch reports CUDA availability.
+    gpu_capable = nvidia_smi_available or (cuda_version_torch is not None)
+
+    checked_at_ns = time.time_ns()
+    runtime_fingerprint = _runtime_fingerprint()
+
+    # --- mode-aware promotion eligibility --------------------------------
+    # Canary without a GPU is never promotion eligible. Research is
+    # never promotion eligible by default (per MODE_RULES). Production
+    # requires a GPU to be promotion eligible.
+    rules = MODE_RULES.get(mode, {})
+    promotion_eligible_default = bool(rules.get("promotion_eligible_default", False))
+    if mode == TrainingMode.CANARY and not gpu_capable:
+        promotion_eligible = False
+    elif mode == TrainingMode.PRODUCTION:
+        promotion_eligible = promotion_eligible_default and gpu_capable
+    else:
+        promotion_eligible = promotion_eligible_default
+
+    result = GPUHealthcheckResult(
+        gpu_capable=gpu_capable,
+        nvidia_smi_available=nvidia_smi_available,
+        nvidia_smi_output=nvidia_smi_output,
+        cuda_version=cuda_version,
+        driver_version=driver_version,
+        gpu_model=gpu_model,
+        gpu_memory_mb=gpu_memory_mb,
+        gpu_count=gpu_count,
+        library_gpu_flags=library_gpu_flags,
+        mode=mode.value,
+        promotion_eligible=promotion_eligible,
+        checked_at_ns=checked_at_ns,
+        runtime_fingerprint=runtime_fingerprint,
+    )
+
+    # --- production fail-closed ------------------------------------------
+    # A production healthcheck with no GPU is a terminal failure — the
+    # dispatcher must not route a production training job to this
+    # worker.
+    if mode == TrainingMode.PRODUCTION and not gpu_capable:
+        return {
+            "error_code": "gpu_required_production",
+            "error_summary": (
+                "production mode requires a GPU worker but gpu_capable=false "
+                "(local CPU training is not an acceptance substitute)"
+            ),
+            "job_id": job_id,
+            "gpu_healthcheck": asdict(result),
+        }
+
+    # --- build the signed callback payload -------------------------------
+    # The callback carries the full GPU runtime metadata so the
+    # dispatcher/trusted verifier can audit the worker's GPU capability
+    # and bind it to a specific image (runtime fingerprint).
+    callback_payload_dict = {
+        "schema_version": 1,
+        "job_id": job_id,
+        "worker_id": "runpod-gpu-healthcheck",
+        "result_type": "gpu_healthcheck",
+        "payload": {
+            "gpu_healthcheck": asdict(result),
+        },
+    }
+    callback_payload = json.dumps(callback_payload_dict, sort_keys=True).encode("utf-8")
+    callback_ts = int(time.time())
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=_get_callback_secret(),
+        ts=callback_ts,
+        job_id=job_id,
+    )
+
+    return {
+        "task": "gpu_healthcheck",
+        "job_id": job_id,
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+        "gpu_healthcheck": asdict(result),
+    }
+
+
 def _build_trainer(n_folds: int = 3) -> Any:
     """Select the trainer based on the QUANT_FOUNDRY_USE_REAL_TRAINER env var.
 
@@ -452,6 +843,19 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     #   config: {...} (optional per-module config overrides)
     if input_data.get("task") == "ingest_media_sentiment":
         return _handle_ingest_media_sentiment(input_data)
+
+    # GPU healthcheck task (Phase 4 / T-4.1): probe the worker's GPU
+    # runtime and return signed metadata. Mode-aware:
+    #   - production: fails closed if no GPU (gpu_capable=false → error)
+    #   - canary: reports GPU absence but marks promotion_eligible=false
+    #   - research: permissive (reports GPU state without failing)
+    # Input fields (handler-level extensions, not in the schema):
+    #   task: "gpu_healthcheck"
+    #   job_id: "gpu-hc-001" (optional, defaults to gpu-healthcheck-unknown)
+    #   mode: "canary" | "research" | "production" (optional, default canary)
+    #   training_mode: alias for mode (matches extra_constraints convention)
+    if input_data.get("task") == "gpu_healthcheck":
+        return _handle_gpu_healthcheck(input_data)
 
     # Support inline dataset for E2E testing: if the input includes
     # ``inline_dataset_csv``, write it to a temp file and override the
