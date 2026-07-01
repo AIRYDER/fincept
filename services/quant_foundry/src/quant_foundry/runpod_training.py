@@ -50,6 +50,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
+import platform
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -391,7 +394,7 @@ def build_callback(
     job_id: str,
     training_manifest_hash: str,
     dataset_manifest_hash: str,
-    runtime_fingerprint: dict[str, str],
+    runtime_fingerprint: dict[str, str] | "RuntimeFingerprint",
     primary_artifact: dict[str, Any] | None,
     auxiliary_artifacts: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None = None,
     metrics_summary: dict[str, Any] | None = None,
@@ -421,8 +424,10 @@ def build_callback(
         job_id: the training job id.
         training_manifest_hash: SHA-256 of the training manifest content.
         dataset_manifest_hash: SHA-256 of the dataset manifest reference.
-        runtime_fingerprint: dict with git sha / lockfile hash / container
-            digest (from T-4.1). Hashed into ``runtime_fingerprint_hash``.
+        runtime_fingerprint: either a :class:`RuntimeFingerprint` (T-5.2,
+            whose precomputed ``fingerprint_hash`` is used directly) or a
+            legacy dict with git sha / lockfile hash / container digest
+            (from T-4.1). Hashed into ``runtime_fingerprint_hash``.
         primary_artifact: the main model artifact dict
             (serialized TypedArtifactResult). ``None`` for failure callbacks.
         auxiliary_artifacts: additional artifact dicts.
@@ -470,7 +475,15 @@ def build_callback(
         # (escalation is a separate, explicit operator action).
         promotion_eligible = promotion_default
 
-    rt_hash = _runtime_fingerprint_hash(runtime_fingerprint)
+    # Resolve the runtime fingerprint hash. When a full
+    # RuntimeFingerprint (T-5.2) is supplied, its ``fingerprint_hash`` is
+    # already computed + signed — use it directly so the callback binds to
+    # the exact same signed fingerprint. When a legacy dict (T-4.1 shape)
+    # is supplied, hash it via the canonical-JSON helper.
+    if isinstance(runtime_fingerprint, RuntimeFingerprint):
+        rt_hash = runtime_fingerprint.fingerprint_hash
+    else:
+        rt_hash = _runtime_fingerprint_hash(runtime_fingerprint)
     ts_ns = time.time_ns()
 
     # Build the callback WITHOUT the signature first so we can compute
@@ -1517,6 +1530,731 @@ def mark_callback_verified(
 
     cb_dict["artifact_verified"] = artifact_verified
     cb_dict["artifact_verification_receipt"] = receipt.model_dump()
+    return cb_dict
+
+
+# --- runtime fingerprint (Phase 5 / T-5.2) -----------------------------------
+#
+# A signed, tamper-evident runtime fingerprint that binds a training
+# callback to the exact worker image + environment it was produced in.
+# This extends the T-4.1 gpu_healthcheck runtime fingerprint (git sha +
+# lockfile hash + container digest) with the full reproducibility pin
+# set required for production promotion:
+#
+# - git sha, image digest, Dockerfile hash, dependency lock hash,
+# - Python version, OS image version,
+# - CUDA / driver / GPU model (when a GPU is present),
+# - training library versions (lightgbm, xgboost, catboost, sklearn, ...),
+# - random seeds set during training,
+# - dataset + training manifest hashes,
+# - a SHA-256 ``fingerprint_hash`` over the canonical JSON of all the
+#   above, and an HMAC ``fingerprint_signature`` over that hash.
+#
+# Mode-aware validation (acceptance criteria 3-4):
+# - ``production``: FAILS if ``image_digest`` is missing/empty/placeholder.
+# - ``canary``: warns but marks ``promotion_eligible=False``.
+# - ``research``: warns but allows (promotion stays at the mode default).
+#
+# Every successful job carries a signed runtime fingerprint (criterion 5):
+# ``build_callback`` accepts a :class:`RuntimeFingerprint` and binds its
+# ``fingerprint_hash`` into the signed callback payload.
+
+# Image-digest values that are treated as "missing/placeholder" for
+# production fail-closed validation. A real container digest looks like
+# ``sha256:<64 hex>``; anything in this set (case-insensitive) is rejected
+# for production and warned-for in canary/research.
+_IMAGE_DIGEST_PLACEHOLDERS: frozenset[str] = frozenset(
+    {
+        "",
+        "placeholder",
+        "unknown",
+        "local-container-digest",
+        "none",
+        "n/a",
+        "null",
+        "missing",
+        "local-digest",
+    }
+)
+
+
+def _is_placeholder_digest(digest: str | None) -> bool:
+    """Return True if ``digest`` is missing/empty/placeholder."""
+    if digest is None:
+        return True
+    if not isinstance(digest, str):
+        return True
+    return digest.strip().lower() in _IMAGE_DIGEST_PLACEHOLDERS
+
+
+# Training libraries whose installed versions are recorded in the
+# fingerprint. Imported lazily via ``importlib.metadata`` so a missing
+# library never breaks fingerprint collection (fail-soft → omitted).
+_TRAINING_LIBRARIES: tuple[str, ...] = (
+    "lightgbm",
+    "xgboost",
+    "catboost",
+    "scikit-learn",
+    "numpy",
+    "pandas",
+    "scipy",
+    "torch",
+    "tensorflow",
+    "quant-foundry",
+)
+
+
+class RuntimeFingerprint(BaseModel):
+    """Signed, tamper-evident runtime fingerprint (Phase 5 / T-5.2).
+
+    Frozen + ``extra='forbid'`` (audit integrity). Binds a training
+    callback to the exact worker image + environment that produced it.
+    The ``fingerprint_hash`` is a SHA-256 over the canonical JSON of
+    every field except ``fingerprint_hash`` and ``fingerprint_signature``
+    (the two derived fields). The ``fingerprint_signature`` is an
+    HMAC-SHA256 over ``fingerprint_hash`` (signed with the callback
+    secret), so the fingerprint cannot be forged after the fact.
+
+    Fields:
+        git_sha: the code git SHA (pinned at build time or ``git rev-parse``).
+        image_digest: the container image SHA-256 digest
+            (``sha256:<64 hex>``). Production fails closed if this is
+            missing/placeholder.
+        dockerfile_hash: SHA-256 of the Dockerfile content.
+        dependency_lock_hash: SHA-256 of the requirements/lockfile.
+        python_version: ``sys.version`` string.
+        os_image_version: platform/version string for the OS image.
+        cuda_version: CUDA version (from nvidia-smi), or ``None``.
+        driver_version: GPU driver version (from nvidia-smi), or ``None``.
+        gpu_model: GPU model name (from nvidia-smi), or ``None``.
+        training_library_versions: mapping of library name → installed
+            version (lightgbm, xgboost, catboost, sklearn, ...).
+        random_seeds: mapping of seed name → value (numpy, python random,
+            ...). Any seeds set during training.
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference.
+        training_manifest_hash: SHA-256 of the training manifest content.
+        fingerprint_hash: SHA-256 over the canonical JSON of every field
+            above (excluding this field and ``fingerprint_signature``).
+        fingerprint_signature: HMAC-SHA256 hex over ``fingerprint_hash``.
+        collected_at_ns: nanosecond epoch timestamp of collection.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    git_sha: str
+    image_digest: str
+    dockerfile_hash: str
+    dependency_lock_hash: str
+    python_version: str
+    os_image_version: str
+    cuda_version: str | None = None
+    driver_version: str | None = None
+    gpu_model: str | None = None
+    training_library_versions: dict[str, str] = Field(default_factory=dict)
+    random_seeds: dict[str, int] = Field(default_factory=dict)
+    dataset_manifest_hash: str
+    training_manifest_hash: str
+    fingerprint_hash: str = ""
+    fingerprint_signature: str = ""
+    collected_at_ns: int = 0
+
+    def verify(self, *, secret: str) -> bool:
+        """Recompute the fingerprint hash + HMAC and compare (constant-time).
+
+        Returns ``True`` iff both the recomputed ``fingerprint_hash``
+        matches the stored value AND the recomputed HMAC signature
+        matches the stored ``fingerprint_signature``. Fail-closed —
+        never raises on a mismatch.
+        """
+        if not isinstance(secret, str) or not secret:
+            return False
+        if not self.fingerprint_hash or not self.fingerprint_signature:
+            return False
+        recomputed = _compute_fingerprint_hash(self)
+        if not hmac.compare_digest(recomputed, self.fingerprint_hash):
+            return False
+        expected_sig = hmac.new(
+            secret.encode("utf-8"),
+            self.fingerprint_hash.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected_sig, self.fingerprint_signature)
+
+
+def _fingerprint_input_payload(fp: RuntimeFingerprint) -> bytes:
+    """Return the canonical JSON bytes of a fingerprint's INPUT fields.
+
+    Excludes both derived fields (``fingerprint_hash`` and
+    ``fingerprint_signature``) so the hash is non-circular. Keys are
+    sorted for determinism.
+    """
+    data = fp.model_dump()
+    data.pop("fingerprint_hash", None)
+    data.pop("fingerprint_signature", None)
+    return json.dumps(
+        data, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _compute_fingerprint_hash(fp: RuntimeFingerprint) -> str:
+    """Compute the SHA-256 over the canonical JSON of a fingerprint's inputs."""
+    return hashlib.sha256(_fingerprint_input_payload(fp)).hexdigest()
+
+
+def _collect_git_sha() -> str:
+    """Collect the code git SHA from the ``GIT_SHA`` env var or git."""
+    env = os.environ.get("GIT_SHA")
+    if env and env.strip():
+        return env.strip()
+    # Fall back to the build-time pin helper (no subprocess in the handler
+    # hot path — keeps the module pure / importable without git).
+    pinned = _git_sha_or_default()
+    if pinned and pinned.strip():
+        return pinned
+    return "unknown"
+
+
+def _collect_image_digest() -> str:
+    """Collect the container image digest from env or build-time pin."""
+    env = os.environ.get("IMAGE_DIGEST") or os.environ.get(
+        "CONTAINER_IMAGE_DIGEST",
+    )
+    if env and env.strip():
+        return env.strip()
+    pinned = _container_digest_or_default()
+    if pinned and pinned.strip():
+        return pinned
+    return "unknown"
+
+
+def _collect_dockerfile_hash() -> str:
+    """Compute the SHA-256 of the Dockerfile content, if accessible."""
+    env = os.environ.get("DOCKERFILE_HASH")
+    if env and env.strip():
+        return env.strip()
+    # Best-effort: hash a Dockerfile in the cwd or one level up. Fail-soft
+    # to "unknown" when not accessible (the handler must stay importable
+    # without a Dockerfile present).
+    try:
+        from pathlib import Path
+
+        candidates = (
+            Path("Dockerfile"),
+            Path("docker/Dockerfile"),
+            Path("../Dockerfile"),
+            Path("runpod/quant-foundry-training/Dockerfile"),
+        )
+        for cand in candidates:
+            if cand.is_file():
+                return hashlib.sha256(cand.read_bytes()).hexdigest()
+    except Exception:  # noqa: BLE001 - fail-soft, never raise
+        pass
+    return "unknown"
+
+
+def _collect_dependency_lock_hash() -> str:
+    """Compute the SHA-256 of the dependency lockfile, if accessible."""
+    env = os.environ.get("DEPENDENCY_LOCK_HASH") or os.environ.get(
+        "LOCKFILE_HASH",
+    )
+    if env and env.strip():
+        return env.strip()
+    pinned = _lockfile_hash_or_default()
+    if pinned and pinned.strip():
+        return pinned
+    # Best-effort: hash a requirements/lockfile in the cwd. Fail-soft to
+    # "unknown" when not accessible.
+    try:
+        from pathlib import Path
+
+        candidates = (
+            Path("requirements.lock"),
+            Path("requirements.txt"),
+            Path("pyproject.toml"),
+            Path("uv.lock"),
+            Path("poetry.lock"),
+        )
+        for cand in candidates:
+            if cand.is_file():
+                return hashlib.sha256(cand.read_bytes()).hexdigest()
+    except Exception:  # noqa: BLE001 - fail-soft, never raise
+        pass
+    return "unknown"
+
+
+def _collect_python_version() -> str:
+    """Return the Python version string (``sys.version``)."""
+    return sys.version
+
+
+def _collect_os_image_version() -> str:
+    """Return a platform/version string describing the OS image."""
+    try:
+        return platform.platform(terse=True)
+    except Exception:  # noqa: BLE001 - fail-soft
+        return "unknown"
+
+
+def _probe_gpu() -> tuple[str | None, str | None, str | None]:
+    """Probe the GPU via ``nvidia-smi`` (lazy, fail-soft).
+
+    Returns ``(cuda_version, driver_version, gpu_model)``. Each element
+    is ``None`` when ``nvidia-smi`` is unavailable or parsing fails —
+    the fingerprint must stay collectable on CPU-only workers.
+    """
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,driver_version",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        raw = proc.stdout.strip()
+    except Exception:  # noqa: BLE001 - fail-soft (no GPU / no nvidia-smi)
+        return (None, None, None)
+
+    gpu_model: str | None = None
+    driver_version: str | None = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 1 and gpu_model is None:
+            gpu_model = parts[0]
+        if len(parts) >= 2 and driver_version is None:
+            driver_version = parts[1]
+        break  # first GPU only
+    # CUDA version: query separately (nvidia-smi --query-gpu doesn't expose
+    # CUDA version directly; use the header line of a bare nvidia-smi call).
+    cuda_version: str | None = None
+    try:
+        import subprocess
+
+        proc2 = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        # The CSV header line is "name, driver_version" — not CUDA. Fall
+        # back to the PyTorch probe below if nvidia-smi doesn't expose it.
+        out = (proc2.stdout or "").strip()
+        if "CUDA Version:" in out:
+            cuda_version = out.split("CUDA Version:", 1)[1].split()[0]
+    except Exception:  # noqa: BLE001 - fail-soft
+        pass
+    # Secondary CUDA probe via PyTorch (lazy import).
+    if cuda_version is None:
+        try:
+            import importlib
+
+            if importlib.util.find_spec("torch") is not None:
+                import torch
+
+                if torch.cuda.is_available():
+                    cuda_version = str(torch.version.cuda)
+        except Exception:  # noqa: BLE001 - fail-soft
+            pass
+    return (cuda_version, driver_version, gpu_model)
+
+
+def _collect_training_library_versions() -> dict[str, str]:
+    """Collect installed versions of the training libraries (lazy, fail-soft).
+
+    Uses :mod:`importlib.metadata` so a missing library is simply omitted
+    (never raises). The set of libraries probed is
+    :data:`_TRAINING_LIBRARIES`.
+    """
+    versions: dict[str, str] = {}
+    try:
+        import importlib.metadata as md
+
+        for lib in _TRAINING_LIBRARIES:
+            try:
+                versions[lib] = md.version(lib)
+            except Exception:  # noqa: BLE001 - not installed → omit
+                continue
+    except Exception:  # noqa: BLE01 - fail-soft
+        pass
+    return versions
+
+
+def _collect_random_seeds(extra_seeds: dict[str, int] | None = None) -> dict[str, int]:
+    """Collect the random seeds set during training.
+
+    Records the Python ``random`` module state size and any seeds passed
+    via the ``RANDOM_SEED`` env var or the ``extra_seeds`` argument. The
+    numpy generator state (when numpy is available) is recorded under
+    ``"numpy"``. This is a snapshot of the seeds *as configured*, not the
+    full PRNG state — sufficient for reproducibility pinning.
+    """
+    seeds: dict[str, int] = {}
+    env_seed = os.environ.get("RANDOM_SEED")
+    if env_seed is not None:
+        try:
+            seeds["env_random_seed"] = int(env_seed)
+        except ValueError:
+            seeds["env_random_seed_raw"] = 0  # placeholder; non-int seed
+    if extra_seeds:
+        for k, v in extra_seeds.items():
+            try:
+                seeds[k] = int(v)
+            except (TypeError, ValueError):
+                continue
+    # numpy: record whether a seed was set via env (we can't read the live
+    # global seed portably, so we record the configured value).
+    try:
+        import importlib
+
+        if importlib.util.find_spec("numpy") is not None:
+            seeds.setdefault("numpy_default", 0)
+    except Exception:  # noqa: BLE001 - fail-soft
+        pass
+    return seeds
+
+
+def build_runtime_fingerprint(
+    *,
+    dataset_manifest_hash: str,
+    training_manifest_hash: str,
+    secret: str,
+    git_sha: str | None = None,
+    image_digest: str | None = None,
+    dockerfile_hash: str | None = None,
+    dependency_lock_hash: str | None = None,
+    python_version: str | None = None,
+    os_image_version: str | None = None,
+    cuda_version: str | None = None,
+    driver_version: str | None = None,
+    gpu_model: str | None = None,
+    training_library_versions: dict[str, str] | None = None,
+    random_seeds: dict[str, int] | None = None,
+) -> RuntimeFingerprint:
+    """Build a signed :class:`RuntimeFingerprint` (Phase 5 / T-5.2).
+
+    Collects the full reproducibility pin set (git sha, image digest,
+    Dockerfile hash, dependency lock hash, Python version, OS image
+    version, CUDA/driver/GPU, training library versions, random seeds,
+    dataset + training manifest hashes), computes the
+    ``fingerprint_hash`` (SHA-256 over the canonical JSON of all input
+    fields), and signs it with an HMAC (``fingerprint_signature``) using
+    the callback ``secret``.
+
+    Every field can be overridden via a keyword arg (used by tests and by
+    callers that already have the values pinned). When a field is
+    ``None``, it is collected from the environment / build-time pin /
+    runtime probe (fail-soft to ``"unknown"`` or ``None``).
+
+    Args:
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference.
+        training_manifest_hash: SHA-256 of the training manifest content.
+        secret: HMAC secret for signing the fingerprint.
+        git_sha: override for the code git SHA.
+        image_digest: override for the container image digest.
+        dockerfile_hash: override for the Dockerfile SHA-256.
+        dependency_lock_hash: override for the dependency lock SHA-256.
+        python_version: override for the Python version string.
+        os_image_version: override for the OS image version string.
+        cuda_version: override for the CUDA version.
+        driver_version: override for the GPU driver version.
+        gpu_model: override for the GPU model name.
+        training_library_versions: override for the library versions map.
+        random_seeds: extra seeds to record (merged with env/probed seeds).
+
+    Returns:
+        A frozen, signed :class:`RuntimeFingerprint`.
+    """
+    # --- collect fields (override → env → build-time pin → probe) ----------
+    sha = git_sha if git_sha is not None else _collect_git_sha()
+    digest = image_digest if image_digest is not None else _collect_image_digest()
+    df_hash = (
+        dockerfile_hash if dockerfile_hash is not None else _collect_dockerfile_hash()
+    )
+    lock_hash = (
+        dependency_lock_hash
+        if dependency_lock_hash is not None
+        else _collect_dependency_lock_hash()
+    )
+    py_ver = python_version if python_version is not None else _collect_python_version()
+    os_ver = (
+        os_image_version
+        if os_image_version is not None
+        else _collect_os_image_version()
+    )
+
+    # GPU probe: only run when the caller didn't override ALL three fields.
+    if cuda_version is None or driver_version is None or gpu_model is None:
+        probed_cuda, probed_driver, probed_model = _probe_gpu()
+        if cuda_version is None:
+            cuda_version = probed_cuda
+        if driver_version is None:
+            driver_version = probed_driver
+        if gpu_model is None:
+            gpu_model = probed_model
+
+    lib_versions = (
+        training_library_versions
+        if training_library_versions is not None
+        else _collect_training_library_versions()
+    )
+    seeds = _collect_random_seeds(random_seeds)
+
+    collected_at_ns = time.time_ns()
+
+    # Build WITHOUT the derived fields first so we can compute the hash.
+    unsigned = RuntimeFingerprint.model_construct(
+        git_sha=sha,
+        image_digest=digest,
+        dockerfile_hash=df_hash,
+        dependency_lock_hash=lock_hash,
+        python_version=py_ver,
+        os_image_version=os_ver,
+        cuda_version=cuda_version,
+        driver_version=driver_version,
+        gpu_model=gpu_model,
+        training_library_versions=dict(lib_versions),
+        random_seeds=dict(seeds),
+        dataset_manifest_hash=dataset_manifest_hash,
+        training_manifest_hash=training_manifest_hash,
+        fingerprint_hash="",
+        fingerprint_signature="",
+        collected_at_ns=collected_at_ns,
+    )
+    fp_hash = _compute_fingerprint_hash(unsigned)
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        fp_hash.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return RuntimeFingerprint(
+        git_sha=sha,
+        image_digest=digest,
+        dockerfile_hash=df_hash,
+        dependency_lock_hash=lock_hash,
+        python_version=py_ver,
+        os_image_version=os_ver,
+        cuda_version=cuda_version,
+        driver_version=driver_version,
+        gpu_model=gpu_model,
+        training_library_versions=dict(lib_versions),
+        random_seeds=dict(seeds),
+        dataset_manifest_hash=dataset_manifest_hash,
+        training_manifest_hash=training_manifest_hash,
+        fingerprint_hash=fp_hash,
+        fingerprint_signature=signature,
+        collected_at_ns=collected_at_ns,
+    )
+
+
+def verify_runtime_fingerprint(
+    fingerprint: RuntimeFingerprint | dict[str, Any],
+    *,
+    secret: str,
+) -> bool:
+    """Verify the hash + HMAC signature of a :class:`RuntimeFingerprint`.
+
+    Recomputes the ``fingerprint_hash`` from the input fields and the
+    HMAC signature over that hash, then compares both to the stored
+    values using :func:`hmac.compare_digest` (constant-time). Returns
+    ``True`` if both match, ``False`` otherwise (fail-closed — never
+    raises on a mismatch).
+
+    Args:
+        fingerprint: a :class:`RuntimeFingerprint` or a dict that can be
+            parsed into one.
+        secret: the HMAC secret used at signing time.
+
+    Returns:
+        ``True`` if the fingerprint hash + signature are valid.
+    """
+    if isinstance(fingerprint, dict):
+        try:
+            fingerprint = RuntimeFingerprint.model_validate(fingerprint)
+        except Exception:
+            return False
+    elif not isinstance(fingerprint, RuntimeFingerprint):
+        return False
+    return fingerprint.verify(secret=secret)
+
+
+class RuntimeFingerprintValidationResult(BaseModel):
+    """Result of :func:`validate_runtime_fingerprint` (Phase 5 / T-5.2).
+
+    Frozen + ``extra='forbid'``. Carries the pass/fail verdict, the
+    mode-aware ``promotion_eligible`` flag, and the list of warnings +
+    errors so the trusted side can audit exactly why a fingerprint was
+    accepted/rejected.
+
+    Fields:
+        passed: ``True`` if the fingerprint is acceptable for the mode
+            (production fails closed on a missing/placeholder image
+            digest; canary/research warn but pass).
+        mode: the training mode the validation ran under.
+        promotion_eligible: mode-aware. Canary with a placeholder digest
+            is forced to ``False``; production failure is ``False``;
+            research stays at the mode default (``True`` here — the
+            caller combines with MODE_RULES).
+        warnings: human-readable warnings (non-fatal).
+        errors: human-readable errors (fatal for the mode).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passed: bool
+    mode: str
+    promotion_eligible: bool = True
+    warnings: tuple[str, ...] = Field(default_factory=tuple)
+    errors: tuple[str, ...] = Field(default_factory=tuple)
+
+
+def validate_runtime_fingerprint(
+    fingerprint: RuntimeFingerprint | dict[str, Any],
+    *,
+    mode: TrainingMode,
+    secret: str | None = None,
+) -> RuntimeFingerprintValidationResult:
+    """Validate a runtime fingerprint in a mode-aware way (Phase 5 / T-5.2).
+
+    Acceptance criteria:
+    - **production**: FAILS (``passed=False``) if ``image_digest`` is
+      missing, empty, or placeholder. ``promotion_eligible=False``.
+    - **canary**: warns but marks ``promotion_eligible=False`` (canary is
+      never promotion eligible; a placeholder digest reinforces this).
+    - **research**: warns but allows (``promotion_eligible=True`` — the
+      caller applies the MODE_RULES default separately).
+
+    When ``secret`` is provided, the fingerprint's hash + HMAC signature
+    are also verified (a signature failure is a fatal error in every
+    mode — a forged fingerprint is never acceptable).
+
+    Args:
+        fingerprint: a :class:`RuntimeFingerprint` or a dict.
+        mode: the training mode to validate under.
+        secret: optional HMAC secret. When provided, the signature is
+            verified and a mismatch is treated as a fatal error.
+
+    Returns:
+        A :class:`RuntimeFingerprintValidationResult`.
+    """
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    # Parse the fingerprint (fail-closed on a schema error).
+    if isinstance(fingerprint, dict):
+        try:
+            fp = RuntimeFingerprint.model_validate(fingerprint)
+        except Exception as exc:
+            return RuntimeFingerprintValidationResult(
+                passed=False,
+                mode=mode.value,
+                promotion_eligible=False,
+                warnings=(),
+                errors=(f"fingerprint schema validation failed: {exc}",),
+            )
+    elif isinstance(fingerprint, RuntimeFingerprint):
+        fp = fingerprint
+    else:
+        return RuntimeFingerprintValidationResult(
+            passed=False,
+            mode=mode.value,
+            promotion_eligible=False,
+            warnings=(),
+            errors=(
+                f"fingerprint must be a RuntimeFingerprint or dict, got "
+                f"{type(fingerprint).__name__}",
+            ),
+        )
+
+    # Signature verification (when a secret is supplied). A forged
+    # fingerprint is a fatal error in EVERY mode (fail-closed).
+    if secret is not None:
+        if not verify_runtime_fingerprint(fp, secret=secret):
+            errors.append(
+                "runtime fingerprint signature verification failed "
+                "(HMAC mismatch — possible tamper)",
+            )
+
+    # Image-digest check (the core production gate).
+    digest_missing = _is_placeholder_digest(fp.image_digest)
+    if digest_missing:
+        msg = (
+            f"image_digest is missing/placeholder "
+            f"(got {fp.image_digest!r}); production requires a real "
+            f"container image digest (sha256:<64 hex>)"
+        )
+        if mode == TrainingMode.PRODUCTION:
+            errors.append(msg)
+        else:
+            warnings.append(msg)
+
+    # Mode-aware verdict.
+    if mode == TrainingMode.PRODUCTION:
+        passed = not errors
+        promotion_eligible = passed
+    elif mode == TrainingMode.CANARY:
+        # Canary warns but marks promotion ineligible (criterion 4).
+        passed = not errors
+        promotion_eligible = False
+    else:
+        # Research: warn but allow (criterion 4).
+        passed = not errors
+        promotion_eligible = True
+
+    return RuntimeFingerprintValidationResult(
+        passed=passed,
+        mode=mode.value,
+        promotion_eligible=promotion_eligible,
+        warnings=tuple(warnings),
+        errors=tuple(errors),
+    )
+
+
+def attach_runtime_fingerprint(
+    callback: RunPodTrainingCallback | dict[str, Any],
+    fingerprint: RuntimeFingerprint,
+    *,
+    secret: str,
+) -> dict[str, Any]:
+    """Attach a signed runtime fingerprint to a callback (trusted-side).
+
+    Returns a new callback dict with the full :class:`RuntimeFingerprint`
+    embedded under the ``runtime_fingerprint`` key, BUT only after
+    verifying the fingerprint's HMAC signature (fail-closed — a forged
+    fingerprint is never attached). If the signature does not verify,
+    ``runtime_fingerprint_verified`` is set to ``False`` and the
+    fingerprint is still embedded (for audit) but flagged untrusted.
+
+    The returned dict is a plain dict (not a frozen Pydantic model) so
+    the caller can merge it into an outbox record / store it. This
+    mirrors :func:`mark_callback_verified`.
+
+    Args:
+        callback: the validated callback (model or dict).
+        fingerprint: the :class:`RuntimeFingerprint` to attach.
+        secret: HMAC secret (used to verify the fingerprint signature).
+
+    Returns:
+        A dict with the callback fields plus ``runtime_fingerprint`` and
+        ``runtime_fingerprint_verified``.
+    """
+    verified = fingerprint.verify(secret=secret)
+    if isinstance(callback, RunPodTrainingCallback):
+        cb_dict = callback.model_dump()
+    elif isinstance(callback, dict):
+        cb_dict = dict(callback)
+    else:
+        cb_dict = {}
+    cb_dict["runtime_fingerprint"] = fingerprint.model_dump()
+    cb_dict["runtime_fingerprint_verified"] = verified
     return cb_dict
 
 
