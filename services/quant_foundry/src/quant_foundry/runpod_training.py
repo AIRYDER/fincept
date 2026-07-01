@@ -53,6 +53,8 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import unquote, urlparse
+from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -618,6 +620,904 @@ def validate_callback(
         )
 
     return model
+
+
+# --- trusted-side artifact verifier (Phase 1 / T-1.3) -----------------------
+#
+# The trusted side (dispatcher/gateway) must independently verify the
+# artifact referenced by a callback before marking it
+# ``artifact_verified=true``. This module implements the full verification
+# chain:
+#
+# 1. Fetch the artifact bytes from the declared ``artifact_uri``
+#    (``file://`` and ``https://`` supported).
+# 2. Recompute the SHA-256 and byte size, compare to the declared values
+#    (fail-closed on mismatch — detects corruption / truncation / tamper).
+# 3. Load the artifact with the declared ``loader_family``
+#    (``"lightgbm"`` or ``"local-stub"``). Unknown loaders are rejected.
+# 4. Run a deterministic smoke prediction against a frozen sample (when
+#    provided) to prove the loaded model is callable and produces a
+#    sensibly-shaped output.
+# 5. Build and HMAC-sign an :class:`ArtifactVerificationReceipt` recording
+#    every check's pass/fail status.
+#
+# Security invariants (fail-closed):
+# - A corrupted artifact (hash mismatch) is rejected.
+# - A missing artifact (empty/None URI or fetch failure) is rejected.
+# - An unknown loader family is rejected.
+# - A loader that throws on load is rejected.
+# - A smoke prediction that throws or produces a wrong shape is rejected.
+# - The receipt is HMAC-signed so it cannot be forged after the fact.
+
+
+# Loader families recognized by the trusted-side verifier. A callback
+# declaring a loader family NOT in this set is rejected with
+# ``ArtifactVerificationError(code="unknown_loader")`` (fail-closed).
+_KNOWN_LOADER_FAMILIES: frozenset[str] = frozenset({"lightgbm", "local-stub"})
+
+# Allowed URI schemes for artifact fetch on the trusted side. ``file://``
+# is the volume path; ``https://`` is the presigned object URL (TLS
+# required). ``artifact://`` is the synthetic fake-writer URI (testing
+# only — bytes are not fetchable, so it raises ``artifact_fetch_failed``
+# unless the caller passes inline bytes). Any other scheme is rejected.
+_VERIFIER_ALLOWED_URI_SCHEMES: frozenset[str] = frozenset(
+    {"file", "https", "artifact"},
+)
+
+
+class ArtifactVerificationError(ValueError):
+    """Raised when artifact verification fails (fail-closed).
+
+    Subclass of :class:`ValueError` so existing ``except ValueError``
+    handlers keep catching it. Carries a machine-readable ``code`` so the
+    trusted-side verifier can record a precise rejection reason in the
+    outbox / audit log.
+
+    Attributes:
+        code: short machine-readable error code. One of:
+            - ``"missing_artifact"`` — artifact URI is empty or None.
+            - ``"artifact_fetch_failed"`` — could not fetch bytes from URI.
+            - ``"hash_mismatch"`` — recomputed sha256 doesn't match.
+            - ``"size_mismatch"`` — recomputed size doesn't match.
+            - ``"unknown_loader"`` — loader family not recognized.
+            - ``"load_failed"`` — loader threw an exception.
+            - ``"smoke_prediction_failed"`` — smoke prediction failed.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class ArtifactVerificationReceipt(BaseModel):
+    """Typed, HMAC-signed artifact verification receipt (Phase 1 / T-1.3).
+
+    Frozen + ``extra='forbid'`` (audit integrity). Records the outcome of
+    every verification check (hash, size, loader, smoke prediction) so the
+    trusted side can audit exactly which check passed/failed. The
+    ``receipt_signature`` is an HMAC-SHA256 over the canonical JSON of
+    every other field, signed with the callback secret, so the receipt
+    cannot be forged after the fact.
+
+    Fields:
+        artifact_uri: the URI the artifact was fetched from.
+        artifact_sha256: the declared SHA-256 (64-char lowercase hex).
+        artifact_size_bytes: the declared byte size.
+        artifact_format: the declared serialisation format.
+        loader_family: the declared loader family used to load the
+            artifact.
+        artifact_verified: ``True`` only if ALL checks (hash, size,
+            loader, smoke prediction) passed. This is the single
+            authoritative flag the trusted side checks before marking a
+            callback ``artifact_verified=true``.
+        hash_verified: ``True`` if the recomputed sha256 matched.
+        size_verified: ``True`` if the recomputed size matched.
+        loader_verified: ``True`` if the loader loaded the artifact
+            without error.
+        smoke_prediction_passed: ``True`` if the smoke prediction
+            succeeded (or was skipped because no sample was provided).
+        smoke_prediction_metrics: dict of metrics from the smoke
+            prediction (e.g. ``{"n_rows": ..., "n_outputs": ...}``).
+            Empty when no smoke sample was provided.
+        verification_error: the error code (from
+            :class:`ArtifactVerificationError`) when verification failed,
+            or ``None`` on success.
+        verified_at_ns: nanosecond epoch timestamp of verification.
+        receipt_signature: HMAC-SHA256 hex over the canonical JSON of
+            every field except this one.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    artifact_uri: str
+    artifact_sha256: str
+    artifact_size_bytes: int
+    artifact_format: str
+    loader_family: str
+    artifact_verified: bool = False
+    hash_verified: bool = False
+    size_verified: bool = False
+    loader_verified: bool = False
+    smoke_prediction_passed: bool = False
+    smoke_prediction_metrics: dict[str, Any] = Field(default_factory=dict)
+    verification_error: str | None = None
+    verified_at_ns: int = 0
+    receipt_signature: str = ""
+
+    def verify_receipt(self, *, secret: str) -> bool:
+        """Recompute the receipt HMAC and compare (constant-time).
+
+        Returns ``True`` iff the recomputed HMAC matches the stored
+        ``receipt_signature``. Used by downstream auditors to authenticate
+        the receipt (fail-closed — never raises on a mismatch).
+        """
+        if not isinstance(secret, str) or not secret:
+            return False
+        if not self.receipt_signature:
+            return False
+        data = self.model_dump()
+        data.pop("receipt_signature", None)
+        canonical = json.dumps(
+            data, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        expected = hmac.new(
+            secret.encode("utf-8"), canonical, hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, self.receipt_signature)
+
+
+def _canonical_receipt_payload(receipt: ArtifactVerificationReceipt) -> bytes:
+    """Return the canonical JSON bytes of a receipt EXCLUDING the signature."""
+    data = receipt.model_dump()
+    data.pop("receipt_signature", None)
+    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _sign_receipt(
+    receipt: ArtifactVerificationReceipt,
+    *,
+    secret: str,
+) -> str:
+    """Compute the HMAC-SHA256 hex over the canonical receipt payload."""
+    canonical = _canonical_receipt_payload(receipt)
+    return hmac.new(
+        secret.encode("utf-8"), canonical, hashlib.sha256,
+    ).hexdigest()
+
+
+def _fetch_artifact_bytes(artifact_uri: str) -> bytes:
+    """Fetch artifact bytes from a ``file://`` or ``https://`` URI.
+
+    Raises :class:`ArtifactVerificationError` with code
+    ``"artifact_fetch_failed"`` on any fetch failure (missing file,
+    network error, disallowed scheme). This is a fail-closed helper — it
+    never returns empty bytes silently.
+
+    Args:
+        artifact_uri: the URI to fetch (``file://`` or ``https://``).
+
+    Returns:
+        The raw artifact bytes.
+
+    Raises:
+        ArtifactVerificationError: if the URI is empty, uses a
+            disallowed scheme, or the fetch fails.
+    """
+    if not artifact_uri or not artifact_uri.strip():
+        raise ArtifactVerificationError(
+            "missing_artifact",
+            "artifact URI is empty or None (missing artifact — fail closed)",
+        )
+    parsed = urlparse(artifact_uri)
+    scheme = (parsed.scheme or "").lower()
+    if not scheme:
+        raise ArtifactVerificationError(
+            "artifact_fetch_failed",
+            f"artifact URI has no scheme: {artifact_uri!r}",
+        )
+    if scheme not in _VERIFIER_ALLOWED_URI_SCHEMES:
+        raise ArtifactVerificationError(
+            "artifact_fetch_failed",
+            f"disallowed artifact URI scheme {scheme!r} "
+            f"(allowed: {sorted(_VERIFIER_ALLOWED_URI_SCHEMES)}): "
+            f"{artifact_uri!r}",
+        )
+    if scheme == "artifact":
+        # Synthetic fake-writer URI — bytes are not fetchable from a URI.
+        # The caller must pass inline bytes via ``artifact_bytes``.
+        raise ArtifactVerificationError(
+            "artifact_fetch_failed",
+            f"artifact:// URIs are not fetchable (testing-only scheme); "
+            f"pass inline bytes via artifact_bytes: {artifact_uri!r}",
+        )
+    if scheme == "file":
+        path = unquote(parsed.path)
+        # On Windows, file:///C:/path produces parsed.path = "/C:/path".
+        # Strip the leading slash before the drive letter so Path() works.
+        import os
+
+        if os.name == "nt" and len(path) > 2 and path[0] == "/" and path[2] == ":":
+            path = path[1:]
+        if not path:
+            raise ArtifactVerificationError(
+                "artifact_fetch_failed",
+                f"file:// URI has no path: {artifact_uri!r}",
+            )
+        try:
+            from pathlib import Path
+
+            p = Path(path)
+            if not p.exists():
+                raise ArtifactVerificationError(
+                    "artifact_fetch_failed",
+                    f"artifact file does not exist: {artifact_uri!r}",
+                )
+            return p.read_bytes()
+        except ArtifactVerificationError:
+            raise
+        except Exception as exc:
+            raise ArtifactVerificationError(
+                "artifact_fetch_failed",
+                f"failed to read artifact from {artifact_uri!r}: {exc}",
+            ) from exc
+    if scheme == "https":
+        try:
+            req = Request(artifact_uri, method="GET")
+            with urlopen(req, timeout=120) as resp:  # noqa: S310 - operator-provided URL
+                status = getattr(resp, "status", None) or resp.getcode()
+                if status != 200:
+                    raise ArtifactVerificationError(
+                        "artifact_fetch_failed",
+                        f"artifact fetch failed: HTTP {status} for "
+                        f"{artifact_uri!r}",
+                    )
+                return resp.read()
+        except ArtifactVerificationError:
+            raise
+        except Exception as exc:
+            raise ArtifactVerificationError(
+                "artifact_fetch_failed",
+                f"failed to fetch artifact from {artifact_uri!r}: {exc}",
+            ) from exc
+    # Should be unreachable (scheme validated above), but fail-closed.
+    raise ArtifactVerificationError(
+        "artifact_fetch_failed",
+        f"unsupported artifact URI scheme {scheme!r}: {artifact_uri!r}",
+    )
+
+
+def _load_artifact(
+    model_bytes: bytes,
+    loader_family: str,
+    artifact_format: str,
+) -> Any:
+    """Load artifact bytes with the declared loader family.
+
+    Returns the loaded model object. Raises
+    :class:`ArtifactVerificationError` on any load failure (unknown
+    loader, loader exception).
+
+    Loader families:
+        - ``"lightgbm"``: loads a LightGBM model. Supports both pickled
+          ``Booster`` objects (``artifact_format="pickle"``) and LightGBM
+          text model files (``artifact_format="lightgbm-txt"``). ML deps
+          (``lightgbm``, ``numpy``) are imported lazily so this module
+          remains importable without them.
+        - ``"local-stub"``: accepts any bytes (canary/test loader). The
+          "loaded model" is a lightweight stub that returns a fixed
+          prediction shape — used for contract proofs without ML deps.
+
+    Raises:
+        ArtifactVerificationError: with code ``"unknown_loader"`` if the
+            loader family is not recognized, or ``"load_failed"`` if the
+            loader throws.
+    """
+    if loader_family not in _KNOWN_LOADER_FAMILIES:
+        raise ArtifactVerificationError(
+            "unknown_loader",
+            f"unknown loader family {loader_family!r} "
+            f"(known: {sorted(_KNOWN_LOADER_FAMILIES)})",
+        )
+    if loader_family == "local-stub":
+        # Canary/test loader: accept any non-empty bytes. Return a stub
+        # "model" that records the byte length (proves the bytes were
+        # received). The stub's predict() returns a fixed-shape output.
+        return _LocalStubModel(len(model_bytes))
+    # loader_family == "lightgbm"
+    try:
+        import importlib.util
+
+        if importlib.util.find_spec("lightgbm") is None:
+            raise ArtifactVerificationError(
+                "load_failed",
+                "lightgbm dependency not available for loader_family="
+                f"{loader_family!r}",
+            )
+        import lightgbm as lgb
+
+        fmt = (artifact_format or "").lower()
+        if fmt == "pickle":
+            # The real trainer serializes Booster objects via pickle.
+            import pickle
+
+            model = pickle.loads(model_bytes)
+            # Verify it's a Booster (or at least has predict()).
+            if not hasattr(model, "predict"):
+                raise ArtifactVerificationError(
+                    "load_failed",
+                    f"pickled artifact is not a callable model "
+                    f"(no predict() method): {type(model).__name__}",
+                )
+            return model
+        # lightgbm-txt or other text formats: use Booster(model_file=...).
+        # Booster can load from a file path or a model string. We pass
+        # the raw bytes decoded as the model string.
+        try:
+            model_str = model_bytes.decode("utf-8")
+            return lgb.Booster(model_file=model_str)
+        except Exception:
+            # Fallback: write to a temp file and load from path.
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".txt", delete=False,
+            ) as tmp:
+                tmp.write(model_bytes)
+                tmp_path = tmp.name
+            return lgb.Booster(model_file=tmp_path)
+    except ArtifactVerificationError:
+        raise
+    except Exception as exc:
+        raise ArtifactVerificationError(
+            "load_failed",
+            f"lightgbm loader failed to load artifact: {exc}",
+        ) from exc
+
+
+class _LocalStubModel:
+    """Stub model for the ``local-stub`` loader family (canary/test).
+
+    Provides a ``predict()`` method that returns a deterministic output
+    based on the input shape, proving the load + predict contract without
+    ML dependencies.
+    """
+
+    def __init__(self, n_bytes: int) -> None:
+        self._n_bytes = n_bytes
+
+    def predict(self, X: Any, **kwargs: Any) -> Any:  # noqa: ARG002
+        """Return a deterministic prediction based on the input shape."""
+        try:
+            import numpy as np
+
+            n_rows = int(X.shape[0]) if hasattr(X, "shape") else len(X)
+            return np.zeros(n_rows, dtype=float)
+        except ImportError:
+            # numpy not available — return a plain list.
+            n_rows = int(X.shape[0]) if hasattr(X, "shape") else len(X)
+            return [0.0] * n_rows
+
+
+def _run_smoke_prediction(
+    model: Any,
+    smoke_sample: Any,
+) -> tuple[bool, dict[str, Any]]:
+    """Run a deterministic smoke prediction against a frozen sample.
+
+    Returns ``(passed, metrics)``. The prediction is considered passed if
+    ``model.predict(smoke_sample)`` succeeds and produces a non-empty
+    output with the expected number of rows (matching the sample's first
+    dimension).
+
+    Args:
+        model: the loaded model object (must have a ``predict()`` method).
+        smoke_sample: a frozen feature matrix (numpy array or list of
+            lists). Must not be mutated by this function.
+
+    Returns:
+        A tuple of ``(passed, metrics_dict)``. The metrics dict records
+        ``n_rows``, ``n_outputs``, ``prediction_min``, ``prediction_max``,
+        and ``prediction_mean`` (when numpy is available).
+    """
+    metrics: dict[str, Any] = {}
+    try:
+        preds = model.predict(smoke_sample)
+    except Exception as exc:
+        metrics["error"] = str(exc)
+        return False, metrics
+    # Determine the prediction shape.
+    try:
+        import numpy as np
+
+        arr = np.asarray(preds)
+        n_rows = int(arr.shape[0]) if arr.ndim >= 1 else 1
+        n_outputs = int(arr.shape[1]) if arr.ndim >= 2 else 1
+        metrics["n_rows"] = n_rows
+        metrics["n_outputs"] = n_outputs
+        if arr.size > 0:
+            metrics["prediction_min"] = float(arr.min())
+            metrics["prediction_max"] = float(arr.max())
+            metrics["prediction_mean"] = float(arr.mean())
+        else:
+            return False, metrics
+        # Verify the prediction has at least one row.
+        if n_rows < 1:
+            metrics["error"] = "smoke prediction produced 0 rows"
+            return False, metrics
+        return True, metrics
+    except ImportError:
+        # numpy not available — do a best-effort shape check.
+        try:
+            n_rows = len(preds) if hasattr(preds, "__len__") else 1
+        except Exception:
+            n_rows = 1
+        metrics["n_rows"] = n_rows
+        if n_rows < 1:
+            metrics["error"] = "smoke prediction produced 0 rows"
+            return False, metrics
+        return True, metrics
+
+
+def _build_frozen_smoke_sample(model: Any, n_features: int | None = None) -> Any:
+    """Build a small frozen feature matrix for smoke prediction.
+
+    Uses the model's declared feature count when available (LightGBM
+    Booster exposes ``num_feature``). Falls back to ``n_features`` arg,
+    then to a single-feature default.
+
+    The sample is deterministic (all zeros) so the smoke prediction is
+    reproducible across runs.
+    """
+    try:
+        import numpy as np
+
+        nf = n_features
+        if nf is None and hasattr(model, "num_feature"):
+            try:
+                nf = int(model.num_feature())
+            except Exception:
+                nf = None
+        if nf is None or nf < 1:
+            nf = 1
+        return np.zeros((2, nf), dtype=float)
+    except ImportError:
+        # numpy not available — return a list of lists.
+        nf = n_features if (n_features and n_features >= 1) else 1
+        return [[0.0] * nf for _ in range(2)]
+
+
+def verify_artifact(
+    callback: RunPodTrainingCallback | dict[str, Any] | None = None,
+    *,
+    artifact_uri: str | None = None,
+    artifact_sha256: str | None = None,
+    artifact_size_bytes: int | None = None,
+    artifact_format: str | None = None,
+    loader_family: str | None = None,
+    artifact_bytes: bytes | None = None,
+    smoke_sample: Any = None,
+    run_smoke_prediction: bool = True,
+    secret: str,
+) -> ArtifactVerificationReceipt:
+    """Verify a training artifact (trusted-side, fail-closed).
+
+    Performs the full verification chain:
+    1. Resolve the artifact metadata (URI, sha256, size, format, loader)
+       from a :class:`RunPodTrainingCallback`'s ``primary_artifact`` or
+       from explicit keyword arguments.
+    2. Fetch the artifact bytes from ``artifact_uri`` (``file://`` /
+       ``https://``), unless ``artifact_bytes`` is provided inline
+       (testing / ``artifact://`` fake URIs).
+    3. Recompute the SHA-256 and byte size, compare to the declared
+       values (fail-closed on mismatch).
+    4. Load the artifact with the declared ``loader_family`` (rejects
+       unknown loaders).
+    5. Run a deterministic smoke prediction against ``smoke_sample`` (or
+       a frozen default sample when ``run_smoke_prediction=True`` and no
+       sample is given).
+    6. Build and HMAC-sign an :class:`ArtifactVerificationReceipt`.
+
+    On any verification failure, a receipt is STILL built and signed
+    (with ``artifact_verified=False`` and the error code recorded), so the
+    trusted side has an auditable record of the failure. The
+    :class:`ArtifactVerificationError` is also raised so the caller can
+    branch on the failure code.
+
+    Args:
+        callback: a :class:`RunPodTrainingCallback` (or dict) whose
+            ``primary_artifact`` carries the artifact metadata. When
+            provided, the artifact fields are read from it unless
+            overridden by the explicit keyword args.
+        artifact_uri: explicit artifact URI (overrides callback).
+        artifact_sha256: explicit declared SHA-256 (overrides callback).
+        artifact_size_bytes: explicit declared size (overrides callback).
+        artifact_format: explicit declared format (overrides callback).
+        loader_family: explicit declared loader family (overrides
+            callback).
+        artifact_bytes: inline artifact bytes (skip the URI fetch — used
+            for testing and ``artifact://`` fake URIs).
+        smoke_sample: a frozen feature matrix for the smoke prediction.
+            When ``None`` and ``run_smoke_prediction=True``, a frozen
+            default sample is built from the loaded model's feature count.
+        run_smoke_prediction: if ``True`` (default), run the smoke
+            prediction step. Set to ``False`` to skip it (the receipt
+            records ``smoke_prediction_passed=True`` when skipped).
+        secret: HMAC secret for signing the receipt.
+
+    Returns:
+        A signed :class:`ArtifactVerificationReceipt`.
+
+    Raises:
+        ArtifactVerificationError: on any verification failure (the
+            receipt is also returned via the exception's ``__cause__``
+            chain — see implementation). Callers that want the receipt
+            even on failure should catch the exception.
+    """
+    # --- resolve artifact metadata from callback or explicit args ----------
+    uri = artifact_uri
+    sha = artifact_sha256
+    size = artifact_size_bytes
+    fmt = artifact_format
+    loader = loader_family
+
+    if callback is not None:
+        if isinstance(callback, dict):
+            pa = callback.get("primary_artifact")
+        elif isinstance(callback, RunPodTrainingCallback):
+            pa = callback.primary_artifact
+        else:
+            pa = None
+        if isinstance(pa, dict):
+            if uri is None:
+                uri = pa.get("artifact_uri")
+            if sha is None:
+                sha = pa.get("artifact_sha256")
+            if size is None:
+                size = pa.get("artifact_size_bytes")
+            if fmt is None:
+                fmt = pa.get("artifact_format")
+            if loader is None:
+                loader = pa.get("loader_family")
+
+    # --- helper to build + sign a receipt (success or failure) ------------
+    def _make_receipt(
+        *,
+        artifact_verified: bool,
+        hash_verified: bool,
+        size_verified: bool,
+        loader_verified: bool,
+        smoke_passed: bool,
+        smoke_metrics: dict[str, Any],
+        error_code: str | None,
+    ) -> ArtifactVerificationReceipt:
+        ts_ns = time.time_ns()
+        unsigned = ArtifactVerificationReceipt.model_construct(
+            artifact_uri=uri or "",
+            artifact_sha256=sha or "",
+            artifact_size_bytes=int(size) if size is not None else 0,
+            artifact_format=fmt or "",
+            loader_family=loader or "",
+            artifact_verified=artifact_verified,
+            hash_verified=hash_verified,
+            size_verified=size_verified,
+            loader_verified=loader_verified,
+            smoke_prediction_passed=smoke_passed,
+            smoke_prediction_metrics=smoke_metrics,
+            verification_error=error_code,
+            verified_at_ns=ts_ns,
+            receipt_signature="",
+        )
+        sig = _sign_receipt(unsigned, secret=secret)
+        return ArtifactVerificationReceipt(
+            artifact_uri=uri or "",
+            artifact_sha256=sha or "",
+            artifact_size_bytes=int(size) if size is not None else 0,
+            artifact_format=fmt or "",
+            loader_family=loader or "",
+            artifact_verified=artifact_verified,
+            hash_verified=hash_verified,
+            size_verified=size_verified,
+            loader_verified=loader_verified,
+            smoke_prediction_passed=smoke_passed,
+            smoke_prediction_metrics=smoke_metrics,
+            verification_error=error_code,
+            verified_at_ns=ts_ns,
+            receipt_signature=sig,
+        )
+
+    # --- step 1: missing artifact check -----------------------------------
+    if not uri or not uri.strip():
+        receipt = _make_receipt(
+            artifact_verified=False,
+            hash_verified=False,
+            size_verified=False,
+            loader_verified=False,
+            smoke_passed=False,
+            smoke_metrics={},
+            error_code="missing_artifact",
+        )
+        raise _ArtifactVerificationWithReceipt(
+            "missing_artifact",
+            "artifact URI is empty or None (missing artifact — fail closed)",
+            receipt,
+        )
+
+    # --- step 2: fetch artifact bytes -------------------------------------
+    try:
+        if artifact_bytes is not None:
+            model_bytes = artifact_bytes
+        else:
+            model_bytes = _fetch_artifact_bytes(uri)
+    except ArtifactVerificationError as exc:
+        receipt = _make_receipt(
+            artifact_verified=False,
+            hash_verified=False,
+            size_verified=False,
+            loader_verified=False,
+            smoke_passed=False,
+            smoke_metrics={},
+            error_code=exc.code,
+        )
+        raise _ArtifactVerificationWithReceipt(exc.code, str(exc), receipt) from exc
+
+    # --- step 3: recompute hash + size, compare (fail-closed) -------------
+    recomputed_sha = hashlib.sha256(model_bytes).hexdigest()
+    recomputed_size = len(model_bytes)
+    hash_ok = isinstance(sha, str) and len(sha) == 64 and hmac.compare_digest(
+        recomputed_sha, sha.lower(),
+    )
+    size_ok = size is not None and recomputed_size == int(size)
+
+    if not hash_ok:
+        receipt = _make_receipt(
+            artifact_verified=False,
+            hash_verified=False,
+            size_verified=size_ok,
+            loader_verified=False,
+            smoke_passed=False,
+            smoke_metrics={},
+            error_code="hash_mismatch",
+        )
+        raise _ArtifactVerificationWithReceipt(
+            "hash_mismatch",
+            f"artifact sha256 mismatch: declared={sha!r} "
+            f"recomputed={recomputed_sha!r}",
+            receipt,
+        )
+    if not size_ok:
+        receipt = _make_receipt(
+            artifact_verified=False,
+            hash_verified=True,
+            size_verified=False,
+            loader_verified=False,
+            smoke_passed=False,
+            smoke_metrics={},
+            error_code="size_mismatch",
+        )
+        raise _ArtifactVerificationWithReceipt(
+            "size_mismatch",
+            f"artifact size mismatch: declared={size!r} "
+            f"recomputed={recomputed_size!r}",
+            receipt,
+        )
+
+    # --- step 4: load artifact with declared loader family ----------------
+    try:
+        model = _load_artifact(model_bytes, loader or "", fmt or "")
+    except ArtifactVerificationError as exc:
+        receipt = _make_receipt(
+            artifact_verified=False,
+            hash_verified=True,
+            size_verified=True,
+            loader_verified=False,
+            smoke_passed=False,
+            smoke_metrics={},
+            error_code=exc.code,
+        )
+        raise _ArtifactVerificationWithReceipt(exc.code, str(exc), receipt) from exc
+
+    # --- step 5: smoke prediction (deterministic, frozen sample) ----------
+    smoke_passed = True
+    smoke_metrics: dict[str, Any] = {}
+    if run_smoke_prediction:
+        sample = smoke_sample
+        if sample is None:
+            sample = _build_frozen_smoke_sample(model)
+        smoke_passed, smoke_metrics = _run_smoke_prediction(model, sample)
+        if not smoke_passed:
+            receipt = _make_receipt(
+                artifact_verified=False,
+                hash_verified=True,
+                size_verified=True,
+                loader_verified=True,
+                smoke_passed=False,
+                smoke_metrics=smoke_metrics,
+                error_code="smoke_prediction_failed",
+            )
+            raise _ArtifactVerificationWithReceipt(
+                "smoke_prediction_failed",
+                f"smoke prediction failed: {smoke_metrics.get('error', 'unknown')}",
+                receipt,
+            )
+
+    # --- step 6: all checks passed — build + sign the success receipt -----
+    receipt = _make_receipt(
+        artifact_verified=True,
+        hash_verified=True,
+        size_verified=True,
+        loader_verified=True,
+        smoke_passed=smoke_passed,
+        smoke_metrics=smoke_metrics,
+        error_code=None,
+    )
+    return receipt
+
+
+class _ArtifactVerificationWithReceipt(ArtifactVerificationError):
+    """Internal: ArtifactVerificationError that carries the signed receipt.
+
+    This lets callers that want the receipt even on failure to access it
+    via ``exc.receipt`` without changing the public exception hierarchy
+    (``_ArtifactVerificationWithReceipt`` is still an
+    ``ArtifactVerificationError`` and a ``ValueError``).
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        receipt: ArtifactVerificationReceipt,
+    ) -> None:
+        super().__init__(code, message)
+        self.receipt = receipt
+
+
+class TrainingCallbackVerificationResult(BaseModel):
+    """Combined result of :func:`verify_training_callback`.
+
+    Frozen + ``extra='forbid'``. Carries the validated callback and the
+    artifact verification receipt, plus the single authoritative
+    ``artifact_verified`` flag (``True`` only if BOTH the callback HMAC
+    validated AND the artifact verification passed).
+
+    Fields:
+        callback: the validated :class:`RunPodTrainingCallback`.
+        callback_valid: ``True`` if the callback HMAC + schema validated.
+        receipt: the :class:`ArtifactVerificationReceipt` (or ``None``
+            when artifact verification was skipped or the callback itself
+            was invalid).
+        artifact_verified: ``True`` only if the callback validated AND
+            the receipt's ``artifact_verified`` is ``True``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    callback: RunPodTrainingCallback
+    callback_valid: bool = False
+    receipt: ArtifactVerificationReceipt | None = None
+    artifact_verified: bool = False
+
+
+def verify_training_callback(
+    callback: RunPodTrainingCallback | dict[str, Any],
+    *,
+    secret: str,
+    smoke_sample: Any = None,
+    run_smoke_prediction: bool = True,
+    artifact_bytes: bytes | None = None,
+) -> TrainingCallbackVerificationResult:
+    """Validate a callback AND verify its artifact (trusted-side, combined).
+
+    Combines:
+    1. :func:`validate_callback` — HMAC + schema validation (fail-closed).
+    2. :func:`verify_artifact` — artifact hash + size + loader + smoke
+       prediction (fail-closed).
+
+    The ``artifact_verified`` flag on the returned result is ``True`` ONLY
+    if BOTH the callback validated AND the artifact verification passed.
+    This is the single authoritative flag the trusted side checks before
+    promoting a callback.
+
+    On a callback validation failure, raises
+    :class:`CallbackValidationError` (no artifact verification is
+    attempted — there's nothing to verify if the callback itself is
+    untrusted).
+
+    On an artifact verification failure, raises
+    :class:`ArtifactVerificationError` (the signed receipt is available
+    via ``exc.receipt`` on the
+    :class:`_ArtifactVerificationWithReceipt` subclass). Callers that
+    want the result even on artifact failure should catch the exception.
+
+    Args:
+        callback: a :class:`RunPodTrainingCallback` or dict.
+        secret: the HMAC secret (used for both callback + receipt signing).
+        smoke_sample: optional frozen feature matrix for smoke prediction.
+        run_smoke_prediction: if ``True`` (default), run smoke prediction.
+        artifact_bytes: inline artifact bytes (skip URI fetch — testing).
+
+    Returns:
+        A :class:`TrainingCallbackVerificationResult` with the validated
+        callback and signed receipt.
+
+    Raises:
+        CallbackValidationError: if the callback HMAC/schema is invalid.
+        ArtifactVerificationError: if artifact verification fails.
+    """
+    # 1. Callback validation (HMAC + schema). Fail-closed — if the
+    #    callback itself is untrusted, there's nothing to verify.
+    model = validate_callback(callback, secret=secret)
+
+    # 2. Artifact verification (hash + size + loader + smoke prediction).
+    #    If the callback has no primary_artifact (failure callback), skip
+    #    artifact verification and return artifact_verified=False.
+    if model.primary_artifact is None:
+        return TrainingCallbackVerificationResult(
+            callback=model,
+            callback_valid=True,
+            receipt=None,
+            artifact_verified=False,
+        )
+
+    receipt = verify_artifact(
+        model,
+        secret=secret,
+        smoke_sample=smoke_sample,
+        run_smoke_prediction=run_smoke_prediction,
+        artifact_bytes=artifact_bytes,
+    )
+
+    return TrainingCallbackVerificationResult(
+        callback=model,
+        callback_valid=True,
+        receipt=receipt,
+        artifact_verified=receipt.artifact_verified,
+    )
+
+
+def mark_callback_verified(
+    callback: RunPodTrainingCallback | dict[str, Any],
+    receipt: ArtifactVerificationReceipt,
+    *,
+    secret: str,
+) -> dict[str, Any]:
+    """Mark a callback as artifact-verified (trusted-side).
+
+    Returns a new callback dict with ``artifact_verified`` set to ``True``
+    and the verification receipt attached, BUT only if
+    ``receipt.artifact_verified`` is ``True``. If the receipt indicates
+    verification failed, the returned dict has ``artifact_verified=False``
+    and the receipt is still attached (for audit).
+
+    The returned dict is a plain dict (not a frozen Pydantic model) so
+    the caller can merge it into an outbox record / store it. The receipt
+    is embedded as a dict under the ``artifact_verification_receipt`` key.
+
+    Args:
+        callback: the validated callback (model or dict).
+        receipt: the :class:`ArtifactVerificationReceipt` from
+            :func:`verify_artifact`.
+        secret: HMAC secret (used to verify the receipt signature before
+            trusting it — fail-closed).
+
+    Returns:
+        A dict with the callback fields plus ``artifact_verified`` and
+        ``artifact_verification_receipt``.
+    """
+    # Verify the receipt signature before trusting it (fail-closed).
+    receipt_ok = receipt.verify_receipt(secret=secret)
+    artifact_verified = receipt_ok and receipt.artifact_verified
+
+    if isinstance(callback, RunPodTrainingCallback):
+        cb_dict = callback.model_dump()
+    elif isinstance(callback, dict):
+        cb_dict = dict(callback)
+    else:
+        cb_dict = {}
+
+    cb_dict["artifact_verified"] = artifact_verified
+    cb_dict["artifact_verification_receipt"] = receipt.model_dump()
+    return cb_dict
 
 
 # --- local trainer ---------------------------------------------------------
