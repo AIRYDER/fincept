@@ -57,6 +57,183 @@ except ImportError:  # pragma: no cover - fincept-core always present in-workspa
     StorageBackend = None  # type: ignore[assignment,misc]
     get_storage_backend = None  # type: ignore[assignment]
 
+
+# --- typed artifact result (Phase 1 / T-1.1) --------------------------------
+#
+# A typed, tamper-evident artifact result contract. This replaces the
+# previous fragile ``getattr(result, "model_bytes", None)`` pattern in the
+# RunPod handler: the trainer now produces a ``TypedArtifactResult`` with
+# an explicit ``artifact_uri`` / ``artifact_sha256`` / ``artifact_size_bytes``
+# triple (plus format/kind/loader provenance) so the handler can verify the
+# artifact byte-for-byte and fail closed when an artifact is missing for a
+# successful job.
+#
+# Design rules (matching the codebase Pydantic-v2 conventions):
+# - ``frozen=True`` so the contract is immutable after construction.
+# - ``artifact_sha256`` and ``artifact_size_bytes`` are ALWAYS required
+#   (a successful training job that produces no artifact hash/size is a
+#   contract violation — fail closed).
+# - ``artifact_uri`` MAY be ``None`` for canary runs that keep tiny inline
+#   ``model_bytes`` (never persisted). For real/research/production runs
+#   the handler sets ``artifact_uri`` after writing the bytes to a volume
+#   or object store.
+# - ``model_bytes`` carries the inline artifact bytes. Canary tests keep
+#   them inline; real runs persist them and clear the inline copy after
+#   the handler has written + verified them.
+
+
+@dataclass(frozen=True)
+class TypedArtifactResult:
+    """Typed, tamper-evident artifact result for a successful training job.
+
+    Fields:
+        artifact_id: stable id (``artifact:<sha16>``).
+        artifact_uri: declared location of the persisted artifact. ``None``
+            is allowed ONLY for canary runs that keep inline ``model_bytes``.
+        artifact_sha256: SHA-256 hex (64 lowercase chars) of the artifact
+            bytes. Always required.
+        artifact_size_bytes: byte length of the artifact. Always required
+            and must be > 0.
+        artifact_format: serialisation format (``"pickle"``,
+            ``"lightgbm-txt"``, ...).
+        artifact_kind: artifact category (``"model"``).
+        loader_family: loader used to reload the artifact
+            (``"lightgbm"``, ``"local-stub"``).
+        model_family: model family the artifact was trained for.
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference
+            (binds the artifact to the data it was trained on).
+        training_manifest_hash: SHA-256 of the training manifest content
+            hash (from ``extra_constraints["manifest_content_hash"]``),
+            or ``None`` when not forwarded.
+        created_at: nanosecond epoch timestamp of artifact creation.
+        model_bytes: inline artifact bytes. Present for canary runs and
+            before the handler persists real runs; the handler clears
+            this after a successful persist + verify.
+    """
+
+    artifact_id: str
+    artifact_uri: str | None
+    artifact_sha256: str
+    artifact_size_bytes: int
+    artifact_format: str
+    artifact_kind: str
+    loader_family: str
+    model_family: str
+    dataset_manifest_hash: str | None
+    training_manifest_hash: str | None
+    created_at: int
+    model_bytes: bytes | None = None
+
+    def __post_init__(self) -> None:
+        # Validate at construction time so a malformed result fails fast
+        # (fail closed) rather than silently propagating.
+        if not self.artifact_id or not self.artifact_id.strip():
+            raise ValueError("TypedArtifactResult.artifact_id must be non-empty")
+        if not self.artifact_sha256 or not self.artifact_sha256.strip():
+            raise ValueError(
+                "TypedArtifactResult.artifact_sha256 must be non-empty "
+                "(success callback cannot be built without artifact hash)"
+            )
+        if len(self.artifact_sha256) != 64 or not all(
+            c in "0123456789abcdef" for c in self.artifact_sha256.lower()
+        ):
+            raise ValueError(
+                "TypedArtifactResult.artifact_sha256 must be a 64-char "
+                f"lowercase hex SHA-256; got {self.artifact_sha256!r}"
+            )
+        if self.artifact_size_bytes <= 0:
+            raise ValueError(
+                "TypedArtifactResult.artifact_size_bytes must be > 0 "
+                "(success callback cannot be built without artifact size)"
+            )
+        if not self.artifact_format or not self.artifact_format.strip():
+            raise ValueError("TypedArtifactResult.artifact_format must be non-empty")
+        if not self.artifact_kind or not self.artifact_kind.strip():
+            raise ValueError("TypedArtifactResult.artifact_kind must be non-empty")
+        if not self.loader_family or not self.loader_family.strip():
+            raise ValueError("TypedArtifactResult.loader_family must be non-empty")
+        if not self.model_family or not self.model_family.strip():
+            raise ValueError("TypedArtifactResult.model_family must be non-empty")
+        if self.created_at < 0:
+            raise ValueError("TypedArtifactResult.created_at must be >= 0")
+        # Normalise sha to lowercase for stable comparisons.
+        if self.artifact_sha256 != self.artifact_sha256.lower():
+            object.__setattr__(self, "artifact_sha256", self.artifact_sha256.lower())
+
+    def verify_bytes(self, data: bytes) -> bool:
+        """Recompute the SHA-256 of ``data`` and compare to ``artifact_sha256``.
+
+        Returns ``True`` iff the recomputed hash matches the declared
+        hash. Used by the handler to detect artifact corruption / sha
+        mismatch (acceptance criterion: artifact sha mismatch fails).
+        """
+        import hashlib
+
+        return hashlib.sha256(data).hexdigest() == self.artifact_sha256
+
+
+def _dataset_manifest_hash(ref: str) -> str:
+    """Stable SHA-256 of the dataset manifest reference string."""
+    return hashlib.sha256(ref.encode("utf-8")).hexdigest()
+
+
+def _training_manifest_hash(req: RunPodTrainingRequest) -> str | None:
+    """Resolve the training manifest content hash from ``extra_constraints``.
+
+    The dispatch path forwards the manifest content hash via
+    ``extra_constraints["manifest_content_hash"]`` (see
+    :meth:`TrainingManifest.to_dispatch_request`). Returns ``None`` when
+    not forwarded (e.g. ad-hoc requests not staged through a manifest).
+    """
+    raw = req.extra_constraints.get("manifest_content_hash")
+    if raw and isinstance(raw, str) and raw.strip():
+        return raw.strip().lower()
+    return None
+
+
+def build_artifact_result(
+    *,
+    artifact_id: str,
+    model_bytes: bytes,
+    model_family: str,
+    req: RunPodTrainingRequest,
+    artifact_uri: str | None = None,
+    artifact_format: str = "pickle",
+    artifact_kind: str = "model",
+    loader_family: str = "lightgbm",
+    created_at: int | None = None,
+) -> TypedArtifactResult:
+    """Build a :class:`TypedArtifactResult` from raw model bytes.
+
+    Computes the SHA-256 + size from ``model_bytes`` (never from request
+    inputs) and binds the dataset/training manifest hashes from the
+    request. Raises ``ValueError`` (fail closed) when ``model_bytes`` is
+    empty — a successful training job that produces no artifact bytes is
+    a contract violation.
+    """
+    if not model_bytes:
+        raise ValueError(
+            "cannot build TypedArtifactResult without artifact bytes "
+            "(successful training job produced no model artifact — fail closed)"
+        )
+    sha = hashlib.sha256(model_bytes).hexdigest()
+    if created_at is None:
+        created_at = time.time_ns()
+    return TypedArtifactResult(
+        artifact_id=artifact_id,
+        artifact_uri=artifact_uri,
+        artifact_sha256=sha,
+        artifact_size_bytes=len(model_bytes),
+        artifact_format=artifact_format,
+        artifact_kind=artifact_kind,
+        loader_family=loader_family,
+        model_family=model_family,
+        dataset_manifest_hash=_dataset_manifest_hash(req.dataset_manifest_ref),
+        training_manifest_hash=_training_manifest_hash(req),
+        created_at=created_at,
+        model_bytes=model_bytes,
+    )
+
 # Canonical walk-forward fold math (single shared home — see
 # ``fincept_core.datasets.cv``). Delegating here keeps Path B (RunPod real
 # trainer) consistent with Path A (agents.gbm_predictor.train) and the
@@ -96,6 +273,15 @@ class RealLightGBMTrainer:
     # fallback when no bar-frequency info is present on the request.
     annualization_factor: int = 252
     storage_backend: Any = None
+    # --- Phase 1 / T-1.1: typed artifact result -------------------------
+    # After a successful ``train()`` call, the typed artifact result +
+    # raw model bytes are stashed here so the RunPod handler can read
+    # them through a typed field instead of the fragile
+    # ``getattr(result, "model_bytes", None)`` pattern. The handler
+    # creates a fresh trainer per job, so this per-instance state is
+    # safe (no cross-job leakage).
+    last_artifact_result: TypedArtifactResult | None = None
+    last_model_bytes: bytes | None = None
 
     # --- public API ------------------------------------------------------
 
@@ -190,6 +376,38 @@ class RealLightGBMTrainer:
             lockfile_hash=_lockfile_hash_or_default(),
             container_image_digest=_container_digest_or_default(),
         )
+
+        # Phase 1 / T-1.1: build the typed artifact result from the real
+        # model bytes (sha/size computed from bytes, never from request
+        # inputs) and stash it on the instance so the RunPod handler can
+        # read it through a typed field. ``artifact_uri`` is left None
+        # here — the handler sets it after persisting the bytes to a
+        # volume / object store. Fail closed: if the model bytes are
+        # empty (a successful job with no artifact), build_artifact_result
+        # raises ValueError, which we translate to a TrainingFailure.
+        try:
+            typed_result = build_artifact_result(
+                artifact_id=artifact_id,
+                model_bytes=model_bytes,
+                model_family=req.model_family,
+                req=req,
+                artifact_uri=None,
+                artifact_format="pickle",
+                artifact_kind="model",
+                loader_family="lightgbm",
+                created_at=now_ns,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="artifact_missing",
+                error_summary=(
+                    "successful training produced no artifact bytes "
+                    f"(fail closed): {exc}"
+                ),
+            ) from exc
+        # Stash for the handler (mutable dataclass — safe per-job).
+        self.last_artifact_result = typed_result
+        self.last_model_bytes = model_bytes
 
         dossier = ModelDossier(
             model_id=f"model:{req.job_id}",

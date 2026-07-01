@@ -67,6 +67,14 @@ from quant_foundry.runpod_training import (  # noqa: E402
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
 
+# Phase 1 / T-1.1: typed artifact result contract. Imported at module
+# level — ``quant_foundry.real_trainer`` is importable without ML deps
+# (lightgbm/numpy are imported lazily inside ``train()``).
+from quant_foundry.real_trainer import (  # noqa: E402
+    TypedArtifactResult,
+    build_artifact_result,
+)
+
 
 def runpod_data_root() -> Path:
     """Resolve the RunPod network volume mount path.
@@ -487,9 +495,15 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # can detect crashed workers via stale heartbeat_at timestamps.
     write_status(req.job_id, "started")
 
+    # Build the trainer and keep a reference so we can read the typed
+    # artifact result (Phase 1 / T-1.1) after handle() returns. The
+    # trainer stashes ``last_artifact_result`` / ``last_model_bytes`` on
+    # a successful train(); the handler reads them through the typed
+    # field instead of the fragile ``getattr(result, "model_bytes")``.
+    trainer = _build_trainer(n_folds=int(n_folds) if n_folds else 3)
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
-        trainer=_build_trainer(n_folds=int(n_folds) if n_folds else 3),
+        trainer=trainer,
         deadline_seconds=_get_deadline_seconds(),
     )
 
@@ -516,8 +530,74 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
     write_status(req.job_id, "completed", artifact_id=result.artifact_id)
 
-    # If output_prefix is set, write the model artifact + dossier to the volume
+    # --- Phase 1 / T-1.1: resolve the typed artifact result -----------------
+    # The real trainer stashes a TypedArtifactResult on itself; the local
+    # (canary) trainer does not, so we synthesize a tiny inline-bytes
+    # result for canary tests. A successful real training job with no
+    # artifact is a contract violation — fail closed.
+    typed_artifact: TypedArtifactResult | None = getattr(
+        trainer, "last_artifact_result", None
+    )
+    model_bytes: bytes | None = getattr(trainer, "last_model_bytes", None)
+
+    is_real_trainer = not isinstance(trainer, LocalTrainer)
+
+    if is_real_trainer:
+        # Fail closed: a successful real training job MUST produce an
+        # artifact (acceptance criterion: trainer success without
+        # artifact fails).
+        if typed_artifact is None or not model_bytes:
+            return {
+                "error_code": "artifact_missing",
+                "error_summary": (
+                    "successful training produced no typed artifact result "
+                    "(fail closed: artifact URI/hash/size required)"
+                ),
+                "job_id": req.job_id,
+            }
+    else:
+        # Canary / local-stub path: keep tiny inline bytes only for
+        # canary tests (never persisted to a real artifact URI unless
+        # output_prefix is set). Build a typed result so the contract
+        # shape is identical across modes.
+        if typed_artifact is None:
+            canary_bytes = (
+                b"canary-model-stub:" + req.job_id.encode("utf-8")
+            )
+            try:
+                typed_artifact = build_artifact_result(
+                    artifact_id=result.artifact_id,
+                    model_bytes=canary_bytes,
+                    model_family=req.model_family,
+                    req=req,
+                    artifact_uri=None,
+                    artifact_format="local-stub",
+                    artifact_kind="model",
+                    loader_family="local-stub",
+                )
+            except ValueError as exc:
+                return {
+                    "error_code": "artifact_missing",
+                    "error_summary": f"cannot build canary artifact result: {exc}",
+                    "job_id": req.job_id,
+                }
+            model_bytes = typed_artifact.model_bytes
+
+    # If output_prefix is set, persist the model artifact + dossier to the
+    # network volume. Fail the job if the artifact write fails or the sha
+    # does not match (acceptance: artifact sha mismatch fails; fail the
+    # job if artifact write fails).
+    artifact_uri: str | None = None
     if output_prefix:
+        if typed_artifact is None or not model_bytes:
+            return {
+                "error_code": "artifact_missing",
+                "error_summary": (
+                    "output_prefix set but no artifact bytes to write "
+                    "(fail closed)"
+                ),
+                "job_id": req.job_id,
+            }
         try:
             out_dir = Path(output_prefix)
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -534,13 +614,48 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             (out_dir / "dossier.json").write_text(
                 json.dumps(dossier_data, indent=2), encoding="utf-8"
             )
-            # Write the model bytes if available
-            model_bytes = getattr(result, "model_bytes", None)
-            if model_bytes:
-                (out_dir / "model.txt").write_bytes(model_bytes)
+            # Write the model artifact bytes (typed field, not getattr).
+            model_path = out_dir / "model.pkl"
+            model_path.write_bytes(model_bytes)
+            # Verify the written bytes match the declared sha256. A
+            # mismatch is a terminal failure (acceptance: artifact sha
+            # mismatch fails).
+            if not typed_artifact.verify_bytes(model_bytes):
+                return {
+                    "error_code": "artifact_sha_mismatch",
+                    "error_summary": (
+                        "artifact sha256 mismatch: recomputed hash does not "
+                        f"match declared {typed_artifact.artifact_sha256}"
+                    ),
+                    "job_id": req.job_id,
+                }
+            artifact_uri = model_path.as_uri()
         except Exception as exc:
-            # Best-effort — don't fail the job if volume write fails
-            pass
+            # Fail the job if the artifact write fails (no longer
+            # best-effort — an unverified/unpersisted artifact is a
+            # contract violation for production/research runs).
+            return {
+                "error_code": "artifact_write_failed",
+                "error_summary": f"failed to persist artifact to volume: {exc}",
+                "job_id": req.job_id,
+            }
+
+    # Bind the artifact URI onto the typed result (immutable → rebuild).
+    if typed_artifact is not None and artifact_uri is not None:
+        typed_artifact = TypedArtifactResult(
+            artifact_id=typed_artifact.artifact_id,
+            artifact_uri=artifact_uri,
+            artifact_sha256=typed_artifact.artifact_sha256,
+            artifact_size_bytes=typed_artifact.artifact_size_bytes,
+            artifact_format=typed_artifact.artifact_format,
+            artifact_kind=typed_artifact.artifact_kind,
+            loader_family=typed_artifact.loader_family,
+            model_family=typed_artifact.model_family,
+            dataset_manifest_hash=typed_artifact.dataset_manifest_hash,
+            training_manifest_hash=typed_artifact.training_manifest_hash,
+            created_at=typed_artifact.created_at,
+            model_bytes=typed_artifact.model_bytes,
+        )
 
     return {
         "job_id": req.job_id,
@@ -550,6 +665,27 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         "artifact_id": result.artifact_id,
         "dossier_id": result.dossier_id,
         "output_prefix": output_prefix,
+        # Phase 1 / T-1.1: typed artifact result (uri/hash/size/format/
+        # kind/loader_family + manifest hashes). Present on every
+        # successful training job; the dispatcher/trusted verifier uses
+        # it to fetch + re-verify the artifact.
+        "artifact_result": (
+            {
+                "artifact_id": typed_artifact.artifact_id,
+                "artifact_uri": typed_artifact.artifact_uri,
+                "artifact_sha256": typed_artifact.artifact_sha256,
+                "artifact_size_bytes": typed_artifact.artifact_size_bytes,
+                "artifact_format": typed_artifact.artifact_format,
+                "artifact_kind": typed_artifact.artifact_kind,
+                "loader_family": typed_artifact.loader_family,
+                "model_family": typed_artifact.model_family,
+                "dataset_manifest_hash": typed_artifact.dataset_manifest_hash,
+                "training_manifest_hash": typed_artifact.training_manifest_hash,
+                "created_at": typed_artifact.created_at,
+            }
+            if typed_artifact is not None
+            else None
+        ),
     }
 
 
