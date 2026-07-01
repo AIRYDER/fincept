@@ -1,28 +1,55 @@
-# Quant Foundry Training Worker Container (TASK-0501)
+# Quant Foundry Training Worker Container — trainer-gpu-tree (T-4.2)
 #
-# Minimal Python container for the RunPod training worker. No broker
+# CUDA-capable RunPod serverless worker for tree-model training
+# (XGBoost GPU / CatBoost GPU / LightGBM CPU baseline). No broker
 # credentials, no Redis, no trading access. The worker only reads a
-# RunPodTrainingRequest, trains a tiny baseline, and returns a signed
+# RunPodTrainingRequest, trains a baseline, and returns a signed
 # callback envelope.
 #
 # Build (from repo root):
-#   docker build -t fincept-qf-training:latest -f runpod/quant-foundry-training/Dockerfile .
+#   DOCKER_BUILDKIT=1 docker build \
+#     -t fincept-qf-training:gpu-tree \
+#     -f runpod/quant-foundry-training/Dockerfile \
+#     --build-arg GIT_SHA=$(git rev-parse HEAD) .
 #
-# Run (local test):
-#   echo '{"input": {"job_id": "qf:train:test:1", "dataset_manifest_ref": "ds-1", "model_family": "gbm", "search_space": {"n_estimators": [100]}, "random_seed": 42, "hardware_class": "mock-gpu"}}' | docker run --rm -i -e QUANT_FOUNDRY_CALLBACK_SECRET=secret fincept-qf-training:latest
+# Run (local CPU smoke — healthcheck will report no GPU, canary still runs):
+#   echo '{"input": {"task": "gpu_healthcheck", "mode": "canary"}}' | \
+#     docker run --rm -i -e QUANT_FOUNDRY_CALLBACK_SECRET=secret \
+#     fincept-qf-training:gpu-tree
 #
 # Run (with real GPU on RunPod):
-#   The container is deployed as a RunPod serverless endpoint. RunPod
-#   injects the GPU and calls handler(event) for each job. The only
-#   required env var is QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
+#   Deploy as a RunPod serverless endpoint with an NVIDIA GPU template
+#   (e.g. RTX 4090 / A100). RunPod injects the GPU and calls
+#   handler(event) for each job. The only required env var is
+#   QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
 
-FROM python:3.12-slim
+# ---------------------------------------------------------------------------
+# Base image: PyTorch CUDA runtime gives us Python + CUDA 12.4 + cuDNN 9 in
+# one well-maintained layer. Python 3.11 is the conda interpreter; pip works
+# directly. This avoids hand-installing Python via deadsnakes on a bare
+# nvidia/cuda image (which is fragile and slow to build).
+# ---------------------------------------------------------------------------
+FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+
+# Prevent Python from buffering stdout/stderr so RunPod captures logs live.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /worker
 
-# Install build dependencies for Python packages.
+# Install OS dependencies:
+#  - build-essential: headers needed by a few pip sdists (scikit-learn wheels
+#    are prebuilt, but keep it for safety).
+#  - gosu: used by the entrypoint to drop privileges from root to the
+#    `trainer` user after fixing network-volume ownership.
+#  - curl: used by the healthcheck fallback / diagnostics.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gosu \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
@@ -43,24 +70,203 @@ COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 # (avoids importing storage/heartbeat which need redis/pydantic-settings).
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
+# Copy the shared RunPod worker_status utility (sibling to this handler in
+# the monorepo). The handler adds runpod/shared to sys.path at import time.
+COPY runpod/shared/worker_status.py /worker/runpod/shared/worker_status.py
+
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 
-# Install dependencies. `runpod` is the serverless worker SDK that
-# registers the handler with RunPod's control plane and polls for jobs.
-# Without it, the handler falls back to stdin mode which doesn't work
-# on RunPod serverless (the platform doesn't pipe jobs via stdin).
-# httpx is needed for the HTTP RunPod client (status/health checks).
-# pydantic is the core schema library.
-# Pin dependencies to compatible ranges for reproducible builds.
-# Lower bounds ensure feature availability; upper bounds prevent
-# breaking changes from unreleased major versions.
+# ---------------------------------------------------------------------------
+# Install GPU-capable ML libraries.
+#
+#  - xgboost:  the official manylinux wheel is built with CUDA support since
+#              2.0; `device="cuda"` works on a CUDA runtime image.
+#  - catboost: the official wheel ships GPU support (`task_type="GPU"`).
+#  - lightgbm: the official PyPI wheel is CPU-only (GPU requires a custom
+#              OpenCL/CUDA build). We install it as the CPU baseline and
+#              document this in the README. The gpu_healthcheck task reports
+#              lightgbm_gpu=False for this image.
+#  - pandas / pyarrow / scikit-learn / numpy: data handling + walk-forward
+#    fold math used by RealLightGBMTrainer.
+#  - pydantic / httpx / runpod: handler runtime + RunPod serverless SDK.
+# ---------------------------------------------------------------------------
 RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "httpx>=0.27,<1" \
     "runpod>=1.6,<2" \
+    "numpy>=1.26,<3" \
+    "pandas>=2.0,<3" \
+    "pyarrow>=14.0,<20" \
+    "scikit-learn>=1.4,<2" \
     "lightgbm>=4.0,<5" \
-    "pyarrow>=14.0,<20"
+    "xgboost>=2.0,<3" \
+    "catboost>=1.2,<2"
+
+# ---------------------------------------------------------------------------
+# Startup security preflight.
+#
+# A small Python script run by the entrypoint BEFORE the handler starts. It:
+#   1. Fails closed if any forbidden env var is set (broker secrets, Redis,
+#      DB write URLs, trading keys). The worker must be a pure function over
+#      its inputs — it must never carry trading/broker credentials.
+#   2. Validates the callback URL host (if QUANT_FOUNDRY_CALLBACK_URL is set)
+#      rejects loopback/private/link-local hosts in production.
+#   3. Prints a REDACTED config summary so operators can audit the runtime
+#      without leaking secrets.
+# ---------------------------------------------------------------------------
+RUN cat > /worker/preflight.py <<'PREFLIGHT_EOF'
+"""Startup security preflight for the trainer-gpu-tree worker.
+
+Run by /worker/entrypoint.sh before the handler starts. Exits non-zero
+(fail closed) if a forbidden env var is present, so a misconfigured image
+can never reach the training loop.
+"""
+from __future__ import annotations
+
+import ipaddress
+import os
+import socket
+import sys
+from urllib.parse import urlparse
+
+# Env vars the worker must NEVER carry. Presence of any of these means the
+# image was misconfigured with trading/broker/storage credentials, which
+# violates the security boundary (pure function over inputs).
+FORBIDDEN_ENV = [
+    "REDIS_URL",
+    "REDIS_HOST",
+    "FINCEPT_JWT_SECRET",
+    "ALPACA_API_KEY",
+    "ALPACA_SECRET_KEY",
+    "ALPACA_API_SECRET",
+    "DATABASE_URL",
+    "DB_URL",
+    "POSTGRES_URL",
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "BROKER_URL",
+    "AMQP_URL",
+    "MONGO_URL",
+    "MONGODB_URI",
+]
+
+# Callback URL is optional (the worker returns the callback in its response,
+# it does not POST). If set, the host must not be loopback/private in
+# production mode.
+_CALLBACK_URL_ENV = "QUANT_FOUNDRY_CALLBACK_URL"
+_MODE_ENV = "QUANT_FOUNDRY_TRAINING_MODE"
+
+
+def _redact(value: str) -> str:
+    """Redact a secret-like value, keeping only the first and last char."""
+    if not value:
+        return "<empty>"
+    if len(value) <= 4:
+        return "***"
+    return f"{value[0]}***{value[-1]}"
+
+
+def _host_is_private(host: str) -> bool:
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_reserved:
+            return True
+    return False
+
+
+def main() -> int:
+    mode = os.environ.get(_MODE_ENV, "canary").lower()
+    print(f"[preflight] training_mode={mode}", flush=True)
+
+    # 1. Forbidden env vars — fail closed regardless of mode.
+    violations = [k for k in FORBIDDEN_ENV if os.environ.get(k)]
+    if violations:
+        print(
+            f"[preflight] FAIL: forbidden env vars present: {sorted(violations)}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+
+    # 2. Validate callback URL host (if provided).
+    cb_url = os.environ.get(_CALLBACK_URL_ENV, "")
+    if cb_url:
+        parsed = urlparse(cb_url)
+        host = parsed.hostname or ""
+        if host and _host_is_private(host) and mode == "production":
+            print(
+                f"[preflight] FAIL: callback URL host {host!r} is loopback/private "
+                f"in production mode",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 3
+        print(f"[preflight] callback_url host={host} (ok)", flush=True)
+    else:
+        print("[preflight] callback_url not set (worker returns callback in response)", flush=True)
+
+    # 3. Redacted config summary.
+    secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
+    print("[preflight] redacted config summary:", flush=True)
+    print(f"  QUANT_FOUNDRY_CALLBACK_SECRET={_redact(secret)}", flush=True)
+    print(f"  QUANT_FOUNDRY_USE_REAL_TRAINER={os.environ.get('QUANT_FOUNDRY_USE_REAL_TRAINER', 'false')}", flush=True)
+    print(f"  QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS={os.environ.get('QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS', '600')}", flush=True)
+    print(f"  QUANT_FOUNDRY_GIT_SHA={os.environ.get('QUANT_FOUNDRY_GIT_SHA', 'unknown')}", flush=True)
+    print("[preflight] OK", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+PREFLIGHT_EOF
+
+# ---------------------------------------------------------------------------
+# Entrypoint wrapper.
+#
+# Runs as root (RunPod mounts the network volume owned by root), performs the
+# security preflight, fixes ownership of the writable volume dirs so the
+# non-root `trainer` user can write artifacts/status, then drops privileges
+# via gosu and execs the handler. If the volume dirs are not mountpoints
+# (local test), chown is best-effort.
+# ---------------------------------------------------------------------------
+RUN cat > /worker/entrypoint.sh <<'ENTRY_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Security preflight (fail closed on forbidden env vars).
+python /worker/preflight.py
+
+# 2. Best-effort ownership fix for RunPod network volumes so the non-root
+#    trainer user can write artifacts + status files. Ignore failures (the
+#    dir may be a read-only mountpoint or absent in local tests).
+for d in /runpod-volume /workspace; do
+  if [ -d "$d" ]; then
+    chown -R trainer:trainer "$d" 2>/dev/null || true
+  fi
+done
+
+# 3. Drop privileges and exec the handler as the non-root trainer user.
+exec gosu trainer:trainer python -u /worker/handler.py
+ENTRY_EOF
+RUN chmod +x /worker/entrypoint.sh
+
+# ---------------------------------------------------------------------------
+# Non-root user. RunPod network volumes are mounted with permissive perms and
+# the entrypoint chowns them at startup, so a non-root user is safe. The
+# security boundary is still the container itself (no broker creds, no Redis),
+# but running as non-root adds defense in depth against privilege escalation
+# inside the container.
+# ---------------------------------------------------------------------------
+RUN useradd --create-home --shell /bin/bash --uid 1000 trainer \
+    && chown -R trainer:trainer /worker
 
 # Pin the code git SHA at build time (for reproducibility).
 # Override with --build-arg GIT_SHA=$(git rev-parse HEAD)
@@ -69,22 +275,24 @@ ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA}
 
 # No broker credentials, no Redis, no trading env vars.
 # Only the callback secret is required (injected at runtime).
-ENV QUANT_FOUNDRY_CALLBACK_SECRET=""
-ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800"
-# Use RealLightGBMTrainer (real LightGBM training with walk-forward validation).
-ENV QUANT_FOUNDRY_USE_REAL_TRAINER="true"
-ENV PYTHONPATH=/worker
+ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
+    QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800" \
+    QUANT_FOUNDRY_USE_REAL_TRAINER="true" \
+    QUANT_FOUNDRY_TRAINING_MODE="canary" \
+    PYTHONPATH=/worker
 
-# Run as root so the handler can write to the network volume at /workspace/.
-# The container is already sandboxed: no broker credentials, no Redis, no
-# trading access. The security boundary is the container itself, not the
-# user inside it. RunPod serverless workers are ephemeral and isolated.
+# ---------------------------------------------------------------------------
+# Healthcheck: verify the Python runtime + handler module load AND that a GPU
+# is visible via nvidia-smi. On RunPod GPU this passes; on a CPU host it
+# reports the absence (exit 1) so a misrouted deployment is surfaced. The
+# handler's gpu_healthcheck task is the authoritative probe; this Docker
+# HEALTHCHECK is the container-level liveness gate RunPod polls.
+# ---------------------------------------------------------------------------
+HEALTHCHECK --interval=30s --timeout=15s --start-period=20s --retries=3 \
+  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; import subprocess; subprocess.run(['nvidia-smi'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); print('healthcheck ok')" || exit 1
 
-# Healthcheck: verify the Python runtime + handler module can load.
-# RunPod polls this to decide whether to send jobs to the worker.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('ok')" || exit 1
-
-# RunPod's serverless loader calls handler(event).
-# Use ENTRYPOINT (not CMD) so RunPod's dockerArgs field can't override it.
-ENTRYPOINT ["python", "-u", "/worker/handler.py"]
+# RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
+# RunPod's dockerArgs field can't override it. The entrypoint runs the
+# security preflight, fixes volume ownership, then drops to the non-root
+# trainer user before execing the handler.
+ENTRYPOINT ["/worker/entrypoint.sh"]
