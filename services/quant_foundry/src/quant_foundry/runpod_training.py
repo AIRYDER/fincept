@@ -48,10 +48,13 @@ Training modes (Phase 0):
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from quant_foundry.schemas import (
     ArtifactManifest,
@@ -205,6 +208,416 @@ class TrainingResult:
     callback_ts: int  # unix seconds used in the signature
     artifact_id: str
     dossier_id: str
+
+
+# --- typed callback contract (Phase 1 / T-1.4) -----------------------------
+#
+# A typed, tamper-evident callback result contract. This replaces the
+# previous opaque ``RunPodCallbackEnvelope`` payload with an explicit,
+# schema-versioned, HMAC-signed contract that binds together:
+#
+# - the primary + auxiliary artifacts (T-1.1 TypedArtifactResult dicts),
+# - the dataset + training manifest hashes,
+# - the runtime fingerprint hash (T-4.1 gpu_healthcheck),
+# - the training metrics summary,
+# - the quality gate result (T-3.3),
+# - the GPU healthcheck result (T-4.1),
+# - the promotion eligibility flag (mode-aware),
+# - the failure code/reason (for failure callbacks),
+# - the callback signature + timestamp.
+#
+# Design rules (matching the codebase Pydantic-v2 conventions):
+# - ``frozen=True`` + ``extra='forbid'`` so the contract is immutable and
+#   rejects unknown fields (audit integrity / fail-closed).
+# - The HMAC covers the canonical JSON of every field EXCEPT
+#   ``callback_signature`` (the signature cannot sign itself).
+# - ``callback_timestamp_ns`` is a nanosecond epoch timestamp captured at
+#   signing time and included in the signed payload (replay protection).
+# - Required fields are non-optional; optional fields default to ``None``
+#   or empty containers. ``validate_callback`` fails closed when a
+#   required field is missing.
+
+
+class CallbackValidationError(ValueError):
+    """Raised when a callback fails trusted-side validation (fail-closed).
+
+    Subclass of :class:`ValueError` so existing ``except ValueError``
+    handlers keep catching it. Carries a machine-readable ``code`` and a
+    human-readable ``message`` plus the list of missing/invalid fields
+    so the trusted-side verifier can record a precise rejection reason.
+
+    Attributes:
+        code: short machine-readable error code
+            (``missing_required_fields``, ``signature_mismatch``,
+            ``schema_validation_failed``).
+        fields: the specific fields that failed (when applicable).
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        fields: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.fields = fields
+
+
+# Required fields for a RunPodTrainingCallback (per acceptance criterion 3:
+# a callback with missing required fields is rejected by the trusted side).
+# Optional fields (failure_code, failure_reason, quality_gate_result,
+# gpu_healthcheck, primary_artifact, auxiliary_artifacts) are NOT in this
+# set — they may be absent on a success-only or minimal callback.
+_CALLBACK_REQUIRED_FIELDS: tuple[str, ...] = (
+    "schema_version",
+    "job_id",
+    "training_manifest_hash",
+    "dataset_manifest_hash",
+    "runtime_fingerprint_hash",
+    "metrics_summary",
+    "promotion_eligible",
+    "callback_signature",
+    "callback_timestamp_ns",
+)
+
+
+class RunPodTrainingCallback(BaseModel):
+    """Typed, HMAC-signed callback result contract (Phase 1 / T-1.4).
+
+    Frozen + ``extra='forbid'`` (audit integrity). The
+    ``callback_signature`` field carries the HMAC-SHA256 over the
+    canonical JSON of every other field (see :func:`build_callback`).
+    The trusted side verifies the signature via
+    :func:`verify_callback` / :func:`validate_callback` before trusting
+    any field (fail-closed).
+
+    Fields:
+        schema_version: callback schema version (e.g. ``"1.0"``).
+        job_id: the training job id (binds the callback to one job).
+        training_manifest_hash: SHA-256 of the training manifest content.
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference.
+        runtime_fingerprint_hash: SHA-256 of the runtime fingerprint
+            (git sha + lockfile hash + container digest) — binds the
+            callback to a specific worker image.
+        primary_artifact: the main model artifact (a
+            :class:`~quant_foundry.real_trainer.TypedArtifactResult`
+            serialized to a dict). ``None`` only on failure callbacks.
+        auxiliary_artifacts: additional artifacts (calibration, feature
+            importance, etc.) as a tuple of TypedArtifactResult dicts.
+        metrics_summary: training metrics (accuracy, logloss, etc.).
+        promotion_eligible: whether the result is eligible for promotion
+            (mode-aware: canary=False, production=True only if all
+            gates pass).
+        failure_code: machine-readable failure code (failure callbacks).
+        failure_reason: human-readable failure reason (failure callbacks).
+        quality_gate_result: serialized :class:`QualityGateResult`
+            (from T-3.3 QualityGateRunner). ``None`` when no gate ran.
+        gpu_healthcheck: serialized :class:`GPUHealthcheckResult`
+            (from T-4.1). ``None`` when no healthcheck ran.
+        callback_signature: HMAC-SHA256 hex over the canonical JSON of
+            all fields except this one.
+        callback_timestamp_ns: nanosecond epoch timestamp at signing
+            time (included in the signed payload for replay protection).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "1.0"
+    job_id: str
+    training_manifest_hash: str
+    dataset_manifest_hash: str
+    runtime_fingerprint_hash: str
+    primary_artifact: dict[str, Any] | None = None
+    auxiliary_artifacts: tuple[dict[str, Any], ...] = Field(default_factory=tuple)
+    metrics_summary: dict[str, Any] = Field(default_factory=dict)
+    promotion_eligible: bool = False
+    failure_code: str | None = None
+    failure_reason: str | None = None
+    quality_gate_result: dict[str, Any] | None = None
+    gpu_healthcheck: dict[str, Any] | None = None
+    callback_signature: str = ""
+    callback_timestamp_ns: int = 0
+
+    @field_validator("job_id")
+    @classmethod
+    def _job_id_nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("job_id must be non-empty")
+        return v
+
+    @field_validator("schema_version")
+    @classmethod
+    def _schema_version_nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("schema_version must be non-empty")
+        return v
+
+
+def _canonical_callback_payload(callback: RunPodTrainingCallback) -> bytes:
+    """Return the canonical JSON bytes of a callback EXCLUDING the signature.
+
+    The HMAC is computed over this canonical form so the signature cannot
+    sign itself. Keys are sorted for determinism and ``None`` values are
+    preserved (they are part of the contract). The
+    ``callback_signature`` field is always excluded.
+    """
+    data = callback.model_dump()
+    data.pop("callback_signature", None)
+    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _runtime_fingerprint_hash(runtime_fingerprint: dict[str, str]) -> str:
+    """Compute a stable SHA-256 over a runtime fingerprint dict.
+
+    The runtime fingerprint (from T-4.1) carries the git sha, lockfile
+    hash, container digest, and hostname. We hash the canonical JSON so
+    a single ``runtime_fingerprint_hash`` field can bind the callback to
+    a specific worker image without embedding the full fingerprint in
+    the signed payload (the full fingerprint travels in
+    ``gpu_healthcheck``).
+    """
+    canonical = json.dumps(
+        runtime_fingerprint, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def build_callback(
+    *,
+    job_id: str,
+    training_manifest_hash: str,
+    dataset_manifest_hash: str,
+    runtime_fingerprint: dict[str, str],
+    primary_artifact: dict[str, Any] | None,
+    auxiliary_artifacts: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None = None,
+    metrics_summary: dict[str, Any] | None = None,
+    mode: TrainingMode = TrainingMode.RESEARCH,
+    quality_gate_result: dict[str, Any] | None = None,
+    gpu_healthcheck: dict[str, Any] | None = None,
+    quality_gate_passed: bool | None = None,
+    failure_code: str | None = None,
+    failure_reason: str | None = None,
+    secret: str,
+    schema_version: str = "1.0",
+) -> RunPodTrainingCallback:
+    """Build a signed :class:`RunPodTrainingCallback`.
+
+    Constructs the callback model with all fields, computes the HMAC over
+    the canonical JSON of every field except ``callback_signature``, and
+    returns the signed (frozen) callback.
+
+    Promotion eligibility is mode-aware (per MODE_RULES):
+    - ``canary``: always ``False`` (canary is never promotion eligible).
+    - ``research``: ``False`` by default (research is permissive but not
+      promotion-eligible unless escalated).
+    - ``production``: ``True`` only if all gates pass
+      (``quality_gate_passed is True`` and no ``failure_code``).
+
+    Args:
+        job_id: the training job id.
+        training_manifest_hash: SHA-256 of the training manifest content.
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference.
+        runtime_fingerprint: dict with git sha / lockfile hash / container
+            digest (from T-4.1). Hashed into ``runtime_fingerprint_hash``.
+        primary_artifact: the main model artifact dict
+            (serialized TypedArtifactResult). ``None`` for failure callbacks.
+        auxiliary_artifacts: additional artifact dicts.
+        metrics_summary: training metrics dict.
+        mode: the training mode (controls promotion_eligible).
+        quality_gate_result: serialized QualityGateResult (T-3.3).
+        gpu_healthcheck: serialized GPUHealthcheckResult (T-4.1).
+        quality_gate_passed: whether the quality gate passed. When
+            ``None``, inferred from ``quality_gate_result["passed"]`` if
+            present, else treated as not-passed (fail-closed).
+        failure_code: machine-readable failure code (failure callbacks).
+        failure_reason: human-readable failure reason.
+        secret: HMAC secret for signing the callback.
+        schema_version: callback schema version (default ``"1.0"``).
+
+    Returns:
+        A frozen, signed :class:`RunPodTrainingCallback`.
+    """
+    aux: tuple[dict[str, Any], ...] = (
+        tuple(auxiliary_artifacts) if auxiliary_artifacts else ()
+    )
+    metrics: dict[str, Any] = metrics_summary or {}
+
+    # Resolve quality gate passed flag (fail-closed when unknown).
+    if quality_gate_passed is None and quality_gate_result is not None:
+        quality_gate_passed = bool(quality_gate_result.get("passed", False))
+    gates_ok = bool(quality_gate_passed) if quality_gate_passed is not None else False
+
+    # Mode-aware promotion eligibility.
+    rules = MODE_RULES.get(mode, {})
+    promotion_default = bool(rules.get("promotion_eligible_default", False))
+    if failure_code is not None:
+        # A failure callback is never promotion eligible.
+        promotion_eligible = False
+    elif mode == TrainingMode.CANARY:
+        # Canary is never promotion eligible (even if gates pass).
+        promotion_eligible = False
+    elif mode == TrainingMode.PRODUCTION:
+        # Production is promotion eligible ONLY if all gates pass.
+        # ``promotion_eligible_default`` is False (the pre-gate default);
+        # gates passing is what flips it to True.
+        promotion_eligible = gates_ok
+    else:
+        # Research: permissive but not promotion eligible by default
+        # (escalation is a separate, explicit operator action).
+        promotion_eligible = promotion_default
+
+    rt_hash = _runtime_fingerprint_hash(runtime_fingerprint)
+    ts_ns = time.time_ns()
+
+    # Build the callback WITHOUT the signature first so we can compute
+    # the HMAC over the canonical payload. We use model_construct to
+    # bypass validation (the signature is empty at this point) then
+    # re-validate after signing.
+    unsigned = RunPodTrainingCallback.model_construct(
+        schema_version=schema_version,
+        job_id=job_id,
+        training_manifest_hash=training_manifest_hash,
+        dataset_manifest_hash=dataset_manifest_hash,
+        runtime_fingerprint_hash=rt_hash,
+        primary_artifact=primary_artifact,
+        auxiliary_artifacts=aux,
+        metrics_summary=metrics,
+        promotion_eligible=promotion_eligible,
+        failure_code=failure_code,
+        failure_reason=failure_reason,
+        quality_gate_result=quality_gate_result,
+        gpu_healthcheck=gpu_healthcheck,
+        callback_signature="",
+        callback_timestamp_ns=ts_ns,
+    )
+    canonical = _canonical_callback_payload(unsigned)
+    signature = hmac.new(
+        secret.encode("utf-8"), canonical, hashlib.sha256,
+    ).hexdigest()
+    return RunPodTrainingCallback(
+        schema_version=schema_version,
+        job_id=job_id,
+        training_manifest_hash=training_manifest_hash,
+        dataset_manifest_hash=dataset_manifest_hash,
+        runtime_fingerprint_hash=rt_hash,
+        primary_artifact=primary_artifact,
+        auxiliary_artifacts=aux,
+        metrics_summary=metrics,
+        promotion_eligible=promotion_eligible,
+        failure_code=failure_code,
+        failure_reason=failure_reason,
+        quality_gate_result=quality_gate_result,
+        gpu_healthcheck=gpu_healthcheck,
+        callback_signature=signature,
+        callback_timestamp_ns=ts_ns,
+    )
+
+
+def verify_callback(
+    callback: RunPodTrainingCallback | dict[str, Any],
+    *,
+    secret: str,
+) -> bool:
+    """Verify the HMAC signature of a :class:`RunPodTrainingCallback`.
+
+    Recomputes the HMAC over the canonical JSON of every field except
+    ``callback_signature`` and compares it to the stored signature using
+    :func:`hmac.compare_digest` (constant-time). Returns ``True`` if the
+    signature matches, ``False`` otherwise (fail-closed — never raises
+    on a signature mismatch).
+
+    Args:
+        callback: a :class:`RunPodTrainingCallback` or a dict that can be
+            parsed into one.
+        secret: the HMAC secret used at signing time.
+
+    Returns:
+        ``True`` if the signature is valid, ``False`` otherwise.
+    """
+    if isinstance(callback, dict):
+        try:
+            callback = RunPodTrainingCallback.model_validate(callback)
+        except Exception:
+            return False
+    elif not isinstance(callback, RunPodTrainingCallback):
+        return False
+    if not isinstance(secret, str) or not secret:
+        return False
+    if not callback.callback_signature:
+        return False
+    canonical = _canonical_callback_payload(callback)
+    expected = hmac.new(
+        secret.encode("utf-8"), canonical, hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, callback.callback_signature)
+
+
+def validate_callback(
+    callback: RunPodTrainingCallback | dict[str, Any],
+    *,
+    secret: str,
+) -> RunPodTrainingCallback:
+    """Validate a callback (required fields + HMAC) — fail-closed.
+
+    1. Parses the callback into a :class:`RunPodTrainingCallback` (rejects
+       unknown fields via ``extra='forbid'``).
+    2. Checks all required fields are present (per
+       :data:`_CALLBACK_REQUIRED_FIELDS`).
+    3. Verifies the HMAC signature via :func:`verify_callback`.
+
+    Returns the validated callback on success. Raises
+    :class:`CallbackValidationError` on any failure (fail-closed).
+
+    Args:
+        callback: a :class:`RunPodTrainingCallback` or a dict.
+        secret: the HMAC secret used at signing time.
+
+    Raises:
+        CallbackValidationError: if schema validation fails, required
+            fields are missing, or the signature does not verify.
+    """
+    # 1. Schema validation (extra='forbid' rejects unknown fields).
+    if isinstance(callback, RunPodTrainingCallback):
+        model = callback
+    elif isinstance(callback, dict):
+        try:
+            model = RunPodTrainingCallback.model_validate(callback)
+        except Exception as exc:
+            raise CallbackValidationError(
+                "schema_validation_failed",
+                f"callback failed schema validation: {exc}",
+            ) from exc
+    else:
+        raise CallbackValidationError(
+            "schema_validation_failed",
+            f"callback must be a dict or RunPodTrainingCallback, got "
+            f"{type(callback).__name__}",
+        )
+
+    # 2. Required fields check (fail-closed).
+    missing: list[str] = []
+    for fname in _CALLBACK_REQUIRED_FIELDS:
+        val = getattr(model, fname, None)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            missing.append(fname)
+    if missing:
+        raise CallbackValidationError(
+            "missing_required_fields",
+            f"callback missing required fields: {missing}",
+            fields=tuple(missing),
+        )
+
+    # 3. HMAC signature verification.
+    if not verify_callback(model, secret=secret):
+        raise CallbackValidationError(
+            "signature_mismatch",
+            "callback signature verification failed (HMAC mismatch)",
+            fields=("callback_signature",),
+        )
+
+    return model
 
 
 # --- local trainer ---------------------------------------------------------

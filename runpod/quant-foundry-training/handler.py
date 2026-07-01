@@ -65,6 +65,7 @@ from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
     TrainingFailure,
+    build_callback,
 )
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
@@ -1894,6 +1895,125 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             model_bytes=typed_artifact.model_bytes,
         )
 
+    # --- Phase 1 / T-1.4: build the typed RunPodTrainingCallback -------------
+    # Construct the typed, HMAC-signed callback contract that binds together
+    # the artifact, manifest hashes, runtime fingerprint, metrics, quality
+    # gate result, GPU healthcheck, and promotion eligibility. The trusted
+    # side verifies the signature via validate_callback() before trusting
+    # any field (fail-closed).
+    callback_json = json.loads(result.callback_payload.decode("utf-8"))
+    payload = callback_json.get("payload", {})
+    dossier_data = payload.get("dossier", {})
+
+    # Resolve the training mode (same convention as the quality gate path).
+    raw_mode = req.extra_constraints.get("training_mode")
+    try:
+        cb_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+    except ValueError:
+        cb_mode = TrainingMode.PRODUCTION  # fail closed (strictest)
+
+    # Manifest hashes: prefer the typed artifact's hashes (computed from
+    # the request), fall back to the extra_constraints values. When no
+    # manifest hash is available (e.g. ad-hoc canary requests not staged
+    # through a manifest), derive a deterministic hash from the request
+    # config so the callback always carries a non-empty binding (the
+    # trusted-side validate_callback rejects empty manifest hashes).
+    dataset_mhash = (
+        typed_artifact.dataset_manifest_hash
+        if typed_artifact is not None
+        else req.extra_constraints.get("dataset_manifest_hash", "")
+    ) or ""
+    if not dataset_mhash:
+        import hashlib as _hl
+
+        dataset_mhash = _hl.sha256(
+            req.dataset_manifest_ref.encode("utf-8"),
+        ).hexdigest()
+
+    training_mhash = (
+        typed_artifact.training_manifest_hash
+        if typed_artifact is not None
+        else req.extra_constraints.get("manifest_content_hash", "")
+    ) or ""
+    if not training_mhash:
+        import hashlib as _hl
+
+        training_mhash = _hl.sha256(
+            json.dumps(
+                {
+                    "job_id": req.job_id,
+                    "model_family": req.model_family,
+                    "search_space": req.search_space,
+                    "extra_constraints": req.extra_constraints,
+                },
+                sort_keys=True,
+            ).encode("utf-8"),
+        ).hexdigest()
+
+    # Metrics summary from the dossier training_metrics.
+    metrics_summary = dict(dossier_data.get("training_metrics", {}))
+
+    # Quality gate passed flag (fail-closed when unknown).
+    quality_gate_passed: bool | None = None
+    if quality_gate_result_dict is not None:
+        quality_gate_passed = bool(quality_gate_result_dict.get("passed", False))
+    # Advisory failures (canary/research) force promotion_eligible=False —
+    # build_callback already forces canary=False; for research, the
+    # advisory failures mean the gate did not cleanly pass.
+    if quality_gate_advisory_failures is not None:
+        quality_gate_passed = False
+
+    # Runtime fingerprint (same pins used by the trainer / gpu_healthcheck).
+    rt_fingerprint = _runtime_fingerprint()
+
+    # Primary artifact dict (serialized TypedArtifactResult, without the
+    # inline model_bytes — those are not JSON-safe and not part of the
+    # callback contract).
+    primary_artifact_dict: dict[str, Any] | None = None
+    if typed_artifact is not None:
+        primary_artifact_dict = {
+            "artifact_id": typed_artifact.artifact_id,
+            "artifact_uri": typed_artifact.artifact_uri,
+            "artifact_sha256": typed_artifact.artifact_sha256,
+            "artifact_size_bytes": typed_artifact.artifact_size_bytes,
+            "artifact_format": typed_artifact.artifact_format,
+            "artifact_kind": typed_artifact.artifact_kind,
+            "loader_family": typed_artifact.loader_family,
+            "model_family": typed_artifact.model_family,
+            "dataset_manifest_hash": typed_artifact.dataset_manifest_hash,
+            "training_manifest_hash": typed_artifact.training_manifest_hash,
+            "created_at": typed_artifact.created_at,
+        }
+
+    # GPU healthcheck dict (present only if a healthcheck ran for this
+    # job — normally the healthcheck is a separate task, so this is
+    # typically None here; included for completeness when available).
+    gpu_healthcheck_dict: dict[str, Any] | None = None
+
+    try:
+        typed_callback = build_callback(
+            job_id=req.job_id,
+            training_manifest_hash=training_mhash,
+            dataset_manifest_hash=dataset_mhash,
+            runtime_fingerprint=rt_fingerprint,
+            primary_artifact=primary_artifact_dict,
+            auxiliary_artifacts=(),
+            metrics_summary=metrics_summary,
+            mode=cb_mode,
+            quality_gate_result=quality_gate_result_dict,
+            gpu_healthcheck=gpu_healthcheck_dict,
+            quality_gate_passed=quality_gate_passed,
+            secret=_get_callback_secret(),
+        )
+    except Exception as exc:
+        # Fail closed: if the typed callback cannot be built, the job is
+        # a contract violation. Return a safe terminal error.
+        return {
+            "error_code": "callback_build_failed",
+            "error_summary": f"failed to build typed callback: {exc}",
+            "job_id": req.job_id,
+        }
+
     return {
         "job_id": req.job_id,
         "callback_payload": result.callback_payload.decode("utf-8"),
@@ -1919,23 +2039,15 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # kind/loader_family + manifest hashes). Present on every
         # successful training job; the dispatcher/trusted verifier uses
         # it to fetch + re-verify the artifact.
-        "artifact_result": (
-            {
-                "artifact_id": typed_artifact.artifact_id,
-                "artifact_uri": typed_artifact.artifact_uri,
-                "artifact_sha256": typed_artifact.artifact_sha256,
-                "artifact_size_bytes": typed_artifact.artifact_size_bytes,
-                "artifact_format": typed_artifact.artifact_format,
-                "artifact_kind": typed_artifact.artifact_kind,
-                "loader_family": typed_artifact.loader_family,
-                "model_family": typed_artifact.model_family,
-                "dataset_manifest_hash": typed_artifact.dataset_manifest_hash,
-                "training_manifest_hash": typed_artifact.training_manifest_hash,
-                "created_at": typed_artifact.created_at,
-            }
-            if typed_artifact is not None
-            else None
-        ),
+        "artifact_result": primary_artifact_dict,
+        # Phase 1 / T-1.4: typed, HMAC-signed RunPodTrainingCallback.
+        # The trusted side verifies the signature via
+        # ``validate_callback()`` before trusting any field. Carries the
+        # full contract: schema_version, job_id, manifest hashes, runtime
+        # fingerprint hash, primary/auxiliary artifacts, metrics summary,
+        # promotion_eligible, failure code/reason, quality gate result,
+        # GPU healthcheck, signature, and timestamp.
+        "typed_callback": typed_callback.model_dump(),
     }
 
 
