@@ -40,6 +40,14 @@ from fincept_core.prediction_log import PredictionRow
 from .approved_roots import ApprovedRoots, ApprovedRootsError, default_approved_roots
 from .dossier import build_calibration_sidecar, build_dossier
 from .feature_snapshot import FeatureSnapshotStore
+# Phase 3 / T-2.2: manifest-first dataset loader with hash verification.
+from .manifest_loader import (
+    ColumnRoles,
+    DatasetLoadError,
+    DatasetLoadReceipt,
+    LoadedDataset,
+    ManifestDatasetLoader,
+)
 from .schema_compat import (
     SchemaCompatResult,
     SchemaIncompatibilityError,
@@ -148,11 +156,16 @@ __all__ = [
     "ApprovedRoots",
     "ApprovedRootsError",
     "ArtifactManifest",
+    "ColumnRoles",
+    "DatasetLoadError",
+    "DatasetLoadReceipt",
     "DatasetManifest",
     "FeatureRow",
     "FeatureSnapshot",
     "FeatureSnapshotStore",
     "Fold",
+    "LoadedDataset",
+    "ManifestDatasetLoader",
     "SchemaCompatResult",
     "SchemaIncompatibilityError",
     "SettlementError",

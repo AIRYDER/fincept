@@ -83,6 +83,12 @@ from quant_foundry.training_manifest import (  # noqa: E402
     TrainingMode,
 )
 
+# Phase 3 / T-2.2: manifest-first dataset loader with hash verification.
+from fincept_core.datasets import (  # noqa: E402
+    DatasetLoadError,
+    ManifestDatasetLoader,
+)
+
 
 def runpod_data_root() -> Path:
     """Resolve the RunPod network volume mount path.
@@ -709,6 +715,77 @@ def _heartbeat_during_training(
     return stop
 
 
+def _load_dataset_via_manifest(
+    load_spec: dict[str, Any],
+    *,
+    job_id: str,
+) -> tuple[str, dict[str, Any]]:
+    """Load a dataset manifest-first and return the verified data URI.
+
+    Phase 3 / T-2.2: when the input includes a ``dataset_load_spec``
+    dict, the handler uses :class:`ManifestDatasetLoader` to fetch +
+    verify the manifest and data BEFORE training. This replaces the
+    overloaded ``dataset_manifest_ref`` with an explicit, fail-closed
+    contract:
+
+    1. Fetch the manifest from ``manifest_uri``.
+    2. Verify ``manifest_sha256`` (fail on mismatch).
+    3. Read the data URI from the verified manifest.
+    4. Fetch the data from ``data_uri``.
+    5. Verify ``data_sha256`` (fail on mismatch).
+    6. Verify ``row_count`` (fail on mismatch).
+    7. Verify ``feature_schema_hash`` / ``label_schema_hash`` (fail on
+       mismatch).
+
+    On success, returns ``(resolved_data_uri, load_receipt_dict)``. The
+    resolved data URI is set on ``dataset_manifest_ref`` so the existing
+    trainer reads the *verified* data file. On any verification failure,
+    raises :class:`DatasetLoadError` (fail-closed).
+
+    Args:
+        load_spec: a dict with the load-spec fields (manifest_uri,
+            manifest_sha256, data_uri, data_sha256, data_format,
+            row_count, feature_schema_hash, label_schema_hash). Mirrors
+            :class:`~quant_foundry.dataset_manifest.DatasetLoadSpec`.
+        job_id: the job ID (for error reporting).
+    """
+    # Resolve volume paths in the spec URIs (/runpod-volume vs /workspace).
+    manifest_uri = resolve_volume_path(
+        load_spec.get("manifest_uri", "")
+    )
+    data_uri = resolve_volume_path(
+        load_spec.get("data_uri", "")
+    )
+    spec_fields = {
+        "manifest_uri": manifest_uri,
+        "manifest_sha256": load_spec.get("manifest_sha256"),
+        "data_uri": data_uri,
+        "data_sha256": load_spec.get("data_sha256"),
+        "data_format": load_spec.get("data_format"),
+        "row_count": load_spec.get("row_count"),
+        "feature_schema_hash": load_spec.get("feature_schema_hash"),
+        "label_schema_hash": load_spec.get("label_schema_hash"),
+    }
+    loader = ManifestDatasetLoader(**spec_fields)
+    loaded = loader.load()
+    receipt = loaded.load_receipt
+    receipt_dict = {
+        "manifest_uri": receipt.manifest_uri,
+        "manifest_sha256_verified": receipt.manifest_sha256_verified,
+        "data_uri": receipt.data_uri,
+        "data_sha256_verified": receipt.data_sha256_verified,
+        "row_count_verified": receipt.row_count_verified,
+        "schema_verified": receipt.schema_verified,
+        "loaded_at_ns": receipt.loaded_at_ns,
+        "manifest_hash": loaded.manifest_hash,
+        "row_count": loaded.row_count,
+    }
+    # The verified data URI is what the trainer reads. Resolve it to a
+    # path the trainer can open (already resolved above, but the
+    # manifest may declare a different data_uri — use the receipt's).
+    return receipt.data_uri, receipt_dict
+
+
 def handler(event: dict[str, Any]) -> dict[str, Any]:
     """RunPod serverless handler entrypoint.
 
@@ -868,6 +945,13 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     inline_csv = input_data.pop("inline_dataset_csv", None)
     output_prefix = input_data.pop("output_prefix", None)
     n_folds = input_data.pop("n_folds", 3)
+    # Phase 3 / T-2.2: manifest-first dataset loading. When present,
+    # ``dataset_load_spec`` is a dict with manifest_uri + expected hashes.
+    # The handler fetches + verifies the manifest and data BEFORE training
+    # and sets ``dataset_manifest_ref`` to the verified data URI. Fail
+    # closed on any verification error (hash mismatch, row count mismatch,
+    # schema hash mismatch, unknown format, missing column role).
+    dataset_load_spec = input_data.pop("dataset_load_spec", None)
 
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
@@ -878,7 +962,35 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "job_id": input_data.get("job_id"),
         }
 
-    if isinstance(inline_csv, str) and inline_csv.strip():
+    # Phase 3 / T-2.2: manifest-first loading takes precedence over the
+    # legacy inline/volume-path paths. When a load spec is provided, the
+    # handler verifies the manifest + data hashes and row count, then
+    # points ``dataset_manifest_ref`` at the verified data file. Any
+    # verification failure is a terminal error (fail-closed).
+    dataset_load_receipt: dict[str, Any] | None = None
+    if dataset_load_spec and isinstance(dataset_load_spec, dict):
+        try:
+            verified_data_uri, dataset_load_receipt = (
+                _load_dataset_via_manifest(
+                    dataset_load_spec, job_id=req.job_id,
+                )
+            )
+            req = req.model_copy(
+                update={"dataset_manifest_ref": verified_data_uri}
+            )
+        except DatasetLoadError as exc:
+            write_status(
+                req.job_id,
+                "failed",
+                error_code=exc.code,
+                error_summary=str(exc),
+            )
+            return {
+                "error_code": exc.code,
+                "error_summary": str(exc),
+                "job_id": req.job_id,
+            }
+    elif isinstance(inline_csv, str) and inline_csv.strip():
         import tempfile
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="qf_dataset_"))
@@ -1069,6 +1181,11 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         "artifact_id": result.artifact_id,
         "dossier_id": result.dossier_id,
         "output_prefix": output_prefix,
+        # Phase 3 / T-2.2: dataset load receipt (present when the job
+        # used manifest-first loading). Records every verification flag
+        # so the dispatcher/trusted verifier can audit the dataset
+        # provenance.
+        "dataset_load_receipt": dataset_load_receipt,
         # Phase 1 / T-1.1: typed artifact result (uri/hash/size/format/
         # kind/loader_family + manifest hashes). Present on every
         # successful training job; the dispatcher/trusted verifier uses
