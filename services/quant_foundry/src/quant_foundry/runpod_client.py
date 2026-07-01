@@ -33,6 +33,37 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.telemetry import CostTelemetry, PhaseTiming, TimingPhase, infer_gpu_type
+
+
+# --- helpers --------------------------------------------------------------- #
+
+
+def _compute_queue_wait_ns(rec: Any) -> float:
+    """Compute queue wait time (seconds) from an outbox record's history.
+
+    Reads the QUEUED -> DISPATCHING transition timestamps from the
+    outbox history and returns the difference in seconds. Returns 0.0
+    if the record is None or the transition is not found.
+    """
+    if rec is None:
+        return 0.0
+    queued_ts: int | None = None
+    dispatched_ts: int | None = None
+    for entry in rec.history:
+        status = entry.get("status")
+        ts = entry.get("ts_ns")
+        if ts is None:
+            continue
+        if status == JobStatus.QUEUED.value and queued_ts is None:
+            queued_ts = ts
+        elif status == JobStatus.DISPATCHING.value and dispatched_ts is None:
+            dispatched_ts = ts
+    if queued_ts is not None and dispatched_ts is not None:
+        wait = (dispatched_ts - queued_ts) / 1e9
+        return max(wait, 0.0)
+    return 0.0
+
 
 # --- dispatch status -------------------------------------------------------
 
@@ -381,6 +412,12 @@ class RunPodDispatcher:
             job. When None, ledger tracking is disabled (backward
             compat). The ledger is read-only with respect to the outbox:
             it observes transitions but never drives them.
+        telemetry: optional CostTelemetry (Phase 6 / T-6.3) — when
+            provided, the dispatcher records per-job cost estimates (by
+            GPU type + duration) and per-phase timing (queue, train).
+            When None, telemetry tracking is disabled (backward compat).
+            Missing GPU prices are recorded as cost_unknown=True (never
+            silently zero).
     """
 
     outbox: JobOutbox
@@ -390,17 +427,25 @@ class RunPodDispatcher:
     max_dispatches_per_sweep: int | None = None
     endpoint_id: str | None = None
     ledger: TrainingJobLedger | None = None
+    telemetry: CostTelemetry | None = None
 
     def dispatch(
         self,
         job_id: str,
         *,
         request_payload: dict[str, Any],
+        gpu_type: str | None = None,
     ) -> DispatchResult:
         """Dispatch a single job to RunPod.
 
         Returns a DispatchResult. Does NOT raise on RunPod failures
         (they're classified into transient/terminal/budget_exceeded).
+
+        Args:
+            gpu_type: optional GPU type override (a ``GPUType`` value or
+                raw string). When None, the GPU type is inferred from
+                the endpoint id. Used for cost telemetry estimation;
+                an unknown GPU type yields ``cost_unknown=True``.
         """
         if self.mode != "runpod":
             return DispatchResult(
@@ -512,6 +557,36 @@ class RunPodDispatcher:
                         result.cost_cents,
                         result.duration_seconds or elapsed,
                     )
+            # Telemetry: record queue time (from outbox history) and
+            # train timing + cost estimate. The GPU type is inferred
+            # from the endpoint id (or the caller-supplied gpu_type).
+            # Missing GPU price => cost_unknown=True (never zero).
+            if self.telemetry is not None:
+                resolved_gpu = gpu_type or infer_gpu_type(endpoint_id)
+                # Compute queue wait from outbox history: time from the
+                # QUEUED entry to the DISPATCHING entry.
+                queue_wait = _compute_queue_wait_ns(self.outbox.get(job_id))
+                train_duration = result.duration_seconds or elapsed
+                phases = (
+                    PhaseTiming(
+                        phase=TimingPhase.QUEUE,
+                        duration_seconds=queue_wait,
+                    ),
+                    PhaseTiming(
+                        phase=TimingPhase.TRAIN,
+                        duration_seconds=train_duration,
+                    ),
+                    PhaseTiming(
+                        phase=TimingPhase.TOTAL,
+                        duration_seconds=queue_wait + train_duration,
+                    ),
+                )
+                self.telemetry.record_job_timing(
+                    job_id,
+                    resolved_gpu,
+                    phases,
+                    actual_cost_cents=result.cost_cents or None,
+                )
 
         # Classify transient vs terminal.
         if result.status == DispatchStatus.TRANSIENT_FAILURE:
