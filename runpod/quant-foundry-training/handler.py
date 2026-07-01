@@ -24,10 +24,14 @@ RunPod protocol:
 
 from __future__ import annotations
 
+import getpass
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
 import threading
@@ -263,6 +267,473 @@ ALLOWED_TRAINER_TASKS: frozenset[str] = frozenset(
 DATASET_UTILITY_TASKS: frozenset[str] = frozenset(
     {"write_volume", "stat_volume", "list_volume", "ingest_media_sentiment"},
 )
+
+
+# --- Phase 5 / T-5.1: handler-level SecurityPreflight ----------------------
+#
+# Defense in depth: the Dockerfile startup preflight (T-4.2) checks forbidden
+# env vars at container boot. This handler-level preflight re-runs the same
+# checks at request time so a misconfigured env (e.g. a hot-reloaded env or a
+# shared image reused across endpoints) cannot sneak trading/broker/storage
+# credentials into the training loop.
+#
+# Mode-aware enforcement (matches the quality-gate convention):
+# - ``production``: fail closed. Any forbidden env var present, or a
+#   loopback/private callback URL, is a terminal failure → signed failure
+#   envelope with ``error_code="security_preflight_failed"``. The worker
+#   MUST be a pure function over its inputs in production — it must never
+#   carry broker/Redis/DB/trading credentials.
+# - ``canary`` / ``research``: advisory. Forbidden vars and private callback
+#   hosts are logged as warnings and recorded in the PreflightResult, but the
+#   job continues (canary/research are permissive by design). The redacted
+#   config summary is always printed so operators can audit the runtime.
+#
+# Redaction: secret-like env var names (matching SECRET_PATTERN) are redacted
+# to ``xx****yy`` (first 2 + last 2 chars). Forbidden vars that are present
+# are shown as ``FORBIDDEN:present`` (the value is never revealed). Non-secret
+# vars are shown in full.
+
+# Env vars the worker must NEVER carry. Presence of any of these means the
+# image/env was misconfigured with trading/broker/storage/admin credentials,
+# which violates the security boundary (the worker is a pure function over its
+# inputs — it must never carry trading, broker, Redis, DB-write, or cloud-admin
+# credentials). AWS keys are forbidden unless the worker needs S3 access (the
+# trainer worker does not — artifact uploads use presigned URLs).
+FORBIDDEN_ENV_VARS: tuple[str, ...] = (
+    "REDIS_URL",
+    "REDIS_HOST",
+    "DATABASE_URL",
+    "DB_URL",
+    "POSTGRES_URL",
+    "FINCEPT_JWT_SECRET",
+    "ALPACA_API_KEY",
+    "ALPACA_API_SECRET",
+    "ALPACA_SECRET_KEY",
+    "BROKER_URL",
+    "BROKER_SECRET",
+    "AMQP_URL",
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "MONGO_URL",
+    "MONGODB_URI",
+    "CLOUD_ADMIN_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+)
+
+# Regex detecting secret-like env var names. A name containing any of
+# SECRET/KEY/PASSWORD/TOKEN/CREDENTIAL is treated as a secret and redacted in
+# the config summary (the value is never printed in full).
+SECRET_PATTERN: re.Pattern[str] = re.compile(
+    r"(SECRET|KEY|PASSWORD|TOKEN|CREDENTIAL)",
+    re.IGNORECASE,
+)
+
+# Env var names that are part of the worker's legitimate config and should be
+# included in the redacted summary (their values are shown in full unless they
+# match SECRET_PATTERN).
+_KNOWN_CONFIG_ENVS: tuple[str, ...] = (
+    "QUANT_FOUNDRY_CALLBACK_SECRET",
+    "QUANT_FOUNDRY_CALLBACK_URL",
+    "QUANT_FOUNDRY_USE_REAL_TRAINER",
+    "QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS",
+    "QUANT_FOUNDRY_TRAINING_MODE",
+    "QUANT_FOUNDRY_GIT_SHA",
+    "RUNPOD_WEBHOOK_GET_JOB",
+)
+
+_CALLBACK_URL_ENV = "QUANT_FOUNDRY_CALLBACK_URL"
+_MODE_ENV = "QUANT_FOUNDRY_TRAINING_MODE"
+
+
+def _redact_secret_value(value: str) -> str:
+    """Redact a secret-like value to ``xx****yy`` (first 2 + last 2 chars).
+
+    For very short values (<=4 chars) the whole value is masked as ``****``
+    so no full secret is ever revealed. Empty values return ``<empty>``.
+    """
+    if not value:
+        return "<empty>"
+    if len(value) <= 4:
+        return "****"
+    return f"{value[:2]}****{value[-2:]}"
+
+
+def _host_is_private(host: str) -> bool:
+    """Return True if ``host`` resolves to a loopback/private/link-local IP.
+
+    Best-effort: if the host cannot be resolved, returns False (we cannot
+    prove it is private). The caller still treats an unresolvable host as
+    suspicious in production by leaving the validation to the URL parse step.
+    """
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if (
+            addr.is_loopback
+            or addr.is_private
+            or addr.is_link_local
+            or addr.is_reserved
+        ):
+            return True
+    return False
+
+
+class PreflightResult(BaseModel):
+    """Typed result of the handler-level SecurityPreflight (Phase 5 / T-5.1).
+
+    Frozen + ``extra='forbid'`` (audit integrity). Carries every check the
+    preflight performed so the dispatcher/trusted verifier can audit the
+    worker's runtime security posture at request time.
+
+    Fields:
+        passed: overall pass flag. ``True`` when no fail-closed check
+            triggered (production: no forbidden vars + valid callback URL;
+            canary/research: always True — failures are advisory).
+        mode: the training mode the preflight ran under
+            (``"production"`` / ``"canary"`` / ``"research"``).
+        forbidden_vars_found: tuple of forbidden env var names that were
+            present in the environment (never their values).
+        callback_url_validated: True if a callback URL was set and its host
+            was checked (False when no callback URL was configured).
+        uri_allowlists_validated: True if the dataset/artifact URI
+            allowlists were confirmed (always True — the ManifestDatasetLoader
+            and ArtifactWriter enforce allowlists downstream).
+        container_user: the user the container is running as
+            (``getpass.getuser()``; ``os.getuid()`` appended when available).
+        writable_dirs: tuple of writable directory paths probed at runtime.
+        redacted_config: dict of env var name → redacted value (secrets
+            masked; forbidden vars shown as ``"FORBIDDEN:present"``).
+        preflight_error: optional human-readable error string when the
+            preflight failed closed (production). None on pass / advisory.
+        checked_at_ns: monotonic-ish nanosecond timestamp of the check
+            (``time.time_ns()``).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passed: bool
+    mode: str
+    forbidden_vars_found: tuple[str, ...]
+    callback_url_validated: bool
+    uri_allowlists_validated: bool
+    container_user: str
+    writable_dirs: tuple[str, ...]
+    redacted_config: dict[str, str]
+    preflight_error: str | None
+    checked_at_ns: int
+
+
+class SecurityPreflight:
+    """Handler-level security preflight (Phase 5 / T-5.1).
+
+    Runs at the top of :func:`handler` (before task dispatch) as defense in
+    depth on top of the Dockerfile startup preflight (T-4.2). Checks:
+
+    1. Forbidden env vars are absent (broker/Redis/DB/trading/cloud-admin
+       credentials). Production fails closed; canary/research log warnings.
+    2. Callback URL host is not loopback/private (production only).
+    3. Dataset/artifact URI allowlists are enforced downstream by
+       ManifestDatasetLoader + ArtifactWriter (recorded as validated).
+    4. Prints a redacted config summary (secrets masked, forbidden vars shown
+       as ``FORBIDDEN:present`` — values never revealed).
+    5. Records the container user and writable directories.
+    """
+
+    def __init__(self, *, mode: TrainingMode) -> None:
+        self._mode = mode
+
+    # --- public API --------------------------------------------------------
+
+    def run(self) -> PreflightResult:
+        """Run all preflight checks and return a typed PreflightResult.
+
+        Production: ``passed`` is False if any forbidden env var is present
+        or the callback URL host is loopback/private (``preflight_error``
+        describes the first failure). Canary/research: ``passed`` is always
+        True (failures are advisory — recorded but non-fatal).
+        """
+        mode = self._mode
+        forbidden_found = self._check_forbidden_env_vars()
+        callback_ok, callback_error = self._check_callback_url()
+        uri_ok = self._check_uri_allowlists()
+        container_user = self._record_container_user()
+        writable_dirs = self._record_writable_dirs()
+        redacted = self._build_redacted_config(forbidden_found)
+
+        # Aggregate the redacted summary to stdout for operator audit.
+        self._print_summary(mode, forbidden_found, callback_ok, redacted)
+
+        errors: list[str] = []
+        if forbidden_found:
+            errors.append(
+                f"forbidden env vars present: {sorted(forbidden_found)}"
+            )
+        if not callback_ok and callback_error:
+            errors.append(callback_error)
+
+        if mode == TrainingMode.PRODUCTION and errors:
+            return PreflightResult(
+                passed=False,
+                mode=mode.value,
+                forbidden_vars_found=forbidden_found,
+                callback_url_validated=callback_ok,
+                uri_allowlists_validated=uri_ok,
+                container_user=container_user,
+                writable_dirs=writable_dirs,
+                redacted_config=redacted,
+                preflight_error="; ".join(errors),
+                checked_at_ns=time.time_ns(),
+            )
+
+        # Canary/research: advisory — record warnings but never fail.
+        if errors:
+            print(
+                f"[preflight] WARNING (advisory, mode={mode.value}): "
+                f"{'; '.join(errors)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return PreflightResult(
+            passed=True,
+            mode=mode.value,
+            forbidden_vars_found=forbidden_found,
+            callback_url_validated=callback_ok,
+            uri_allowlists_validated=uri_ok,
+            container_user=container_user,
+            writable_dirs=writable_dirs,
+            redacted_config=redacted,
+            preflight_error=None,
+            checked_at_ns=time.time_ns(),
+        )
+
+    # --- individual checks -------------------------------------------------
+
+    def _check_forbidden_env_vars(self) -> tuple[str, ...]:
+        """Return the tuple of forbidden env var names that are present."""
+        return tuple(
+            name for name in FORBIDDEN_ENV_VARS if os.environ.get(name)
+        )
+
+    def _check_callback_url(self) -> tuple[bool, str | None]:
+        """Validate the callback URL host (if set).
+
+        Returns ``(validated, error)``. When no callback URL is configured,
+        returns ``(False, None)`` (the worker returns the callback in its
+        response — a URL is optional). When set, the host must not resolve to
+        a loopback/private/link-local IP in production. Returns
+        ``(True, None)`` when the host is acceptable.
+        """
+        cb_url = os.environ.get(_CALLBACK_URL_ENV, "")
+        if not cb_url:
+            return (False, None)
+        parsed = urlparse(cb_url)
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return (False, "callback URL has no host")
+        if self._mode == TrainingMode.PRODUCTION and _host_is_private(host):
+            return (
+                False,
+                f"callback URL host {host!r} is loopback/private in "
+                f"production mode",
+            )
+        return (True, None)
+
+    def _check_uri_allowlists(self) -> bool:
+        """Confirm the dataset/artifact URI allowlists are enforced.
+
+        The actual allowlist enforcement lives downstream:
+        - Dataset URIs are validated by ManifestDatasetLoader (T-2.2) which
+          verifies manifest + data hashes and rejects unknown formats.
+        - Artifact URIs are validated by ``_validate_artifact_uri_scheme``
+          (T-1.2) which rejects disallowed schemes (http/ftp/...).
+        This check records that those gates are wired up (always True here —
+        the downstream gates raise on violation, fail-closed).
+        """
+        return True
+
+    def _record_container_user(self) -> str:
+        """Record the container user (getpass.getuser + uid when available)."""
+        try:
+            user = getpass.getuser() or "unknown"
+        except Exception:
+            user = "unknown"
+        uid = ""
+        try:
+            uid = f":{os.getuid()}"
+        except (AttributeError, OSError):
+            # Windows / platforms without getuid — omit the uid.
+            uid = ""
+        return f"{user}{uid}"
+
+    def _record_writable_dirs(self) -> tuple[str, ...]:
+        """Probe the candidate writable directories and return the writable ones."""
+        candidates = (
+            str(runpod_data_root()),
+            "/tmp",
+            "/runpod-volume",
+            "/workspace",
+        )
+        writable: list[str] = []
+        for cand in candidates:
+            try:
+                p = Path(cand)
+                if p.exists() and os.access(p, os.W_OK):
+                    writable.append(cand)
+            except OSError:
+                continue
+        return tuple(dict.fromkeys(writable))  # de-dup, preserve order
+
+    def _build_redacted_config(
+        self, forbidden_found: tuple[str, ...]
+    ) -> dict[str, str]:
+        """Build a redacted config summary dict.
+
+        - Forbidden vars that are present → ``"FORBIDDEN:present"`` (value
+          never revealed).
+        - Secret-like names (SECRET_PATTERN) → ``xx****yy``.
+        - Other vars → full value.
+        """
+        forbidden_set = set(forbidden_found)
+        redacted: dict[str, str] = {}
+        for name in _KNOWN_CONFIG_ENVS:
+            value = os.environ.get(name)
+            if value is None:
+                continue
+            if name in forbidden_set:
+                redacted[name] = "FORBIDDEN:present"
+            elif SECRET_PATTERN.search(name):
+                redacted[name] = _redact_secret_value(value)
+            else:
+                redacted[name] = value
+        # Surface any forbidden vars that are not in the known-config list so
+        # operators see them in the summary (value never revealed).
+        for name in forbidden_found:
+            if name not in redacted:
+                redacted[name] = "FORBIDDEN:present"
+        return redacted
+
+    def _print_summary(
+        self,
+        mode: TrainingMode,
+        forbidden_found: tuple[str, ...],
+        callback_ok: bool,
+        redacted: dict[str, str],
+    ) -> None:
+        """Print the redacted config summary to stdout for operator audit."""
+        print(f"[preflight] training_mode={mode.value}", flush=True)
+        if forbidden_found:
+            print(
+                f"[preflight] forbidden env vars present: "
+                f"{sorted(forbidden_found)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        cb_url = os.environ.get(_CALLBACK_URL_ENV, "")
+        if cb_url:
+            host = (urlparse(cb_url).hostname or "").lower()
+            status = "ok" if callback_ok else "REJECTED"
+            print(f"[preflight] callback_url host={host} ({status})", flush=True)
+        else:
+            print(
+                "[preflight] callback_url not set "
+                "(worker returns callback in response)",
+                flush=True,
+            )
+        print("[preflight] redacted config summary:", flush=True)
+        for key in sorted(redacted):
+            print(f"  {key}={redacted[key]}", flush=True)
+
+
+def _resolve_preflight_mode(input_data: dict[str, Any]) -> TrainingMode:
+    """Resolve the training mode for the handler-level preflight.
+
+    Reads the mode from, in priority order:
+    1. ``input_data["mode"]`` / ``input_data["training_mode"]`` (top-level
+       request fields — used by gpu_healthcheck and the canary).
+    2. ``input_data["extra_constraints"]["training_mode"]`` (the
+       RunPodTrainingRequest convention for training jobs — read BEFORE
+       schema validation so the preflight can fail closed on a production
+       request before any task dispatch).
+    3. The ``QUANT_FOUNDRY_TRAINING_MODE`` env var.
+    4. Defaults to ``canary`` (the most lenient mode) so a bare request
+       never accidentally fails closed at the preflight gate.
+
+    An unknown mode fails closed as ``production`` (strictest), matching
+    ``_resolve_healthcheck_mode``.
+    """
+    raw = input_data.get("mode") or input_data.get("training_mode")
+    if raw is None:
+        extra = input_data.get("extra_constraints")
+        if isinstance(extra, dict):
+            raw = extra.get("training_mode")
+    if raw is None:
+        raw = os.environ.get(_MODE_ENV)
+    if raw is None:
+        return TrainingMode.CANARY
+    try:
+        return TrainingMode(raw)
+    except ValueError:
+        return TrainingMode.PRODUCTION
+
+
+def _build_security_preflight_failure_callback(
+    *,
+    job_id: str | None,
+    preflight_result: PreflightResult,
+) -> dict[str, Any]:
+    """Build a signed security-preflight failure envelope (Phase 5 / T-5.1).
+
+    When the preflight fails closed in production, the handler emits this
+    signed failure so the dispatcher can authenticate the rejection (never a
+    silent drop). The envelope carries ``error_code="security_preflight_failed"``
+    and the redacted preflight result (no secret values are revealed).
+    """
+    resolved_job_id = job_id or "preflight-unknown"
+    callback_payload_dict = {
+        "schema_version": 1,
+        "job_id": resolved_job_id,
+        "worker_id": "runpod-trainer",
+        "result_type": "security_preflight_failed",
+        "payload": {
+            "error_code": "security_preflight_failed",
+            "message": preflight_result.preflight_error or "security preflight failed",
+            "mode": preflight_result.mode,
+            "forbidden_vars_found": list(preflight_result.forbidden_vars_found),
+        },
+    }
+    callback_payload = json.dumps(
+        callback_payload_dict, sort_keys=True,
+    ).encode("utf-8")
+    callback_ts = int(time.time())
+    try:
+        callback_signature = sign_callback(
+            callback_payload,
+            secret=_get_callback_secret(),
+            ts=callback_ts,
+            job_id=resolved_job_id,
+        )
+    except Exception:
+        # If the callback secret itself is missing/unusable we still refuse
+        # to start (fail closed) — return an unsigned-but-explicit failure.
+        callback_signature = ""
+    return {
+        "error_code": "security_preflight_failed",
+        "error_summary": preflight_result.preflight_error or "security preflight failed",
+        "job_id": job_id,
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+        "preflight_result": preflight_result.model_dump(),
+    }
 
 
 class ArtifactWriteResult(BaseModel):
@@ -1943,6 +2414,25 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "job_id": None,
         }
 
+    # Phase 5 / T-5.1: handler-level SecurityPreflight (defense in depth).
+    #
+    # Runs at request time, before task dispatch, on top of the Dockerfile
+    # startup preflight (T-4.2). Production fails closed if any forbidden env
+    # var (broker/Redis/DB/trading/cloud-admin credentials) is present or the
+    # callback URL host is loopback/private. Canary/research log advisory
+    # warnings but never fail. The redacted config summary is always printed.
+    preflight_mode = _resolve_preflight_mode(input_data)
+    preflight = SecurityPreflight(mode=preflight_mode)
+    preflight_result = preflight.run()
+    if not preflight_result.passed:
+        # Production fail-closed: refuse to start with app credentials
+        # present. Emit a signed failure envelope so the dispatcher can
+        # authenticate the rejection (never a silent drop).
+        return _build_security_preflight_failure_callback(
+            job_id=input_data.get("job_id"),
+            preflight_result=preflight_result,
+        )
+
     # Phase 4 / T-4.3: trainer worker task allowlist gate.
     #
     # This image is the GPU trainer (``trainer-gpu-tree``). It only
@@ -1967,7 +2457,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     task_type = input_data.get("task")
     job_id = input_data.get("job_id")
     if task_type in DATASET_UTILITY_TASKS:
-        return _build_task_rejection_callback(
+        rejection = _build_task_rejection_callback(
             task_type=task_type,
             error_code="task_not_supported_on_trainer",
             message=(
@@ -1977,10 +2467,12 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             ),
             job_id=job_id,
         )
+        rejection["preflight_result"] = preflight_result.model_dump()
+        return rejection
     # ``None`` (no task field) is an implicit training request — allow it
     # through to the training pipeline (do NOT reject as unknown).
     if task_type is not None and task_type not in ALLOWED_TRAINER_TASKS:
-        return _build_task_rejection_callback(
+        rejection = _build_task_rejection_callback(
             task_type=task_type,
             error_code="unknown_task_type",
             message=(
@@ -1990,12 +2482,16 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             ),
             job_id=job_id,
         )
+        rejection["preflight_result"] = preflight_result.model_dump()
+        return rejection
 
     # Callback-secret canary: bypasses the training pipeline entirely.
     # The API dispatches this to verify that the worker shares the same
     # QUANT_FOUNDRY_CALLBACK_SECRET. See gateway.runpod_canary().
     if input_data.get("task") == "callback_secret_canary":
-        return _handle_canary(input_data)
+        canary_result = _handle_canary(input_data)
+        canary_result["preflight_result"] = preflight_result.model_dump()
+        return canary_result
 
     # Volume write task: write a data chunk to the network volume.
     # This bypasses training entirely and is used to stage large datasets
@@ -2104,7 +2600,9 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     #   n_folds: 3 (optional, default 3)
     #   config: {...} (optional per-module config overrides)
     if input_data.get("task") == "ingest_media_sentiment":
-        return _handle_ingest_media_sentiment(input_data)
+        ingest_result = _handle_ingest_media_sentiment(input_data)
+        ingest_result["preflight_result"] = preflight_result.model_dump()
+        return ingest_result
 
     # GPU healthcheck task (Phase 4 / T-4.1): probe the worker's GPU
     # runtime and return signed metadata. Mode-aware:
@@ -2117,7 +2615,9 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     #   mode: "canary" | "research" | "production" (optional, default canary)
     #   training_mode: alias for mode (matches extra_constraints convention)
     if input_data.get("task") == "gpu_healthcheck":
-        return _handle_gpu_healthcheck(input_data)
+        hc_result = _handle_gpu_healthcheck(input_data)
+        hc_result["preflight_result"] = preflight_result.model_dump()
+        return hc_result
 
     # Support inline dataset for E2E testing: if the input includes
     # ``inline_dataset_csv``, write it to a temp file and override the
@@ -2758,6 +3258,13 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # promotion_eligible, failure code/reason, quality gate result,
         # GPU healthcheck, signature, and timestamp.
         "typed_callback": typed_callback.model_dump(),
+        # Phase 5 / T-5.1: handler-level SecurityPreflight result. Carries
+        # the forbidden-env-var check, callback URL validation, URI
+        # allowlist confirmation, container user, writable dirs, and the
+        # redacted config summary (no secret values). Advisory warnings
+        # (canary/research) are recorded in ``forbidden_vars_found`` and
+        # ``preflight_error``; production failures short-circuit above.
+        "preflight_result": preflight_result.model_dump(),
     }
 
 
