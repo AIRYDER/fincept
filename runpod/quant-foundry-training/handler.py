@@ -86,7 +86,22 @@ from quant_foundry.training_manifest import (  # noqa: E402
 # Phase 3 / T-2.2: manifest-first dataset loader with hash verification.
 from fincept_core.datasets import (  # noqa: E402
     DatasetLoadError,
+    LoadedDataset,
     ManifestDatasetLoader,
+)
+
+# Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
+# policy registry + validation function so the worker can recompute cheap
+# data checks and reject bad data even if the trusted-side preflight was
+# skipped (defense in depth).
+from quant_foundry.data_ingestion.quality_report import (  # noqa: E402
+    DatasetQualityReport,
+    FailedCheck,
+    QUALITY_POLICY_REGISTRY,
+    QualityGateResult,
+    QualityPolicy,
+    resolve_quality_policy,
+    validate_quality_policy,
 )
 
 
@@ -783,7 +798,563 @@ def _load_dataset_via_manifest(
     # The verified data URI is what the trainer reads. Resolve it to a
     # path the trainer can open (already resolved above, but the
     # manifest may declare a different data_uri — use the receipt's).
-    return receipt.data_uri, receipt_dict
+    return receipt.data_uri, receipt_dict, loaded
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 / T-3.3: Worker-Side QualityGateRunner
+# ---------------------------------------------------------------------------
+#
+# The worker recomputes cheap data checks on the loaded dataframe AFTER
+# the manifest-first load (T-2.2) and BEFORE training begins. This is
+# defense in depth: even if the trusted-side preflight was skipped (or
+# produced a stale/tampered quality report), the worker catches bad data
+# on its own copy of the dataframe.
+#
+# Mode-aware enforcement:
+# - ``production``: all gates must pass. Any failure → signed failure
+#   callback with ``error_code="quality_gate_failed"`` and the specific
+#   ``gate_code``. Training does NOT start.
+# - ``canary``: gates are advisory — failures are logged as warnings and
+#   the job continues, but ``promotion_eligible`` is forced to ``False``.
+# - ``research``: gates are advisory — failures are logged but the job
+#   continues (research is permissive by design).
+#
+# The failure callback is HMAC-signed with the same
+# ``QUANT_FOUNDRY_CALLBACK_SECRET`` used for training callbacks, so the
+# dispatcher/trusted verifier can authenticate it.
+
+
+class QualityGateError(ValueError):
+    """A quality gate configuration or resolution error (fail-closed).
+
+    Subclass of :class:`ValueError` so existing ``except ValueError``
+    handlers keep catching it. ``code`` is a short machine-readable
+    string (``unknown_quality_policy``, ``quality_report_fetch_failed``,
+    ``quality_report_parse_failed``) the handler maps to an error
+    callback.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+# --- dataframe-agnostic helpers -------------------------------------------
+#
+# The ManifestDatasetLoader may return a pandas DataFrame, a pyarrow
+# Table, or (rarely) a numpy array. These helpers work across all three
+# so the quality gate runner does not hard-depend on pandas.
+
+
+def _df_row_count(df: Any) -> int:
+    """Return the number of rows in ``df`` (pandas, pyarrow, or numpy)."""
+    if hasattr(df, "__len__"):
+        return len(df)
+    shape = getattr(df, "shape", None)
+    if shape is not None and len(shape) >= 1:
+        return int(shape[0])
+    return 0
+
+
+def _df_columns(df: Any) -> list[str]:
+    """Return the column names of ``df`` (pandas, pyarrow, or numpy)."""
+    if hasattr(df, "columns"):
+        try:
+            return [str(c) for c in df.columns]
+        except Exception:  # noqa: BLE001 - best-effort column extraction
+            pass
+    if hasattr(df, "column_names"):
+        return list(df.column_names)
+    # numpy ndarray → positional column names.
+    shape = getattr(df, "shape", None)
+    if shape is not None and len(shape) >= 2:
+        return [f"col_{i}" for i in range(shape[1])]
+    return []
+
+
+def _df_to_pandas(df: Any) -> Any:
+    """Best-effort convert ``df`` to a pandas DataFrame.
+
+    Returns the original object if pandas is not available or the
+    conversion fails. The caller should guard pandas-specific operations
+    with ``hasattr`` checks after calling this.
+    """
+    # Already a pandas DataFrame.
+    if hasattr(df, "duplicated") and hasattr(df, "iloc"):
+        return df
+    # pyarrow Table → pandas.
+    if hasattr(df, "to_pandas"):
+        try:
+            return df.to_pandas()
+        except Exception:  # noqa: BLE001
+            pass
+    return df
+
+
+def _df_duplicate_count(df: Any) -> int:
+    """Count exact duplicate rows in ``df`` (pandas or pyarrow)."""
+    pdf = _df_to_pandas(df)
+    if hasattr(pdf, "duplicated"):
+        try:
+            return int(pdf.duplicated().sum())
+        except Exception:  # noqa: BLE001
+            pass
+    # pyarrow fallback: unique() height difference.
+    if hasattr(df, "unique") and hasattr(df, "num_rows"):
+        try:
+            return int(df.num_rows - df.unique().num_rows)
+        except Exception:  # noqa: BLE001
+            pass
+    return 0
+
+
+def _df_label_balance(df: Any, label_col: str) -> float:
+    """Return the minority class fraction (0..1) for ``label_col``.
+
+    Returns ``0.0`` when the column is missing, empty, or the fraction
+    cannot be computed (fail-closed: an unknown label distribution is
+    treated as maximally imbalanced).
+    """
+    cols = _df_columns(df)
+    if label_col not in cols:
+        return 0.0
+    pdf = _df_to_pandas(df)
+    if hasattr(pdf, "value_counts") and hasattr(pdf, "__getitem__"):
+        try:
+            series = pdf[label_col]
+            non_null = series.dropna()
+            total = len(non_null)
+            if total == 0:
+                return 0.0
+            counts = non_null.value_counts()
+            return float(counts.min()) / total
+        except Exception:  # noqa: BLE001
+            pass
+    return 0.0
+
+
+def _df_feature_coverage(df: Any, feature_cols: list[str]) -> float:
+    """Return the minimum non-null fraction across ``feature_cols`` (0..1).
+
+    A missing column contributes ``0.0`` (fail-closed). Returns ``1.0``
+    when there are no feature columns to check (vacuously covered).
+    """
+    if not feature_cols:
+        return 1.0
+    total_rows = _df_row_count(df)
+    if total_rows == 0:
+        return 0.0
+    cols = set(_df_columns(df))
+    pdf = _df_to_pandas(df)
+    min_frac = 1.0
+    for col in feature_cols:
+        if col not in cols:
+            return 0.0  # missing column → zero coverage
+        # pandas path.
+        if hasattr(pdf, "isnull") and hasattr(pdf, "__getitem__"):
+            try:
+                null_count = int(pdf[col].isnull().sum())
+                frac = (total_rows - null_count) / total_rows
+                min_frac = min(min_frac, frac)
+                continue
+            except Exception:  # noqa: BLE101
+                pass
+        # pyarrow path.
+        if hasattr(df, "column") and hasattr(df, "num_rows"):
+            try:
+                col_data = df.column(col)
+                null_count = int(col_data.null_count)
+                frac = (total_rows - null_count) / total_rows
+                min_frac = min(min_frac, frac)
+                continue
+            except Exception:  # noqa: BLE101
+                pass
+        # Cannot determine coverage for this column → fail closed.
+        return 0.0
+    return min_frac
+
+
+def _fetch_quality_report(
+    quality_report_uri: str,
+    *,
+    expected_sha256: str | None = None,
+) -> DatasetQualityReport:
+    """Fetch + parse a :class:`DatasetQualityReport` from a URI.
+
+    Reads the JSON file at ``quality_report_uri`` (resolved via
+    :func:`resolve_volume_path`), optionally verifies its SHA-256, and
+    parses it into a :class:`DatasetQualityReport`. Raises
+    :class:`QualityGateError` on any fetch, hash, or parse failure
+    (fail-closed).
+    """
+    resolved = resolve_volume_path(quality_report_uri)
+    try:
+        raw = Path(resolved).read_bytes()
+    except OSError as exc:
+        raise QualityGateError(
+            "quality_report_fetch_failed",
+            f"failed to fetch quality report from {quality_report_uri}: {exc}",
+        ) from exc
+    if expected_sha256:
+        import hashlib
+
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual.lower() != expected_sha256.lower():
+            raise QualityGateError(
+                "quality_report_hash_mismatch",
+                f"quality report sha256 mismatch: expected {expected_sha256}, "
+                f"got {actual}",
+            )
+    try:
+        return DatasetQualityReport.model_validate_json(raw)
+    except Exception as exc:
+        raise QualityGateError(
+            "quality_report_parse_failed",
+            f"failed to parse quality report JSON: {exc}",
+        ) from exc
+
+
+class QualityGateRunner:
+    """Worker-side quality gate runner (Phase 3 / T-3.3).
+
+    Recomputes cheap data checks on the loaded dataframe and validates
+    them against a :class:`QualityPolicy`. Defense in depth: even if
+    the trusted-side preflight was skipped (or produced a stale report),
+    the worker rejects bad data before GPU training begins.
+
+    Usage::
+
+        runner = QualityGateRunner(
+            loaded, quality_policy_id="qp-production-v1",
+            quality_report=report, mode=TrainingMode.PRODUCTION,
+        )
+        result = runner.run()
+        if not result.passed and mode == TrainingMode.PRODUCTION:
+            # emit signed failure callback, do NOT train
+    """
+
+    def __init__(
+        self,
+        loaded: LoadedDataset,
+        *,
+        quality_policy_id: str | None = None,
+        quality_report: DatasetQualityReport | None = None,
+        mode: TrainingMode = TrainingMode.RESEARCH,
+    ) -> None:
+        self._loaded = loaded
+        self._quality_report = quality_report
+        self._mode = mode
+        self._policy = self._resolve_policy(quality_policy_id, mode)
+
+    # ------------------------------------------------------------------ #
+    # Policy resolution                                                  #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _resolve_policy(
+        policy_id: str | None, mode: TrainingMode,
+    ) -> QualityPolicy:
+        """Resolve the quality policy, falling back to the mode default.
+
+        Raises :class:`QualityGateError` (``unknown_quality_policy``)
+        if an explicit ``policy_id`` is provided but not registered, or
+        if no policy is available for the mode (fail-closed).
+        """
+        if policy_id:
+            policy = resolve_quality_policy(policy_id)
+            if policy is None:
+                raise QualityGateError(
+                    "unknown_quality_policy",
+                    f"unknown quality_policy_id {policy_id!r} "
+                    f"(not in registry: "
+                    f"{sorted(QUALITY_POLICY_REGISTRY.known_ids())})",
+                )
+            return policy
+        # Fall back to the mode's default policy (defense in depth:
+        # even without an explicit policy id, the worker applies the
+        # mode-appropriate gate).
+        policy = QUALITY_POLICY_REGISTRY.for_mode(mode)
+        if policy is None:
+            raise QualityGateError(
+                "unknown_quality_policy",
+                f"no quality_policy_id provided and no default policy "
+                f"for mode {mode.value}",
+            )
+        return policy
+
+    # ------------------------------------------------------------------ #
+    # Public API                                                         #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def policy(self) -> QualityPolicy:
+        """The resolved quality policy."""
+        return self._policy
+
+    def run(self) -> QualityGateResult:
+        """Run the quality gates and return a :class:`QualityGateResult`.
+
+        Always recomputes cheap data checks on the loaded dataframe
+        (defense in depth). When a quality report is provided, also
+        validates it against the policy via
+        :func:`validate_quality_policy` and merges any failures. The
+        merged result is fail-closed: ``passed`` is ``True`` only when
+        no check failed across either path.
+        """
+        cheap_result = self._run_cheap_checks()
+
+        if self._quality_report is not None:
+            report_result = validate_quality_policy(
+                self._quality_report, self._policy,
+            )
+            return self._merge_results(report_result, cheap_result)
+
+        return cheap_result
+
+    # ------------------------------------------------------------------ #
+    # Cheap data checks (recomputed on the loaded df)                    #
+    # ------------------------------------------------------------------ #
+
+    def _run_cheap_checks(self) -> QualityGateResult:
+        """Recompute cheap data checks on the loaded dataframe.
+
+        Checks (each maps to a gate code):
+        - ``row_count_mismatch`` — actual rows vs manifest-declared.
+        - ``duplicate_rows`` — duplicate count vs policy max.
+        - ``label_balance`` — minority class fraction vs policy min.
+        - ``feature_coverage`` — min non-null fraction vs policy min.
+        - ``schema_match`` — expected feature/label columns exist in df.
+        """
+        failed: list[FailedCheck] = []
+        df = self._loaded.df
+        roles = self._loaded.column_roles
+        policy = self._policy
+
+        # --- row count (compare to manifest-declared) -------------------
+        actual_rows = _df_row_count(df)
+        declared_rows = self._loaded.row_count
+        if declared_rows is not None and actual_rows != declared_rows:
+            failed.append(
+                FailedCheck(
+                    check_name="row_count_mismatch",
+                    expected=str(declared_rows),
+                    actual=str(actual_rows),
+                    message=(
+                        f"row count mismatch: manifest declares "
+                        f"{declared_rows} rows, loaded df has "
+                        f"{actual_rows} rows"
+                    ),
+                )
+            )
+
+        # --- row count (compare to policy minimum) ----------------------
+        # Defense in depth: even without a quality report, the worker
+        # checks the actual row count against the policy's min_row_count
+        # (mirrors the ``row_count`` check in validate_quality_policy).
+        if actual_rows < policy.min_row_count:
+            failed.append(
+                FailedCheck(
+                    check_name="row_count",
+                    expected=f">= {policy.min_row_count}",
+                    actual=str(actual_rows),
+                    message=(
+                        f"dataset has {actual_rows} rows; policy "
+                        f"requires at least {policy.min_row_count}"
+                    ),
+                )
+            )
+
+        # --- duplicate rows ---------------------------------------------
+        dup_count = _df_duplicate_count(df)
+        if dup_count > policy.max_duplicate_rows:
+            failed.append(
+                FailedCheck(
+                    check_name="duplicate_rows",
+                    expected=f"<= {policy.max_duplicate_rows}",
+                    actual=str(dup_count),
+                    message=(
+                        f"dataset has {dup_count} duplicate rows; "
+                        f"policy allows at most "
+                        f"{policy.max_duplicate_rows}"
+                    ),
+                )
+            )
+
+        # --- label balance (minority class fraction) --------------------
+        label_col = (
+            roles.label_columns[0] if roles.label_columns else None
+        )
+        if label_col:
+            minority = _df_label_balance(df, label_col)
+            if minority < policy.min_label_balance:
+                failed.append(
+                    FailedCheck(
+                        check_name="label_balance",
+                        expected=f">= {policy.min_label_balance}",
+                        actual=str(minority),
+                        message=(
+                            f"minority class fraction is {minority}; "
+                            f"policy requires at least "
+                            f"{policy.min_label_balance}"
+                        ),
+                    )
+                )
+
+        # --- feature coverage (min non-null fraction) -------------------
+        feature_cols = list(roles.feature_columns)
+        min_cov = _df_feature_coverage(df, feature_cols)
+        if min_cov < policy.min_feature_coverage:
+            failed.append(
+                FailedCheck(
+                    check_name="feature_coverage",
+                    expected=f">= {policy.min_feature_coverage}",
+                    actual=str(min_cov),
+                    message=(
+                        f"minimum feature coverage is {min_cov}; "
+                        f"policy requires at least "
+                        f"{policy.min_feature_coverage}"
+                    ),
+                )
+            )
+
+        # --- schema match (expected columns exist) ----------------------
+        df_cols = set(_df_columns(df))
+        expected_cols = list(feature_cols)
+        if label_col:
+            expected_cols.append(label_col)
+        missing = [c for c in expected_cols if c not in df_cols]
+        if missing and policy.require_schema_match:
+            failed.append(
+                FailedCheck(
+                    check_name="schema_match",
+                    expected=str(expected_cols),
+                    actual=f"missing={missing}",
+                    message=(
+                        f"schema mismatch: columns {missing} declared "
+                        f"in column roles but not present in the "
+                        f"loaded dataframe (columns={sorted(df_cols)})"
+                    ),
+                )
+            )
+
+        return QualityGateResult(
+            policy_id=policy.policy_id,
+            passed=len(failed) == 0,
+            failed_checks=tuple(failed),
+            evaluated_at_ns=time.time_ns(),
+        )
+
+    # ------------------------------------------------------------------ #
+    # Merging                                                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _merge_results(
+        report_result: QualityGateResult,
+        cheap_result: QualityGateResult,
+    ) -> QualityGateResult:
+        """Merge two gate results (union of failed checks, fail-closed).
+
+        De-duplicates by ``check_name`` so a failure caught by both the
+        report validation and the cheap checks is reported once. The
+        merged result is fail-closed: ``passed`` is ``True`` only when
+        both inputs passed.
+        """
+        seen: set[str] = set()
+        merged: list[FailedCheck] = []
+        for fc in (*report_result.failed_checks, *cheap_result.failed_checks):
+            if fc.check_name in seen:
+                continue
+            seen.add(fc.check_name)
+            merged.append(fc)
+        return QualityGateResult(
+            policy_id=report_result.policy_id,
+            passed=len(merged) == 0,
+            failed_checks=tuple(merged),
+            evaluated_at_ns=time.time_ns(),
+        )
+
+
+def _quality_gate_result_to_dict(result: QualityGateResult) -> dict[str, Any]:
+    """Serialize a :class:`QualityGateResult` to a JSON-safe dict."""
+    return {
+        "policy_id": result.policy_id,
+        "passed": result.passed,
+        "failed_checks": [
+            {
+                "check_name": fc.check_name,
+                "expected": fc.expected,
+                "actual": fc.actual,
+                "message": fc.message,
+            }
+            for fc in result.failed_checks
+        ],
+        "evaluated_at_ns": result.evaluated_at_ns,
+    }
+
+
+def _build_quality_gate_failure_callback(
+    *,
+    job_id: str,
+    mode: TrainingMode,
+    gate_result: QualityGateResult,
+) -> dict[str, Any]:
+    """Build a signed quality-gate failure callback.
+
+    The callback carries:
+    - ``error_code``: ``"quality_gate_failed"`` (machine-readable).
+    - ``gate_code``: the first failed check's ``check_name`` (e.g.
+      ``"row_count_mismatch"``, ``"label_balance"``).
+    - ``quality_gate_result``: the full serialized gate result.
+    - ``mode``: the training mode.
+
+    The callback payload is HMAC-signed with
+    ``QUANT_FOUNDRY_CALLBACK_SECRET`` (same mechanism as training
+    callbacks) so the dispatcher/trusted verifier can authenticate it.
+    """
+    gate_code = (
+        gate_result.failed_checks[0].check_name
+        if gate_result.failed_checks
+        else "unknown"
+    )
+    callback_payload_dict = {
+        "schema_version": 1,
+        "job_id": job_id,
+        "worker_id": "runpod-quality-gate",
+        "result_type": "quality_gate_failed",
+        "payload": {
+            "error_code": "quality_gate_failed",
+            "gate_code": gate_code,
+            "mode": mode.value,
+            "quality_gate_result": _quality_gate_result_to_dict(gate_result),
+        },
+    }
+    callback_payload = json.dumps(
+        callback_payload_dict, sort_keys=True,
+    ).encode("utf-8")
+    callback_ts = int(time.time())
+    callback_signature = sign_callback(
+        callback_payload,
+        secret=_get_callback_secret(),
+        ts=callback_ts,
+        job_id=job_id,
+    )
+    return {
+        "error_code": "quality_gate_failed",
+        "error_summary": (
+            f"quality gate failed (mode={mode.value}, "
+            f"policy={gate_result.policy_id}, gate={gate_code}): "
+            f"{len(gate_result.failed_checks)} check(s) failed"
+        ),
+        "job_id": job_id,
+        "gate_code": gate_code,
+        "mode": mode.value,
+        "quality_gate_result": _quality_gate_result_to_dict(gate_result),
+        "callback_payload": callback_payload.decode("utf-8"),
+        "callback_signature": callback_signature,
+        "callback_ts": callback_ts,
+    }
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
@@ -968,9 +1539,10 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # points ``dataset_manifest_ref`` at the verified data file. Any
     # verification failure is a terminal error (fail-closed).
     dataset_load_receipt: dict[str, Any] | None = None
+    loaded_dataset: LoadedDataset | None = None
     if dataset_load_spec and isinstance(dataset_load_spec, dict):
         try:
-            verified_data_uri, dataset_load_receipt = (
+            verified_data_uri, dataset_load_receipt, loaded_dataset = (
                 _load_dataset_via_manifest(
                     dataset_load_spec, job_id=req.job_id,
                 )
@@ -1002,6 +1574,155 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         resolved_ref = resolve_volume_path(req.dataset_manifest_ref)
         if resolved_ref != req.dataset_manifest_ref:
             req = req.model_copy(update={"dataset_manifest_ref": resolved_ref})
+
+    # Phase 3 / T-3.3: worker-side quality gate runner (defense in depth).
+    #
+    # After the manifest-first load (T-2.2) and BEFORE training begins,
+    # the worker recomputes cheap data checks on the loaded dataframe and
+    # validates them against the resolved quality policy. This catches
+    # bad data even if the trusted-side preflight was skipped (or
+    # produced a stale/tampered quality report).
+    #
+    # Mode-aware enforcement:
+    # - ``production``: all gates must pass. Any failure → signed failure
+    #   callback with ``error_code="quality_gate_failed"`` + ``gate_code``.
+    #   Training does NOT start (bad datasets stop before GPU training).
+    # - ``canary``: gates are advisory — failures are logged as warnings
+    #   and the job continues, but ``quality_gate_advisory_failures`` is
+    #   included in the result so the dispatcher can mark
+    #   ``promotion_eligible=False``.
+    # - ``research``: gates are advisory — failures are logged but the
+    #   job continues (research is permissive by design).
+    #
+    # The quality policy id is read from
+    # ``req.extra_constraints["quality_policy_id"]`` (forwarded by the
+    # dispatch manifest). When absent, the mode's default policy is used
+    # (defense in depth: the worker always applies a gate).
+    quality_gate_result_dict: dict[str, Any] | None = None
+    quality_gate_advisory_failures: dict[str, Any] | None = None
+    if loaded_dataset is not None:
+        # Resolve the training mode (same convention as
+        # runpod_training._resolve_mode).
+        raw_mode = req.extra_constraints.get("training_mode")
+        try:
+            gate_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+        except ValueError:
+            # Unknown mode → fail closed as production (strictest).
+            gate_mode = TrainingMode.PRODUCTION
+
+        quality_policy_id = req.extra_constraints.get("quality_policy_id") or None
+
+        # Optionally fetch the quality report if the manifest or load
+        # spec declares a ``quality_report_uri``. The manifest dict
+        # (loaded_dataset.manifest) is the source of truth once verified.
+        quality_report: DatasetQualityReport | None = None
+        qr_uri = (
+            loaded_dataset.manifest.get("quality_report_uri")
+            if loaded_dataset.manifest
+            else None
+        ) or (dataset_load_spec or {}).get("quality_report_uri")
+        qr_sha = (
+            loaded_dataset.manifest.get("quality_report_sha256")
+            if loaded_dataset.manifest
+            else None
+        ) or (dataset_load_spec or {}).get("quality_report_sha256")
+        if qr_uri:
+            try:
+                quality_report = _fetch_quality_report(
+                    qr_uri, expected_sha256=qr_sha,
+                )
+            except QualityGateError as exc:
+                # Production: a declared-but-unreadable quality report
+                # is a hard failure (fail-closed). Canary/research: log
+                # and continue without the report (the cheap checks
+                # still run).
+                if gate_mode == TrainingMode.PRODUCTION:
+                    write_status(
+                        req.job_id, "failed",
+                        error_code=exc.code,
+                        error_summary=str(exc),
+                    )
+                    return {
+                        "error_code": exc.code,
+                        "error_summary": str(exc),
+                        "job_id": req.job_id,
+                    }
+                # Advisory: log the warning (best-effort).
+                write_status(
+                    req.job_id, "started",
+                    error_code=exc.code,
+                    error_summary=f"advisory: {exc}",
+                )
+
+        # Run the quality gate.
+        try:
+            gate_runner = QualityGateRunner(
+                loaded_dataset,
+                quality_policy_id=quality_policy_id,
+                quality_report=quality_report,
+                mode=gate_mode,
+            )
+            gate_result = gate_runner.run()
+        except QualityGateError as exc:
+            # Policy resolution failure (unknown policy id). Production
+            # fails closed; canary/research log and skip the gate.
+            if gate_mode == TrainingMode.PRODUCTION:
+                write_status(
+                    req.job_id, "failed",
+                    error_code=exc.code,
+                    error_summary=str(exc),
+                )
+                return {
+                    "error_code": exc.code,
+                    "error_summary": str(exc),
+                    "job_id": req.job_id,
+                }
+            write_status(
+                req.job_id, "started",
+                error_code=exc.code,
+                error_summary=f"advisory: {exc}",
+            )
+        else:
+            quality_gate_result_dict = _quality_gate_result_to_dict(gate_result)
+
+            if not gate_result.passed:
+                if gate_mode == TrainingMode.PRODUCTION:
+                    # --- production: fail closed BEFORE training ----------
+                    # Bad datasets stop before GPU training begins. Emit
+                    # a signed failure callback with the gate code so the
+                    # dispatcher/trusted verifier can authenticate it.
+                    failure = _build_quality_gate_failure_callback(
+                        job_id=req.job_id,
+                        mode=gate_mode,
+                        gate_result=gate_result,
+                    )
+                    write_status(
+                        req.job_id, "failed",
+                        error_code="quality_gate_failed",
+                        error_summary=failure["error_summary"],
+                    )
+                    return failure
+                else:
+                    # --- canary/research: advisory -------------------------
+                    # Log the failures as warnings but continue training.
+                    # The advisory failures are included in the result so
+                    # the dispatcher can mark promotion_eligible=False.
+                    failed_names = [
+                        fc.check_name for fc in gate_result.failed_checks
+                    ]
+                    write_status(
+                        req.job_id, "started",
+                        error_code="quality_gate_advisory",
+                        error_summary=(
+                            f"advisory quality gate failures (mode="
+                            f"{gate_mode.value}): {failed_names}"
+                        ),
+                    )
+                    quality_gate_advisory_failures = {
+                        "policy_id": gate_result.policy_id,
+                        "failed_checks": failed_names,
+                        "mode": gate_mode.value,
+                    }
 
     # Resolve output_prefix if provided (handler-level extension)
     if output_prefix:
@@ -1186,6 +1907,14 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # so the dispatcher/trusted verifier can audit the dataset
         # provenance.
         "dataset_load_receipt": dataset_load_receipt,
+        # Phase 3 / T-3.3: worker-side quality gate result. Present when
+        # the job used manifest-first loading (the gate runs on the
+        # loaded dataframe). ``passed=True`` means all gates passed;
+        # ``quality_gate_advisory_failures`` is non-null when canary/
+        # research mode logged advisory failures (the dispatcher should
+        # mark promotion_eligible=False in that case).
+        "quality_gate_result": quality_gate_result_dict,
+        "quality_gate_advisory_failures": quality_gate_advisory_failures,
         # Phase 1 / T-1.1: typed artifact result (uri/hash/size/format/
         # kind/loader_family + manifest hashes). Present on every
         # successful training job; the dispatcher/trusted verifier uses
