@@ -80,6 +80,16 @@ from fincept_core.datasets.cv import (
     derive_walk_forward_window as _canonical_derive_walk_forward_window,
 )
 
+# Quality-policy registry (Phase 3 / T-3.2). Imported lazily-safe: the
+# quality_report module only imports from dataset_manifest (not from this
+# module), so there is no circular import. The registry supplies the
+# known ``quality_policy_id`` values that production-mode manifests must
+# reference.
+from quant_foundry.data_ingestion.quality_report import (
+    QualityPolicy,
+    resolve_quality_policy,
+)
+
 # Try to import the alpha_genome allowlists (preferred). Fall back to a
 # small literal allowlist if the module is not yet importable (e.g. older
 # deployment where the lab is not enabled).
@@ -508,6 +518,32 @@ class TrainingManifest(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_quality_policy_id_known(self) -> TrainingManifest:
+        """Validate that ``quality_policy_id`` names a real policy.
+
+        When a ``quality_policy_id`` is provided (non-empty), it must
+        resolve to a registered :class:`QualityPolicy` in the
+        :data:`QUALITY_POLICY_REGISTRY`. This is fail closed: an unknown
+        policy id is rejected at construction so a manifest can never
+        silently reference a non-existent gate. Production mode already
+        requires a non-empty id (see :meth:`_validate_mode_rules`); this
+        validator additionally confirms the id is real.
+
+        A ``None`` or empty id is left to the mode rules (canary/research
+        permit no policy; production requires one) — this validator only
+        rejects *unknown* ids, not *missing* ones.
+        """
+        if self.quality_policy_id and self.quality_policy_id.strip():
+            if resolve_quality_policy(self.quality_policy_id) is None:
+                raise ValueError(
+                    "quality_policy_id "
+                    f"{self.quality_policy_id!r} is not a registered "
+                    "quality policy; known ids: "
+                    f"{sorted(_known_quality_policy_ids())}"
+                )
+        return self
+
     def model_post_init(self, __context: Any) -> None:
         ch = _compute_content_hash(self)
         object.__setattr__(self, "content_hash", ch)
@@ -524,6 +560,19 @@ class TrainingManifest(BaseModel):
         return copied
 
     # --- helpers --------------------------------------------------------
+
+    def resolve_quality_policy(self) -> QualityPolicy | None:
+        """Resolve this manifest's ``quality_policy_id`` to a policy.
+
+        Returns the registered :class:`QualityPolicy` for the manifest's
+        ``quality_policy_id``, or ``None`` when no id is set or the id is
+        unknown. Construction already rejects unknown ids (when
+        provided), so for a successfully-constructed manifest this
+        returns the policy whenever ``quality_policy_id`` is set.
+        """
+        if not self.quality_policy_id:
+            return None
+        return resolve_quality_policy(self.quality_policy_id)
 
     def to_dispatch_request(
         self,
@@ -579,6 +628,19 @@ class TrainingManifest(BaseModel):
                 ),
             },
         }
+
+
+def _known_quality_policy_ids() -> frozenset[str]:
+    """Return the set of registered quality-policy ids.
+
+    Used by the manifest validator's error message so an operator can
+    see the valid options when an unknown id is rejected.
+    """
+    from quant_foundry.data_ingestion.quality_report import (
+        QUALITY_POLICY_REGISTRY,
+    )
+
+    return QUALITY_POLICY_REGISTRY.known_ids()
 
 
 def _compute_content_hash(manifest: TrainingManifest) -> str:
@@ -696,8 +758,10 @@ __all__ = [
     "MODE_RULES",
     "ModelFamily",
     "ModelFamilyStr",
+    "QualityPolicy",
     "TrainingManifest",
     "TrainingMode",
     "WalkForwardWindow",
     "derive_walk_forward_window",
+    "resolve_quality_policy",
 ]
