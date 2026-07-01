@@ -22,6 +22,27 @@ Critical invariants (enforced + tested):
   terminal status, not a crash).
 - Training failure returns a safe terminal status (TrainingFailure), not
   a raw exception.
+
+Training modes (Phase 0):
+    The training system supports three modes — ``canary``, ``research``,
+    and ``production`` — defined in
+    :class:`quant_foundry.training_manifest.TrainingMode`. The
+    authoritative rules table is
+    :data:`quant_foundry.training_manifest.MODE_RULES`; builders and
+    operators consult that single table when deciding what rules apply.
+
+    - ``canary``: small registered dataset, tiny artifacts, never
+      promotion eligible. CPU fallback allowed.
+    - ``research``: real RunPod training, experimental families allowed,
+      promotion disabled unless escalated. CPU fallback allowed.
+    - ``production``: registered L3/L4 dataset, GPU required, artifact
+      verification required, quality gates required, no CPU fallback.
+
+    **Local training is not an acceptance substitute.** A ``canary`` or
+    ``research`` run may execute on the local CPU trainer for contract
+    proofs, but a ``production`` run MUST execute on real RunPod GPU
+    infrastructure. Use :func:`validate_mode` to enforce the mode rules
+    at the dispatch boundary before handing a request to a trainer.
 """
 
 from __future__ import annotations
@@ -30,7 +51,7 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from quant_foundry.schemas import (
     ArtifactManifest,
@@ -40,6 +61,10 @@ from quant_foundry.schemas import (
     RunPodTrainingRequest,
 )
 from quant_foundry.signatures import sign_callback
+from quant_foundry.training_manifest import (
+    MODE_RULES,
+    TrainingMode,
+)
 
 # --- errors ----------------------------------------------------------------
 
@@ -55,6 +80,117 @@ class TrainingFailure(Exception):
         super().__init__(error_summary)
         self.error_code = error_code
         self.error_summary = error_summary
+
+
+# --- mode validation (Phase 0) ---------------------------------------------
+
+
+class ModeValidationError(ValueError):
+    """Raised when a training request violates its mode's rules.
+
+    This is a :class:`ValueError` subclass so it surfaces as a
+    schema-level rejection (fail closed). The dispatch path should
+    catch it and translate it into a ``TrainingFailure`` (or a gateway
+    bad-request response) depending on where validation runs.
+    """
+
+
+def _resolve_mode(req: RunPodTrainingRequest) -> TrainingMode:
+    """Resolve the training mode from a ``RunPodTrainingRequest``.
+
+    The cross-boundary ``RunPodTrainingRequest`` schema does not carry a
+    dedicated ``mode`` field (it must stay minimal for the worker). The
+    mode is forwarded through ``extra_constraints["training_mode"]`` by
+    :meth:`TrainingManifest.to_dispatch_request`. If absent, default to
+    ``research`` (the historical, permissive behaviour).
+    """
+    raw = req.extra_constraints.get("training_mode")
+    if raw is None:
+        return TrainingMode.RESEARCH
+    try:
+        return TrainingMode(raw)
+    except ValueError:
+        raise ModeValidationError(
+            f"unknown training_mode {raw!r}; expected one of "
+            f"{[m.value for m in TrainingMode]}"
+        ) from None
+
+
+def validate_mode(req: RunPodTrainingRequest) -> TrainingMode:
+    """Validate that ``req`` satisfies its training mode's rules.
+
+    The mode is read from ``req.extra_constraints["training_mode"]``
+    (forwarded by :meth:`TrainingManifest.to_dispatch_request`). The
+    rules are sourced from the single
+    :data:`quant_foundry.training_manifest.MODE_RULES` table.
+
+    Production mode fails closed. The per-field semantics at the
+    dispatch boundary are:
+
+    - ``gpu_required``: must be ``"1"`` (missing or ``"0"`` → fail).
+    - ``allow_cpu_fallback``: must NOT be ``"1"`` (missing is permissive,
+      ``"0"`` is OK, ``"1"`` → fail).
+    - ``quality_policy_id``: must be present and non-empty (missing or
+      ``""`` → fail).
+    - ``artifact_verification_required``: must be ``"1"`` (missing or
+      ``"0"`` → fail).
+    - ``dataset_manifest_ref``: must not be a raw CSV/parquet path.
+
+    **Local training is not an acceptance substitute** — a production
+    request that would run on the CPU trainer must be rejected here,
+    before any work begins.
+
+    Canary and research modes are permissive and never raise.
+
+    Returns the resolved :class:`TrainingMode` so the caller can route
+    the request (e.g. skip GPU scheduling for canary/research).
+
+    Raises:
+        ModeValidationError: if the request violates its mode's rules.
+    """
+    mode = _resolve_mode(req)
+    errors: list[str] = []
+
+    if mode == TrainingMode.PRODUCTION:
+        ec = req.extra_constraints
+        if ec.get("gpu_required") != "1":
+            errors.append(
+                "production mode requires gpu_required=1 "
+                "(local CPU training is not an acceptance substitute)"
+            )
+        # allow_cpu_fallback: only an explicit "1" is a violation.
+        # Missing is permissive (treated as "not enabled").
+        if ec.get("allow_cpu_fallback") == "1":
+            errors.append(
+                "production mode requires allow_cpu_fallback=0 "
+                "(no CPU fallback for production runs)"
+            )
+        if not ec.get("quality_policy_id"):
+            errors.append(
+                "production mode requires a quality_policy_id "
+                "(quality gates are mandatory)"
+            )
+        if ec.get("artifact_verification_required") != "1":
+            errors.append(
+                "production mode requires artifact_verification_required=1 "
+                "(artifact hash verification is mandatory)"
+            )
+        ref = req.dataset_manifest_ref or ""
+        low = ref.lower()
+        if (
+            low.endswith((".csv", ".parquet", ".csv.gz", ".parquet.gz"))
+            or low.startswith(("file://", "inline://"))
+        ):
+            errors.append(
+                "production mode requires a registered dataset "
+                f"reference, not a raw CSV/path: {ref!r}"
+            )
+
+    if errors:
+        raise ModeValidationError(
+            "production mode validation failed: " + "; ".join(errors)
+        )
+    return mode
 
 
 # --- result ----------------------------------------------------------------

@@ -11,6 +11,8 @@ a single baseline training job end-to-end. It packages:
 - a budget envelope (``budget_cents`` + ``timeout_seconds``) that the
   ``BudgetGuard`` enforces before the job is dispatched
 - reproducibility pins (random seed, optional hardware class label)
+- a **training mode** (``mode``) that selects which rules apply to the
+  job (see :class:`TrainingMode` and :data:`MODE_RULES` below)
 
 The manifest is **schema-versioned** (``schema_version=1``) and frozen
 (``extra='forbid'``) so a manifest can be hashed, signed, and referenced
@@ -46,6 +48,20 @@ Invariants (enforced + tested):
   supports, with values inside the allowed bounds.
 - No secret-shaped values are accepted anywhere — the constructor
   rejects feature / hyperparameter names that look like credentials.
+- **Production mode fails closed**: if ``mode == production`` and any of
+  ``gpu_required``, ``allow_cpu_fallback == False``, a registered dataset
+  reference, ``quality_policy_id``, and ``artifact_verification_required``
+  are not satisfied, construction is rejected. Local CPU training is
+  **not** an acceptance substitute for a production run.
+
+.. note::
+
+    **Local training is not an acceptance substitute.** A ``canary`` or
+    ``research`` run may execute on the local CPU trainer for contract
+    proofs, but a ``production`` run MUST execute on real RunPod GPU
+    infrastructure with a registered L3/L4 dataset. The mode validation
+    below enforces the *request* shape; the dispatch path is responsible
+    for routing production jobs to GPU workers and rejecting CPU fallback.
 """
 
 from __future__ import annotations
@@ -105,6 +121,144 @@ class ModelFamily(StrEnum):
     LINEAR = "linear"
 
 
+class ModelFamilyStr(str):
+    """A ``str`` subclass that exposes ``.value`` for backward compat.
+
+    Code throughout the dispatch path (e.g.
+    ``local_training_dispatch.py``) calls ``manifest.model_family.value``
+    expecting a ``ModelFamily`` enum. Since ``model_family`` now accepts
+    arbitrary strings (research mode allows experimental families), we
+    normalise the stored value to ``ModelFamilyStr`` so ``.value`` always
+    works while the field remains a plain string for comparison and
+    serialisation.
+    """
+
+    __slots__ = ()
+
+    @property
+    def value(self) -> str:  # type: ignore[override]
+        return str.__str__(self)
+
+
+class TrainingMode(StrEnum):
+    """Training mode — selects which rules apply to a training job.
+
+    The mode is the **single source of truth** for what invariants a job
+    must satisfy. Builders and operators should consult
+    :data:`MODE_RULES` (the mode rules table) when deciding what rules
+    apply to a given mode.
+
+    Members:
+        CANARY: Small registered dataset, may use tiny artifacts, never
+            promotion eligible by default. Used for contract proofs and
+            smoke tests. CPU fallback allowed.
+        RESEARCH: Real RunPod training, experimental model families
+            allowed, promotion disabled unless explicitly escalated.
+            CPU fallback allowed for local iteration.
+        PRODUCTION: Registered L3/L4 dataset, GPU required, artifact
+            verification required, quality gates required, no CPU
+            fallback. Local training is **not** an acceptance substitute.
+    """
+
+    CANARY = "canary"
+    RESEARCH = "research"
+    PRODUCTION = "production"
+
+
+# ---------------------------------------------------------------------------
+# Mode rules table — the single source of truth for per-mode rules.
+# ---------------------------------------------------------------------------
+#
+# Builders and operators consult this table when deciding what rules apply
+# to a given mode. Each entry maps a :class:`TrainingMode` to the rules
+# that mode enforces. The ``TrainingManifest`` validator and
+# ``quant_foundry.runpod_training.validate_mode`` both reference these
+# rules so there is exactly one place to look.
+#
+# Fields:
+#   gpu_required               — must the job run on a GPU worker?
+#   allow_cpu_fallback         — may the job fall back to a CPU trainer?
+#   registered_dataset_required— must dataset_manifest_ref point at a
+#                                 registered manifest (not a raw CSV)?
+#   quality_policy_required    — must quality_policy_id be present?
+#   artifact_verification_required — must the artifact be hash-verified?
+#   promotion_eligible_default — is the resulting dossier promotion
+#                                 eligible by default (before gates)?
+#   description                — human-readable summary.
+MODE_RULES: dict[TrainingMode, dict[str, object]] = {
+    TrainingMode.CANARY: {
+        "gpu_required": False,
+        "allow_cpu_fallback": True,
+        "registered_dataset_required": False,
+        "quality_policy_required": False,
+        "artifact_verification_required": False,
+        "promotion_eligible_default": False,
+        "description": (
+            "Small registered dataset, may use tiny artifacts, never "
+            "promotion eligible by default. Used for contract proofs "
+            "and smoke tests."
+        ),
+    },
+    TrainingMode.RESEARCH: {
+        "gpu_required": False,
+        "allow_cpu_fallback": True,
+        "registered_dataset_required": False,
+        "quality_policy_required": False,
+        "artifact_verification_required": False,
+        "promotion_eligible_default": False,
+        "description": (
+            "Real RunPod training, experimental model families allowed, "
+            "promotion disabled unless explicitly escalated. CPU "
+            "fallback allowed for local iteration."
+        ),
+    },
+    TrainingMode.PRODUCTION: {
+        "gpu_required": True,
+        "allow_cpu_fallback": False,
+        "registered_dataset_required": True,
+        "quality_policy_required": True,
+        "artifact_verification_required": True,
+        "promotion_eligible_default": False,
+        "description": (
+            "Registered L3/L4 dataset, GPU required, artifact "
+            "verification required, quality gates required, no CPU "
+            "fallback. Local training is NOT an acceptance substitute."
+        ),
+    },
+}
+
+
+# Substrings that suggest a dataset ref is a raw file rather than a
+# registered manifest id. Used by the production-mode validator to reject
+# raw CSV / parquet paths.
+_RAW_DATASET_EXTENSIONS = (".csv", ".parquet", ".csv.gz", ".parquet.gz", ".feather")
+
+
+def _is_raw_dataset_ref(ref: str) -> bool:
+    """Return True if ``ref`` looks like a raw file path rather than a
+    registered dataset/manifest id.
+
+    A registered dataset reference is an opaque id (e.g. ``"ds-test"``)
+    that the feature-lake / dataset registry resolves. A raw reference is
+    a filesystem path (``/workspace/dataset.csv``), a ``file://`` URI, or
+    any string ending in a known tabular file extension.
+    """
+    if not ref:
+        return False
+    low = ref.lower()
+    if low.startswith("file://"):
+        return True
+    if low.startswith("inline://"):
+        return True
+    if any(low.endswith(ext) for ext in _RAW_DATASET_EXTENSIONS):
+        return True
+    # A registered id is an opaque slug without path separators. A path
+    # containing ``/`` or ``\\`` is treated as a raw filesystem reference.
+    if "/" in ref or "\\" in ref:
+        return True
+    return False
+
+
 # Substrings that suggest a field is carrying a secret. Reject at the
 # schema boundary so a malicious / accidental credential can never ride
 # into a manifest.
@@ -141,7 +295,10 @@ class TrainingManifest(BaseModel):
     manifest_id: str
     feature_lake_manifest_ref: str  # the dataset_id from FeatureLakeManifest
     feature_lake_manifest_hash: str  # the manifest_hash from FeatureLakeManifest
-    model_family: ModelFamily
+    # ``model_family`` accepts any string so research mode can use
+    # experimental families outside the baseline allowlist. Canary and
+    # production modes enforce the allowlist in ``_model_family_allowed``.
+    model_family: str
     hyperparameters: dict[str, float] = Field(default_factory=dict)
     train_window_ns: int
     val_window_ns: int
@@ -153,6 +310,29 @@ class TrainingManifest(BaseModel):
     budget_cents: int = 0
     timeout_seconds: int = 600
     operator_note: str = ""
+    # --- training mode (Phase 0) ---------------------------------------
+    # The mode selects which rules apply. See TrainingMode + MODE_RULES.
+    # Defaults to CANARY (the most lenient mode: CPU fallback allowed,
+    # no GPU/quality requirements). This preserves backward compat for
+    # manifests created before modes existed.
+    mode: TrainingMode = TrainingMode.CANARY
+    # GPU / CPU fallback controls. Production mode REQUIRES
+    # gpu_required=True and allow_cpu_fallback=False (enforced below).
+    gpu_required: bool = False
+    allow_cpu_fallback: bool = True
+    # Quality-gate policy id. Production mode REQUIRES a non-empty value.
+    quality_policy_id: str | None = None
+    # Registered dataset registry reference (L3/L4 dataset id). Production
+    # mode REQUIRES a non-empty value that is NOT a raw CSV/parquet path.
+    dataset_registry_ref: str | None = None
+    # Whether the resulting dossier is promotion eligible. Defaults to
+    # False for all modes (canary and research are never promotion
+    # eligible by default; production must pass quality gates first).
+    promotion_eligible: bool = False
+    # Whether the resulting artifact must be hash-verified on import.
+    # Production mode sets this via the dispatch path; the manifest
+    # validator does not enforce it (the tests do not require it here).
+    artifact_verification_required: bool = False
     content_hash: str = ""
 
     # --- validators -----------------------------------------------------
@@ -182,13 +362,18 @@ class TrainingManifest(BaseModel):
 
     @field_validator("model_family")
     @classmethod
-    def _model_family_allowed(cls, v: ModelFamily) -> ModelFamily:
-        if v.value not in _ALLOWED_MODEL_FAMILIES:
-            raise ValueError(
-                f"model_family {v.value!r} not in allowlist; "
-                f"allowed: {sorted(_ALLOWED_MODEL_FAMILIES)}"
-            )
-        return v
+    def _model_family_allowed(cls, v: Any) -> ModelFamilyStr:
+        # Accept ModelFamily enum or plain string. Normalise to
+        # ModelFamilyStr so downstream code that calls ``.value`` (e.g.
+        # local_training_dispatch.py) keeps working, while the field
+        # remains a plain string for comparison and serialisation.
+        if isinstance(v, ModelFamily):
+            v = v.value
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("model_family must be a non-empty string")
+        # The cross-field allowlist check (mode-dependent) runs in
+        # ``_validate_mode_family`` after the mode field is available.
+        return ModelFamilyStr(v)
 
     @field_validator("hyperparameters")
     @classmethod
@@ -205,13 +390,35 @@ class TrainingManifest(BaseModel):
         return dict(v)
 
     @model_validator(mode="after")
+    def _validate_mode_family(self) -> TrainingManifest:
+        """Mode-dependent model_family allowlist check.
+
+        - CANARY and PRODUCTION: ``model_family`` must be in the baseline
+          allowlist (no experimental families).
+        - RESEARCH: any non-empty family string is allowed (experimental
+          model families are permitted).
+        """
+        if self.mode != TrainingMode.RESEARCH:
+            if self.model_family not in _ALLOWED_MODEL_FAMILIES:
+                raise ValueError(
+                    f"model_family {self.model_family!r} not in allowlist; "
+                    f"allowed: {sorted(_ALLOWED_MODEL_FAMILIES)}"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _validate_hyperparams_for_family(self) -> TrainingManifest:
-        bounds = _HYPERPARAM_BOUNDS.get(self.model_family.value, {})
+        bounds = _HYPERPARAM_BOUNDS.get(self.model_family, {})
+        # If the family has no defined bounds (e.g. an experimental
+        # family in research mode), skip the hyperparameter bounds check
+        # — we cannot bound what we have not profiled.
+        if not bounds:
+            return self
         bad_keys = set(self.hyperparameters) - set(bounds)
         if bad_keys:
             raise ValueError(
                 f"hyperparameters {sorted(bad_keys)!r} not defined for "
-                f"model_family {self.model_family.value!r}; "
+                f"model_family {self.model_family!r}; "
                 f"allowed: {sorted(bounds)}"
             )
         for k, val in self.hyperparameters.items():
@@ -236,6 +443,69 @@ class TrainingManifest(BaseModel):
     def _operator_note_safe(self) -> TrainingManifest:
         if self.operator_note and _looks_like_secret(self.operator_note):
             raise ValueError("operator_note contains a secret-like substring; reject")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_mode_rules(self) -> TrainingManifest:
+        """Enforce per-mode rules from :data:`MODE_RULES`.
+
+        Production mode fails closed: if any production requirement is
+        missing or contradicted, construction is rejected. Canary and
+        research modes are permissive (they allow CPU fallback and do
+        not require a quality policy, artifact verification, or
+        registered dataset).
+
+        Local training is **not** an acceptance substitute for a
+        production run — this validator enforces the request shape; the
+        dispatch path enforces routing to a GPU worker.
+        """
+        errors: list[str] = []
+
+        if self.mode == TrainingMode.PRODUCTION:
+            # gpu_required must be True.
+            if not self.gpu_required:
+                errors.append(
+                    "production mode requires gpu_required=True "
+                    "(local CPU training is not an acceptance substitute)"
+                )
+            # allow_cpu_fallback must be False.
+            if self.allow_cpu_fallback:
+                errors.append(
+                    "production mode requires allow_cpu_fallback=False "
+                    "(no CPU fallback for production runs)"
+                )
+            # quality_policy_id must be present and non-empty.
+            if not self.quality_policy_id or not self.quality_policy_id.strip():
+                errors.append(
+                    "production mode requires a non-empty quality_policy_id "
+                    "(quality gates are mandatory)"
+                )
+            # artifact_verification_required must be True.
+            if not self.artifact_verification_required:
+                errors.append(
+                    "production mode requires artifact_verification_required=True "
+                    "(artifact hash verification is mandatory)"
+                )
+            # dataset_registry_ref must be present, non-empty, and a
+            # registered dataset id (not a raw CSV/parquet path or file URI).
+            if not self.dataset_registry_ref or not self.dataset_registry_ref.strip():
+                errors.append(
+                    "production mode requires a non-empty dataset_registry_ref "
+                    "(registered L3/L4 dataset id)"
+                )
+            elif _is_raw_dataset_ref(self.dataset_registry_ref):
+                errors.append(
+                    "production mode requires a registered dataset "
+                    "reference (L3/L4 manifest id), not a raw CSV/path: "
+                    f"{self.dataset_registry_ref!r}"
+                )
+
+        if errors:
+            # Join all errors so the operator sees every unmet requirement
+            # in a single rejection (fail closed, fail loud).
+            raise ValueError(
+                "production mode validation failed: " + "; ".join(errors)
+            )
         return self
 
     def model_post_init(self, __context: Any) -> None:
@@ -265,6 +535,11 @@ class TrainingManifest(BaseModel):
         The dispatch script then hands this dict to the trainer (local or
         remote). ``dataset_manifest_ref`` carries the feature_lake id +
         hash so the worker can verify what it is training on.
+
+        The training mode and GPU/CPU-fallback controls are forwarded via
+        ``extra_constraints`` so the worker (which uses the
+        ``RunPodTrainingRequest`` schema) can enforce them without a
+        schema change to the cross-boundary contract.
         """
         return {
             "schema_version": 1,
@@ -272,7 +547,7 @@ class TrainingManifest(BaseModel):
             "dataset_manifest_ref": (
                 f"{self.feature_lake_manifest_ref}:{self.feature_lake_manifest_hash[:16]}"
             ),
-            "model_family": self.model_family.value,
+            "model_family": self.model_family,
             "search_space": {},  # operator pinned values; no search for baseline
             "random_seed": self.random_seed,
             "hardware_class": self.hardware_class,
@@ -283,6 +558,25 @@ class TrainingManifest(BaseModel):
                 "label_horizon_ns": str(self.label_horizon_ns),
                 "walk_forward_enabled": "1" if self.walk_forward_enabled else "0",
                 "manifest_content_hash": self.content_hash,
+                # Phase 0: forward the training mode + GPU controls so the
+                # worker / dispatch path can enforce them.
+                "training_mode": self.mode.value,
+                "gpu_required": "1" if self.gpu_required else "0",
+                "allow_cpu_fallback": "1" if self.allow_cpu_fallback else "0",
+                "artifact_verification_required": (
+                    "1" if self.artifact_verification_required else "0"
+                ),
+                "promotion_eligible": "1" if self.promotion_eligible else "0",
+                **(
+                    {"quality_policy_id": self.quality_policy_id}
+                    if self.quality_policy_id
+                    else {}
+                ),
+                **(
+                    {"dataset_registry_ref": self.dataset_registry_ref}
+                    if self.dataset_registry_ref
+                    else {}
+                ),
             },
         }
 
@@ -294,7 +588,7 @@ def _compute_content_hash(manifest: TrainingManifest) -> str:
         "manifest_id": manifest.manifest_id,
         "feature_lake_manifest_ref": manifest.feature_lake_manifest_ref,
         "feature_lake_manifest_hash": manifest.feature_lake_manifest_hash,
-        "model_family": manifest.model_family.value,
+        "model_family": manifest.model_family,
         "hyperparameters": dict(sorted(manifest.hyperparameters.items())),
         "train_window_ns": manifest.train_window_ns,
         "val_window_ns": manifest.val_window_ns,
@@ -306,6 +600,15 @@ def _compute_content_hash(manifest: TrainingManifest) -> str:
         "budget_cents": manifest.budget_cents,
         "timeout_seconds": manifest.timeout_seconds,
         "operator_note": manifest.operator_note,
+        # Phase 0: include the training mode + GPU/quality controls so a
+        # content-hash change reflects a mode change (audit integrity).
+        "mode": manifest.mode.value,
+        "gpu_required": manifest.gpu_required,
+        "allow_cpu_fallback": manifest.allow_cpu_fallback,
+        "quality_policy_id": manifest.quality_policy_id,
+        "dataset_registry_ref": manifest.dataset_registry_ref,
+        "promotion_eligible": manifest.promotion_eligible,
+        "artifact_verification_required": manifest.artifact_verification_required,
     }
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(body).hexdigest()
@@ -390,8 +693,11 @@ def derive_walk_forward_window(
 
 
 __all__ = [
+    "MODE_RULES",
     "ModelFamily",
+    "ModelFamilyStr",
     "TrainingManifest",
+    "TrainingMode",
     "WalkForwardWindow",
     "derive_walk_forward_window",
 ]
