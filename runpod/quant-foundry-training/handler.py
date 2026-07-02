@@ -69,6 +69,42 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
     def clear_status(*args, **kwargs):  # type: ignore[no-redef]
         pass
 
+
+# Phase 1 / T-1.2: artifact writer interface. Pydantic v2 is used for
+# the typed write result (frozen=True, extra='forbid' — audit integrity /
+# fail-closed). The writer protocol decouples the handler from the
+# storage backend so canary/research/production runs can use different
+# backends (volume path, presigned object upload, or a fake in-memory
+# writer for tests) behind a single contract.
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+
+# Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
+# policy registry + validation function so the worker can recompute cheap
+# data checks and reject bad data even if the trusted-side preflight was
+# skipped (defense in depth).
+from quant_foundry.data_ingestion.quality_report import (  # noqa: E402
+    QUALITY_POLICY_REGISTRY,
+    DatasetQualityReport,
+    FailedCheck,
+    QualityGateResult,
+    QualityPolicy,
+    resolve_quality_policy,
+    validate_quality_policy,
+)
+from quant_foundry.dataset_manifest import (  # noqa: E402
+    ColumnRoles as QFColumnRoles,
+)
+from quant_foundry.dataset_manifest import (
+    FoldSpec as QFFoldSpec,
+)
+
+# Phase 1 / T-1.1: typed artifact result contract. Imported at module
+# level — ``quant_foundry.real_trainer`` is importable without ML deps
+# (lightgbm/numpy are imported lazily inside ``train()``).
+from quant_foundry.real_trainer import (  # noqa: E402
+    TypedArtifactResult,
+    build_artifact_result,
+)
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
@@ -81,17 +117,10 @@ from quant_foundry.runpod_training import (  # noqa: E402
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
 
-# Phase 1 / T-1.1: typed artifact result contract. Imported at module
-# level — ``quant_foundry.real_trainer`` is importable without ML deps
-# (lightgbm/numpy are imported lazily inside ``train()``).
-from quant_foundry.real_trainer import (  # noqa: E402
-    TypedArtifactResult,
-    build_artifact_result,
-)
-
 # Phase 0 / T-4.1: mode system for GPU healthcheck mode-aware validation.
 from quant_foundry.training_manifest import (  # noqa: E402
     MODE_RULES,
+    ModelTaskSpec,
     TrainingMode,
 )
 
@@ -101,28 +130,6 @@ from fincept_core.datasets import (  # noqa: E402
     LoadedDataset,
     ManifestDatasetLoader,
 )
-
-# Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
-# policy registry + validation function so the worker can recompute cheap
-# data checks and reject bad data even if the trusted-side preflight was
-# skipped (defense in depth).
-from quant_foundry.data_ingestion.quality_report import (  # noqa: E402
-    DatasetQualityReport,
-    FailedCheck,
-    QUALITY_POLICY_REGISTRY,
-    QualityGateResult,
-    QualityPolicy,
-    resolve_quality_policy,
-    validate_quality_policy,
-)
-
-# Phase 1 / T-1.2: artifact writer interface. Pydantic v2 is used for
-# the typed write result (frozen=True, extra='forbid' — audit integrity /
-# fail-closed). The writer protocol decouples the handler from the
-# storage backend so canary/research/production runs can use different
-# backends (volume path, presigned object upload, or a fake in-memory
-# writer for tests) behind a single contract.
-from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 
 def runpod_data_root() -> Path:
@@ -380,12 +387,7 @@ def _host_is_private(host: str) -> bool:
             addr = ipaddress.ip_address(ip)
         except ValueError:
             continue
-        if (
-            addr.is_loopback
-            or addr.is_private
-            or addr.is_link_local
-            or addr.is_reserved
-        ):
+        if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_reserved:
             return True
     return False
 
@@ -477,9 +479,7 @@ class SecurityPreflight:
 
         errors: list[str] = []
         if forbidden_found:
-            errors.append(
-                f"forbidden env vars present: {sorted(forbidden_found)}"
-            )
+            errors.append(f"forbidden env vars present: {sorted(forbidden_found)}")
         if not callback_ok and callback_error:
             errors.append(callback_error)
 
@@ -500,8 +500,7 @@ class SecurityPreflight:
         # Canary/research: advisory — record warnings but never fail.
         if errors:
             print(
-                f"[preflight] WARNING (advisory, mode={mode.value}): "
-                f"{'; '.join(errors)}",
+                f"[preflight] WARNING (advisory, mode={mode.value}): {'; '.join(errors)}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -522,9 +521,7 @@ class SecurityPreflight:
 
     def _check_forbidden_env_vars(self) -> tuple[str, ...]:
         """Return the tuple of forbidden env var names that are present."""
-        return tuple(
-            name for name in FORBIDDEN_ENV_VARS if os.environ.get(name)
-        )
+        return tuple(name for name in FORBIDDEN_ENV_VARS if os.environ.get(name))
 
     def _check_callback_url(self) -> tuple[bool, str | None]:
         """Validate the callback URL host (if set).
@@ -545,8 +542,7 @@ class SecurityPreflight:
         if self._mode == TrainingMode.PRODUCTION and _host_is_private(host):
             return (
                 False,
-                f"callback URL host {host!r} is loopback/private in "
-                f"production mode",
+                f"callback URL host {host!r} is loopback/private in production mode",
             )
         return (True, None)
 
@@ -595,9 +591,7 @@ class SecurityPreflight:
                 continue
         return tuple(dict.fromkeys(writable))  # de-dup, preserve order
 
-    def _build_redacted_config(
-        self, forbidden_found: tuple[str, ...]
-    ) -> dict[str, str]:
+    def _build_redacted_config(self, forbidden_found: tuple[str, ...]) -> dict[str, str]:
         """Build a redacted config summary dict.
 
         - Forbidden vars that are present → ``"FORBIDDEN:present"`` (value
@@ -635,8 +629,7 @@ class SecurityPreflight:
         print(f"[preflight] training_mode={mode.value}", flush=True)
         if forbidden_found:
             print(
-                f"[preflight] forbidden env vars present: "
-                f"{sorted(forbidden_found)}",
+                f"[preflight] forbidden env vars present: {sorted(forbidden_found)}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -647,8 +640,7 @@ class SecurityPreflight:
             print(f"[preflight] callback_url host={host} ({status})", flush=True)
         else:
             print(
-                "[preflight] callback_url not set "
-                "(worker returns callback in response)",
+                "[preflight] callback_url not set (worker returns callback in response)",
                 flush=True,
             )
         print("[preflight] redacted config summary:", flush=True)
@@ -704,15 +696,11 @@ def _build_security_preflight_failure_callback(
     :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
     compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
     """
-    error_message = (
-        preflight_result.preflight_error or "security preflight failed"
-    )
+    error_message = preflight_result.preflight_error or "security preflight failed"
     context: dict[str, str] = {
         "job_id": job_id or "preflight-unknown",
         "mode": preflight_result.mode,
-        "forbidden_vars_found": ",".join(
-            sorted(preflight_result.forbidden_vars_found)
-        ),
+        "forbidden_vars_found": ",".join(sorted(preflight_result.forbidden_vars_found)),
     }
     return _build_signed_failure(
         error_code="security_preflight_failed",
@@ -815,7 +803,8 @@ def _build_signed_failure(
         },
     }
     callback_payload = json.dumps(
-        callback_payload_dict, sort_keys=True,
+        callback_payload_dict,
+        sort_keys=True,
     ).encode("utf-8")
     callback_ts = int(time.time())
     callback_signature = sign_callback(
@@ -891,7 +880,9 @@ class ArtifactWriteResult(BaseModel):
             ]
         ).encode("utf-8")
         expected = hmac.new(
-            secret.encode("utf-8"), canonical, hashlib.sha256,
+            secret.encode("utf-8"),
+            canonical,
+            hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(expected, self.write_receipt)
 
@@ -920,7 +911,9 @@ def _sign_artifact_metadata(
         ]
     ).encode("utf-8")
     return hmac.new(
-        secret.encode("utf-8"), canonical, hashlib.sha256,
+        secret.encode("utf-8"),
+        canonical,
+        hashlib.sha256,
     ).hexdigest()
 
 
@@ -1011,17 +1004,15 @@ class VolumeArtifactWriter:
         artifact_format: str,
     ) -> ArtifactWriteResult:
         if not model_bytes:
-            raise ValueError(
-                "VolumeArtifactWriter cannot write empty artifact bytes "
-                "(fail closed)"
-            )
+            raise ValueError("VolumeArtifactWriter cannot write empty artifact bytes (fail closed)")
         out_dir = self._output_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         # Write JSON sidecars (best-effort audit trail on the volume).
         try:
             callback_json = json.loads(self._callback_payload_bytes.decode("utf-8"))
             (out_dir / "callback_envelope.json").write_text(
-                json.dumps(callback_json, indent=2), encoding="utf-8",
+                json.dumps(callback_json, indent=2),
+                encoding="utf-8",
             )
             (out_dir / "artifact_manifest.json").write_text(
                 json.dumps(self._artifact_manifest_dict, indent=2),
@@ -1112,8 +1103,7 @@ class PresignedUploadArtifactWriter:
     ) -> ArtifactWriteResult:
         if not model_bytes:
             raise ValueError(
-                "PresignedUploadArtifactWriter cannot upload empty "
-                "artifact bytes (fail closed)"
+                "PresignedUploadArtifactWriter cannot upload empty artifact bytes (fail closed)"
             )
         sha = hashlib.sha256(model_bytes).hexdigest()
         size = len(model_bytes)
@@ -1140,9 +1130,7 @@ class PresignedUploadArtifactWriter:
             raise
         except Exception as exc:
             # Network / connection / timeout failure → fail closed.
-            raise ValueError(
-                f"presigned artifact upload failed: {exc}"
-            ) from exc
+            raise ValueError(f"presigned artifact upload failed: {exc}") from exc
 
         uri = self._presigned_url
         _validate_artifact_uri_scheme(uri)
@@ -1184,10 +1172,7 @@ class FakeArtifactWriter:
         artifact_format: str,
     ) -> ArtifactWriteResult:
         if not model_bytes:
-            raise ValueError(
-                "FakeArtifactWriter cannot hash empty artifact bytes "
-                "(fail closed)"
-            )
+            raise ValueError("FakeArtifactWriter cannot hash empty artifact bytes (fail closed)")
         sha = hashlib.sha256(model_bytes).hexdigest()
         size = len(model_bytes)
         uri = f"artifact://fake/{artifact_id}"
@@ -1457,7 +1442,9 @@ class GPUHealthcheckResult:
     runtime_fingerprint: dict[str, str]
 
 
-def _probe_nvidia_smi() -> tuple[bool, str | None, str | None, str | None, str | None, int | None, int]:
+def _probe_nvidia_smi() -> tuple[
+    bool, str | None, str | None, str | None, str | None, int | None, int
+]:
     """Probe the GPU via ``nvidia-smi``.
 
     Returns a tuple of:
@@ -1802,27 +1789,261 @@ def _handle_gpu_healthcheck(input_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_trainer(n_folds: int = 3) -> Any:
-    """Select the trainer based on the QUANT_FOUNDRY_USE_REAL_TRAINER env var.
+_REAL_TRAINER_BACKEND_BY_FAMILY: dict[str, str] = {
+    "gbm": "lightgbm",
+    "lightgbm": "lightgbm",
+    "lightgbm_baseline": "lightgbm",
+    "catboost": "catboost",
+    "catboost_gpu": "catboost",
+    "xgb": "xgboost",
+    "xgboost": "xgboost",
+    "xgboost_gpu": "xgboost",
+}
 
-    When ``QUANT_FOUNDRY_USE_REAL_TRAINER=true``, use ``RealLightGBMTrainer``
-    which trains a real LightGBM model with walk-forward validation and
-    produces real metrics (accuracy, logloss, brier, PBO, Sharpe, drawdown).
+_KNOWN_NON_ROUTED_FAMILIES: frozenset[str] = frozenset(
+    {
+        "tabm",
+        "tabm_gpu",
+        "patchtst",
+        "patchtst_gpu",
+        "tft",
+        "tft_gpu",
+        "deeplob",
+        "deeplob_gpu",
+        "event",
+        "event_text",
+        "graph",
+        "graph_ranker",
+        "rl_shadow",
+        "rl_shadow_policy",
+    },
+)
 
-    Otherwise, fall back to ``LocalTrainer`` (the deterministic stub) for
-    backward-compatible testing and contract proofs.
-    """
+
+def _json_mapping_from_extra(
+    extra: dict[str, str],
+    *keys: str,
+) -> dict[str, Any] | None:
+    for key in keys:
+        raw = extra.get(key)
+        if not raw:
+            continue
+        if isinstance(raw, str):
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise TrainingFailure(
+                    error_code="invalid_trainer_metadata",
+                    error_summary=f"{key} must be valid JSON: {exc}",
+                ) from exc
+        else:
+            value = raw
+        if not isinstance(value, dict):
+            raise TrainingFailure(
+                error_code="invalid_trainer_metadata",
+                error_summary=f"{key} must decode to a JSON object",
+            )
+        return value
+    return None
+
+
+def _qf_column_roles_from_raw(raw: Any, source: str) -> QFColumnRoles | None:
+    if raw is None:
+        return None
+    if isinstance(raw, QFColumnRoles):
+        return raw
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        raise TrainingFailure(
+            error_code="invalid_column_roles",
+            error_summary=f"{source} must be a mapping or ColumnRoles model",
+        )
+    try:
+        return QFColumnRoles.model_validate(raw)
+    except Exception as exc:
+        raise TrainingFailure(
+            error_code="invalid_column_roles",
+            error_summary=f"{source} failed validation: {exc}",
+        ) from exc
+
+
+def _task_spec_from_raw(raw: Any, source: str) -> ModelTaskSpec | None:
+    if raw is None:
+        return None
+    if isinstance(raw, ModelTaskSpec):
+        return raw
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        raise TrainingFailure(
+            error_code="invalid_task_spec",
+            error_summary=f"{source} must be a mapping or ModelTaskSpec model",
+        )
+    try:
+        return ModelTaskSpec.model_validate(raw)
+    except Exception as exc:
+        raise TrainingFailure(
+            error_code="invalid_task_spec",
+            error_summary=f"{source} failed validation: {exc}",
+        ) from exc
+
+
+def _fold_spec_from_raw(raw: Any, source: str) -> QFFoldSpec | None:
+    if raw is None:
+        return None
+    if isinstance(raw, QFFoldSpec):
+        return raw
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        raise TrainingFailure(
+            error_code="invalid_fold_spec",
+            error_summary=f"{source} must be a mapping or FoldSpec model",
+        )
+    try:
+        return QFFoldSpec.model_validate(raw)
+    except Exception as exc:
+        raise TrainingFailure(
+            error_code="invalid_fold_spec",
+            error_summary=f"{source} failed validation: {exc}",
+        ) from exc
+
+
+def _resolve_column_roles(
+    req: RunPodTrainingRequest,
+    loaded_dataset: LoadedDataset | None,
+) -> QFColumnRoles | None:
+    extra_roles = _json_mapping_from_extra(
+        req.extra_constraints,
+        "column_roles",
+        "column_roles_json",
+    )
+    if extra_roles is not None:
+        return _qf_column_roles_from_raw(extra_roles, "extra_constraints.column_roles")
+    if loaded_dataset is not None:
+        manifest_roles = loaded_dataset.manifest.get("column_roles")
+        if manifest_roles is not None:
+            return _qf_column_roles_from_raw(manifest_roles, "dataset manifest column_roles")
+        return _qf_column_roles_from_raw(
+            loaded_dataset.column_roles,
+            "loaded dataset column_roles",
+        )
+    return None
+
+
+def _resolve_task_spec(
+    req: RunPodTrainingRequest,
+    loaded_dataset: LoadedDataset | None,
+) -> ModelTaskSpec | None:
+    extra_spec = _json_mapping_from_extra(
+        req.extra_constraints,
+        "task_spec",
+        "task_spec_json",
+        "model_task_spec",
+        "model_task_spec_json",
+    )
+    if extra_spec is not None:
+        return _task_spec_from_raw(extra_spec, "extra_constraints.task_spec")
+    if loaded_dataset is not None:
+        for key in ("task_spec", "model_task_spec"):
+            manifest_spec = loaded_dataset.manifest.get(key)
+            if manifest_spec is not None:
+                return _task_spec_from_raw(manifest_spec, f"dataset manifest {key}")
+    return None
+
+
+def _resolve_fold_spec(
+    req: RunPodTrainingRequest,
+    loaded_dataset: LoadedDataset | None,
+) -> QFFoldSpec | None:
+    extra_spec = _json_mapping_from_extra(
+        req.extra_constraints,
+        "fold_spec",
+        "fold_spec_json",
+    )
+    if extra_spec is not None:
+        return _fold_spec_from_raw(extra_spec, "extra_constraints.fold_spec")
+    if loaded_dataset is not None:
+        manifest_spec = loaded_dataset.manifest.get("fold_spec")
+        if manifest_spec is not None:
+            return _fold_spec_from_raw(manifest_spec, "dataset manifest fold_spec")
+    return None
+
+
+def _real_backend_for_family(model_family: str) -> str:
+    family = model_family.strip().lower()
+    backend = _REAL_TRAINER_BACKEND_BY_FAMILY.get(family)
+    if backend:
+        return backend
+    if family in _KNOWN_NON_ROUTED_FAMILIES:
+        raise TrainingFailure(
+            error_code="model_family_not_routed",
+            error_summary=(
+                f"model_family {model_family!r} is implemented locally but "
+                "does not yet share the RunPod training artifact contract; "
+                "use a dedicated canary route before live training"
+            ),
+        )
+    raise TrainingFailure(
+        error_code="unsupported_model_family",
+        error_summary=(
+            f"unsupported model_family {model_family!r}; supported live "
+            f"families: {sorted(_REAL_TRAINER_BACKEND_BY_FAMILY)}"
+        ),
+    )
+
+
+def _training_mode_is_production(req: RunPodTrainingRequest) -> bool:
+    raw_mode = req.extra_constraints.get("training_mode") or "research"
+    try:
+        return TrainingMode(raw_mode) == TrainingMode.PRODUCTION
+    except ValueError:
+        return True
+
+
+def _build_trainer(
+    req: RunPodTrainingRequest,
+    *,
+    n_folds: int = 3,
+    loaded_dataset: LoadedDataset | None = None,
+) -> Any:
     use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_TRAINER", "").lower() == "true"
     if use_real:
         from quant_foundry.real_trainer import RealLightGBMTrainer
 
-        return RealLightGBMTrainer(n_folds=n_folds)
+        backend = _real_backend_for_family(req.model_family)
+        column_roles = _resolve_column_roles(req, loaded_dataset)
+        task_spec = _resolve_task_spec(req, loaded_dataset)
+        fold_spec = _resolve_fold_spec(req, loaded_dataset)
+        if backend != "lightgbm" and column_roles is None:
+            raise TrainingFailure(
+                error_code="missing_column_roles",
+                error_summary=(
+                    f"model_family {req.model_family!r} requires explicit "
+                    "column_roles in extra_constraints or dataset manifest"
+                ),
+            )
+        if backend != "lightgbm" and task_spec is None:
+            raise TrainingFailure(
+                error_code="missing_task_spec",
+                error_summary=(
+                    f"model_family {req.model_family!r} requires explicit "
+                    "task_spec in extra_constraints or dataset manifest"
+                ),
+            )
+        return RealLightGBMTrainer(
+            n_folds=n_folds,
+            backend=backend,
+            column_roles=column_roles,
+            task_spec=task_spec,
+            fold_spec=fold_spec,
+            is_production=_training_mode_is_production(req),
+        )
     return LocalTrainer()
 
 
-def _heartbeat_during_training(
-    job_id: str, interval: float = 10.0
-) -> threading.Event:
+def _heartbeat_during_training(job_id: str, interval: float = 10.0) -> threading.Event:
     """Start a background heartbeat thread. Returns a stop event.
 
     The thread writes a heartbeat status file every ``interval`` seconds
@@ -1875,12 +2096,8 @@ def _load_dataset_via_manifest(
         job_id: the job ID (for error reporting).
     """
     # Resolve volume paths in the spec URIs (/runpod-volume vs /workspace).
-    manifest_uri = resolve_volume_path(
-        load_spec.get("manifest_uri", "")
-    )
-    data_uri = resolve_volume_path(
-        load_spec.get("data_uri", "")
-    )
+    manifest_uri = resolve_volume_path(load_spec.get("manifest_uri", ""))
+    data_uri = resolve_volume_path(load_spec.get("data_uri", ""))
     spec_fields = {
         "manifest_uri": manifest_uri,
         "manifest_sha256": load_spec.get("manifest_sha256"),
@@ -2113,8 +2330,7 @@ def _fetch_quality_report(
         if actual.lower() != expected_sha256.lower():
             raise QualityGateError(
                 "quality_report_hash_mismatch",
-                f"quality report sha256 mismatch: expected {expected_sha256}, "
-                f"got {actual}",
+                f"quality report sha256 mismatch: expected {expected_sha256}, got {actual}",
             )
     try:
         return DatasetQualityReport.model_validate_json(raw)
@@ -2163,7 +2379,8 @@ class QualityGateRunner:
 
     @staticmethod
     def _resolve_policy(
-        policy_id: str | None, mode: TrainingMode,
+        policy_id: str | None,
+        mode: TrainingMode,
     ) -> QualityPolicy:
         """Resolve the quality policy, falling back to the mode default.
 
@@ -2188,8 +2405,7 @@ class QualityGateRunner:
         if policy is None:
             raise QualityGateError(
                 "unknown_quality_policy",
-                f"no quality_policy_id provided and no default policy "
-                f"for mode {mode.value}",
+                f"no quality_policy_id provided and no default policy for mode {mode.value}",
             )
         return policy
 
@@ -2216,7 +2432,8 @@ class QualityGateRunner:
 
         if self._quality_report is not None:
             report_result = validate_quality_policy(
-                self._quality_report, self._policy,
+                self._quality_report,
+                self._policy,
             )
             return self._merge_results(report_result, cheap_result)
 
@@ -2292,9 +2509,7 @@ class QualityGateRunner:
             )
 
         # --- label balance (minority class fraction) --------------------
-        label_col = (
-            roles.label_columns[0] if roles.label_columns else None
-        )
+        label_col = roles.label_columns[0] if roles.label_columns else None
         if label_col:
             minority = _df_label_balance(df, label_col)
             if minority < policy.min_label_balance:
@@ -2427,11 +2642,7 @@ def _build_quality_gate_failure_callback(
     :func:`_build_signed_failure` (HMAC-signed context hash) with backward-
     compat ``error_code`` / ``error_summary`` / ``callback_*`` keys.
     """
-    gate_code = (
-        gate_result.failed_checks[0].check_name
-        if gate_result.failed_checks
-        else "unknown"
-    )
+    gate_code = gate_result.failed_checks[0].check_name if gate_result.failed_checks else "unknown"
     error_summary = (
         f"quality gate failed (mode={mode.value}, "
         f"policy={gate_result.policy_id}, gate={gate_code}): "
@@ -2518,10 +2729,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # the most lenient default, matching _resolve_preflight_mode).
         return _build_signed_failure(
             error_code="bad_request",
-            error_message=(
-                "event['input'] must be a dict matching "
-                "RunPodTrainingRequest"
-            ),
+            error_message=("event['input'] must be a dict matching RunPodTrainingRequest"),
             mode="canary",
             context={"job_id": "none", "stage": "input_parse"},
         )
@@ -2686,11 +2894,13 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             }
         files = []
         for p in sorted(target.iterdir()):
-            files.append({
-                "name": p.name,
-                "size_bytes": p.stat().st_size if p.is_file() else 0,
-                "is_dir": p.is_dir(),
-            })
+            files.append(
+                {
+                    "name": p.name,
+                    "size_bytes": p.stat().st_size if p.is_file() else 0,
+                    "is_dir": p.is_dir(),
+                }
+            )
         return {
             "task": "list_volume",
             "volume_path": str(target),
@@ -2787,14 +2997,11 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     loaded_dataset: LoadedDataset | None = None
     if dataset_load_spec and isinstance(dataset_load_spec, dict):
         try:
-            verified_data_uri, dataset_load_receipt, loaded_dataset = (
-                _load_dataset_via_manifest(
-                    dataset_load_spec, job_id=req.job_id,
-                )
+            verified_data_uri, dataset_load_receipt, loaded_dataset = _load_dataset_via_manifest(
+                dataset_load_spec,
+                job_id=req.job_id,
             )
-            req = req.model_copy(
-                update={"dataset_manifest_ref": verified_data_uri}
-            )
+            req = req.model_copy(update={"dataset_manifest_ref": verified_data_uri})
         except DatasetLoadError as exc:
             write_status(
                 req.job_id,
@@ -2869,9 +3076,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # (loaded_dataset.manifest) is the source of truth once verified.
         quality_report: DatasetQualityReport | None = None
         qr_uri = (
-            loaded_dataset.manifest.get("quality_report_uri")
-            if loaded_dataset.manifest
-            else None
+            loaded_dataset.manifest.get("quality_report_uri") if loaded_dataset.manifest else None
         ) or (dataset_load_spec or {}).get("quality_report_uri")
         qr_sha = (
             loaded_dataset.manifest.get("quality_report_sha256")
@@ -2881,7 +3086,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         if qr_uri:
             try:
                 quality_report = _fetch_quality_report(
-                    qr_uri, expected_sha256=qr_sha,
+                    qr_uri,
+                    expected_sha256=qr_sha,
                 )
             except QualityGateError as exc:
                 # Production: a declared-but-unreadable quality report
@@ -2890,7 +3096,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 # still run).
                 if gate_mode == TrainingMode.PRODUCTION:
                     write_status(
-                        req.job_id, "failed",
+                        req.job_id,
+                        "failed",
                         error_code=exc.code,
                         error_summary=str(exc),
                     )
@@ -2907,7 +3114,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                     )
                 # Advisory: log the warning (best-effort).
                 write_status(
-                    req.job_id, "started",
+                    req.job_id,
+                    "started",
                     error_code=exc.code,
                     error_summary=f"advisory: {exc}",
                 )
@@ -2926,7 +3134,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             # fails closed; canary/research log and skip the gate.
             if gate_mode == TrainingMode.PRODUCTION:
                 write_status(
-                    req.job_id, "failed",
+                    req.job_id,
+                    "failed",
                     error_code=exc.code,
                     error_summary=str(exc),
                 )
@@ -2943,7 +3152,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                     },
                 )
             write_status(
-                req.job_id, "started",
+                req.job_id,
+                "started",
                 error_code=exc.code,
                 error_summary=f"advisory: {exc}",
             )
@@ -2962,7 +3172,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                         gate_result=gate_result,
                     )
                     write_status(
-                        req.job_id, "failed",
+                        req.job_id,
+                        "failed",
                         error_code="quality_gate_failed",
                         error_summary=failure["error_summary"],
                     )
@@ -2972,11 +3183,10 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                     # Log the failures as warnings but continue training.
                     # The advisory failures are included in the result so
                     # the dispatcher can mark promotion_eligible=False.
-                    failed_names = [
-                        fc.check_name for fc in gate_result.failed_checks
-                    ]
+                    failed_names = [fc.check_name for fc in gate_result.failed_checks]
                     write_status(
-                        req.job_id, "started",
+                        req.job_id,
+                        "started",
                         error_code="quality_gate_advisory",
                         error_summary=(
                             f"advisory quality gate failures (mode="
@@ -3002,7 +3212,30 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # trainer stashes ``last_artifact_result`` / ``last_model_bytes`` on
     # a successful train(); the handler reads them through the typed
     # field instead of the fragile ``getattr(result, "model_bytes")``.
-    trainer = _build_trainer(n_folds=int(n_folds) if n_folds else 3)
+    try:
+        trainer = _build_trainer(
+            req,
+            n_folds=int(n_folds) if n_folds else 3,
+            loaded_dataset=loaded_dataset,
+        )
+    except TrainingFailure as exc:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code=exc.error_code,
+            error_summary=exc.error_summary,
+        )
+        raw_mode = req.extra_constraints.get("training_mode") or "research"
+        return _build_signed_failure(
+            error_code=exc.error_code,
+            error_message=exc.error_summary,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "trainer_routing",
+                "model_family": req.model_family,
+            },
+        )
     handler = RunPodTrainingHandler(
         callback_secret=_get_callback_secret(),
         trainer=trainer,
@@ -3044,9 +3277,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # (canary) trainer does not, so we synthesize a tiny inline-bytes
     # result for canary tests. A successful real training job with no
     # artifact is a contract violation — fail closed.
-    typed_artifact: TypedArtifactResult | None = getattr(
-        trainer, "last_artifact_result", None
-    )
+    typed_artifact: TypedArtifactResult | None = getattr(trainer, "last_artifact_result", None)
     model_bytes: bytes | None = getattr(trainer, "last_model_bytes", None)
 
     is_real_trainer = not isinstance(trainer, LocalTrainer)
@@ -3078,9 +3309,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # output_prefix is set). Build a typed result so the contract
         # shape is identical across modes.
         if typed_artifact is None:
-            canary_bytes = (
-                b"canary-model-stub:" + req.job_id.encode("utf-8")
-            )
+            canary_bytes = b"canary-model-stub:" + req.job_id.encode("utf-8")
             try:
                 typed_artifact = build_artifact_result(
                     artifact_id=result.artifact_id,
@@ -3139,15 +3368,14 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 # URI scheme rejection (e.g. http://, ftp://) → signed
                 # failure envelope (fail-closed).
                 write_status(
-                    req.job_id, "failed",
+                    req.job_id,
+                    "failed",
                     error_code="artifact_write_failed",
                     error_summary=str(exc),
                 )
                 return _build_artifact_write_failure_callback(
                     job_id=req.job_id,
-                    error_summary=(
-                        f"disallowed presigned artifact URL: {exc}"
-                    ),
+                    error_summary=(f"disallowed presigned artifact URL: {exc}"),
                 )
         elif output_prefix:
             # Canary/operator fallback: volume path writer.
@@ -3175,7 +3403,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             # Write failure (sha mismatch, URI scheme rejection, upload
             # failure) → signed failure envelope (fail-closed).
             write_status(
-                req.job_id, "failed",
+                req.job_id,
+                "failed",
                 error_code="artifact_write_failed",
                 error_summary=str(exc),
             )
@@ -3187,7 +3416,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             # Unexpected write failure (volume I/O, network) → signed
             # failure envelope (fail-closed — no silent drop).
             write_status(
-                req.job_id, "failed",
+                req.job_id,
+                "failed",
                 error_code="artifact_write_failed",
                 error_summary=str(exc),
             )
@@ -3202,7 +3432,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         # — fail closed.
         if write_result.artifact_sha256 != typed_artifact.artifact_sha256:
             write_status(
-                req.job_id, "failed",
+                req.job_id,
+                "failed",
                 error_code="artifact_sha_mismatch",
                 error_summary=(
                     "artifact sha256 mismatch: writer declared "
@@ -3227,10 +3458,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         raw_mode = req.extra_constraints.get("training_mode") or "production"
         return _build_signed_failure(
             error_code="artifact_missing",
-            error_message=(
-                "persistence target set but no artifact bytes to "
-                "write (fail closed)"
-            ),
+            error_message=("persistence target set but no artifact bytes to write (fail closed)"),
             mode=raw_mode,
             context={
                 "job_id": req.job_id,
@@ -3352,9 +3580,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             # Phase 1 / T-1.2: signed write receipt (HMAC over
             # uri|sha256|size|format). Present when a writer persisted
             # the artifact; None for inline-only canary runs.
-            "write_receipt": (
-                write_result.write_receipt if write_result is not None else None
-            ),
+            "write_receipt": (write_result.write_receipt if write_result is not None else None),
         }
 
     # GPU healthcheck dict (present only if a healthcheck ran for this
@@ -3471,6 +3697,7 @@ if __name__ == "__main__":  # pragma: no cover
     # Try RunPod serverless mode first (uses runpod SDK)
     try:
         import runpod
+
         _log(f"runpod SDK imported, version: {getattr(runpod, '__version__', 'unknown')}")
 
         # Dump RUNPOD_* env vars to diagnose serverless vs local mode.

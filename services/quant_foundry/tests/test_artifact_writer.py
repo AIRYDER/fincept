@@ -159,6 +159,85 @@ def test_fake_writer_rejects_empty_bytes(handler_module):
         writer.write_artifact(b"", "artifact:x", "pickle")
 
 
+def _runpod_request_for_family(model_family: str, extra: dict[str, str] | None = None):
+    from quant_foundry.schemas import RunPodTrainingRequest
+
+    return RunPodTrainingRequest(
+        job_id=f"route-{model_family}",
+        dataset_manifest_ref="/tmp/route.csv",
+        model_family=model_family,
+        search_space={"n_estimators": [3], "max_depth": [2], "learning_rate": [0.1]},
+        random_seed=7,
+        hardware_class="test-gpu",
+        extra_constraints=extra or {},
+    )
+
+
+def _tree_route_extra() -> dict[str, str]:
+    return {
+        "column_roles": json.dumps(
+            {
+                "feature_columns": ["f1", "f2"],
+                "label_columns": ["label"],
+                "timestamp_column": "ts",
+            }
+        ),
+        "task_spec": json.dumps(
+            {
+                "task_type": "binary",
+                "label_column": "label",
+            }
+        ),
+    }
+
+
+def test_runpod_real_trainer_routes_catboost_gpu(handler_module, monkeypatch):
+    monkeypatch.setenv("QUANT_FOUNDRY_USE_REAL_TRAINER", "true")
+
+    trainer = handler_module._build_trainer(
+        _runpod_request_for_family("catboost_gpu", _tree_route_extra()),
+        n_folds=2,
+    )
+
+    assert trainer.backend == "catboost"
+    assert trainer.column_roles.feature_columns == ("f1", "f2")
+    assert trainer.task_spec.task_type == "binary"
+    assert trainer.n_folds == 2
+
+
+def test_runpod_real_trainer_routes_xgboost_gpu(handler_module, monkeypatch):
+    monkeypatch.setenv("QUANT_FOUNDRY_USE_REAL_TRAINER", "true")
+
+    trainer = handler_module._build_trainer(
+        _runpod_request_for_family("xgboost_gpu", _tree_route_extra()),
+        n_folds=2,
+    )
+
+    assert trainer.backend == "xgboost"
+    assert trainer.column_roles.label_columns == ("label",)
+    assert trainer.task_spec.label_column == "label"
+
+
+def test_runpod_real_trainer_rejects_unrouted_family(handler_module, monkeypatch):
+    from quant_foundry.runpod_training import TrainingFailure
+
+    monkeypatch.setenv("QUANT_FOUNDRY_USE_REAL_TRAINER", "true")
+
+    with pytest.raises(TrainingFailure, match="does not yet share"):
+        handler_module._build_trainer(
+            _runpod_request_for_family("tabm_gpu", _tree_route_extra()),
+        )
+
+
+def test_runpod_tree_gpu_family_requires_roles(handler_module, monkeypatch):
+    from quant_foundry.runpod_training import TrainingFailure
+
+    monkeypatch.setenv("QUANT_FOUNDRY_USE_REAL_TRAINER", "true")
+
+    with pytest.raises(TrainingFailure, match="requires explicit column_roles"):
+        handler_module._build_trainer(_runpod_request_for_family("catboost_gpu"))
+
+
 # --- VolumeArtifactWriter -------------------------------------------------- #
 
 
