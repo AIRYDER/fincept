@@ -2755,19 +2755,27 @@ class RunPodTrainingHandler:
 def _git_sha_or_default() -> str | None:
     """Return the current git SHA, or None if not in a git repo.
 
-    In the RunPod container, the code git SHA is pinned at build time.
-    For local tests, we return a deterministic default.
+    In the RunPod container, the code git SHA is pinned at build time
+    via the QUANT_FOUNDRY_GIT_SHA env var (set from the GIT_SHA build arg
+    in the Dockerfile). For local tests, we return a deterministic default.
     """
-    # We don't shell out here (no subprocess in the handler — keeps it pure).
-    # The container build pins the real SHA; tests use the default.
+    env_sha = os.environ.get("QUANT_FOUNDRY_GIT_SHA")
+    if env_sha and env_sha.strip() and env_sha.strip() != "unknown":
+        return env_sha.strip()
     return "local-git-sha"
 
 
 def _lockfile_hash_or_default() -> str | None:
     """Return the lockfile hash, or None. Pinned at container build time."""
+    env_hash = os.environ.get("QUANT_FOUNDRY_LOCKFILE_HASH")
+    if env_hash and env_hash.strip() and env_hash.strip() != "unknown":
+        return env_hash.strip()
     return "local-lockfile-hash"
 
 
 def _container_digest_or_default() -> str | None:
     """Return the container image digest, or None. Set at build time."""
+    env_digest = os.environ.get("QUANT_FOUNDRY_CONTAINER_DIGEST")
+    if env_digest and env_digest.strip() and env_digest.strip() != "unknown":
+        return env_digest.strip()
     return "local-container-digest"
