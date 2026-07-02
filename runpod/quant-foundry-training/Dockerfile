@@ -24,12 +24,14 @@
 #   QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
 
 # ---------------------------------------------------------------------------
-# Base image: PyTorch CUDA runtime gives us Python + CUDA 12.4 + cuDNN 9 in
-# one well-maintained layer. Python 3.11 is the conda interpreter; pip works
-# directly. This avoids hand-installing Python via deadsnakes on a bare
-# nvidia/cuda image (which is fragile and slow to build).
+# Base image: RunPod's official PyTorch image is purpose-built for RunPod
+# serverless workers. It uses a standard apt-installed Python 3.11 (not
+# conda), has CUDA 12.4.1 + cuDNN, and is tested against RunPod's
+# serverless platform. The previous pytorch/pytorch:2.4.1-cuda12.4-
+# cudnn9-runtime image used a conda Python shim that caused the worker
+# to go unhealthy within ~40s on RunPod's serverless platform.
 # ---------------------------------------------------------------------------
-FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 # Prevent Python from buffering stdout/stderr so RunPod captures logs live.
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -41,13 +43,13 @@ WORKDIR /worker
 
 # Install OS dependencies:
 #  - build-essential: headers needed by a few pip sdists (scikit-learn wheels
-#    are prebuilt, but keep it for safety).
-#  - gosu: used by the entrypoint to drop privileges from root to the
-#    `trainer` user after fixing network-volume ownership.
+#    are prebuilt, but keep it for safety). The runpod/pytorch devel image
+#    already includes this, but keep it for explicitness.
 #  - curl: used by the healthcheck fallback / diagnostics.
+#  Note: gosu is no longer needed — we run the handler as root (RunPod's
+#  default for serverless workers).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    gosu \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -242,10 +244,16 @@ PREFLIGHT_EOF
 # ---------------------------------------------------------------------------
 RUN cat > /worker/entrypoint.sh <<'ENTRY_EOF'
 #!/usr/bin/env bash
-set -euo pipefail
 
 # 1. Security preflight (fail closed on forbidden env vars).
+#    Don't use set -e — if preflight fails, we want the error message
+#    to reach RunPod's logs before the container exits.
 python /worker/preflight.py
+preflight_rc=$?
+if [ $preflight_rc -ne 0 ]; then
+  echo "[entrypoint] Preflight failed (rc=$preflight_rc), exiting." >&2
+  exit $preflight_rc
+fi
 
 # 2. Best-effort ownership fix for RunPod network volumes.
 for d in /runpod-volume /workspace; do
@@ -254,11 +262,10 @@ for d in /runpod-volume /workspace; do
   fi
 done
 
-# 3. Exec the handler as root (RunPod serverless workers run as root by
-#    default; the gosu drop to trainer was causing the worker to go
-#    unhealthy within ~40s, likely due to GPU device file permissions
-#    or NVIDIA container runtime access restrictions for non-root users).
-exec python -u /worker/handler.py
+# 3. Exec the handler. Run as root (RunPod serverless workers run as
+#    root by default). Forward all arguments to the Python handler
+#    so RunPod's platform can pass --rp_log_level etc.
+exec python -u /worker/handler.py "$@"
 ENTRY_EOF
 RUN chmod +x /worker/entrypoint.sh
 
@@ -287,18 +294,15 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
 
 # ---------------------------------------------------------------------------
 # Healthcheck: verify the Python runtime + handler module load. We do NOT
-# require nvidia-smi here because the pytorch/pytorch:cuda-runtime base image
-# does not ship nvidia-smi in its PATH — the binary is mounted by the NVIDIA
-# container runtime at /usr/bin/nvidia-smi but may not be discoverable in all
-# base images. The handler's gpu_healthcheck task is the authoritative GPU
-# probe; this Docker HEALTHCHECK is only the container-level liveness gate
-# RunPod polls to decide if the worker is eligible to receive jobs.
+# require nvidia-smi here — the handler's gpu_healthcheck task is the
+# authoritative GPU probe. This Docker HEALTHCHECK is only the
+# container-level liveness gate.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=15s --start-period=40s --retries=3 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=60s --timeout=15s --start-period=60s --retries=3 \
+  CMD python3 -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
-# RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
-# RunPod's dockerArgs field can't override it. The entrypoint runs the
-# security preflight, fixes volume ownership, then drops to the non-root
-# trainer user before execing the handler.
+# RunPod's serverless platform expects the container to start the handler.
+# We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
+# which then execs the Python handler. Arguments from RunPod's platform
+# (e.g. --rp_log_level) are forwarded via "$@".
 ENTRYPOINT ["/worker/entrypoint.sh"]
