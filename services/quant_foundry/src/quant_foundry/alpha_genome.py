@@ -236,6 +236,24 @@ class ModelFamilySpec(BaseModel):
     is_baseline_exception: bool = False
     created_at_ns: int = 0
 
+    def resolve_artifact_loader(self) -> Callable[..., Any]:
+        """Resolve this spec's ``artifact_loader`` to a callable.
+
+        Delegates to :func:`quant_foundry.artifact_io.resolve_loader` so
+        the family spec is the single place that knows its loader name and
+        the artifact_io module is the single place that knows the mapping
+        from name to callable.
+
+        Raises:
+            ValueError: if ``artifact_loader`` is not a registered loader.
+        """
+        # Lazy import to avoid a circular dependency at module load time
+        # (artifact_io has no dependency on alpha_genome, but importing it
+        # eagerly here would couple the two modules at import time).
+        from quant_foundry.artifact_io import resolve_loader
+
+        return resolve_loader(self.artifact_loader)
+
 
 class FamilyValidationResult(BaseModel):
     """Result of ``ModelFamilyRegistry.validate_family``.
@@ -364,6 +382,23 @@ class ModelFamilyRegistry:
                 f"family {family_id!r} has no artifact_loader; a family "
                 "without a loader cannot produce a loadable artifact"
             )
+        else:
+            # 2b. Artifact loader resolves to a callable in LOADER_REGISTRY?
+            try:
+                from quant_foundry.artifact_io import resolve_loader
+
+                resolve_loader(spec.artifact_loader)
+            except ValueError:
+                errors.append(
+                    f"family {family_id!r} artifact_loader "
+                    f"{spec.artifact_loader!r} does not resolve to a "
+                    "registered loader (see artifact_io.LOADER_REGISTRY)"
+                )
+            except ImportError:
+                # artifact_io not importable — treat as advisory (older
+                # deployment). The loader-name presence check above still
+                # applies.
+                pass
 
         # 3. Mode-specific gating.
         if mode == "production":
