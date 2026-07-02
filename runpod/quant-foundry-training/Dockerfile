@@ -58,7 +58,7 @@ COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
 # Copy fincept_core.datasets — needed for fincept_core.datasets.cv.make_folds
 # (canonical walk-forward fold math used by RealLightGBMTrainer).
 # We copy only the datasets subpackage + its deps (naming, prediction_log,
-# schemas) to avoid pulling in redis, pydantic-settings, etc.
+# schemas) to avoid pulling in redis and storage-heavy service modules.
 COPY libs/fincept-core/src/fincept_core/datasets/ /worker/fincept_core/datasets/
 COPY libs/fincept-core/src/fincept_core/naming.py /worker/fincept_core/naming.py
 COPY libs/fincept-core/src/fincept_core/prediction_log.py /worker/fincept_core/prediction_log.py
@@ -67,7 +67,7 @@ COPY libs/fincept-core/src/fincept_core/errors.py /worker/fincept_core/errors.py
 COPY libs/fincept-core/src/fincept_core/clock.py /worker/fincept_core/clock.py
 COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 # Create a minimal __init__.py that only imports the datasets subpackage
-# (avoids importing storage/heartbeat which need redis/pydantic-settings).
+# (avoids importing storage/heartbeat which need redis).
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
 # Copy the shared RunPod worker_status utility (sibling to this handler in
@@ -89,10 +89,13 @@ COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 #              lightgbm_gpu=False for this image.
 #  - pandas / pyarrow / scikit-learn / numpy: data handling + walk-forward
 #    fold math used by RealLightGBMTrainer.
-#  - pydantic / httpx / runpod: handler runtime + RunPod serverless SDK.
+#  - pydantic / pydantic-settings / httpx / runpod: handler runtime +
+#    RunPod serverless SDK. pydantic-settings is required by the copied
+#    fincept_core.config module, which is imported through fincept_core.
 # ---------------------------------------------------------------------------
 RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
+    "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
     "runpod>=1.6,<2" \
     "numpy>=1.26,<3" \

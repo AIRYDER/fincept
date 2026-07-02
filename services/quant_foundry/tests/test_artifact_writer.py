@@ -18,6 +18,7 @@ The handler module lives in ``runpod/quant-foundry-training/handler.py``
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import pathlib
 import sys
@@ -34,9 +35,7 @@ def handler_module():
     """Import the handler module (adding its dir to sys.path)."""
     if _HANDLER_DIR not in sys.path:
         sys.path.insert(0, _HANDLER_DIR)
-    import handler as handler_mod
-
-    return handler_mod
+    return importlib.import_module("handler")
 
 
 # --- ArtifactWriteResult model --------------------------------------------- #
@@ -456,8 +455,6 @@ def _make_training_input(job_id: str, **extra) -> dict:
 
 def test_handler_rejects_disallowed_presigned_uri_scheme(handler_module, monkeypatch):
     """Handler rejects http:// presigned URL with a signed failure envelope."""
-    import os
-
     secret = "handler-integration-secret"
     monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", secret)
     # Use a canary request (local trainer) so no GPU/ML deps needed.
