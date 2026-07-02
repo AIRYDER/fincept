@@ -100,9 +100,16 @@ try:
     from quant_foundry.alpha_genome import (
         HYPERPARAM_BOUNDS as _AG_HYPERPARAM_BOUNDS,
     )
+    from quant_foundry.alpha_genome import (
+        MODEL_FAMILY_REGISTRY as _AG_MODEL_FAMILY_REGISTRY,
+    )
+    from quant_foundry.alpha_genome import (
+        FamilyValidationResult as _AGFamilyValidationResult,
+    )
 
     _ALLOWED_MODEL_FAMILIES: frozenset[str] = _AG_MODEL_FAMILIES
     _HYPERPARAM_BOUNDS: dict[str, dict[str, tuple[float, float]]] = dict(_AG_HYPERPARAM_BOUNDS)
+    _FAMILY_REGISTRY = _AG_MODEL_FAMILY_REGISTRY
 except Exception:
     _ALLOWED_MODEL_FAMILIES = frozenset({"gbm", "catboost", "logreg", "linear"})
     _HYPERPARAM_BOUNDS = {
@@ -120,6 +127,8 @@ except Exception:
         "logreg": {"C": (1e-4, 100.0), "max_iter": (50.0, 5000.0)},
         "linear": {"alpha": (1e-4, 10.0), "max_iter": (100.0, 10000.0)},
     }
+    _FAMILY_REGISTRY = None
+    _AGFamilyValidationResult = None  # type: ignore[assignment,misc]
 
 
 class ModelFamily(StrEnum):
@@ -236,6 +245,79 @@ MODE_RULES: dict[TrainingMode, dict[str, object]] = {
         ),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Model family registry integration (Phase 7 / T-7.1)
+# ---------------------------------------------------------------------------
+#
+# ``validate_family_for_mode`` is the production-tree-challenger gating
+# hook. It consults the :data:`MODEL_FAMILY_REGISTRY` (the single source
+# of truth for which families may run in production) and enforces:
+#   - the family is registered (unknown family rejected),
+#   - the family declares an artifact loader (no loader rejected),
+#   - for production: the family maps to a GPU RunPod image OR carries an
+#     explicit baseline exception,
+#   - for canary/research: the GPU requirement is advisory (warning only).
+#
+# This is *additive* to the legacy ``_validate_mode_family`` allowlist
+# check on ``TrainingManifest`` (which gates the lab's bounded mutation
+# family set: gbm / catboost / logreg / linear). The registry uses the
+# production deployment family ids (lightgbm_baseline, catboost_gpu,
+# xgboost_gpu, logreg_sanity, linear_sanity). New production-tree
+# challenger code (T-7.2 / T-7.3) calls this function with the registry
+# family id; the legacy manifest path is unchanged.
+
+
+def validate_family_for_mode(
+    *,
+    family_id: str,
+    mode: TrainingMode | str,
+    has_gpu: bool = False,
+) -> _AGFamilyValidationResult | None:
+    """Validate a registry family id against ``mode`` rules.
+
+    Returns a :class:`FamilyValidationResult` (``passed`` True only when
+    there are no errors). Returns ``None`` when the registry is not
+    importable (older deployment) so callers can fall back gracefully.
+
+    Args:
+        family_id: the registry family id (e.g. ``"catboost_gpu"``).
+        mode: a :class:`TrainingMode` or its string value.
+        has_gpu: whether a GPU is available for this run. Advisory for
+            canary/research; ignored for production (production requires
+            the family to *map* to a GPU image, not merely have one
+            available at dispatch time).
+    """
+    if _FAMILY_REGISTRY is None or _AGFamilyValidationResult is None:
+        return None
+    mode_str = mode.value if isinstance(mode, TrainingMode) else str(mode)
+    return _FAMILY_REGISTRY.validate_family(
+        family_id=family_id,
+        mode=mode_str,
+        has_gpu=has_gpu,
+    )
+
+
+def is_family_registered(family_id: str) -> bool:
+    """Return True if ``family_id`` is registered in the family registry.
+
+    Returns ``False`` when the registry is not importable.
+    """
+    if _FAMILY_REGISTRY is None:
+        return False
+    return _FAMILY_REGISTRY.is_registered(family_id)
+
+
+def get_family_spec(family_id: str):
+    """Return the :class:`ModelFamilySpec` for ``family_id``.
+
+    Raises ``KeyError`` if the family is not registered. Returns ``None``
+    when the registry is not importable.
+    """
+    if _FAMILY_REGISTRY is None:
+        return None
+    return _FAMILY_REGISTRY.get(family_id)
 
 
 # Substrings that suggest a dataset ref is a raw file rather than a
@@ -763,5 +845,8 @@ __all__ = [
     "TrainingMode",
     "WalkForwardWindow",
     "derive_walk_forward_window",
+    "get_family_spec",
+    "is_family_registered",
     "resolve_quality_policy",
+    "validate_family_for_mode",
 ]
