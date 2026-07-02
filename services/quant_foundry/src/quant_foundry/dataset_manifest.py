@@ -1484,6 +1484,298 @@ class DatasetRegistry:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Phase 8 / T-8.1 — Column Roles, Groups, Weights, Horizons
+# ---------------------------------------------------------------------------
+#
+# The ``ColumnRoles`` model is the **explicit** declaration of which columns
+# in a dataset play which role during training. It replaces the fragile
+# "infer features by dropping a few names" pattern that the legacy trainer
+# used (``feature_cols = [c for c in columns if c != label_col and c != ts_col]``).
+#
+# Every trainer must now receive an explicit ``ColumnRoles`` so that:
+# - feature columns are declared, never inferred,
+# - leakage / audit columns are explicitly excluded and can never appear
+#   in the feature set,
+# - label, timestamp, symbol, horizon, weight, group, and sector columns
+#   are named up front so the trainer and the tournament agree on the
+#   dataset's shape.
+#
+# Fail-closed invariants (enforced at construction + validation):
+# - ``feature_columns`` and ``label_columns`` must be non-empty.
+# - No overlap between ``feature_columns`` and ``excluded_columns``
+#   (leakage prevention — an excluded audit/leakage column must NEVER be
+#   used as a feature).
+# - No overlap between ``label_columns`` and ``feature_columns`` (a label
+#   cannot also be a feature).
+
+
+class ColumnRolesValidationResult(BaseModel):
+    """Result of validating :class:`ColumnRoles` against available columns.
+
+    Frozen + ``extra='forbid'`` (audit integrity). ``passed`` is True only
+    when there are no errors (warnings do not fail validation).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    passed: bool
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    def raise_if_failed(self) -> None:
+        """Raise ``ValueError`` if validation did not pass (fail-closed)."""
+        if not self.passed:
+            raise ValueError(
+                "column roles validation failed: " + "; ".join(self.errors)
+            )
+
+
+class ColumnRoles(BaseModel):
+    """Explicit declaration of column roles for a training dataset.
+
+    This is the **single source of truth** for which columns are features,
+    labels, timestamps, symbols, horizons, weights, groups, sectors, and
+    which columns are excluded (audit/leakage columns that must never be
+    used as features).
+
+    Frozen + ``extra='forbid'`` (audit integrity).
+
+    Fields:
+        feature_columns: explicit tuple of feature column names. Must be
+            non-empty. The trainer uses ONLY these columns as features —
+            never inferred by dropping a few names.
+        label_columns: explicit tuple of label / target column names. Must
+            be non-empty. ``label_columns[0]`` is the primary label.
+        timestamp_column: the timestamp / decision-time column. Optional.
+        symbol_column: the symbol / instrument id column. Optional.
+        horizon_column: the horizon column (bar offset for the label).
+            Optional — the horizon may instead be a parameter on
+            :class:`ModelTaskSpec`.
+        weight_column: the sample-weight column. Optional.
+        group_column: the group-id column (required for ranking tasks).
+            Optional here, but :func:`validate_task_spec` enforces it for
+            ranking task types.
+        sector_column: the sector / industry classification column.
+            Optional.
+        excluded_columns: audit / leakage columns that must NEVER be used
+            as features. The trainer fail-closes if any excluded column
+            appears in ``feature_columns``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    feature_columns: tuple[str, ...]
+    label_columns: tuple[str, ...]
+    timestamp_column: str | None = None
+    symbol_column: str | None = None
+    horizon_column: str | None = None
+    weight_column: str | None = None
+    group_column: str | None = None
+    sector_column: str | None = None
+    excluded_columns: tuple[str, ...] = ()
+
+    @field_validator("feature_columns", "label_columns")
+    @classmethod
+    def _nonempty_tuple(cls, v: tuple[str, ...], info: Any) -> tuple[str, ...]:
+        if not v:
+            raise ValueError(f"{info.field_name} must be non-empty")
+        for name in v:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    f"{info.field_name} entries must be non-empty strings"
+                )
+        return v
+
+    @field_validator("excluded_columns")
+    @classmethod
+    def _excluded_entries_nonempty(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for name in v:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    "excluded_columns entries must be non-empty strings"
+                )
+        return v
+
+    @model_validator(mode="after")
+    def _no_feature_excluded_overlap(self) -> ColumnRoles:
+        """An excluded (audit/leakage) column must never be a feature."""
+        feature_set = set(self.feature_columns)
+        excluded_set = set(self.excluded_columns)
+        overlap = feature_set & excluded_set
+        if overlap:
+            raise ValueError(
+                "feature_columns must not overlap excluded_columns "
+                f"(leakage prevention): overlapping columns "
+                f"{sorted(overlap)!r} are declared both as features and "
+                "excluded"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _no_label_feature_overlap(self) -> ColumnRoles:
+        """A label column must not also be a feature column."""
+        feature_set = set(self.feature_columns)
+        label_set = set(self.label_columns)
+        overlap = feature_set & label_set
+        if overlap:
+            raise ValueError(
+                "label_columns must not overlap feature_columns: "
+                f"{sorted(overlap)!r} appear in both"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _no_duplicate_features(self) -> ColumnRoles:
+        """Feature columns must be unique (no duplicate feature names)."""
+        if len(set(self.feature_columns)) != len(self.feature_columns):
+            dupes = sorted(
+                {c for c in self.feature_columns
+                 if self.feature_columns.count(c) > 1}
+            )
+            raise ValueError(
+                f"feature_columns must not contain duplicates: {dupes!r}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _no_duplicate_labels(self) -> ColumnRoles:
+        """Label columns must be unique."""
+        if len(set(self.label_columns)) != len(self.label_columns):
+            dupes = sorted(
+                {c for c in self.label_columns
+                 if self.label_columns.count(c) > 1}
+            )
+            raise ValueError(
+                f"label_columns must not contain duplicates: {dupes!r}"
+            )
+        return self
+
+    # --- convenience -----------------------------------------------------
+
+    @property
+    def primary_label(self) -> str:
+        """The primary label column (``label_columns[0]``)."""
+        return self.label_columns[0]
+
+    @property
+    def all_declared_columns(self) -> set[str]:
+        """All column names declared in any role (for existence checking)."""
+        cols: set[str] = set(self.feature_columns) | set(self.label_columns)
+        if self.timestamp_column:
+            cols.add(self.timestamp_column)
+        if self.symbol_column:
+            cols.add(self.symbol_column)
+        if self.horizon_column:
+            cols.add(self.horizon_column)
+        if self.weight_column:
+            cols.add(self.weight_column)
+        if self.group_column:
+            cols.add(self.group_column)
+        if self.sector_column:
+            cols.add(self.sector_column)
+        cols.update(self.excluded_columns)
+        return cols
+
+    def is_excluded(self, column: str) -> bool:
+        """Return True if ``column`` is declared excluded (leakage/audit)."""
+        return column in set(self.excluded_columns)
+
+
+def validate_column_roles(
+    roles: ColumnRoles,
+    available_columns: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+) -> ColumnRolesValidationResult:
+    """Validate :class:`ColumnRoles` against the columns actually present.
+
+    Checks:
+    - Every declared column (features, labels, timestamp, symbol, horizon,
+      weight, group, sector, excluded) exists in ``available_columns``.
+    - Excluded columns are not in ``feature_columns`` (already enforced at
+      construction, but re-checked here for defence in depth).
+    - Label columns are not in ``feature_columns`` (already enforced at
+      construction, re-checked here).
+
+    Args:
+        roles: the :class:`ColumnRoles` to validate.
+        available_columns: the set of column names present in the dataset.
+
+    Returns:
+        A :class:`ColumnRolesValidationResult`. ``passed`` is True only
+        when there are no errors. Warnings are recorded for soft issues
+        (e.g. an excluded column that is not present in the dataset).
+    """
+    available: set[str] = set(available_columns)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Check feature columns exist.
+    for col in roles.feature_columns:
+        if col not in available:
+            errors.append(
+                f"feature column {col!r} not found in available columns"
+            )
+
+    # Check label columns exist.
+    for col in roles.label_columns:
+        if col not in available:
+            errors.append(
+                f"label column {col!r} not found in available columns"
+            )
+
+    # Check optional role columns exist (if declared).
+    optional_roles: list[tuple[str | None, str]] = [
+        (roles.timestamp_column, "timestamp_column"),
+        (roles.symbol_column, "symbol_column"),
+        (roles.horizon_column, "horizon_column"),
+        (roles.weight_column, "weight_column"),
+        (roles.group_column, "group_column"),
+        (roles.sector_column, "sector_column"),
+    ]
+    for col, role_name in optional_roles:
+        if col is not None and col not in available:
+            errors.append(
+                f"{role_name} {col!r} not found in available columns"
+            )
+
+    # Check excluded columns exist (warning if not — an excluded column
+    # that is absent is harmless but may indicate a stale manifest).
+    for col in roles.excluded_columns:
+        if col not in available:
+            warnings.append(
+                f"excluded column {col!r} not found in available columns "
+                "(stale manifest?)"
+            )
+
+    # Defence in depth: re-check no excluded column is a feature.
+    feature_set = set(roles.feature_columns)
+    excluded_set = set(roles.excluded_columns)
+    overlap = feature_set & excluded_set
+    if overlap:
+        errors.append(
+            "excluded columns must not appear in feature_columns "
+            f"(leakage): {sorted(overlap)!r}"
+        )
+
+    # Defence in depth: re-check no label is a feature.
+    label_set = set(roles.label_columns)
+    lf_overlap = feature_set & label_set
+    if lf_overlap:
+        errors.append(
+            "label columns must not appear in feature_columns: "
+            f"{sorted(lf_overlap)!r}"
+        )
+
+    passed = len(errors) == 0
+    return ColumnRolesValidationResult(
+        passed=passed,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
 def lookup_dataset_registry_ref(
     registry: DatasetRegistry,
     dataset_registry_ref: str,

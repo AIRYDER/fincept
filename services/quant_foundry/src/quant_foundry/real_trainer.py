@@ -50,6 +50,19 @@ from quant_foundry.schemas import (
     ModelDossier,
     RunPodTrainingRequest,
 )
+# Phase 8 / T-8.1: explicit column roles + task spec. Imported lazily-safe
+# (dataset_manifest / training_manifest do not import real_trainer, so
+# there is no circular import). These are OPTIONAL inputs — when None the
+# trainer falls back to the legacy infer-by-dropping-names behaviour with
+# a deprecation warning.
+from quant_foundry.dataset_manifest import (
+    ColumnRoles,
+    validate_column_roles,
+)
+from quant_foundry.training_manifest import (
+    ModelTaskSpec,
+    validate_task_spec,
+)
 
 try:
     from fincept_core.storage import StorageBackend, get_storage_backend
@@ -273,6 +286,15 @@ class RealLightGBMTrainer:
     # fallback when no bar-frequency info is present on the request.
     annualization_factor: int = 252
     storage_backend: Any = None
+    # --- Phase 8 / T-8.1: explicit column roles + task spec -------------
+    # When set, the trainer uses ONLY ``column_roles.feature_columns`` as
+    # features (never inferred by dropping a few names) and
+    # ``column_roles.label_columns[0]`` (or ``task_spec.label_column``) as
+    # the label. Excluded columns are fail-closed if they appear in the
+    # feature set. When None, the trainer falls back to the legacy
+    # infer-by-dropping-names behaviour and logs a deprecation warning.
+    column_roles: ColumnRoles | None = None
+    task_spec: ModelTaskSpec | None = None
     # --- Phase 1 / T-1.1: typed artifact result -------------------------
     # After a successful ``train()`` call, the typed artifact result +
     # raw model bytes are stashed here so the RunPod handler can read
@@ -321,7 +343,16 @@ class RealLightGBMTrainer:
                 error_summary="ML dependency not available: numpy",
             )
 
-        X, y, timestamps = self._load_dataset(req.dataset_manifest_ref)
+        # Phase 8 / T-8.1: validate explicit column roles + task spec.
+        # When column_roles is provided, the trainer uses ONLY the
+        # declared feature columns (never inferred). When None, fall back
+        # to the legacy infer-by-dropping-names behaviour with a
+        # deprecation warning.
+        self._validate_column_roles_and_task_spec()
+
+        X, y, timestamps, weights, groups = self._load_dataset(
+            req.dataset_manifest_ref,
+        )
 
         if time.time_ns() >= deadline_ns:
             raise TrainingFailure(
@@ -338,6 +369,8 @@ class RealLightGBMTrainer:
             seed,
             deadline_ns,
             req,
+            weights=weights,
+            groups=groups,
         )
 
         if time.time_ns() >= deadline_ns:
@@ -346,7 +379,7 @@ class RealLightGBMTrainer:
                 error_summary="training deadline breached after validation",
             )
 
-        final_model = self._train_final_model(X, y, seed, req)
+        final_model = self._train_final_model(X, y, seed, req, weights=weights)
 
         model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
         sha256 = hashlib.sha256(model_bytes).hexdigest()
@@ -450,6 +483,109 @@ class RealLightGBMTrainer:
 
     # --- dataset loading -------------------------------------------------
 
+    def _validate_column_roles_and_task_spec(self) -> None:
+        """Validate ``column_roles`` and ``task_spec`` (Phase 8 / T-8.1).
+
+        Fail-closed checks (raise ``TrainingFailure``):
+        - If ``column_roles`` is set but ``feature_columns`` is empty.
+        - If any excluded column appears in the feature set (leakage).
+        - If ``task_spec`` is set and the label column is missing from
+          ``column_roles.label_columns``.
+        - For ranking tasks: ``group_column`` must be set on both the
+          task spec and the column roles.
+
+        When ``column_roles`` is None, log a deprecation warning and fall
+        back to the legacy infer-by-dropping-names behaviour (backward
+        compat).
+        """
+        import warnings
+
+        if self.column_roles is None:
+            # Backward compat: no explicit column roles. The legacy
+            # loaders infer features by dropping the label + timestamp
+            # columns. Emit a deprecation warning so callers migrate to
+            # explicit ColumnRoles.
+            warnings.warn(
+                "RealLightGBMTrainer was constructed without column_roles; "
+                "falling back to legacy infer-by-dropping-names feature "
+                "selection. This is deprecated — pass an explicit "
+                "ColumnRoles so features are declared, never inferred, "
+                "and leakage/audit columns are excluded.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return
+
+        # Fail-closed: feature_columns must be non-empty (already enforced
+        # by the Pydantic model, but re-check here for defence in depth).
+        if not self.column_roles.feature_columns:
+            raise TrainingFailure(
+                error_code="invalid_column_roles",
+                error_summary=(
+                    "column_roles.feature_columns is empty — the trainer "
+                    "requires explicit feature columns (never inferred)"
+                ),
+            )
+
+        # Fail-closed: no excluded column may appear in the feature set
+        # (leakage prevention). The Pydantic model already enforces this
+        # at construction, but re-check here so a mutated / stale roles
+        # object is caught at train time.
+        feature_set = set(self.column_roles.feature_columns)
+        excluded_set = set(self.column_roles.excluded_columns)
+        overlap = feature_set & excluded_set
+        if overlap:
+            raise TrainingFailure(
+                error_code="leakage_column_in_features",
+                error_summary=(
+                    "excluded (leakage/audit) columns must never appear in "
+                    f"feature_columns: {sorted(overlap)!r} are declared "
+                    "both as features and excluded"
+                ),
+            )
+
+        # Fail-closed: label columns must not be features.
+        label_set = set(self.column_roles.label_columns)
+        lf_overlap = feature_set & label_set
+        if lf_overlap:
+            raise TrainingFailure(
+                error_code="label_in_features",
+                error_summary=(
+                    "label columns must not appear in feature_columns: "
+                    f"{sorted(lf_overlap)!r}"
+                ),
+            )
+
+        # If a task spec is provided, validate it against the column roles.
+        if self.task_spec is not None:
+            verdict = validate_task_spec(self.task_spec, self.column_roles)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_task_spec",
+                    error_summary=(
+                        "task spec validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            # Fail-closed: ranking without group column.
+            if self.task_spec.task_type == "ranking":
+                if not self.task_spec.group_column:
+                    raise TrainingFailure(
+                        error_code="ranking_without_group",
+                        error_summary=(
+                            "ranking task requires a group_column "
+                            "(ranking request without group id fails)"
+                        ),
+                    )
+                if self.column_roles.group_column is None:
+                    raise TrainingFailure(
+                        error_code="ranking_without_group",
+                        error_summary=(
+                            "ranking task requires column_roles.group_column "
+                            "to be set (the group-id column must be declared)"
+                        ),
+                    )
+
     def _resolve_path(self, ref: str) -> Path:
         """Resolve a dataset reference (file://, s3://, http(s):// URI, or plain path) to a Path.
 
@@ -520,9 +656,15 @@ class RealLightGBMTrainer:
                 error_summary=f"unsupported URI scheme: {parsed.scheme!r}",
             )
 
-    def _load_dataset(self, ref: str) -> tuple[Any, Any, Any]:
-        """Load dataset from a URI. Returns ``(X, y, timestamps)``."""
+    def _load_dataset(
+        self, ref: str,
+    ) -> tuple[Any, Any, Any, Any, Any]:
+        """Load dataset from a URI.
 
+        Returns ``(X, y, timestamps, weights, groups)`` where ``weights``
+        and ``groups`` are ``None`` when no ``column_roles`` is set or the
+        corresponding columns are not declared.
+        """
         path = self._resolve_path(ref)
         if not path.exists():
             raise TrainingFailure(
@@ -541,8 +683,15 @@ class RealLightGBMTrainer:
                 error_summary=f"unsupported dataset format: {ext} (expected .parquet or .csv)",
             )
 
-    def _load_parquet(self, path: Path) -> tuple[Any, Any, Any]:
-        """Load a parquet file. Requires pyarrow or pandas (lazy import)."""
+    def _load_parquet(self, path: Path) -> tuple[Any, Any, Any, Any, Any]:
+        """Load a parquet file. Requires pyarrow or pandas (lazy import).
+
+        When ``column_roles`` is set, uses ONLY the declared
+        ``feature_columns`` as features (never inferred by dropping names)
+        and ``label_columns[0]`` (or ``task_spec.label_column``) as the
+        label. Extracts weights/groups from the declared columns when
+        present.
+        """
         import numpy as np
 
         try:
@@ -564,31 +713,112 @@ class RealLightGBMTrainer:
                     error_summary="neither pyarrow nor pandas available for parquet loading",
                 ) from None
 
-        label_col = "label" if "label" in columns else columns[-1]
-        ts_col: str | None = None
-        for candidate in ("timestamp", "decision_time", "ts", "event_ts"):
-            if candidate in columns:
-                ts_col = candidate
-                break
+        available = set(columns)
+
+        # --- Phase 8 / T-8.1: explicit column roles --------------------
+        if self.column_roles is not None:
+            roles = self.column_roles
+            # Validate declared columns exist in the dataset.
+            verdict = validate_column_roles(roles, available)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_column_roles",
+                    error_summary=(
+                        "column roles validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            # Label: prefer task_spec.label_column, else roles.primary_label.
+            if self.task_spec is not None and self.task_spec.label_column:
+                label_col = self.task_spec.label_column
+            else:
+                label_col = roles.primary_label
+            if label_col not in available:
+                raise TrainingFailure(
+                    error_code="missing_label",
+                    error_summary=(
+                        f"label column {label_col!r} not found in dataset "
+                        f"columns {sorted(available)!r} (missing label fails)"
+                    ),
+                )
+            # Features: ONLY the declared feature columns.
+            feature_cols = list(roles.feature_columns)
+            for fc in feature_cols:
+                if fc not in available:
+                    raise TrainingFailure(
+                        error_code="missing_feature",
+                        error_summary=(
+                            f"feature column {fc!r} not found in dataset "
+                            f"columns {sorted(available)!r}"
+                        ),
+                    )
+            # Timestamp.
+            ts_col = roles.timestamp_column
+            # Weights.
+            weights = None
+            if roles.weight_column is not None:
+                if roles.weight_column not in available:
+                    raise TrainingFailure(
+                        error_code="missing_weight_column",
+                        error_summary=(
+                            f"weight column {roles.weight_column!r} not "
+                            f"found in dataset columns"
+                        ),
+                    )
+                weights = np.array(data[roles.weight_column], dtype=np.float64)
+            # Groups.
+            groups = None
+            if roles.group_column is not None:
+                if roles.group_column not in available:
+                    raise TrainingFailure(
+                        error_code="missing_group_column",
+                        error_summary=(
+                            f"group column {roles.group_column!r} not "
+                            f"found in dataset columns"
+                        ),
+                    )
+                groups = np.array(data[roles.group_column])
+        else:
+            # Legacy: infer by dropping label + timestamp.
+            label_col = "label" if "label" in columns else columns[-1]
+            ts_col = None
+            for candidate in ("timestamp", "decision_time", "ts", "event_ts"):
+                if candidate in columns:
+                    ts_col = candidate
+                    break
+            feature_cols = [c for c in columns if c != label_col and c != ts_col]
+            weights = None
+            groups = None
 
         y = np.array(data[label_col], dtype=np.float64)
-        feature_cols = [c for c in columns if c != label_col and c != ts_col]
-        X = np.column_stack([np.array(data[c], dtype=np.float64) for c in feature_cols])
+        X = np.column_stack(
+            [np.array(data[c], dtype=np.float64) for c in feature_cols],
+        )
 
-        if ts_col is not None:
+        if ts_col is not None and ts_col in available:
             timestamps = np.array(data[ts_col], dtype=np.int64)
         else:
             timestamps = np.arange(len(y), dtype=np.int64)
 
-        return X, y, timestamps
+        return X, y, timestamps, weights, groups
 
-    def _load_csv(self, path: Path) -> tuple[Any, Any, Any]:
+    def _load_csv(self, path: Path) -> tuple[Any, Any, Any, Any, Any]:
         """Load a CSV file using numpy.
 
         Expected layout: first column = timestamp, last column = label,
         middle columns = features. A header row is required.
+
+        When ``column_roles`` is set, the header row is read to map column
+        names to indices, and ONLY the declared ``feature_columns`` are
+        used as features (never inferred by dropping names).
         """
         import numpy as np
+
+        # Read the header to get column names (needed for column-roles
+        # mapping). The header is the first non-empty line.
+        with open(str(path), "r", encoding="utf-8", errors="replace") as fh:
+            header_line = fh.readline().strip()
+        header_cols = [c.strip() for c in header_line.split(",")] if header_line else []
 
         data = np.genfromtxt(str(path), delimiter=",", skip_header=1, dtype=float)
         if data.ndim == 1:
@@ -603,12 +833,89 @@ class RealLightGBMTrainer:
                 ),
             )
 
-        timestamps = data[:, 0].astype(np.int64)
-        y = data[:, -1].astype(np.float64)
-        X = data[:, 1:-1].astype(np.float64)
-        if X.ndim == 1:
-            X = X.reshape(-1, 1)
-        return X, y, timestamps
+        # --- Phase 8 / T-8.1: explicit column roles --------------------
+        if self.column_roles is not None and header_cols:
+            roles = self.column_roles
+            available = set(header_cols)
+            verdict = validate_column_roles(roles, available)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_column_roles",
+                    error_summary=(
+                        "column roles validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            col_index = {name: i for i, name in enumerate(header_cols)}
+            # Label.
+            if self.task_spec is not None and self.task_spec.label_column:
+                label_col = self.task_spec.label_column
+            else:
+                label_col = roles.primary_label
+            if label_col not in col_index:
+                raise TrainingFailure(
+                    error_code="missing_label",
+                    error_summary=(
+                        f"label column {label_col!r} not found in CSV "
+                        f"header {header_cols!r} (missing label fails)"
+                    ),
+                )
+            y = data[:, col_index[label_col]].astype(np.float64)
+            # Features: ONLY the declared feature columns.
+            feature_indices = []
+            for fc in roles.feature_columns:
+                if fc not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_feature",
+                        error_summary=(
+                            f"feature column {fc!r} not found in CSV "
+                            f"header {header_cols!r}"
+                        ),
+                    )
+                feature_indices.append(col_index[fc])
+            X = data[:, feature_indices].astype(np.float64)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            # Timestamp.
+            if roles.timestamp_column and roles.timestamp_column in col_index:
+                timestamps = data[:, col_index[roles.timestamp_column]].astype(np.int64)
+            else:
+                timestamps = np.arange(len(y), dtype=np.int64)
+            # Weights.
+            weights = None
+            if roles.weight_column is not None:
+                if roles.weight_column not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_weight_column",
+                        error_summary=(
+                            f"weight column {roles.weight_column!r} not "
+                            f"found in CSV header"
+                        ),
+                    )
+                weights = data[:, col_index[roles.weight_column]].astype(np.float64)
+            # Groups.
+            groups = None
+            if roles.group_column is not None:
+                if roles.group_column not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_group_column",
+                        error_summary=(
+                            f"group column {roles.group_column!r} not "
+                            f"found in CSV header"
+                        ),
+                    )
+                groups = data[:, col_index[roles.group_column]]
+        else:
+            # Legacy: first column = timestamp, last = label, middle = features.
+            timestamps = data[:, 0].astype(np.int64)
+            y = data[:, -1].astype(np.float64)
+            X = data[:, 1:-1].astype(np.float64)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            weights = None
+            groups = None
+
+        return X, y, timestamps, weights, groups
 
     # --- LightGBM params -------------------------------------------------
 
@@ -823,6 +1130,9 @@ class RealLightGBMTrainer:
         seed: int,
         deadline_ns: int,
         req: RunPodTrainingRequest,
+        *,
+        weights: Any = None,
+        groups: Any = None,
     ) -> dict[str, Any]:
         """Walk-forward validation with expanding window + purge gap.
 
@@ -839,6 +1149,11 @@ class RealLightGBMTrainer:
         Fold boundaries are delegated to the canonical
         ``fincept_core.datasets.cv.make_folds`` (fixing F4 — Path B now
         matches Path A and the backtester).
+
+        Phase 8 / T-8.1: when ``weights`` is provided, sample weights are
+        passed to the LightGBM ``Dataset``. When ``groups`` is provided
+        and the task is ranking, group boundaries are computed and passed
+        to the ``Dataset``.
         """
         import lightgbm as lgb
         import numpy as np
@@ -853,6 +1168,10 @@ class RealLightGBMTrainer:
         order = np.argsort(timestamps, kind="stable")
         X_s = X[order]
         y_s = y[order]
+        # Apply the same time-ordering to weights/groups so they stay
+        # aligned with the feature/label rows.
+        weights_s = weights[order] if weights is not None else None
+        groups_s = groups[order] if groups is not None else None
 
         # Resolve the purge gap from the request. Default = horizon_bars
         # (matches Path A: ``--purge-bars -1`` means "use --horizon-bars").
@@ -913,7 +1232,13 @@ class RealLightGBMTrainer:
             if len(np.unique(y_train)) < 2:
                 continue
 
-            train_set = lgb.Dataset(X_train, label=y_train)
+            # Phase 8 / T-8.1: pass sample weights to the train Dataset
+            # when column_roles declares a weight column.
+            train_kwargs: dict[str, Any] = {}
+            if weights_s is not None:
+                w_train = weights_s[:train_end]
+                train_kwargs["weight"] = w_train
+            train_set = lgb.Dataset(X_train, label=y_train, **train_kwargs)
 
             if early_stopping_rounds and len(X_val) > 0:
                 val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
@@ -1109,6 +1434,8 @@ class RealLightGBMTrainer:
         y: Any,
         seed: int,
         req: RunPodTrainingRequest,
+        *,
+        weights: Any = None,
     ) -> Any:
         """Train the final LightGBM model on all available data.
 
@@ -1116,6 +1443,9 @@ class RealLightGBMTrainer:
         average best iteration across folds as the number of boosting rounds
         for the final model. This prevents the final model from overfitting
         by training too many rounds on the full dataset.
+
+        Phase 8 / T-8.1: when ``weights`` is provided, sample weights are
+        passed to the LightGBM ``Dataset``.
         """
         import lightgbm as lgb
 
@@ -1129,7 +1459,10 @@ class RealLightGBMTrainer:
             if avg_iter and avg_iter > 10:
                 n_estimators = int(avg_iter)
 
-        train_set = lgb.Dataset(X, label=y)
+        train_kwargs: dict[str, Any] = {}
+        if weights is not None:
+            train_kwargs["weight"] = weights
+        train_set = lgb.Dataset(X, label=y, **train_kwargs)
         model = lgb.train(
             params,
             train_set,

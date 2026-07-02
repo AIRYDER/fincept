@@ -89,6 +89,15 @@ from quant_foundry.data_ingestion.quality_report import (
     QualityPolicy,
     resolve_quality_policy,
 )
+# Phase 8 / T-8.1: column roles live in dataset_manifest (file-disjoint).
+# Imported read-only here so ModelTaskSpec can reference ColumnRoles for
+# task-spec validation. dataset_manifest does NOT import from this module
+# (it re-declares TrainingMode to stay file-disjoint), so there is no
+# circular import.
+from quant_foundry.dataset_manifest import (
+    ColumnRoles,
+    ColumnRolesValidationResult,
+)
 
 # Try to import the alpha_genome allowlists (preferred). Fall back to a
 # small literal allowlist if the module is not yet importable (e.g. older
@@ -836,10 +845,223 @@ def derive_walk_forward_window(
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 8 / T-8.1 — Model Task Spec (column roles, groups, weights, horizons)
+# ---------------------------------------------------------------------------
+#
+# ``ModelTaskSpec`` is the **explicit** declaration of the learning task a
+# training run performs. It binds a task type (binary / regression /
+# ranking / multiclass) to the column roles declared in
+# :class:`ColumnRoles` (dataset_manifest) and enforces:
+# - the label column is declared in ``ColumnRoles.label_columns``,
+# - ranking tasks require a group column (fail-closed),
+# - the calibration policy is one of the allowed values,
+# - weight / group columns (if set) exist in the column roles.
+#
+# This replaces the implicit "the trainer knows it's a binary task because
+# the label is 0/1" pattern with an explicit, auditable task declaration.
+
+
+# Allowed task types. Kept as a frozenset (not a StrEnum) so research mode
+# can experiment with novel task types without a schema change — but the
+# ranking-specific group-column check is always enforced.
+_ALLOWED_TASK_TYPES: frozenset[str] = frozenset(
+    {"binary", "regression", "ranking", "multiclass"},
+)
+
+# Allowed calibration policies. ``none`` = no calibration, ``platt`` =
+# Platt scaling (logistic), ``isotonic`` = isotonic regression.
+_ALLOWED_CALIBRATION_POLICIES: frozenset[str] = frozenset(
+    {"none", "platt", "isotonic"},
+)
+
+
+class ModelTaskSpec(BaseModel):
+    """Explicit declaration of the learning task for a training run.
+
+    Frozen + ``extra='forbid'`` (audit integrity).
+
+    Fields:
+        task_type: the learning task type. One of ``"binary"``,
+            ``"regression"``, ``"ranking"``, ``"multiclass"``.
+        label_column: the target label column name. Must be non-empty and
+            must appear in :attr:`ColumnRoles.label_columns` (validated by
+            :func:`validate_task_spec`).
+        horizon: the prediction horizon in bars/days. ``None`` when not
+            applicable (e.g. a binary same-bar classifier).
+        weight_column: the sample-weight column name. Optional. If set,
+            must exist in the column roles.
+        group_column: the group-id column name. **Required for ranking
+            tasks** (fail-closed if missing). Optional for other task
+            types.
+        calibration_policy: the post-training calibration policy. One of
+            ``"none"``, ``"platt"``, ``"isotonic"``. Defaults to ``"none"``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    task_type: str
+    label_column: str
+    horizon: int | None = None
+    weight_column: str | None = None
+    group_column: str | None = None
+    calibration_policy: str = "none"
+
+    @field_validator("task_type")
+    @classmethod
+    def _task_type_allowed(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("task_type must be a non-empty string")
+        if v not in _ALLOWED_TASK_TYPES:
+            raise ValueError(
+                f"task_type {v!r} is not allowed; "
+                f"allowed: {sorted(_ALLOWED_TASK_TYPES)}"
+            )
+        return v
+
+    @field_validator("label_column")
+    @classmethod
+    def _label_column_nonempty(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("label_column must be a non-empty string")
+        return v
+
+    @field_validator("calibration_policy")
+    @classmethod
+    def _calibration_policy_allowed(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("calibration_policy must be a non-empty string")
+        if v not in _ALLOWED_CALIBRATION_POLICIES:
+            raise ValueError(
+                f"calibration_policy {v!r} is not allowed; "
+                f"allowed: {sorted(_ALLOWED_CALIBRATION_POLICIES)}"
+            )
+        return v
+
+    @field_validator("horizon")
+    @classmethod
+    def _horizon_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError(f"horizon must be > 0 when set; got {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _ranking_requires_group(self) -> ModelTaskSpec:
+        """Ranking tasks MUST declare a group column (fail-closed).
+
+        A ranking task without a group id cannot be trained — LightGBM's
+        lambdarank objective requires a group array. Fail closed at
+        construction so the error surfaces before any data is loaded.
+        """
+        if self.task_type == "ranking" and not self.group_column:
+            raise ValueError(
+                "ranking task_type requires a non-empty group_column "
+                "(a ranking request without a group id fails — "
+                "LightGBM lambdarank needs a group array)"
+            )
+        return self
+
+
+def validate_task_spec(
+    spec: ModelTaskSpec,
+    column_roles: ColumnRoles,
+) -> ColumnRolesValidationResult:
+    """Validate a :class:`ModelTaskSpec` against :class:`ColumnRoles`.
+
+    Checks:
+    - ``spec.label_column`` exists in ``column_roles.label_columns``.
+    - ``spec.weight_column`` (if set) exists in the column roles' declared
+      columns.
+    - ``spec.group_column`` (if set) exists in the column roles' declared
+      columns.
+    - For ranking: ``spec.group_column`` must be set (already enforced at
+      :class:`ModelTaskSpec` construction, re-checked here for defence in
+      depth) and must match ``column_roles.group_column``.
+
+    Args:
+        spec: the :class:`ModelTaskSpec` to validate.
+        column_roles: the :class:`ColumnRoles` the dataset declares.
+
+    Returns:
+        A :class:`ColumnRolesValidationResult`. ``passed`` is True only
+        when there are no errors.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    available = column_roles.all_declared_columns
+
+    # Label column must be declared as a label in the column roles.
+    if spec.label_column not in set(column_roles.label_columns):
+        errors.append(
+            f"task_spec.label_column {spec.label_column!r} is not declared "
+            f"in column_roles.label_columns "
+            f"{list(column_roles.label_columns)!r}"
+        )
+
+    # Weight column (if set) must exist in the declared columns.
+    if spec.weight_column is not None:
+        if spec.weight_column not in available:
+            errors.append(
+                f"task_spec.weight_column {spec.weight_column!r} not found "
+                "in column_roles declared columns"
+            )
+        elif (
+            column_roles.weight_column is not None
+            and spec.weight_column != column_roles.weight_column
+        ):
+            warnings.append(
+                f"task_spec.weight_column {spec.weight_column!r} differs "
+                f"from column_roles.weight_column "
+                f"{column_roles.weight_column!r}"
+            )
+
+    # Group column (if set) must exist in the declared columns.
+    if spec.group_column is not None:
+        if spec.group_column not in available:
+            errors.append(
+                f"task_spec.group_column {spec.group_column!r} not found "
+                "in column_roles declared columns"
+            )
+        elif (
+            column_roles.group_column is not None
+            and spec.group_column != column_roles.group_column
+        ):
+            warnings.append(
+                f"task_spec.group_column {spec.group_column!r} differs "
+                f"from column_roles.group_column "
+                f"{column_roles.group_column!r}"
+            )
+
+    # Ranking: group column must be set (defence in depth — already
+    # enforced at ModelTaskSpec construction).
+    if spec.task_type == "ranking":
+        if not spec.group_column:
+            errors.append(
+                "ranking task_type requires a non-empty group_column "
+                "(ranking request without group id fails)"
+            )
+        elif column_roles.group_column is None:
+            errors.append(
+                "ranking task_type requires column_roles.group_column to "
+                "be set (the group-id column must be declared in the "
+                "dataset's column roles)"
+            )
+
+    passed = len(errors) == 0
+    return ColumnRolesValidationResult(
+        passed=passed,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
 __all__ = [
     "MODE_RULES",
     "ModelFamily",
     "ModelFamilyStr",
+    "ModelTaskSpec",
     "QualityPolicy",
     "TrainingManifest",
     "TrainingMode",
@@ -849,4 +1071,5 @@ __all__ = [
     "is_family_registered",
     "resolve_quality_policy",
     "validate_family_for_mode",
+    "validate_task_spec",
 ]
