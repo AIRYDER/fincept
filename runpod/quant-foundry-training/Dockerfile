@@ -285,14 +285,16 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module load AND that a GPU
-# is visible via nvidia-smi. On RunPod GPU this passes; on a CPU host it
-# reports the absence (exit 1) so a misrouted deployment is surfaced. The
-# handler's gpu_healthcheck task is the authoritative probe; this Docker
-# HEALTHCHECK is the container-level liveness gate RunPod polls.
+# Healthcheck: verify the Python runtime + handler module load. We do NOT
+# require nvidia-smi here because the pytorch/pytorch:cuda-runtime base image
+# does not ship nvidia-smi in its PATH — the binary is mounted by the NVIDIA
+# container runtime at /usr/bin/nvidia-smi but may not be discoverable in all
+# base images. The handler's gpu_healthcheck task is the authoritative GPU
+# probe; this Docker HEALTHCHECK is only the container-level liveness gate
+# RunPod polls to decide if the worker is eligible to receive jobs.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=30s --timeout=15s --start-period=20s --retries=3 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; import subprocess; subprocess.run(['nvidia-smi'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=60s --timeout=15s --start-period=40s --retries=3 \
+  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the
