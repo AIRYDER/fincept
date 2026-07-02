@@ -1831,3 +1831,283 @@ def lookup_dataset_registry_ref(
             f"{entry.status.value} — not usable"
         )
     return entry
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 / T-8.4 — Manifest fold spec structures
+# ---------------------------------------------------------------------------
+#
+# The ``FoldWindow`` and ``FoldSpec`` models are the **manifest-driven** fold
+# contract that the trainer consumes (T-8.4 Consume Manifest Folds Exactly).
+# They are intentionally string-typed (ISO date / datetime) so that a manifest
+# author can declare fold boundaries in human-readable form, and the
+# :mod:`quant_foundry.fold_consumer` module converts them into row-level
+# assignments at load time.
+#
+# These structures are distinct from the lower-level ``FoldBoundary`` /
+# ``PurgedFoldSpec`` (which use nanosecond epochs and are emitted by the
+# feature-lake builder). ``FoldWindow`` / ``FoldSpec`` are the
+# *contract-of-record* that training reads: the manifest's fold windows are
+# the single source of truth for which rows belong to which fold, and the
+# trainer must consume them *exactly* — no re-derivation, no inference.
+#
+# Fail-closed invariants (enforced at construction):
+# - ``FoldWindow``: train_start < train_end < validation_start (or
+#   embargo_until if set) < validation_end.
+# - ``FoldSpec``: at least one fold, no duplicate fold_ids, fold_ids are
+#   sequential starting from 0.
+# - ``compute_fold_hash``: deterministic SHA-256 over the fold windows sorted
+#   by fold_id, so two identical fold specs produce the same hash.
+
+
+def _parse_temporal(value: str) -> float:
+    """Parse an ISO date or datetime string into a comparable epoch float.
+
+    Accepts both date-only (``"2024-01-01"``) and full datetime
+    (``"2024-01-01T00:00:00"``) strings. A date-only string is treated as
+    midnight UTC on that date. Returns a POSIX timestamp (seconds) suitable
+    for ordering comparisons.
+
+    Raises:
+        ValueError: if ``value`` is not a valid ISO date/datetime.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"temporal value must be a non-empty ISO string; got {value!r}")
+    text = value.strip()
+    # Try full datetime first, then date-only.
+    try:
+        from datetime import datetime
+        # Handle trailing 'Z' (UTC) and timezone offsets.
+        normalized = text.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        return dt.timestamp()
+    except ValueError:
+        pass
+    try:
+        from datetime import datetime, timezone
+        from datetime import date as _date
+        d = _date.fromisoformat(text)
+        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
+    except ValueError as exc:
+        raise ValueError(
+            f"temporal value must be an ISO date or datetime string; "
+            f"got {value!r}: {exc}"
+        ) from exc
+
+
+class FoldWindow(BaseModel):
+    """A single manifest-declared fold window (train + validation + embargo).
+
+    All temporal boundaries are ISO date or datetime strings (e.g.
+    ``"2024-01-01"`` or ``"2024-01-01T00:00:00Z"``). The trainer consumes
+    these windows *exactly* as declared — it does not re-derive fold
+    boundaries from the data.
+
+    Fields:
+        fold_id: 0-indexed fold identifier.
+        train_start: ISO date/datetime — inclusive start of the train window.
+        train_end: ISO date/datetime — inclusive end of the train window.
+        validation_start: ISO date/datetime — inclusive start of validation.
+        validation_end: ISO date/datetime — inclusive end of validation.
+        embargo_until: optional ISO date/datetime marking the end of the
+            purge/embargo period that sits between train_end and
+            validation_start. When set, the ordering invariant becomes
+            ``train_start < train_end < embargo_until < validation_start <
+            validation_end``. When None, the invariant is
+            ``train_start < train_end < validation_start < validation_end``.
+
+    Frozen + ``extra='forbid'`` (audit integrity).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    fold_id: int
+    train_start: str
+    train_end: str
+    validation_start: str
+    validation_end: str
+    embargo_until: str | None = None
+
+    @field_validator("fold_id")
+    @classmethod
+    def _fold_id_nonnegative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"fold_id must be >= 0; got {v}")
+        return v
+
+    @field_validator(
+        "train_start", "train_end", "validation_start", "validation_end",
+    )
+    @classmethod
+    def _temporal_nonempty(cls, v: str, info: Any) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError(f"{info.field_name} must be a non-empty ISO string")
+        # Validate parseability immediately.
+        _parse_temporal(v)
+        return v
+
+    @field_validator("embargo_until")
+    @classmethod
+    def _embargo_parseable(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("embargo_until must be a non-empty ISO string or None")
+        _parse_temporal(v)
+        return v
+
+    @model_validator(mode="after")
+    def _check_ordering(self) -> FoldWindow:
+        """Enforce train_start < train_end < (embargo_until | validation_start) < validation_end."""
+        ts = _parse_temporal(self.train_start)
+        te = _parse_temporal(self.train_end)
+        vs = _parse_temporal(self.validation_start)
+        ve = _parse_temporal(self.validation_end)
+        if not (ts < te):
+            raise ValueError(
+                f"fold {self.fold_id}: train_start must be < train_end "
+                f"(train_start={self.train_start!r}, train_end={self.train_end!r})"
+            )
+        # The middle boundary is embargo_until if set, else validation_start.
+        if self.embargo_until is not None:
+            eu = _parse_temporal(self.embargo_until)
+            if not (te < eu):
+                raise ValueError(
+                    f"fold {self.fold_id}: train_end must be < embargo_until "
+                    f"(train_end={self.train_end!r}, embargo_until={self.embargo_until!r})"
+                )
+            if not (eu < vs):
+                raise ValueError(
+                    f"fold {self.fold_id}: embargo_until must be < validation_start "
+                    f"(embargo_until={self.embargo_until!r}, "
+                    f"validation_start={self.validation_start!r})"
+                )
+        else:
+            if not (te < vs):
+                raise ValueError(
+                    f"fold {self.fold_id}: train_end must be < validation_start "
+                    f"(train_end={self.train_end!r}, "
+                    f"validation_start={self.validation_start!r})"
+                )
+        if not (vs < ve):
+            raise ValueError(
+                f"fold {self.fold_id}: validation_start must be < validation_end "
+                f"(validation_start={self.validation_start!r}, "
+                f"validation_end={self.validation_end!r})"
+            )
+        return self
+
+
+class FoldSpec(BaseModel):
+    """Manifest-declared fold specification — the contract of record.
+
+    The trainer reads a ``FoldSpec`` from the manifest and consumes its fold
+    windows *exactly*. The ``fold_assignment_hash`` is a deterministic hash
+    over the fold windows (computed by :func:`compute_fold_hash`) so that two
+    manifests with identical folds share a hash and a single changed window
+    changes the hash.
+
+    Fields:
+        folds: list of :class:`FoldWindow` (at least one).
+        fold_assignment_hash: deterministic SHA-256 of the fold windows
+            (sorted by fold_id). Must match
+            ``compute_fold_hash(folds)``.
+        row_id_columns: columns that form the stable row key (e.g.
+            ``["symbol", "decision_time", "horizon"]``). The fold consumer
+            uses these to extract row keys from the dataframe.
+
+    Frozen + ``extra='forbid'`` (audit integrity).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: int = 1
+    folds: list[FoldWindow]
+    fold_assignment_hash: str
+    row_id_columns: list[str]
+
+    @field_validator("folds")
+    @classmethod
+    def _folds_nonempty(cls, v: list[FoldWindow]) -> list[FoldWindow]:
+        if not v:
+            raise ValueError("FoldSpec.folds must contain at least one fold")
+        return v
+
+    @field_validator("row_id_columns")
+    @classmethod
+    def _row_id_columns_nonempty(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("FoldSpec.row_id_columns must be non-empty")
+        for col in v:
+            if not isinstance(col, str) or not col.strip():
+                raise ValueError(
+                    "FoldSpec.row_id_columns entries must be non-empty strings"
+                )
+        return v
+
+    @field_validator("fold_assignment_hash")
+    @classmethod
+    def _hash_shape(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("fold_assignment_hash must be a non-empty string")
+        return v
+
+    @model_validator(mode="after")
+    def _check_fold_ids(self) -> FoldSpec:
+        """No duplicate fold_ids; fold_ids sequential starting from 0."""
+        ids = [f.fold_id for f in self.folds]
+        if len(set(ids)) != len(ids):
+            dupes = sorted({i for i in ids if ids.count(i) > 1})
+            raise ValueError(
+                f"FoldSpec.folds must not contain duplicate fold_ids: {dupes!r}"
+            )
+        expected = list(range(len(self.folds)))
+        if ids != expected:
+            raise ValueError(
+                f"FoldSpec.folds fold_ids must be sequential starting from 0; "
+                f"got {ids!r}, expected {expected!r}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_hash_matches(self) -> FoldSpec:
+        """The declared hash must match the recomputed hash (fail-closed)."""
+        recomputed = compute_fold_hash(self.folds)
+        if recomputed != self.fold_assignment_hash:
+            raise ValueError(
+                "FoldSpec.fold_assignment_hash does not match the computed "
+                f"hash of its folds (declared={self.fold_assignment_hash!r}, "
+                f"computed={recomputed!r})"
+            )
+        return self
+
+
+def compute_fold_hash(folds: list[FoldWindow]) -> str:
+    """Compute a deterministic SHA-256 hash over a list of fold windows.
+
+    The fold windows are sorted by ``fold_id`` and serialized to a canonical
+    JSON representation (sorted keys, compact separators) before hashing.
+    Two identical fold specifications therefore produce the same hash, and
+    any change to a fold window alters the hash.
+
+    Args:
+        folds: the list of :class:`FoldWindow` to hash.
+
+    Returns:
+        A 64-character lowercase hex SHA-256 digest.
+    """
+    sorted_folds = sorted(folds, key=lambda f: f.fold_id)
+    payload = [
+        {
+            "fold_id": f.fold_id,
+            "train_start": f.train_start,
+            "train_end": f.train_end,
+            "validation_start": f.validation_start,
+            "validation_end": f.validation_end,
+            "embargo_until": f.embargo_until,
+        }
+        for f in sorted_folds
+    ]
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
