@@ -274,6 +274,7 @@ class TestGpuCapability:
         t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(device="cpu"), _tmp_artifact())
         assert t._resolve_device() == "cpu"
 
+    @pytest.mark.filterwarnings("ignore")
     def test_cuda_probe_caches(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import quant_foundry.xgboost_trainer as mod
 

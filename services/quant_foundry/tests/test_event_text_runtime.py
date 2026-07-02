@@ -20,6 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.event_text_runtime import (
     EmbeddingCache,
     EmbeddingConfig,

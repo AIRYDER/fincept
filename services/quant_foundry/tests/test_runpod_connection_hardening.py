@@ -26,6 +26,9 @@ from quant_foundry.gateway_helpers import env_first
 from quant_foundry.runpod_client import DispatchResult, DispatchStatus
 from quant_foundry.signatures import sign_callback
 
+# Deprecated env var fallback tests emit DeprecationWarning by design.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 # --- helpers ----------------------------------------------------------------
 
 

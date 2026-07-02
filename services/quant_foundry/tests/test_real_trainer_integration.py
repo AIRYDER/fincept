@@ -35,6 +35,10 @@ from pathlib import Path
 import pytest
 from quant_foundry.schemas import RunPodTrainingRequest
 
+# Legacy trainer construction (without column_roles) emits a
+# DeprecationWarning; these tests intentionally exercise that path.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 # --- module-level import tests (no ML deps required) -----------------------
 
 
@@ -650,6 +654,7 @@ def test_xgboost_backend_shadow_only_authority(tmp_path: Path) -> None:
 # --- Rank metrics integration ----------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_rank_metrics_for_ranking_task_lightgbm(tmp_path: Path) -> None:
     """Ranking task with LightGBM produces a rank_report in metrics."""
     from quant_foundry.dataset_manifest import ColumnRoles
@@ -706,6 +711,7 @@ def test_rank_metrics_not_computed_for_binary_task(tmp_path: Path) -> None:
     assert dossier.metadata["has_rank_report"] == "False"
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_rank_metrics_for_ranking_task_catboost(tmp_path: Path) -> None:
     """Ranking task with CatBoost backend produces a rank_report."""
     from quant_foundry.dataset_manifest import ColumnRoles
@@ -737,6 +743,7 @@ def test_rank_metrics_for_ranking_task_catboost(tmp_path: Path) -> None:
     assert dossier.metadata["has_rank_report"] == "True"
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_rank_metrics_for_ranking_task_xgboost(tmp_path: Path) -> None:
     """Ranking task with XGBoost backend produces a rank_report."""
     from quant_foundry.dataset_manifest import ColumnRoles
@@ -768,6 +775,7 @@ def test_rank_metrics_for_ranking_task_xgboost(tmp_path: Path) -> None:
     assert dossier.metadata["has_rank_report"] == "True"
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_rank_report_is_rank_report_instance(tmp_path: Path) -> None:
     """The rank_report in metrics is a RankReport instance."""
     from quant_foundry.dataset_manifest import ColumnRoles

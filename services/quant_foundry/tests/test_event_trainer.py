@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.event_trainer import (
     EventAbnormalReturnModel,
     EventTrainer,

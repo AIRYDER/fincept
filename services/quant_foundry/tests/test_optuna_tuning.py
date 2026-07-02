@@ -48,6 +48,14 @@ from quant_foundry.optuna_tuning import (
     create_search_space,
 )
 
+try:
+    import optuna  # noqa: F401
+    _HAS_OPTUNA = True
+except ImportError:
+    _HAS_OPTUNA = False
+
+_optuna_skip = pytest.mark.skipif(not _HAS_OPTUNA, reason="optuna not installed")
+
 
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                     #
@@ -639,6 +647,7 @@ class TestBudgetEnforcer:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerBasicRun:
     """Tests for OptunaTuner.run with a simple objective."""
 
@@ -721,6 +730,7 @@ class TestOptunaTunerBasicRun:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerPersistence:
     """Tests for study.json and best_trial.json save/load."""
 
@@ -801,6 +811,7 @@ class TestOptunaTunerPersistence:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerPruning:
     """Tests for pruning behavior."""
 
@@ -846,6 +857,7 @@ class TestOptunaTunerPruning:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerBudget:
     """Tests for wall-clock budget enforcement."""
 
@@ -867,6 +879,7 @@ class TestOptunaTunerBudget:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerHeartbeat:
     """Tests for the heartbeat callback."""
 
@@ -913,6 +926,7 @@ class TestOptunaTunerHeartbeat:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerFailedTrials:
     """Tests for failed trial recording."""
 
@@ -950,6 +964,7 @@ class TestOptunaTunerFailedTrials:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestSearchAlgorithms:
     """Tests for all search algorithms (TPE, RANDOM, CMAES)."""
 
@@ -995,6 +1010,7 @@ class TestSearchAlgorithms:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestPruningPolicies:
     """Tests for all pruning policies (NONE, MEDIAN, SUCCESSIVE_HALVING, HYPERBAND)."""
 
@@ -1024,6 +1040,7 @@ class TestPruningPolicies:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestStudyHashDeterminism:
     """Tests that the study hash is deterministic for identical studies."""
 
@@ -1054,6 +1071,7 @@ class TestStudyHashDeterminism:
 # --------------------------------------------------------------------------- #
 
 
+@_optuna_skip
 class TestOptunaTunerEdgeCases:
     """Tests for edge cases and error handling."""
 

@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.oof_artifacts import read_oof_artifact
 from quant_foundry.tabular_neural_runtime import GPUStatus
 from quant_foundry.tft_trainer import (

@@ -49,6 +49,14 @@ from quant_foundry.stacked_ensemble import (
     compute_ensemble_hash,
 )
 
+try:
+    import sklearn  # noqa: F401
+    _HAS_SKLEARN = True
+except ImportError:
+    _HAS_SKLEARN = False
+
+_sklearn_skip = pytest.mark.skipif(not _HAS_SKLEARN, reason="scikit-learn not installed")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -582,6 +590,7 @@ class TestStackedEnsembleConstruction:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestTrainMetaLearner:
     """Tests for meta-learner training on merged OOF predictions."""
 
@@ -751,6 +760,7 @@ class TestTrainMetaLearner:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestPredict:
     """Tests for ensemble prediction."""
 
@@ -851,6 +861,7 @@ class TestPredict:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestManifestSaveLoad:
     """Tests for manifest save / load round-trip."""
 
@@ -916,6 +927,7 @@ class TestManifestSaveLoad:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestComputeContributions:
     """Tests for compute_contributions."""
 
@@ -1001,6 +1013,7 @@ class TestComputeContributions:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibrationReport:
     """Tests for calibration report under all three policies."""
 
@@ -1142,6 +1155,7 @@ class TestDeterminism:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestEnsembleResultValidation:
     """Tests for EnsembleResult cross-field validators."""
 
@@ -1208,6 +1222,7 @@ class TestEnsembleResultValidation:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestIntegration:
     """End-to-end integration tests."""
 

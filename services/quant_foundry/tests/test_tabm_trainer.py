@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.dataset_manifest import ColumnRoles
 from quant_foundry.normalizer import (
     Normalizer,

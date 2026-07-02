@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.tabular_neural_runtime import (
     GPUStatus,
     GPUMemorySnapshot,

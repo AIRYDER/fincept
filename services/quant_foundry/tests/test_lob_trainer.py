@@ -23,6 +23,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.lob_manifest import LOBVenue
 from quant_foundry.lob_trainer import (
     DeepLOBConfig,

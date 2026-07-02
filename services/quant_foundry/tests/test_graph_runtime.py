@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.graph_runtime import (
     GPUMemoryPlanner,
     GraphHealthcheck,

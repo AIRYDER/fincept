@@ -34,6 +34,14 @@ from quant_foundry.moe_expert_router import (
     validate_no_infold_leakage,
 )
 
+try:
+    import sklearn  # noqa: F401
+    _HAS_SKLEARN = True
+except ImportError:
+    _HAS_SKLEARN = False
+
+_sklearn_skip = pytest.mark.skipif(not _HAS_SKLEARN, reason="scikit-learn not installed")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -427,6 +435,7 @@ class TestValidateNoInfoldLeakage:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestMoERouterFitRoute:
     def test_fit_linear(self) -> None:
         cfg = _config(router_type="linear", n_experts=2, max_weight=0.7)
@@ -593,6 +602,7 @@ class TestMaxWeightEnforcement:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibration:
     def test_calibrate_isotonic(self) -> None:
         cfg = _config(n_experts=2, calibration_method="isotonic")
@@ -754,6 +764,7 @@ class TestEdgeCases:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestFailClosed:
     def test_infold_leakage_raises(self) -> None:
         eis = [_expert("e0"), _expert("e1")]

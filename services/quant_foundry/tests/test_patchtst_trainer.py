@@ -21,6 +21,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.oof_artifacts import read_oof_artifact
 from quant_foundry.patchtst_trainer import (
     PatchEmbedding,

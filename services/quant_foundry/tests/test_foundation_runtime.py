@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("torch")
+
 from quant_foundry.foundation_runtime import (
     BatchForecastConfig,
     BatchForecastResult,

@@ -24,6 +24,10 @@ from pathlib import Path
 import pytest
 from quant_foundry.schemas import RunPodTrainingRequest
 
+# Legacy trainer construction (without column_roles) emits a
+# DeprecationWarning; these tests intentionally exercise that path.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 # --- lazy import tests (no ML deps required) --------------------------------
 
 

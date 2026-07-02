@@ -48,7 +48,7 @@ def _make_spec(
     tier: VerificationTier = VerificationTier.UNIT,
     category: VerificationCategory = VerificationCategory.SCHEMA_VALIDATION,
     name: str = "test1",
-    module: str = "tests.test_verification_matrix",
+    module: str = __name__,
     test_function: str = "_passing_fn",
     min_passes: int = 1,
     timeout_seconds: float = 30.0,

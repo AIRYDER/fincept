@@ -36,6 +36,14 @@ from quant_foundry.calibration import (
     compute_reliability_buckets,
 )
 
+try:
+    import sklearn  # noqa: F401
+    _HAS_SKLEARN = True
+except ImportError:
+    _HAS_SKLEARN = False
+
+_sklearn_skip = pytest.mark.skipif(not _HAS_SKLEARN, reason="scikit-learn not installed")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -367,6 +375,7 @@ class TestCalibratorNone:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibratorPlatt:
     def test_fit_transform_roundtrip(self) -> None:
         raw = [0.1, 0.2, 0.3, 0.6, 0.7, 0.9]
@@ -413,6 +422,7 @@ class TestCalibratorPlatt:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibratorIsotonic:
     def test_fit_transform_roundtrip(self) -> None:
         raw = [0.1, 0.2, 0.3, 0.6, 0.7, 0.9]
@@ -462,6 +472,7 @@ class TestCalibratorConstructor:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibratorArtifact:
     def test_save_load_roundtrip_platt(self, tmp_path: Path) -> None:
         raw = [0.1, 0.2, 0.3, 0.6, 0.7, 0.9]
@@ -522,6 +533,7 @@ class TestCalibratorArtifact:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibrateEntryPoint:
     def test_returns_calibration_result(self) -> None:
         raw = [0.1, 0.2, 0.3, 0.6, 0.7, 0.9]
@@ -573,6 +585,7 @@ class TestCalibrateEntryPoint:
 # ===========================================================================
 
 
+@_sklearn_skip
 class TestCalibrationImprovesECE:
     def test_platt_improves_ece(self) -> None:
         # Build a synthetic dataset where raw probs are overconfident.
