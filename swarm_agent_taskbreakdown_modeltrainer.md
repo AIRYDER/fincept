@@ -1046,8 +1046,8 @@ benchmarks without granting promotion authority too early.
 
 ### T-11.1 Foundation Weight Policy
 
-- status: `building`
-- owner: Builder 1 (swarm 1ae87926866d1f)
+- status: `done`
+- owner: Builder 1 (swarm 1ae87926866d1f) — commit 2c5e8ca
 - deps: [T-9.1]
 - files:
   - foundation adapter modules
@@ -1063,8 +1063,8 @@ benchmarks without granting promotion authority too early.
 
 ### T-11.2 Forecast Distribution Contract
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 1 (swarm 1ae87926866d1f) — commit 89931c5
 - deps: [T-11.1]
 - files:
   - forecast distribution artifact schema
@@ -1081,8 +1081,8 @@ benchmarks without granting promotion authority too early.
 
 ### T-11.3 Shadow Tournament
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 1 (swarm 1ae87926866d1f) — commit 875067d
 - deps: [T-11.2, T-8.5, T-10.3]
 - files:
   - foundation adapter modules
@@ -1098,8 +1098,8 @@ benchmarks without granting promotion authority too early.
 
 ### T-11.4 Build `trainer-gpu-foundation-ts` Image
 
-- status: `building`
-- owner: Builder 2 (swarm 1ae87926866d1f)
+- status: `done`
+- owner: Builder 2 (swarm 1ae87926866d1f) — commit c78af8c
 - deps: [T-9.1]
 - files:
   - new Dockerfile/image config
@@ -1129,8 +1129,8 @@ after the core trainer contract is reliable.
 
 ### T-12.1 EventDatasetManifest
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 1 (swarm 1ae87926866d1f) — commit 53c6d2f
 - deps: [T-3.1, T-3.4]
 - files:
   - event data ingestion modules
@@ -1146,8 +1146,8 @@ after the core trainer contract is reliable.
 
 ### T-12.2 Event Abnormal-Return Model
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 1 (swarm 1ae87926866d1f) — commit 9587a52
 - deps: [T-12.1, T-9.1]
 - files:
   - text encoder worker image `trainer-gpu-event-text`
@@ -1163,8 +1163,8 @@ after the core trainer contract is reliable.
 
 ### T-12.3 GraphDatasetManifest
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 2 (swarm 1ae87926866d1f) — commit e1cc5d8
 - deps: [T-3.1, T-3.4]
 - files:
   - graph dataset modules
@@ -1179,8 +1179,8 @@ after the core trainer contract is reliable.
 
 ### T-12.4 Graph Ranker
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 2 (swarm 1ae87926866d1f) — commit 71e132a
 - deps: [T-12.3, T-8.2]
 - files:
   - graph trainer modules
@@ -1196,8 +1196,8 @@ after the core trainer contract is reliable.
 
 ### T-12.5 Build `trainer-gpu-event-text` Image
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 3 (swarm 1ae87926866d1f) — commit c268567
 - deps: [T-9.1]
 - files:
   - new Dockerfile/image config
@@ -1209,8 +1209,8 @@ after the core trainer contract is reliable.
 
 ### T-12.6 Build `trainer-gpu-graph` Image
 
-- status: `unstarted`
-- owner: —
+- status: `done`
+- owner: Builder 4 (swarm 1ae87926866d1f) — commit ff87618
 - deps: [T-9.1]
 - files:
   - new Dockerfile/image config
