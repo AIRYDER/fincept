@@ -247,17 +247,18 @@ set -euo pipefail
 # 1. Security preflight (fail closed on forbidden env vars).
 python /worker/preflight.py
 
-# 2. Best-effort ownership fix for RunPod network volumes so the non-root
-#    trainer user can write artifacts + status files. Ignore failures (the
-#    dir may be a read-only mountpoint or absent in local tests).
+# 2. Best-effort ownership fix for RunPod network volumes.
 for d in /runpod-volume /workspace; do
   if [ -d "$d" ]; then
     chown -R trainer:trainer "$d" 2>/dev/null || true
   fi
 done
 
-# 3. Drop privileges and exec the handler as the non-root trainer user.
-exec gosu trainer:trainer python -u /worker/handler.py
+# 3. Exec the handler as root (RunPod serverless workers run as root by
+#    default; the gosu drop to trainer was causing the worker to go
+#    unhealthy within ~40s, likely due to GPU device file permissions
+#    or NVIDIA container runtime access restrictions for non-root users).
+exec python -u /worker/handler.py
 ENTRY_EOF
 RUN chmod +x /worker/entrypoint.sh
 
