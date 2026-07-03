@@ -28,8 +28,10 @@
 #
 # The pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime image caused workers to go
 # unhealthy within 90 seconds on RunPod serverless ADA_24 GPUs (driver 550,
-# CUDA 12.4 max). The nvidia/cuda:12.4.1-runtime-ubuntu22.04 base works —
-# verified with the cuda-test endpoint (became healthy in ~10 minutes).
+# CUDA 12.4 max). After the Python 3.10 compatibility shims were added, this
+# nvidia/cuda base completed a full LightGBM training job on the original
+# endpoint. Do not replace it with python:3.12-slim based on smoke-only
+# receipts; commit 8c45c484 reproduced the IN_QUEUE/no-worker failure there.
 #
 # We install Python 3 explicitly via apt since nvidia/cuda doesn't include it.
 # ---------------------------------------------------------------------------
