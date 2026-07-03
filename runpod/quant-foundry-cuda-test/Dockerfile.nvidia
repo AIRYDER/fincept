@@ -1,13 +1,13 @@
-# Minimal CUDA test image — isolates base image vs heavy imports.
+# Fallback CUDA test image using nvidia/cuda base (RunPod recommended approach).
 #
-# Uses nvidia/cuda runtime base which RunPod docs recommend for GPU
-# serverless workers. Both pytorch/pytorch and runpod/base CUDA images
-# caused workers to go unhealthy within 90 seconds on RunPod serverless.
+# If runpod/base also fails, try this. It uses the bare nvidia/cuda runtime
+# image and installs Python manually, which is what RunPod's own docs
+# recommend for GPU serverless workers.
 #
 # Build (from repo root):
 #   DOCKER_BUILDKIT=1 docker build \
-#     -t fincept-qf-cuda-test \
-#     -f runpod/quant-foundry-cuda-test/Dockerfile \
+#     -t fincept-qf-cuda-test-nvidia \
+#     -f runpod/quant-foundry-cuda-test/Dockerfile.nvidia \
 #     --build-arg GIT_SHA=$(git rev-parse HEAD) .
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
@@ -33,6 +33,4 @@ ARG GIT_SHA=unknown
 ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA} \
     PYTHONPATH=/worker
 
-# Direct entrypoint — no entrypoint.sh wrapper, no preflight, no chown.
-# This matches the proven-working smoke image pattern exactly.
 ENTRYPOINT ["python", "-u", "/worker/handler.py"]
