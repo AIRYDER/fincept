@@ -10,7 +10,7 @@
 #     -f runpod/quant-foundry-cuda-test/Dockerfile \
 #     --build-arg GIT_SHA=$(git rev-parse HEAD) .
 
-FROM runpod/base:1.0.2-cuda1280-ubuntu2204
+FROM runpod/base:1.0.2-cuda1281-ubuntu2204
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
