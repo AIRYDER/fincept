@@ -27,7 +27,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
 # --- Config ------------------------------------------------------------------
 
 DEFAULT_PROFILES = [
@@ -207,7 +206,7 @@ def get_endpoint_health(endpoint_id: str) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
+    except urllib.error.HTTPError:
         # Return empty health if endpoint not ready
         return {"jobs": {}, "workers": {}}
 
@@ -384,7 +383,7 @@ def probe_profile(
 
         # Check if worker is unhealthy before dispatch
         if workers.get("unhealthy", 0) > 0 or workers.get("ready", 0) == 0:
-            print(f"  FAIL: worker not healthy before dispatch")
+            print("  FAIL: worker not healthy before dispatch")
             probe_log.append({
                 "event": "worker_unhealthy_before_dispatch",
                 "health": _redact(health_before),
@@ -457,17 +456,18 @@ def probe_profile(
 
             print(f"  [{int(time.time()) % 100}] status={job_status} "
                   f"ready={workers.get('ready',0)} idle={workers.get('idle',0)} "
+                  f"running={workers.get('running',0)} "
                   f"unhealthy={workers.get('unhealthy',0)} "
                   f"inQueue={jobs.get('inQueue',0)} completed={jobs.get('completed',0)}")
 
             # Check for failure conditions
             if workers.get("unhealthy", 0) > 0:
                 failure_reason = "worker_unhealthy"
-                print(f"  FAIL: worker went unhealthy")
+                print("  FAIL: worker went unhealthy")
                 break
 
             if job_status in ("COMPLETED",):
-                print(f"  PASS: job COMPLETED")
+                print("  PASS: job COMPLETED")
                 break
 
             if job_status in ("FAILED", "CANCELLED", "TIMED_OUT"):
@@ -475,9 +475,19 @@ def probe_profile(
                 print(f"  FAIL: job {job_status}")
                 break
 
-            if job_status == "IN_QUEUE" and workers.get("ready", 0) == 0:
+            if (
+                job_status == "IN_QUEUE"
+                and workers.get("ready", 0) == 0
+                and workers.get("running", 0) == 0
+                and workers.get("unhealthy", 0) == 0
+            ):
+                # Do not treat ready=0 alone as worker death. The worker may
+                # have picked up the job and be running=1 (actively
+                # processing). Only declare death when there is no active
+                # worker at all (ready=0, running=0, unhealthy=0) — meaning
+                # the worker pod exited while the job is still queued.
                 failure_reason = "worker_died_while_job_in_queue"
-                print(f"  FAIL: worker died while job in queue")
+                print("  FAIL: worker died while job in queue (no active worker)")
                 break
 
         else:
@@ -523,7 +533,7 @@ def probe_profile(
         # Always scale down
         try:
             update_endpoint_workers(endpoint_id, 0, 0, name=endpoint_name)
-            print(f"  Scaled down to 0/0")
+            print("  Scaled down to 0/0")
         except Exception as e:
             print(f"  WARNING: could not scale down: {e}")
 
@@ -574,7 +584,7 @@ def main() -> int:
     receipt_dir = Path(f"reports/runpod-test-runs/{sha[:8]}/import-bisection")
     receipt_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Import Bisection Test F")
+    print("Import Bisection Test F")
     print(f"  SHA: {sha}")
     print(f"  Image: {image_tag}")
     print(f"  Profiles: {profiles}")
@@ -621,7 +631,7 @@ def main() -> int:
                 registry_auth_id=REGISTRY_AUTH_ID,
             )
             print(f"  Template created: {template_id}")
-        except Exception as e:
+        except Exception:
             # If template name exists, try with a suffix
             try:
                 bisect_template_name = f"qf-bisect-{sha[:8]}-base-tpl"
@@ -719,16 +729,16 @@ def main() -> int:
 
     # Write interpretation
     interp_lines = [
-        f"# Import Bisection Test F — Interpretation",
-        f"",
+        "# Import Bisection Test F — Interpretation",
+        "",
         f"**Image SHA:** {sha}",
         f"**Image tag:** {image_tag}",
         f"**Template ID:** {template_id}",
-        f"",
-        f"## Results",
-        f"",
-        f"| Profile | Result | Failure Reason | Endpoint | Job ID | Final Status |",
-        f"|---------|--------|----------------|----------|--------|--------------|",
+        "",
+        "## Results",
+        "",
+        "| Profile | Result | Failure Reason | Endpoint | Job ID | Final Status |",
+        "|---------|--------|----------------|----------|--------|--------------|",
     ]
     for r in results:
         interp_lines.append(
@@ -737,23 +747,23 @@ def main() -> int:
             f"{r.get('final_status', '-')} |"
         )
     interp_lines.extend([
-        f"",
-        f"## Summary",
-        f"",
+        "",
+        "## Summary",
+        "",
         f"- **First failing profile:** {first_fail or 'none (all passed)'}",
         f"- **Last passing profile:** {last_pass or 'none'}",
         f"- **Profiles tested:** {len(results)}",
-        f"",
-        f"## Next Steps",
-        f"",
+        "",
+        "## Next Steps",
+        "",
     ])
     if first_fail:
         interp_lines.extend([
             f"The first failing profile is **{first_fail}**.",
             f"The last passing profile is **{last_pass}**.",
-            f"",
+            "",
             f"This means the import group `{first_fail}` poisons the worker at dispatch time.",
-            f"The fix should isolate or lazy-load the imports in this group.",
+            "The fix should isolate or lazy-load the imports in this group.",
         ])
     else:
         interp_lines.append("All profiles passed — the issue may be in the handler logic, not imports.")
@@ -761,7 +771,7 @@ def main() -> int:
     (receipt_dir / "interpretation.md").write_text("\n".join(interp_lines) + "\n")
 
     print(f"\n{'='*60}")
-    print(f"  BISECTION COMPLETE")
+    print("  BISECTION COMPLETE")
     print(f"  First failing: {first_fail or 'none'}")
     print(f"  Last passing: {last_pass or 'none'}")
     print(f"  Receipts: {receipt_dir}")

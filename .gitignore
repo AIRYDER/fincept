@@ -123,3 +123,6 @@ session-db.md
 
 # --- Scratch session logs in root -------------------------------------------
 /2026-*.txt
+
+# --- RunPod scratch scripts (diagnostic one-offs, not durable tools) ---------
+/.tmp_*.py

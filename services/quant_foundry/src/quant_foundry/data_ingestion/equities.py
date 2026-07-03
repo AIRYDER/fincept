@@ -31,18 +31,36 @@ from quant_foundry.feature_lake import export_receipt
 # ---------------------------------------------------------------------------
 # Import the shared pipeline from scripts/build_dataset_manifest.py without
 # modifying it.  scripts/ is not a package, so prepend it to sys.path.
+#
+# The repo root is at parents[5] in the dev checkout
+# (services/quant_foundry/src/quant_foundry/data_ingestion/equities.py) but
+# only parents[3] exists in the RunPod worker image
+# (/worker/quant_foundry/data_ingestion/equities.py).  Guard the index so
+# importing this module never raises IndexError in the container, and skip
+# sys.path insertion when scripts/ is not present.
 # ---------------------------------------------------------------------------
-_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[5] / "scripts"
-if str(_SCRIPTS_DIR) not in sys.path:
+_parents = pathlib.Path(__file__).resolve().parents
+_SCRIPTS_DIR = _parents[5] / "scripts" if len(_parents) > 5 else None
+if _SCRIPTS_DIR and _SCRIPTS_DIR.is_dir() and str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from build_dataset_manifest import (  # noqa: E402
-    FEATURE_NAMES,
-    build_dataset_manifest,
-    load_bars_from_parquet,
-    write_dataset_parquet,
-    write_manifest_json,
-)
+try:
+    from build_dataset_manifest import (
+        FEATURE_NAMES,
+        build_dataset_manifest,
+        load_bars_from_parquet,
+        write_dataset_parquet,
+        write_manifest_json,
+    )
+except ModuleNotFoundError:
+    # scripts/build_dataset_manifest.py is not available in the worker image.
+    # The names are only used inside ingest_equity_bars(); callers that do not
+    # invoke ingestion will never touch them.
+    FEATURE_NAMES = ()  # type: ignore[assignment]
+    build_dataset_manifest = None  # type: ignore[assignment]
+    load_bars_from_parquet = None  # type: ignore[assignment]
+    write_dataset_parquet = None  # type: ignore[assignment]
+    write_manifest_json = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from quant_foundry.data_ingestion.quality_report import DatasetQualityReport
