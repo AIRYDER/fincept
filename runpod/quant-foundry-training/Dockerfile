@@ -61,11 +61,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# StrEnum compatibility shim for Python 3.10 (nvidia/cuda:12.4.1-runtime-ubuntu22.04
-# ships Python 3.10, but quant_foundry uses StrEnum from Python 3.11+).
-# We create a _strenum_compat.py that patches enum.StrEnum if missing,
-# and prepend it to PYTHONPATH so it's imported before any quant_foundry code.
-RUN python -c "import pathlib; p=pathlib.Path('/worker/_strenum_compat.py'); p.write_text('import enum, sys\\nif not hasattr(enum, \"StrEnum\"):\\n    class StrEnum(str, enum.Enum):\\n        pass\\n    enum.StrEnum = StrEnum\\n    sys.modules[\"enum\"].StrEnum = StrEnum\\n', encoding='utf-8')"
+RUN cat > /worker/_strenum_compat.py <<'PY_COMPAT'
+import datetime
+import enum
+import sys
+import typing
+
+if not hasattr(enum, "StrEnum"):
+    class StrEnum(str, enum.Enum):
+        pass
+
+    enum.StrEnum = StrEnum
+    sys.modules["enum"].StrEnum = StrEnum
+
+if not hasattr(datetime, "UTC"):
+    datetime.UTC = datetime.timezone.utc
+    sys.modules["datetime"].UTC = datetime.timezone.utc
+
+if not hasattr(typing, "Self"):
+    try:
+        from typing_extensions import Self
+    except ImportError:
+        Self = object
+
+    typing.Self = Self
+    sys.modules["typing"].Self = Self
+PY_COMPAT
 
 # Copy the quant_foundry source from the monorepo.
 COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/

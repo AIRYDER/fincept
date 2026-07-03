@@ -49,11 +49,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import pathlib
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -143,22 +142,17 @@ class ColumnRoles(BaseModel):
     def _nonempty(cls, v: tuple[str, ...], info: Any) -> tuple[str, ...]:
         if not v:
             raise ValueError(
-                f"{info.field_name} must contain at least one column "
-                "(missing required column role)"
+                f"{info.field_name} must contain at least one column (missing required column role)"
             )
         return v
 
     @field_validator("feature_columns", "label_columns", "excluded_columns")
     @classmethod
-    def _no_duplicates(
-        cls, v: tuple[str, ...], info: Any
-    ) -> tuple[str, ...]:
+    def _no_duplicates(cls, v: tuple[str, ...], info: Any) -> tuple[str, ...]:
         seen: set[str] = set()
         for col in v:
             if col in seen:
-                raise ValueError(
-                    f"{info.field_name} contains duplicate column {col!r}"
-                )
+                raise ValueError(f"{info.field_name} contains duplicate column {col!r}")
             seen.add(col)
         return v
 
@@ -167,9 +161,7 @@ class ColumnRoles(BaseModel):
     def _no_empty_strings(cls, v: tuple[str, ...], info: Any) -> tuple[str, ...]:
         for col in v:
             if not col or not col.strip():
-                raise ValueError(
-                    f"{info.field_name} contains an empty column name"
-                )
+                raise ValueError(f"{info.field_name} contains an empty column name")
         return v
 
 
@@ -393,9 +385,7 @@ class ManifestDatasetLoader:
         #    the spec's values (the manifest is the source of truth once
         #    verified). But we cross-check consistency where both are
         #    present.
-        data_uri = self._extract_from_manifest(
-            manifest_dict, "data_uri", self.data_uri
-        )
+        data_uri = self._extract_from_manifest(manifest_dict, "data_uri", self.data_uri)
         data_sha256 = self._extract_optional_from_manifest(
             manifest_dict, "data_sha256", self.data_sha256
         )
@@ -429,8 +419,7 @@ class ManifestDatasetLoader:
             if data_hash != data_sha256.lower():
                 raise DatasetLoadError(
                     "data_hash_mismatch",
-                    f"data sha256 mismatch: expected {data_sha256}, "
-                    f"got {data_hash}",
+                    f"data sha256 mismatch: expected {data_sha256}, got {data_hash}",
                 )
         else:
             data_sha_verified = False
@@ -449,15 +438,16 @@ class ManifestDatasetLoader:
             if actual_row_count != row_count:
                 raise DatasetLoadError(
                     "row_count_mismatch",
-                    f"row count mismatch: expected {row_count}, "
-                    f"got {actual_row_count}",
+                    f"row count mismatch: expected {row_count}, got {actual_row_count}",
                 )
         else:
             row_count_verified = False
 
         # 11. Build / verify column roles.
         column_roles = self._resolve_column_roles(
-            manifest_dict, df, manifest_feature_schema_hash,
+            manifest_dict,
+            df,
+            manifest_feature_schema_hash,
             manifest_label_schema_hash,
         )
 
@@ -520,16 +510,11 @@ class ManifestDatasetLoader:
           relative paths).
         """
         if uri.startswith("file://"):
-            raw = uri[len("file://"):]
+            raw = uri[len("file://") :]
             # On Windows, ``file:///C:/path`` strips to ``/C:/path``;
             # the leading slash before a drive letter must be removed
             # so pathlib does not treat it as a UNC path.
-            if (
-                len(raw) >= 3
-                and raw[0] == "/"
-                and raw[2] == ":"
-                and raw[1].isalpha()
-            ):
+            if len(raw) >= 3 and raw[0] == "/" and raw[2] == ":" and raw[1].isalpha():
                 raw = raw[1:]
             return pathlib.Path(raw)
         if uri.startswith("inline://"):
@@ -546,7 +531,9 @@ class ManifestDatasetLoader:
 
     @staticmethod
     def _extract_from_manifest(
-        manifest: dict[str, Any], key: str, fallback: str,
+        manifest: dict[str, Any],
+        key: str,
+        fallback: str,
     ) -> str:
         """Extract a required string field from the manifest."""
         val = manifest.get(key)
@@ -561,7 +548,9 @@ class ManifestDatasetLoader:
 
     @staticmethod
     def _extract_optional_from_manifest(
-        manifest: dict[str, Any], key: str, fallback: Any,
+        manifest: dict[str, Any],
+        key: str,
+        fallback: Any,
     ) -> Any:
         """Extract an optional field from the manifest, falling back to the spec value."""
         val = manifest.get(key)
@@ -571,7 +560,9 @@ class ManifestDatasetLoader:
 
     @staticmethod
     def _extract_optional_int_from_manifest(
-        manifest: dict[str, Any], key: str, fallback: int | None,
+        manifest: dict[str, Any],
+        key: str,
+        fallback: int | None,
     ) -> int | None:
         val = manifest.get(key)
         if val is None:
@@ -656,7 +647,10 @@ class ManifestDatasetLoader:
         )
 
     def _load_dataframe(
-        self, data_bytes: bytes, fmt: str, data_uri: str,
+        self,
+        data_bytes: bytes,
+        fmt: str,
+        data_uri: str,
     ) -> Any:
         """Load ``data_bytes`` into a dataframe using the resolved format.
 
@@ -688,6 +682,7 @@ class ManifestDatasetLoader:
                     "neither pyarrow nor pandas available for parquet loading",
                 ) from exc
             import io
+
             try:
                 return pd.read_parquet(io.BytesIO(data_bytes))
             except Exception as exc:
@@ -696,6 +691,7 @@ class ManifestDatasetLoader:
                     f"failed to parse parquet from {data_uri}: {exc}",
                 ) from exc
         import io
+
         try:
             return pq.read_table(io.BytesIO(data_bytes)).to_pandas()
         except Exception:
@@ -722,10 +718,13 @@ class ManifestDatasetLoader:
                     "neither pandas nor numpy available for CSV loading",
                 ) from exc
             import io
+
             try:
                 data = np.genfromtxt(
-                    io.BytesIO(data_bytes), delimiter=",",
-                    skip_header=1, dtype=float,
+                    io.BytesIO(data_bytes),
+                    delimiter=",",
+                    skip_header=1,
+                    dtype=float,
                 )
                 if data.ndim == 1:
                     data = data.reshape(1, -1)
@@ -736,6 +735,7 @@ class ManifestDatasetLoader:
                     f"failed to parse CSV from {data_uri}: {exc}",
                 ) from exc
         import io
+
         try:
             return pd.read_csv(io.BytesIO(data_bytes))
         except Exception as exc:
@@ -802,7 +802,8 @@ class ManifestDatasetLoader:
 
     @staticmethod
     def _column_roles_from_dict(
-        roles: dict[str, Any], df: Any,
+        roles: dict[str, Any],
+        df: Any,
     ) -> ColumnRoles:
         """Build :class:`ColumnRoles` from a manifest-declared dict."""
         feature_cols = roles.get("feature_columns") or []
@@ -890,7 +891,7 @@ class ManifestDatasetLoader:
         if hasattr(df, "columns"):
             try:
                 return [str(c) for c in df.columns]
-            except Exception:
+            except Exception:  # noqa: S110 - best-effort column extraction
                 pass
         # pyarrow Table.
         if hasattr(df, "column_names"):
