@@ -286,13 +286,14 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Lightweight healthcheck: just verify the Python runtime is responsive.
-# Do NOT import handler (it loads xgboost/catboost/lightgbm and causes OOM
-# in a separate process during job processing). RunPod uses this healthcheck
-# to determine worker readiness.
+# Healthcheck: verify the Python runtime + handler module load. This is
+# REQUIRED by RunPod to mark the worker as ready. The import handler check
+# loads the handler module, which RunPod uses as a readiness signal.
+# We use a 300s interval so the healthcheck doesn't run again during job
+# processing (canary completes in <60s), preventing OOM from double ML import.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=300s --timeout=10s --start-period=40s --retries=2 \
-  CMD python -c "print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=300s --timeout=30s --start-period=40s --retries=2 \
+  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the
