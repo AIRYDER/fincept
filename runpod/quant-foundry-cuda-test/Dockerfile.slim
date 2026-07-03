@@ -20,11 +20,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /worker
 
-# Install pip packages: runpod SDK + PyTorch with CUDA 12.4
+# Install runpod SDK from PyPI, then PyTorch with CUDA 12.4 from pytorch.org
 # The pytorch wheel includes CUDA runtime libraries (~2GB)
-RUN pip install --no-cache-dir \
-    "runpod==1.7.13" \
-    "torch==2.4.1" \
+RUN pip install --no-cache-dir "runpod==1.7.13"
+RUN pip install --no-cache-dir "torch==2.4.1" \
     --index-url https://download.pytorch.org/whl/cu124
 
 COPY runpod/quant-foundry-cuda-test/handler.py /worker/handler.py
