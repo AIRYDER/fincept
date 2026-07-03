@@ -49,26 +49,41 @@ except (ImportError, AttributeError, ValueError, OSError) as _sig_exc:
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# --- load the real production handler module -------------------------------
-# In the container: the Dockerfile copies the real handler.py to
-# /worker/handler_full.py and this file to /worker/handler.py, so
-# ``import handler_full`` resolves via PYTHONPATH=/worker.
-# Locally (repo layout): handler_full does not exist; fall back to loading
-# handler.py (the real handler) from this directory by path — the directory
-# name has a hyphen so it cannot be imported as a package.
-print("[layered] importing production handler module...", flush=True)
-try:
-    import handler_full as _full  # type: ignore[import-not-found]
-except ImportError:
-    _spec = importlib.util.spec_from_file_location(
-        "handler_full", os.path.join(_HERE, "handler.py")
-    )
-    if _spec is None or _spec.loader is None:
-        raise RuntimeError("cannot locate production handler module") from None
-    _full = importlib.util.module_from_spec(_spec)
-    sys.modules["handler_full"] = _full
-    _spec.loader.exec_module(_full)
-print("[layered] production handler module imported OK", flush=True)
+# --- lazy load the real production handler module --------------------------
+# The full handler imports quant_foundry, xgboost, catboost, lightgbm, etc.
+# at module scope — ~2 GB RSS.  Importing it eagerly at startup means the
+# worker starts with that memory already committed, leaving very little head
+# room for the RunPod SDK's job-processing allocation.  On RTX 4090 serverless
+# pods (48 GB host RAM shared across tenants) this caused OOM-kills seconds
+# after the first job arrived, even with a Layer-0 immediate-return handler.
+#
+# Fix: import lazily — only when a layer actually needs it (layers 2-5).
+# Layer 0 and 1 never touch the production handler and can run in <50 MB.
+_full: Any = None
+
+
+def _get_full() -> Any:
+    """Lazily import the production handler module on first use."""
+    global _full
+    if _full is not None:
+        return _full
+    print("[layered] importing production handler module (lazy)...", flush=True)
+    t0 = time.monotonic()
+    try:
+        import handler_full as mod  # type: ignore[import-not-found]
+        _full = mod
+    except ImportError:
+        _spec = importlib.util.spec_from_file_location(
+            "handler_full", os.path.join(_HERE, "handler.py")
+        )
+        if _spec is None or _spec.loader is None:
+            raise RuntimeError("cannot locate production handler module") from None
+        _full = importlib.util.module_from_spec(_spec)
+        sys.modules["handler_full"] = _full
+        _spec.loader.exec_module(_full)
+    elapsed = int((time.monotonic() - t0) * 1000)
+    print(f"[layered] production handler module imported OK in {elapsed}ms", flush=True)
+    return _full
 
 
 def _rss_kb() -> int | None:
@@ -126,7 +141,8 @@ def _layer_1(event: Any) -> dict[str, Any]:
 def _layer_2(event: Any) -> dict[str, Any]:
     input_data = event.get("input", {}) if isinstance(event, dict) else {}
     if isinstance(input_data, dict) and input_data.get("task") == "callback_secret_canary":
-        result = _full._handle_canary(input_data)
+        full = _get_full()
+        result = full._handle_canary(input_data)
         result["layer"] = "canary_only_no_preflight"
         return result
     return {"ok": True, "layer": "canary_bypass_non_canary"}
@@ -134,10 +150,11 @@ def _layer_2(event: Any) -> dict[str, Any]:
 
 def _layer_3(event: Any) -> dict[str, Any]:
     input_data = event.get("input", {}) if isinstance(event, dict) else {}
-    preflight_mode = _full._resolve_preflight_mode(
+    full = _get_full()
+    preflight_mode = full._resolve_preflight_mode(
         input_data if isinstance(input_data, dict) else {}
     )
-    preflight = _full.SecurityPreflight(mode=preflight_mode)
+    preflight = full.SecurityPreflight(mode=preflight_mode)
     result = preflight.run()
     return {
         "ok": True,
@@ -151,12 +168,13 @@ def _layer_4(event: Any) -> dict[str, Any]:
     input_data = event.get("input", {}) if isinstance(event, dict) else {}
     if not isinstance(input_data, dict):
         input_data = {}
-    preflight_mode = _full._resolve_preflight_mode(input_data)
-    preflight = _full.SecurityPreflight(mode=preflight_mode)
+    full = _get_full()
+    preflight_mode = full._resolve_preflight_mode(input_data)
+    preflight = full.SecurityPreflight(mode=preflight_mode)
     preflight.run()
 
     if input_data.get("task") == "callback_secret_canary":
-        canary = _full._handle_canary(input_data)
+        canary = full._handle_canary(input_data)
         return {
             "ok": True,
             "layer": "preflight_plus_canary_small",
@@ -166,13 +184,20 @@ def _layer_4(event: Any) -> dict[str, Any]:
 
 
 def _layer_5(event: Any) -> dict[str, Any]:
-    result = _full.handler(event)
+    full = _get_full()
+    result = full.handler(event)
     if isinstance(result, dict):
         result.setdefault("layer", "full_current_path")
     return result
 
 
 _LAYERS = {0: _layer_0, 1: _layer_1, 2: _layer_2, 3: _layer_3, 4: _layer_4, 5: _layer_5}
+
+print(
+    f"[layered] module loaded (lazy imports) rss_kb={_rss_kb()} "
+    f"diag_layer_env={os.environ.get('QF_DIAG_LAYER', '<unset>')}",
+    flush=True,
+)
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:

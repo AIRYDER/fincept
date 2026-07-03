@@ -248,20 +248,41 @@ RUN cat > /worker/entrypoint.sh <<'ENTRY_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+_t0=$(date +%s)
+
 # 1. Security preflight (fail closed on forbidden env vars).
-python /worker/preflight.py
+# Skip with QF_DIAG_SKIP_PREFLIGHT=1 for diagnostic builds.
+if [ "${QF_DIAG_SKIP_PREFLIGHT:-0}" != "1" ]; then
+  python /worker/preflight.py
+  _t1=$(date +%s)
+  echo "[entrypoint] preflight done in $((_t1 - _t0))s" >&2
+else
+  echo "[entrypoint] preflight SKIPPED (QF_DIAG_SKIP_PREFLIGHT=1)" >&2
+  _t1=$_t0
+fi
 
 # 2. Best-effort ownership fix for RunPod network volumes.
-for d in /runpod-volume /workspace; do
-  if [ -d "$d" ]; then
-    chown -R trainer:trainer "$d" 2>/dev/null || true
-  fi
-done
+# Skip with QF_DIAG_SKIP_CHOWN=1 — chown -R on a large volume can take
+# minutes and delay handler startup, which may interact with RunPod's
+# worker health management.
+if [ "${QF_DIAG_SKIP_CHOWN:-0}" != "1" ]; then
+  for d in /runpod-volume /workspace; do
+    if [ -d "$d" ]; then
+      chown -R trainer:trainer "$d" 2>/dev/null || true
+    fi
+  done
+  _t2=$(date +%s)
+  echo "[entrypoint] chown done in $((_t2 - _t1))s" >&2
+else
+  echo "[entrypoint] chown SKIPPED (QF_DIAG_SKIP_CHOWN=1)" >&2
+  _t2=$_t1
+fi
 
 # 3. Exec the handler as root (RunPod serverless workers run as root by
 #    default; the gosu drop to trainer was causing the worker to go
 #    unhealthy within ~40s, likely due to GPU device file permissions
 #    or NVIDIA container runtime access restrictions for non-root users).
+echo "[entrypoint] starting handler at $(date +%s) (total entrypoint: $((_t2 - _t0))s)" >&2
 exec python -u /worker/handler.py
 ENTRY_EOF
 RUN chmod +x /worker/entrypoint.sh
@@ -287,6 +308,8 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800" \
     QUANT_FOUNDRY_USE_REAL_TRAINER="true" \
     QUANT_FOUNDRY_TRAINING_MODE="canary" \
+    QF_DIAG_SKIP_PREFLIGHT="0" \
+    QF_DIAG_SKIP_CHOWN="0" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------

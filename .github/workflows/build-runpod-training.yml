@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "runpod/quant-foundry-training/**"
+      - "runpod/quant-foundry-cuda-test/**"
       - "runpod/shared/**"
       - "services/quant_foundry/**"
       - "libs/fincept-core/**"
