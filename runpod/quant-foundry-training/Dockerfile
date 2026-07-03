@@ -290,14 +290,20 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module load. This is
-# REQUIRED by RunPod to mark the worker as ready. The import handler check
-# loads the handler module, which RunPod uses as a readiness signal.
-# We use a 300s interval so the healthcheck doesn't run again during job
-# processing (canary completes in <60s), preventing OOM from double ML import.
+# NO HEALTHCHECK — deliberately removed (layer-isolation evidence 2026-07-03).
+#
+# The proven-working smoke image defines no HEALTHCHECK. With a HEALTHCHECK
+# at --interval=300s, Docker reports the container as "health: starting"
+# until the FIRST probe fires at t=+300s. The diagnostic pod (endpoint
+# zbpy7m8s8dps7k, image 412080c6) was "Exited by Runpod" at t=+230s —
+# seconds after the first job arrived and BEFORE any healthcheck had ever
+# run — with an immediate-return (layer 0) handler. A worker that never
+# reports "healthy" gets recycled by RunPod at dispatch time, which matched
+# every observed symptom (ready -> running -> unhealthy, job stuck
+# IN_QUEUE). RunPod serverless does its own worker health management; a
+# Docker HEALTHCHECK is not required and must not be reintroduced without
+# re-running the layer-0 probe.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=300s --timeout=30s --start-period=40s --retries=2 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the

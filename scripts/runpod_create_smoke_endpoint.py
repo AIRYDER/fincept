@@ -142,6 +142,18 @@ def _endpoint_input(args: argparse.Namespace, registry_auth_id: str | None) -> d
     if sha:
         template_env.append({"key": "QUANT_FOUNDRY_GIT_SHA", "value": sha})
 
+    # Extra template env vars from --env KEY=VALUE (values never printed:
+    # _redacted_endpoint_input masks all --env values).
+    extra_keys: set[str] = set()
+    for pair in args.env or []:
+        key, sep, value = pair.partition("=")
+        if not key or not sep:
+            raise RunPodSmokeCreateError(f"--env must be KEY=VALUE, got: {pair!r}")
+        template_env = [item for item in template_env if item["key"] != key]
+        template_env.append({"key": key, "value": value})
+        extra_keys.add(key)
+    args._extra_env_keys = extra_keys
+
     template: dict[str, Any] = {
         "name": args.template_name,
         "imageName": args.image_tag,
@@ -172,11 +184,18 @@ def _endpoint_input(args: argparse.Namespace, registry_auth_id: str | None) -> d
     return endpoint
 
 
-def _redacted_endpoint_input(endpoint_input: dict[str, Any]) -> dict[str, Any]:
+def _redacted_endpoint_input(
+    endpoint_input: dict[str, Any],
+    secret_env_keys: set[str] | None = None,
+) -> dict[str, Any]:
     redacted = json.loads(json.dumps(endpoint_input))
     template = redacted.get("template")
-    if isinstance(template, dict) and template.get("containerRegistryAuthId"):
-        template["containerRegistryAuthId"] = "***REDACTED***"
+    if isinstance(template, dict):
+        if template.get("containerRegistryAuthId"):
+            template["containerRegistryAuthId"] = "***REDACTED***"
+        for item in template.get("env", []):
+            if secret_env_keys and item.get("key") in secret_env_keys:
+                item["value"] = "***REDACTED***"
     return redacted
 
 
@@ -241,6 +260,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--scaler-value", type=int, default=4)
     parser.add_argument("--network-volume-id", default="")
     parser.add_argument("--volume-mount-path", default="")
+    parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        help="Extra template env var KEY=VALUE (repeatable; values redacted in output).",
+    )
     parser.add_argument("--wait-health", action="store_true")
     parser.add_argument("--wait-timeout", type=float, default=300.0)
     parser.add_argument("--wait-interval", type=float, default=10.0)
@@ -286,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"gpuIds: {args.gpu_ids}")
 
     if args.dry_run:
-        print(json.dumps(_redacted_endpoint_input(endpoint_input), indent=2))
+        secret_keys = getattr(args, "_extra_env_keys", set())
+        print(json.dumps(_redacted_endpoint_input(endpoint_input, secret_keys), indent=2))
         return 0
 
     data = _graphql(api_key, SAVE_ENDPOINT, {"input": endpoint_input})
