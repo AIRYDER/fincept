@@ -188,7 +188,6 @@ def build_training_payload(job_id: str) -> dict[str, Any]:
 
     return {
         "input": {
-            "task": "train_model",
             "job_id": job_id,
             "schema_version": 1,
             "dataset_manifest_ref": "inline",
@@ -205,6 +204,18 @@ def build_training_payload(job_id: str) -> dict[str, Any]:
             "output_prefix": "/runpod-volume/output",
         }
     }
+
+
+def is_training_success(result: dict[str, Any]) -> bool:
+    if result.get("status") != "COMPLETED":
+        return False
+    output = result.get("output")
+    if not isinstance(output, dict):
+        return False
+    if output.get("signed_failure") is True or output.get("error_code"):
+        return False
+    output_status = str(output.get("status", "")).lower()
+    return output_status not in {"failed", "error"}
 
 
 def submit_and_poll(api_key: str, eid: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -315,7 +326,7 @@ def main() -> int:
     print("\n=== Result ===")
     if result:
         print(json.dumps(result, indent=2, default=str))
-        if result.get("status") == "COMPLETED":
+        if is_training_success(result):
             print("\n*** TRAINING JOB COMPLETED SUCCESSFULLY ***")
             return 0
         else:

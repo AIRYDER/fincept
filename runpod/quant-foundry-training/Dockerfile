@@ -346,8 +346,7 @@ ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA}
 
 # No broker credentials, no Redis, no trading env vars.
 # Only the callback secret is required (injected at runtime).
-ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
-    QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800" \
+ENV QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS="1800" \
     QUANT_FOUNDRY_USE_REAL_TRAINER="true" \
     QUANT_FOUNDRY_TRAINING_MODE="canary" \
     QF_DIAG_SKIP_PREFLIGHT="0" \
