@@ -9,6 +9,7 @@ from __future__ import annotations
 import getpass
 import hashlib
 import hmac
+import importlib
 import ipaddress
 import json
 import os
@@ -37,7 +38,10 @@ for _p in _shared_paths:
         sys.path.insert(0, _p)
 
 try:
-    from worker_status import clear_status, write_heartbeat, write_status
+    _worker_status = importlib.import_module("worker_status")
+    clear_status = _worker_status.clear_status
+    write_heartbeat = _worker_status.write_heartbeat
+    write_status = _worker_status.write_status
 except ImportError:
     def write_status(*args, **kwargs): pass
     def write_heartbeat(*args, **kwargs): pass
@@ -172,6 +176,27 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
         task = input_data.get("task", "")
         job_id = input_data.get("job_id", "unknown")
+
+        diagnostic_mode = os.environ.get(
+            "QUANT_FOUNDRY_DIAGNOSTIC_HANDLER_MODE",
+            "return_only",
+        ).strip().lower()
+        print(f"[diag] diagnostic_mode={diagnostic_mode!r}", flush=True)
+        sys.stdout.flush()
+        if diagnostic_mode in {"return_only", "immediate"}:
+            return {
+                "status": "ok",
+                "handler": "diagnostic-return-only",
+                "diagnostic_mode": diagnostic_mode,
+                "job_id": job_id,
+                "task": task,
+                "input_keys": sorted(str(key) for key in input_data.keys()),
+                "runtime": {
+                    "git_sha": os.environ.get("QUANT_FOUNDRY_GIT_SHA", "unknown"),
+                    "python": sys.version.split()[0],
+                },
+            }
+
         nonce = input_data.get("nonce", "")
         secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
 
@@ -252,14 +277,11 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 if __name__ == "__main__":
     import sys
     try:
-        import runpod
+        runpod = importlib.import_module("runpod")
         print(f"[diag] runpod SDK version: {getattr(runpod, '__version__', 'unknown')}", flush=True)
         sys.stdout.flush()
-        runpod.serverless.start({"handler": handler})
-        # Force flush and hard exit
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
+        serverless = getattr(runpod, "serverless")
+        serverless.start({"handler": handler})
     except ImportError:
         event = json.loads(sys.stdin.read())
         result = handler(event)
@@ -269,4 +291,4 @@ if __name__ == "__main__":
         print(traceback.format_exc(), flush=True)
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(1)
+        raise SystemExit(1)
