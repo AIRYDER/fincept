@@ -31,6 +31,25 @@ docker push "ghcr.io/airyder/fincept/quant-foundry-smoke:$sha"
 Use the exact pushed tag when creating the RunPod endpoint. Do not deploy
 `latest` for this isolation pass.
 
+## Create Endpoint
+
+If the image is private in GHCR, copy registry auth from an existing endpoint
+that can already pull Fincept images. This script only creates a new endpoint;
+it does not update, delete, or recycle existing endpoints.
+
+```pwsh
+$env:RUNPOD_API_KEY = "<redacted>"
+$sha = git rev-parse HEAD
+$sourceEndpoint = "<existing-endpoint-with-ghcr-auth>"
+python scripts/runpod_create_smoke_endpoint.py `
+  --image-tag "ghcr.io/airyder/fincept/quant-foundry-smoke:$sha" `
+  --copy-registry-auth-from-endpoint-id $sourceEndpoint `
+  --wait-health
+```
+
+For the exact GitHub Actions image from a completed run, replace `$sha` with
+the full commit SHA printed by `git rev-parse HEAD` for that build.
+
 ## RunPod Probe
 
 Create a brand-new RunPod serverless endpoint with the pushed smoke image, then
