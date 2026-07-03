@@ -74,7 +74,7 @@ def _get_full() -> Any:
         _full = mod
     except ImportError:
         _spec = importlib.util.spec_from_file_location(
-            "handler_full", os.path.join(_HERE, "handler.py")
+            "handler_full", os.path.join(_HERE, "handler_full.py")
         )
         if _spec is None or _spec.loader is None:
             raise RuntimeError("cannot locate production handler module") from None

@@ -81,12 +81,14 @@ RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'
 
 COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
-# Copy the production handler directly (no layered wrapper).
-# The layered handler (handler_layered.py) was used for crash hunting but
-# caused infinite recursion when import handler_full fell back to loading
-# handler.py (itself). Now that the base image issue is fixed, use the
-# real handler directly.
-COPY runpod/quant-foundry-training/handler.py /worker/handler.py
+# Copy the handlers (layered isolation build):
+#   - handler_full.py: the unmodified production handler (real code paths).
+#   - handler.py: the layered dispatcher that selects a code-path layer per
+#     job via QF_DIAG_LAYER env or input.diag_layer. Layer 5 (default) calls
+#     the real handler. The layered handler has a clean __main__ block that
+#     properly starts the RunPod SDK.
+COPY runpod/quant-foundry-training/handler.py /worker/handler_full.py
+COPY runpod/quant-foundry-training/handler_layered.py /worker/handler.py
 
 # ---------------------------------------------------------------------------
 # Install GPU-capable ML libraries.
@@ -336,6 +338,6 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
 # ---------------------------------------------------------------------------
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
-# RunPod's dockerArgs field can't override it. Direct entrypoint matches the
-# proven-working cuda-test pattern — no entrypoint.sh wrapper.
-ENTRYPOINT ["python", "-u", "/worker/handler.py"]
+# RunPod's dockerArgs field can't override it. The entrypoint runs the security
+# preflight, fixes volume ownership, then execs the handler.
+ENTRYPOINT ["/worker/entrypoint.sh"]
