@@ -31,7 +31,39 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, cast, runtime_checkable
 
+from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.telemetry import CostTelemetry, PhaseTiming, TimingPhase, infer_gpu_type
+
+
+# --- helpers --------------------------------------------------------------- #
+
+
+def _compute_queue_wait_ns(rec: Any) -> float:
+    """Compute queue wait time (seconds) from an outbox record's history.
+
+    Reads the QUEUED -> DISPATCHING transition timestamps from the
+    outbox history and returns the difference in seconds. Returns 0.0
+    if the record is None or the transition is not found.
+    """
+    if rec is None:
+        return 0.0
+    queued_ts: int | None = None
+    dispatched_ts: int | None = None
+    for entry in rec.history:
+        status = entry.get("status")
+        ts = entry.get("ts_ns")
+        if ts is None:
+            continue
+        if status == JobStatus.QUEUED.value and queued_ts is None:
+            queued_ts = ts
+        elif status == JobStatus.DISPATCHING.value and dispatched_ts is None:
+            dispatched_ts = ts
+    if queued_ts is not None and dispatched_ts is not None:
+        wait = (dispatched_ts - queued_ts) / 1e9
+        return max(wait, 0.0)
+    return 0.0
+
 
 # --- dispatch status -------------------------------------------------------
 
@@ -374,6 +406,18 @@ class RunPodDispatcher:
         mode: "runpod" or "local_mock". When != "runpod", no calls.
         budget_guard: BudgetGuard — per-job + global monthly ceiling.
         max_dispatches_per_sweep: rate limit (max dispatches per sweep).
+        ledger: optional TrainingJobLedger (Phase 6 / T-6.1) — when
+            provided, the dispatcher records an audit trail of every
+            state transition, failure, retry, and cost event for each
+            job. When None, ledger tracking is disabled (backward
+            compat). The ledger is read-only with respect to the outbox:
+            it observes transitions but never drives them.
+        telemetry: optional CostTelemetry (Phase 6 / T-6.3) — when
+            provided, the dispatcher records per-job cost estimates (by
+            GPU type + duration) and per-phase timing (queue, train).
+            When None, telemetry tracking is disabled (backward compat).
+            Missing GPU prices are recorded as cost_unknown=True (never
+            silently zero).
     """
 
     outbox: JobOutbox
@@ -382,17 +426,26 @@ class RunPodDispatcher:
     budget_guard: BudgetGuard = field(default_factory=lambda: BudgetGuard(monthly_budget_cents=0))
     max_dispatches_per_sweep: int | None = None
     endpoint_id: str | None = None
+    ledger: TrainingJobLedger | None = None
+    telemetry: CostTelemetry | None = None
 
     def dispatch(
         self,
         job_id: str,
         *,
         request_payload: dict[str, Any],
+        gpu_type: str | None = None,
     ) -> DispatchResult:
         """Dispatch a single job to RunPod.
 
         Returns a DispatchResult. Does NOT raise on RunPod failures
         (they're classified into transient/terminal/budget_exceeded).
+
+        Args:
+            gpu_type: optional GPU type override (a ``GPUType`` value or
+                raw string). When None, the GPU type is inferred from
+                the endpoint id. Used for cost telemetry estimation;
+                an unknown GPU type yields ``cost_unknown=True``.
         """
         if self.mode != "runpod":
             return DispatchResult(
@@ -448,6 +501,15 @@ class RunPodDispatcher:
         self.outbox.update_status(job_id, JobStatus.DISPATCHING)
         self.outbox.update_status(job_id, JobStatus.DISPATCHED)
 
+        # Ledger: ensure a QUEUED row exists (created on first dispatch;
+        # on retries the row already exists so we reuse it). The ledger
+        # observes transitions but never drives them.
+        if self.ledger is not None:
+            lrec = self.ledger.get_by_outbox_id(job_id)
+            if lrec is None:
+                self.ledger.create_row(job_id)
+            self.ledger.update_state(job_id, JobLedgerState.DISPATCHED)
+
         # Call the RunPod client.
         start = time.time()
         result = self.client.dispatch(
@@ -481,6 +543,50 @@ class RunPodDispatcher:
                 runpod_job_id=result.runpod_job_id,
                 note=note,
             )
+            # Ledger: record runpod_job_id, transition to RUNPOD_RUNNING,
+            # and record cost + duration.
+            if self.ledger is not None:
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.RUNPOD_RUNNING,
+                    runpod_job_id=result.runpod_job_id,
+                )
+                if result.cost_cents > 0 or (result.duration_seconds or elapsed) > 0:
+                    self.ledger.record_cost(
+                        job_id,
+                        result.cost_cents,
+                        result.duration_seconds or elapsed,
+                    )
+            # Telemetry: record queue time (from outbox history) and
+            # train timing + cost estimate. The GPU type is inferred
+            # from the endpoint id (or the caller-supplied gpu_type).
+            # Missing GPU price => cost_unknown=True (never zero).
+            if self.telemetry is not None:
+                resolved_gpu = gpu_type or infer_gpu_type(endpoint_id)
+                # Compute queue wait from outbox history: time from the
+                # QUEUED entry to the DISPATCHING entry.
+                queue_wait = _compute_queue_wait_ns(self.outbox.get(job_id))
+                train_duration = result.duration_seconds or elapsed
+                phases = (
+                    PhaseTiming(
+                        phase=TimingPhase.QUEUE,
+                        duration_seconds=queue_wait,
+                    ),
+                    PhaseTiming(
+                        phase=TimingPhase.TRAIN,
+                        duration_seconds=train_duration,
+                    ),
+                    PhaseTiming(
+                        phase=TimingPhase.TOTAL,
+                        duration_seconds=queue_wait + train_duration,
+                    ),
+                )
+                self.telemetry.record_job_timing(
+                    job_id,
+                    resolved_gpu,
+                    phases,
+                    actual_cost_cents=result.cost_cents or None,
+                )
 
         # Classify transient vs terminal.
         if result.status == DispatchStatus.TRANSIENT_FAILURE:
@@ -492,6 +598,20 @@ class RunPodDispatcher:
                 error_summary=result.error_summary,
                 note="transient failure; queued for retry",
             )
+            # Ledger: record the failure (increments retries) and keep
+            # the row in a non-terminal state (back to QUEUED).
+            if self.ledger is not None:
+                self.ledger.record_failure(
+                    job_id,
+                    error_code=result.error_code or "transient_failure",
+                    error_message=result.error_summary or "",
+                    note="transient failure; queued for retry",
+                )
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.QUEUED,
+                    note="transient failure; queued for retry",
+                )
         elif result.status == DispatchStatus.TERMINAL_FAILURE:
             self.outbox.update_status(
                 job_id,
@@ -499,6 +619,19 @@ class RunPodDispatcher:
                 error_code=result.error_code,
                 error_summary=result.error_summary,
             )
+            # Ledger: record the failure and transition to FAILED.
+            if self.ledger is not None:
+                self.ledger.record_failure(
+                    job_id,
+                    error_code=result.error_code or "terminal_failure",
+                    error_message=result.error_summary or "",
+                    note="terminal failure",
+                )
+                self.ledger.update_state(
+                    job_id,
+                    JobLedgerState.FAILED,
+                    note="terminal failure",
+                )
 
         return result
 

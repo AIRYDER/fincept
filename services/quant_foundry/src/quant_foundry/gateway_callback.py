@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from quant_foundry.callback_dlq import CallbackDLQ, DLQRejectionReason
 from quant_foundry.signatures import verify_callback
 
 if TYPE_CHECKING:
@@ -28,7 +29,20 @@ if TYPE_CHECKING:
 
 
 class GatewayCallbackMixin:
-    """Callback ingestion methods — extracted from QuantFoundryGateway."""
+    """Callback ingestion methods — extracted from QuantFoundryGateway.
+
+    Optional DLQ integration (Phase 6 / T-6.2): when ``self.dlq`` is set to
+    a :class:`~quant_foundry.callback_dlq.CallbackDLQ` instance, rejected
+    callbacks are enqueued to the DLQ with the appropriate rejection
+    reason before the error is returned. When ``self.dlq`` is ``None``
+    (the default), the DLQ is disabled and behavior is unchanged
+    (backward compatible). Callers (tests, the gateway constructor) set
+    ``self.dlq`` to enable DLQ recording.
+    """
+
+    # DLQ is disabled by default (backward compatible). Set to a
+    # CallbackDLQ instance to enable DLQ recording of rejected callbacks.
+    dlq: CallbackDLQ | None = None
 
     if TYPE_CHECKING:
         enabled: bool
@@ -78,6 +92,18 @@ class GatewayCallbackMixin:
         if ob_rec is None:
             with contextlib.suppress(OSError):
                 metrics.record("rejected", reason_code="unknown_job")
+            # DLQ: unknown job is a job_id mismatch. Non-retryable for
+            # safety (a callback for an unknown job is not a transient
+            # failure — the job does not exist on the trusted side).
+            if self.dlq is not None:
+                with contextlib.suppress(Exception):
+                    self.dlq.enqueue(
+                        job_id,
+                        manifest_hash=job_id,
+                        rejection_reason=DLQRejectionReason.JOB_ID_MISMATCH,
+                        rejection_detail=f"no outbox record for job_id {job_id}",
+                        is_retryable=False,
+                    )
             return {
                 "enabled": True,
                 "ok": False,
@@ -101,6 +127,19 @@ class GatewayCallbackMixin:
             # inbox. No domain effect, no durable trace of the bad payload.
             with contextlib.suppress(OSError):
                 metrics.record("rejected", reason_code="bad_signature")
+            # DLQ: bad signature lands in the DLQ for audit. NEVER
+            # retryable (security invariant) — the payload is never
+            # re-processed. The manifest_hash is the outbox idempotency
+            # key (the trusted-side manifest reference for this job).
+            if self.dlq is not None:
+                with contextlib.suppress(Exception):
+                    self.dlq.enqueue(
+                        job_id,
+                        manifest_hash=ob_rec.idempotency_key,
+                        rejection_reason=DLQRejectionReason.SIGNATURE_FAILED,
+                        rejection_detail="callback signature verification failed",
+                        is_retryable=False,
+                    )
             return {
                 "enabled": True,
                 "ok": False,
@@ -114,7 +153,7 @@ class GatewayCallbackMixin:
         # DIFFERENT payload hash, that's a tamper/replay event. We catch
         # it and return a clean security error (no crash).
         try:
-            self.inbox.receive(
+            in_rec = self.inbox.receive(
                 job_id=job_id,
                 idempotency_key=ob_rec.idempotency_key,
                 signature_valid=signature_valid,
@@ -125,11 +164,55 @@ class GatewayCallbackMixin:
         except ValueError as exc:
             with contextlib.suppress(OSError):
                 metrics.record("rejected", reason_code="payload_hash_mismatch")
+            # DLQ: payload tamper is a security event. NEVER retryable
+            # (security invariant) — the tampered payload is never
+            # re-processed. Stored for audit only.
+            if self.dlq is not None:
+                with contextlib.suppress(Exception):
+                    self.dlq.enqueue(
+                        job_id,
+                        manifest_hash=ob_rec.idempotency_key,
+                        rejection_reason=DLQRejectionReason.PAYLOAD_TAMPER,
+                        rejection_detail=str(exc),
+                        is_retryable=False,
+                    )
             return {
                 "enabled": True,
                 "ok": False,
                 "error_code": "payload_hash_mismatch",
                 "detail": str(exc),
+            }
+
+        # Duplicate callback detection: the inbox records a DUPLICATE
+        # status when the same job_id + same payload_hash is received
+        # again. Enqueue to the DLQ (idempotent — the DLQ's own
+        # idempotency key prevents a second DLQ row) and return WITHOUT
+        # processing. This guarantees a duplicate callback does not
+        # double-promote or double-verify.
+        from quant_foundry.inbox import CallbackStatus
+
+        if in_rec.status == CallbackStatus.DUPLICATE:
+            with contextlib.suppress(OSError):
+                metrics.record("rejected", reason_code="duplicate_callback")
+            if self.dlq is not None:
+                with contextlib.suppress(Exception):
+                    self.dlq.enqueue(
+                        job_id,
+                        manifest_hash=ob_rec.idempotency_key,
+                        rejection_reason=DLQRejectionReason.DUPLICATE_CALLBACK,
+                        rejection_detail=(
+                            "duplicate callback for job_id "
+                            f"{job_id} (same payload hash)"
+                        ),
+                        callback_id=in_rec.callback_id,
+                        is_retryable=False,
+                    )
+            return {
+                "enabled": True,
+                "ok": False,
+                "error_code": "duplicate_callback",
+                "detail": f"duplicate callback for job_id {job_id}",
+                "inbox_status": in_rec.status.value,
             }
 
         # Process the callback (idempotent + fail-closed on schema/etc).

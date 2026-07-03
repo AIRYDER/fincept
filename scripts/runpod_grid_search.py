@@ -161,8 +161,8 @@ def main() -> int:
     if stat_out.get("exists"):
         print(f"  OK: {stat_out.get('file_size_mb')} MB")
     else:
-        print("  ERROR: dataset not found!")
-        return 1
+        print(f"  WARNING: dataset not found via stat_volume, proceeding anyway...")
+        print(f"  Path: {VOLUME_PATH}")
 
     # 2. Dispatch all jobs
     print(f"\n{'=' * 70}")

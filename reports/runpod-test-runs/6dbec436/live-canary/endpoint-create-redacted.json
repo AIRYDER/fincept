@@ -1,0 +1,11 @@
+{
+  "endpoint_id": "rzw1aifoi2zhc7",
+  "name": "qf-canary-6dbec436",
+  "template_id": "du70543q2j",
+  "gpu_type": "ADA_24",
+  "workers_min": 1,
+  "workers_max": 1,
+  "idle_timeout": 300,
+  "scaler_type": "QUEUE_DELAY",
+  "scaler_value": 4
+}

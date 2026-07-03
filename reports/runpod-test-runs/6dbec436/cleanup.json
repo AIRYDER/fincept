@@ -1,0 +1,19 @@
+{
+  "endpoint_id": "4jc1opwj11zmai",
+  "endpoint_name": "qf-train-prod-canary-6dbec436-full",
+  "action": "scaled_to_workersMin=0_workersMax=1",
+  "timestamp": "2026-07-03T22:30Z",
+  "final_health": {
+    "jobs": {"completed": 3, "failed": 0, "inProgress": 0, "inQueue": 0, "retried": 0},
+    "workers": {"idle": 0, "initializing": 0, "ready": 0, "running": 1, "throttled": 0, "unhealthy": 0}
+  },
+  "broken_endpoint_cleanup": {
+    "endpoint_id": "jtr18cdh5lgov2",
+    "endpoint_name": "qf-train-prod-canary-6dbec436",
+    "note": "Created with short SHA tag 6dbec436 (image does not exist in registry). Scaled to workersMin=0. Pod i20b6hzqak6c8j EXITED with docker=None (image pull failure).",
+    "action": "scaled_to_workersMin=0_workersMax=1"
+  },
+  "no_endpoints_with_workersMin_gt_0": true,
+  "no_stuck_jobs": true,
+  "no_secrets_printed": true
+}

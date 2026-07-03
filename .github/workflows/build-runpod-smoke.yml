@@ -1,0 +1,43 @@
+name: build-runpod-smoke
+
+on:
+  push:
+    paths:
+      - "runpod/quant-foundry-smoke/**"
+      - ".github/workflows/build-runpod-smoke.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image repository
+        id: image_repo
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: runpod/quant-foundry-smoke/Dockerfile
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ steps.image_repo.outputs.value }}/quant-foundry-smoke:${{ github.sha }}
+            ${{ steps.image_repo.outputs.value }}/quant-foundry-smoke:latest
+          cache-from: type=gha,scope=quant-foundry-smoke
+          cache-to: type=gha,mode=max,scope=quant-foundry-smoke

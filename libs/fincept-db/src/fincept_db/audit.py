@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from fincept_core.ids import new_id
 
 from .engine import session_scope
 from .models import AuditLog
+
+_log = logging.getLogger(__name__)
 
 
 async def append(
@@ -34,6 +37,42 @@ async def append(
         )
         await session.execute(stmt)
     return event_id
+
+
+async def safe_append(
+    actor: str,
+    event_type: str,
+    payload: dict[str, Any],
+    correlation_id: str | None = None,
+) -> str | None:
+    """Best-effort audit append that logs failures instead of silencing them.
+
+    This is the correct replacement for ``with contextlib.suppress(Exception):
+    await audit.append(...)`` — the audit trail must not break the main flow,
+    but a failure must be visible so operators can detect an audit outage
+    (e.g. Postgres down, connection pool exhausted).
+
+    Returns the ``event_id`` on success, or ``None`` on failure (after
+    logging the error at WARNING level with structured context).
+    """
+    try:
+        return await append(
+            actor=actor,
+            event_type=event_type,
+            payload=payload,
+            correlation_id=correlation_id,
+        )
+    except Exception:
+        _log.warning(
+            "audit.append_failed",
+            extra={
+                "actor": actor,
+                "event_type": event_type,
+                "correlation_id": correlation_id,
+            },
+            exc_info=True,
+        )
+        return None
 
 
 async def read_by_correlation(correlation_id: str) -> list[dict[str, Any]]:

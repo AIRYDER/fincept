@@ -1,0 +1,130 @@
+{
+  "first_failing_profile": null,
+  "image_tag": "ghcr.io/airyder/fincept/quant-foundry-training:c0f15fa7be38460c6c1930ef5394caf152615199",
+  "last_passing_profile": "full_handler_call",
+  "profiles_tested": [
+    "sentinel",
+    "pandas_numpy",
+    "xgboost",
+    "catboost",
+    "lightgbm",
+    "torch",
+    "signatures_schemas",
+    "runpod_training",
+    "quality_report",
+    "dataset_manifest",
+    "full_handler_import",
+    "full_handler_call"
+  ],
+  "results": [
+    {
+      "endpoint_id": "9uasiygmknikn7",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "65950bb9-30ee-4dab-a520-9c2948011b35-u1",
+      "profile": "sentinel",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "yxw1bt6w2shg07",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "4dd03395-b14e-4353-8adc-5a0b4606d24e-u2",
+      "profile": "pandas_numpy",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "oklx91df3kh8eg",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "67fabf62-d47a-4464-ab39-3b393a957f15-u1",
+      "profile": "xgboost",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "b0hiaap9tdfetg",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "40153391-9b4b-4da0-87d3-9bbadee8bce0-u1",
+      "profile": "catboost",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "ccdkamkwkpb19c",
+      "failure_reason": null,
+      "final_status": "IN_QUEUE",
+      "job_id": "5d2baa2f-3f11-452c-a4fa-c20dbca50912-u2",
+      "profile": "lightgbm",
+      "result": "inconclusive_false_negative",
+      "notes": "Probe script bug (run_import_bisection.py line 478): treated ready=0 as 'worker died' but worker was running=1, unhealthy=0 (alive, processing the job). Probe stopped after ~21s before job completed. The worker was NOT unhealthy at any point. See health-after-lightgbm.json: running=1, unhealthy=0. This is a false negative, NOT a real failure."
+    },
+    {
+      "endpoint_id": "osoafmz74bayp8",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "04a93ae0-c7d8-43d3-b8c4-9e053d8b4c24-u1",
+      "profile": "torch",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "b2ut0grt2img9n",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "7c5a3aa1-e1f0-415f-8c11-25f03da44eeb-u2",
+      "profile": "signatures_schemas",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "yyx35wipyp0pf5",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "3f8f418a-be61-4883-b15f-a78390d1a115-u1",
+      "profile": "runpod_training",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "4yyzv7f5zpwe7x",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "4aca5854-1b7a-4191-9bdb-566416506a0f-u2",
+      "profile": "quality_report",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "5b8mfw104jgwid",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "3afa8f0d-5d3c-4ebd-8060-3323f0735558-u2",
+      "profile": "dataset_manifest",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "enpgwuvvhnl1d4",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "317f0615-766a-4021-934f-1842dd225502-u1",
+      "profile": "full_handler_import",
+      "result": "pass"
+    },
+    {
+      "endpoint_id": "l4g3f0egagavmc",
+      "failure_reason": null,
+      "final_status": "COMPLETED",
+      "job_id": "11f344ec-041d-4c6a-9434-aba00601a649-u1",
+      "profile": "full_handler_call",
+      "result": "pass",
+      "notes": "CRITICAL: this profile calls handler_full.handler(event) — the production handler's canary path — and it COMPLETED in ~5s. The production handler code works live when invoked via the bisect wrapper. This contradicts the c508103f failure where the production handler was the direct RunPod entrypoint."
+    }
+  ],
+  "sha": "c0f15fa7be38460c6c1930ef5394caf152615199",
+  "template_id": "qxqqh6wals",
+  "consolidation_notes": {
+    "consolidated_at": "2026-07-03 hourly receipt consolidation pass",
+    "corrections_made": [
+      "lightgbm result changed from 'fail' to 'inconclusive_false_negative' — raw evidence (health-after-lightgbm.json, cleanup-lightgbm.json) shows worker was running=1, unhealthy=0 (alive, processing) when probe declared failure. The probe script bug at run_import_bisection.py line 478 treats ready=0 as 'worker died' but ready=0 also occurs when worker transitions to running=1.",
+      "first_failing_profile changed from 'lightgbm' to null — no profile genuinely failed. The lightgbm false negative was caused by a probe script bug, not a real worker death.",
+      "full_handler_call result confirmed as 'pass' with added notes about its significance — the production handler's canary path completed live."
+    ],
+    "probe_bug": "run_import_bisection.py line 478: `if job_status == 'IN_QUEUE' and workers.get('ready', 0) == 0` — this condition is true when the worker picks up the job (transitions from ready/idle to running) but the job status hasn't yet updated from IN_QUEUE to IN_PROGRESS. The correct check should also require running=0 AND unhealthy=0 (worker truly gone), or just check unhealthy > 0."
+  }
+}

@@ -50,12 +50,215 @@ from quant_foundry.schemas import (
     ModelDossier,
     RunPodTrainingRequest,
 )
+# Phase 8 / T-8.1: explicit column roles + task spec. Imported lazily-safe
+# (dataset_manifest / training_manifest do not import real_trainer, so
+# there is no circular import). These are OPTIONAL inputs — when None the
+# trainer falls back to the legacy infer-by-dropping-names behaviour with
+# a deprecation warning.
+from quant_foundry.dataset_manifest import (
+    ColumnRoles,
+    FoldSpec,
+    validate_column_roles,
+)
+from quant_foundry.training_manifest import (
+    ModelTaskSpec,
+    validate_task_spec,
+)
 
 try:
     from fincept_core.storage import StorageBackend, get_storage_backend
 except ImportError:  # pragma: no cover - fincept-core always present in-workspace
     StorageBackend = None  # type: ignore[assignment,misc]
     get_storage_backend = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Multi-backend dispatch (T-7.2 / T-7.3 integration)
+# ---------------------------------------------------------------------------
+
+#: Supported trainer backends. The default (``"lightgbm"``) preserves the
+#: existing :class:`RealLightGBMTrainer` behaviour. ``"catboost"`` delegates
+#: to :class:`quant_foundry.catboost_trainer.CatBoostTrainer` and
+#: ``"xgboost"`` delegates to
+#: :class:`quant_foundry.xgboost_trainer.XGBoostTrainer`.
+TRAINER_BACKENDS: tuple[str, ...] = ("lightgbm", "catboost", "xgboost")
+
+
+# --- typed artifact result (Phase 1 / T-1.1) --------------------------------
+#
+# A typed, tamper-evident artifact result contract. This replaces the
+# previous fragile ``getattr(result, "model_bytes", None)`` pattern in the
+# RunPod handler: the trainer now produces a ``TypedArtifactResult`` with
+# an explicit ``artifact_uri`` / ``artifact_sha256`` / ``artifact_size_bytes``
+# triple (plus format/kind/loader provenance) so the handler can verify the
+# artifact byte-for-byte and fail closed when an artifact is missing for a
+# successful job.
+#
+# Design rules (matching the codebase Pydantic-v2 conventions):
+# - ``frozen=True`` so the contract is immutable after construction.
+# - ``artifact_sha256`` and ``artifact_size_bytes`` are ALWAYS required
+#   (a successful training job that produces no artifact hash/size is a
+#   contract violation — fail closed).
+# - ``artifact_uri`` MAY be ``None`` for canary runs that keep tiny inline
+#   ``model_bytes`` (never persisted). For real/research/production runs
+#   the handler sets ``artifact_uri`` after writing the bytes to a volume
+#   or object store.
+# - ``model_bytes`` carries the inline artifact bytes. Canary tests keep
+#   them inline; real runs persist them and clear the inline copy after
+#   the handler has written + verified them.
+
+
+@dataclass(frozen=True)
+class TypedArtifactResult:
+    """Typed, tamper-evident artifact result for a successful training job.
+
+    Fields:
+        artifact_id: stable id (``artifact:<sha16>``).
+        artifact_uri: declared location of the persisted artifact. ``None``
+            is allowed ONLY for canary runs that keep inline ``model_bytes``.
+        artifact_sha256: SHA-256 hex (64 lowercase chars) of the artifact
+            bytes. Always required.
+        artifact_size_bytes: byte length of the artifact. Always required
+            and must be > 0.
+        artifact_format: serialisation format (``"pickle"``,
+            ``"lightgbm-txt"``, ...).
+        artifact_kind: artifact category (``"model"``).
+        loader_family: loader used to reload the artifact
+            (``"lightgbm"``, ``"local-stub"``).
+        model_family: model family the artifact was trained for.
+        dataset_manifest_hash: SHA-256 of the dataset manifest reference
+            (binds the artifact to the data it was trained on).
+        training_manifest_hash: SHA-256 of the training manifest content
+            hash (from ``extra_constraints["manifest_content_hash"]``),
+            or ``None`` when not forwarded.
+        created_at: nanosecond epoch timestamp of artifact creation.
+        model_bytes: inline artifact bytes. Present for canary runs and
+            before the handler persists real runs; the handler clears
+            this after a successful persist + verify.
+    """
+
+    artifact_id: str
+    artifact_uri: str | None
+    artifact_sha256: str
+    artifact_size_bytes: int
+    artifact_format: str
+    artifact_kind: str
+    loader_family: str
+    model_family: str
+    dataset_manifest_hash: str | None
+    training_manifest_hash: str | None
+    created_at: int
+    model_bytes: bytes | None = None
+
+    def __post_init__(self) -> None:
+        # Validate at construction time so a malformed result fails fast
+        # (fail closed) rather than silently propagating.
+        if not self.artifact_id or not self.artifact_id.strip():
+            raise ValueError("TypedArtifactResult.artifact_id must be non-empty")
+        if not self.artifact_sha256 or not self.artifact_sha256.strip():
+            raise ValueError(
+                "TypedArtifactResult.artifact_sha256 must be non-empty "
+                "(success callback cannot be built without artifact hash)"
+            )
+        if len(self.artifact_sha256) != 64 or not all(
+            c in "0123456789abcdef" for c in self.artifact_sha256.lower()
+        ):
+            raise ValueError(
+                "TypedArtifactResult.artifact_sha256 must be a 64-char "
+                f"lowercase hex SHA-256; got {self.artifact_sha256!r}"
+            )
+        if self.artifact_size_bytes <= 0:
+            raise ValueError(
+                "TypedArtifactResult.artifact_size_bytes must be > 0 "
+                "(success callback cannot be built without artifact size)"
+            )
+        if not self.artifact_format or not self.artifact_format.strip():
+            raise ValueError("TypedArtifactResult.artifact_format must be non-empty")
+        if not self.artifact_kind or not self.artifact_kind.strip():
+            raise ValueError("TypedArtifactResult.artifact_kind must be non-empty")
+        if not self.loader_family or not self.loader_family.strip():
+            raise ValueError("TypedArtifactResult.loader_family must be non-empty")
+        if not self.model_family or not self.model_family.strip():
+            raise ValueError("TypedArtifactResult.model_family must be non-empty")
+        if self.created_at < 0:
+            raise ValueError("TypedArtifactResult.created_at must be >= 0")
+        # Normalise sha to lowercase for stable comparisons.
+        if self.artifact_sha256 != self.artifact_sha256.lower():
+            object.__setattr__(self, "artifact_sha256", self.artifact_sha256.lower())
+
+    def verify_bytes(self, data: bytes) -> bool:
+        """Recompute the SHA-256 of ``data`` and compare to ``artifact_sha256``.
+
+        Returns ``True`` iff the recomputed hash matches the declared
+        hash. Used by the handler to detect artifact corruption / sha
+        mismatch (acceptance criterion: artifact sha mismatch fails).
+        """
+        import hashlib
+
+        return hashlib.sha256(data).hexdigest() == self.artifact_sha256
+
+
+def _dataset_manifest_hash(ref: str) -> str:
+    """Stable SHA-256 of the dataset manifest reference string."""
+    return hashlib.sha256(ref.encode("utf-8")).hexdigest()
+
+
+def _training_manifest_hash(req: RunPodTrainingRequest) -> str | None:
+    """Resolve the training manifest content hash from ``extra_constraints``.
+
+    The dispatch path forwards the manifest content hash via
+    ``extra_constraints["manifest_content_hash"]`` (see
+    :meth:`TrainingManifest.to_dispatch_request`). Returns ``None`` when
+    not forwarded (e.g. ad-hoc requests not staged through a manifest).
+    """
+    raw = req.extra_constraints.get("manifest_content_hash")
+    if raw and isinstance(raw, str) and raw.strip():
+        return raw.strip().lower()
+    return None
+
+
+def build_artifact_result(
+    *,
+    artifact_id: str,
+    model_bytes: bytes,
+    model_family: str,
+    req: RunPodTrainingRequest,
+    artifact_uri: str | None = None,
+    artifact_format: str = "pickle",
+    artifact_kind: str = "model",
+    loader_family: str = "lightgbm",
+    created_at: int | None = None,
+) -> TypedArtifactResult:
+    """Build a :class:`TypedArtifactResult` from raw model bytes.
+
+    Computes the SHA-256 + size from ``model_bytes`` (never from request
+    inputs) and binds the dataset/training manifest hashes from the
+    request. Raises ``ValueError`` (fail closed) when ``model_bytes`` is
+    empty — a successful training job that produces no artifact bytes is
+    a contract violation.
+    """
+    if not model_bytes:
+        raise ValueError(
+            "cannot build TypedArtifactResult without artifact bytes "
+            "(successful training job produced no model artifact — fail closed)"
+        )
+    sha = hashlib.sha256(model_bytes).hexdigest()
+    if created_at is None:
+        created_at = time.time_ns()
+    return TypedArtifactResult(
+        artifact_id=artifact_id,
+        artifact_uri=artifact_uri,
+        artifact_sha256=sha,
+        artifact_size_bytes=len(model_bytes),
+        artifact_format=artifact_format,
+        artifact_kind=artifact_kind,
+        loader_family=loader_family,
+        model_family=model_family,
+        dataset_manifest_hash=_dataset_manifest_hash(req.dataset_manifest_ref),
+        training_manifest_hash=_training_manifest_hash(req),
+        created_at=created_at,
+        model_bytes=model_bytes,
+    )
 
 # Canonical walk-forward fold math (single shared home — see
 # ``fincept_core.datasets.cv``). Delegating here keeps Path B (RunPod real
@@ -96,6 +299,41 @@ class RealLightGBMTrainer:
     # fallback when no bar-frequency info is present on the request.
     annualization_factor: int = 252
     storage_backend: Any = None
+    # --- Phase 8 / T-8.1: explicit column roles + task spec -------------
+    # When set, the trainer uses ONLY ``column_roles.feature_columns`` as
+    # features (never inferred by dropping a few names) and
+    # ``column_roles.label_columns[0]`` (or ``task_spec.label_column``) as
+    # the label. Excluded columns are fail-closed if they appear in the
+    # feature set. When None, the trainer falls back to the legacy
+    # infer-by-dropping-names behaviour and logs a deprecation warning.
+    column_roles: ColumnRoles | None = None
+    task_spec: ModelTaskSpec | None = None
+    # --- T-7.2 / T-7.3 / T-8.4 integration fields -----------------------
+    # ``backend`` selects the training backend: ``"lightgbm"`` (default,
+    # existing behaviour), ``"catboost"`` (delegates to CatBoostTrainer),
+    # or ``"xgboost"`` (delegates to XGBoostTrainer). The catboost/xgboost
+    # backends REQUIRE ``column_roles`` + ``task_spec`` (fail-closed when
+    # None) because those backends have no legacy infer-by-dropping-names
+    # fallback.
+    backend: str = "lightgbm"
+    # ``fold_spec`` is the manifest-declared fold specification (T-8.4).
+    # When set, the trainer consumes fold windows *exactly* as declared
+    # (via ``consume_manifest_folds``) instead of re-deriving fold
+    # boundaries from the data. When None, the trainer falls back to the
+    # existing walk-forward fold generation (canary mode).
+    fold_spec: FoldSpec | None = None
+    # ``is_production`` enables the fail-closed guard: a production
+    # manifest MUST declare a FoldSpec (no fallback to heuristic folds).
+    is_production: bool = False
+    # --- Phase 1 / T-1.1: typed artifact result -------------------------
+    # After a successful ``train()`` call, the typed artifact result +
+    # raw model bytes are stashed here so the RunPod handler can read
+    # them through a typed field instead of the fragile
+    # ``getattr(result, "model_bytes", None)`` pattern. The handler
+    # creates a fresh trainer per job, so this per-instance state is
+    # safe (no cross-job leakage).
+    last_artifact_result: TypedArtifactResult | None = None
+    last_model_bytes: bytes | None = None
 
     # --- public API ------------------------------------------------------
 
@@ -124,6 +362,30 @@ class RealLightGBMTrainer:
                 error_summary="training deadline breached before work started",
             )
 
+        # --- T-7.2 / T-7.3 / T-8.4 integration ---------------------------
+        # Validate the backend string.
+        if self.backend not in TRAINER_BACKENDS:
+            raise TrainingFailure(
+                error_code="invalid_backend",
+                error_summary=(
+                    f"unknown backend {self.backend!r}; "
+                    f"supported: {list(TRAINER_BACKENDS)}"
+                ),
+            )
+
+        # Production fail-closed (T-8.4): a production manifest MUST
+        # declare a FoldSpec — the contract of record for fold
+        # boundaries. Canary/research runs may fall back to the
+        # heuristic walk-forward fold generation.
+        if self.is_production:
+            self._require_fold_spec_for_production()
+
+        # Multi-backend dispatch: catboost / xgboost backends have their
+        # own dependency checks + training paths, so we delegate before
+        # the lightgbm-specific dependency checks below.
+        if self.backend != "lightgbm":
+            return self._train_with_backend(req, deadline_ns=deadline_ns)
+
         if importlib.util.find_spec("lightgbm") is None:
             raise TrainingFailure(
                 error_code="missing_dependency",
@@ -135,7 +397,27 @@ class RealLightGBMTrainer:
                 error_summary="ML dependency not available: numpy",
             )
 
-        X, y, timestamps = self._load_dataset(req.dataset_manifest_ref)
+        # Phase 8 / T-8.1: validate explicit column roles + task spec.
+        # When column_roles is provided, the trainer uses ONLY the
+        # declared feature columns (never inferred). When None, fall back
+        # to the legacy infer-by-dropping-names behaviour with a
+        # deprecation warning.
+        self._validate_column_roles_and_task_spec()
+
+        # T-8.4: when a FoldSpec is present, load the dataset as a
+        # dataframe so ``consume_manifest_folds`` can assign rows to
+        # folds, then extract numpy arrays in original row order. When
+        # no FoldSpec, use the existing ``_load_dataset`` path (canary
+        # mode — heuristic walk-forward folds).
+        fold_assignment = None
+        if self.fold_spec is not None:
+            X, y, timestamps, weights, groups, fold_assignment = (
+                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            )
+        else:
+            X, y, timestamps, weights, groups = self._load_dataset(
+                req.dataset_manifest_ref,
+            )
 
         if time.time_ns() >= deadline_ns:
             raise TrainingFailure(
@@ -152,7 +434,18 @@ class RealLightGBMTrainer:
             seed,
             deadline_ns,
             req,
+            weights=weights,
+            groups=groups,
+            fold_assignment=fold_assignment,
         )
+
+        # T-8.2: rank metrics integration. When the task is ranking and
+        # groups are available, compute the cross-sectional rank metrics
+        # from the out-of-sample predictions collected during
+        # walk-forward validation.
+        rank_report = self._maybe_compute_rank_metrics(metrics, groups, timestamps)
+        if rank_report is not None:
+            metrics["rank_report"] = rank_report
 
         if time.time_ns() >= deadline_ns:
             raise TrainingFailure(
@@ -160,7 +453,7 @@ class RealLightGBMTrainer:
                 error_summary="training deadline breached after validation",
             )
 
-        final_model = self._train_final_model(X, y, seed, req)
+        final_model = self._train_final_model(X, y, seed, req, weights=weights)
 
         model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
         sha256 = hashlib.sha256(model_bytes).hexdigest()
@@ -191,6 +484,38 @@ class RealLightGBMTrainer:
             container_image_digest=_container_digest_or_default(),
         )
 
+        # Phase 1 / T-1.1: build the typed artifact result from the real
+        # model bytes (sha/size computed from bytes, never from request
+        # inputs) and stash it on the instance so the RunPod handler can
+        # read it through a typed field. ``artifact_uri`` is left None
+        # here — the handler sets it after persisting the bytes to a
+        # volume / object store. Fail closed: if the model bytes are
+        # empty (a successful job with no artifact), build_artifact_result
+        # raises ValueError, which we translate to a TrainingFailure.
+        try:
+            typed_result = build_artifact_result(
+                artifact_id=artifact_id,
+                model_bytes=model_bytes,
+                model_family=req.model_family,
+                req=req,
+                artifact_uri=None,
+                artifact_format="pickle",
+                artifact_kind="model",
+                loader_family="lightgbm",
+                created_at=now_ns,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="artifact_missing",
+                error_summary=(
+                    "successful training produced no artifact bytes "
+                    f"(fail closed): {exc}"
+                ),
+            ) from exc
+        # Stash for the handler (mutable dataclass — safe per-job).
+        self.last_artifact_result = typed_result
+        self.last_model_bytes = model_bytes
+
         dossier = ModelDossier(
             model_id=f"model:{req.job_id}",
             artifact_manifest_id=artifact.artifact_id,
@@ -207,6 +532,7 @@ class RealLightGBMTrainer:
             metadata={
                 "model_family": req.model_family,
                 "trainer": "real_lightgbm",
+                "backend": self.backend,
                 "n_features": str(n_features),
                 "n_rows": str(n_rows),
                 "n_folds": str(self.n_folds),
@@ -225,12 +551,120 @@ class RealLightGBMTrainer:
                     "deflated_sharpe_method",
                     "sharpe_times_1_minus_fold_overfit_ratio",
                 ),
+                # T-8.4: record whether manifest folds or heuristic folds
+                # were used.
+                "fold_source": "manifest" if fold_assignment is not None else "heuristic",
+                # T-8.2: rank metrics (present only for ranking tasks).
+                "has_rank_report": str(rank_report is not None),
             },
         )
 
         return artifact, dossier
 
     # --- dataset loading -------------------------------------------------
+
+    def _validate_column_roles_and_task_spec(self) -> None:
+        """Validate ``column_roles`` and ``task_spec`` (Phase 8 / T-8.1).
+
+        Fail-closed checks (raise ``TrainingFailure``):
+        - If ``column_roles`` is set but ``feature_columns`` is empty.
+        - If any excluded column appears in the feature set (leakage).
+        - If ``task_spec`` is set and the label column is missing from
+          ``column_roles.label_columns``.
+        - For ranking tasks: ``group_column`` must be set on both the
+          task spec and the column roles.
+
+        When ``column_roles`` is None, log a deprecation warning and fall
+        back to the legacy infer-by-dropping-names behaviour (backward
+        compat).
+        """
+        import warnings
+
+        if self.column_roles is None:
+            # Backward compat: no explicit column roles. The legacy
+            # loaders infer features by dropping the label + timestamp
+            # columns. Emit a deprecation warning so callers migrate to
+            # explicit ColumnRoles.
+            warnings.warn(
+                "RealLightGBMTrainer was constructed without column_roles; "
+                "falling back to legacy infer-by-dropping-names feature "
+                "selection. This is deprecated — pass an explicit "
+                "ColumnRoles so features are declared, never inferred, "
+                "and leakage/audit columns are excluded.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return
+
+        # Fail-closed: feature_columns must be non-empty (already enforced
+        # by the Pydantic model, but re-check here for defence in depth).
+        if not self.column_roles.feature_columns:
+            raise TrainingFailure(
+                error_code="invalid_column_roles",
+                error_summary=(
+                    "column_roles.feature_columns is empty — the trainer "
+                    "requires explicit feature columns (never inferred)"
+                ),
+            )
+
+        # Fail-closed: no excluded column may appear in the feature set
+        # (leakage prevention). The Pydantic model already enforces this
+        # at construction, but re-check here so a mutated / stale roles
+        # object is caught at train time.
+        feature_set = set(self.column_roles.feature_columns)
+        excluded_set = set(self.column_roles.excluded_columns)
+        overlap = feature_set & excluded_set
+        if overlap:
+            raise TrainingFailure(
+                error_code="leakage_column_in_features",
+                error_summary=(
+                    "excluded (leakage/audit) columns must never appear in "
+                    f"feature_columns: {sorted(overlap)!r} are declared "
+                    "both as features and excluded"
+                ),
+            )
+
+        # Fail-closed: label columns must not be features.
+        label_set = set(self.column_roles.label_columns)
+        lf_overlap = feature_set & label_set
+        if lf_overlap:
+            raise TrainingFailure(
+                error_code="label_in_features",
+                error_summary=(
+                    "label columns must not appear in feature_columns: "
+                    f"{sorted(lf_overlap)!r}"
+                ),
+            )
+
+        # If a task spec is provided, validate it against the column roles.
+        if self.task_spec is not None:
+            verdict = validate_task_spec(self.task_spec, self.column_roles)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_task_spec",
+                    error_summary=(
+                        "task spec validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            # Fail-closed: ranking without group column.
+            if self.task_spec.task_type == "ranking":
+                if not self.task_spec.group_column:
+                    raise TrainingFailure(
+                        error_code="ranking_without_group",
+                        error_summary=(
+                            "ranking task requires a group_column "
+                            "(ranking request without group id fails)"
+                        ),
+                    )
+                if self.column_roles.group_column is None:
+                    raise TrainingFailure(
+                        error_code="ranking_without_group",
+                        error_summary=(
+                            "ranking task requires column_roles.group_column "
+                            "to be set (the group-id column must be declared)"
+                        ),
+                    )
 
     def _resolve_path(self, ref: str) -> Path:
         """Resolve a dataset reference (file://, s3://, http(s):// URI, or plain path) to a Path.
@@ -302,9 +736,15 @@ class RealLightGBMTrainer:
                 error_summary=f"unsupported URI scheme: {parsed.scheme!r}",
             )
 
-    def _load_dataset(self, ref: str) -> tuple[Any, Any, Any]:
-        """Load dataset from a URI. Returns ``(X, y, timestamps)``."""
+    def _load_dataset(
+        self, ref: str,
+    ) -> tuple[Any, Any, Any, Any, Any]:
+        """Load dataset from a URI.
 
+        Returns ``(X, y, timestamps, weights, groups)`` where ``weights``
+        and ``groups`` are ``None`` when no ``column_roles`` is set or the
+        corresponding columns are not declared.
+        """
         path = self._resolve_path(ref)
         if not path.exists():
             raise TrainingFailure(
@@ -323,8 +763,15 @@ class RealLightGBMTrainer:
                 error_summary=f"unsupported dataset format: {ext} (expected .parquet or .csv)",
             )
 
-    def _load_parquet(self, path: Path) -> tuple[Any, Any, Any]:
-        """Load a parquet file. Requires pyarrow or pandas (lazy import)."""
+    def _load_parquet(self, path: Path) -> tuple[Any, Any, Any, Any, Any]:
+        """Load a parquet file. Requires pyarrow or pandas (lazy import).
+
+        When ``column_roles`` is set, uses ONLY the declared
+        ``feature_columns`` as features (never inferred by dropping names)
+        and ``label_columns[0]`` (or ``task_spec.label_column``) as the
+        label. Extracts weights/groups from the declared columns when
+        present.
+        """
         import numpy as np
 
         try:
@@ -346,31 +793,112 @@ class RealLightGBMTrainer:
                     error_summary="neither pyarrow nor pandas available for parquet loading",
                 ) from None
 
-        label_col = "label" if "label" in columns else columns[-1]
-        ts_col: str | None = None
-        for candidate in ("timestamp", "decision_time", "ts", "event_ts"):
-            if candidate in columns:
-                ts_col = candidate
-                break
+        available = set(columns)
+
+        # --- Phase 8 / T-8.1: explicit column roles --------------------
+        if self.column_roles is not None:
+            roles = self.column_roles
+            # Validate declared columns exist in the dataset.
+            verdict = validate_column_roles(roles, available)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_column_roles",
+                    error_summary=(
+                        "column roles validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            # Label: prefer task_spec.label_column, else roles.primary_label.
+            if self.task_spec is not None and self.task_spec.label_column:
+                label_col = self.task_spec.label_column
+            else:
+                label_col = roles.primary_label
+            if label_col not in available:
+                raise TrainingFailure(
+                    error_code="missing_label",
+                    error_summary=(
+                        f"label column {label_col!r} not found in dataset "
+                        f"columns {sorted(available)!r} (missing label fails)"
+                    ),
+                )
+            # Features: ONLY the declared feature columns.
+            feature_cols = list(roles.feature_columns)
+            for fc in feature_cols:
+                if fc not in available:
+                    raise TrainingFailure(
+                        error_code="missing_feature",
+                        error_summary=(
+                            f"feature column {fc!r} not found in dataset "
+                            f"columns {sorted(available)!r}"
+                        ),
+                    )
+            # Timestamp.
+            ts_col = roles.timestamp_column
+            # Weights.
+            weights = None
+            if roles.weight_column is not None:
+                if roles.weight_column not in available:
+                    raise TrainingFailure(
+                        error_code="missing_weight_column",
+                        error_summary=(
+                            f"weight column {roles.weight_column!r} not "
+                            f"found in dataset columns"
+                        ),
+                    )
+                weights = np.array(data[roles.weight_column], dtype=np.float64)
+            # Groups.
+            groups = None
+            if roles.group_column is not None:
+                if roles.group_column not in available:
+                    raise TrainingFailure(
+                        error_code="missing_group_column",
+                        error_summary=(
+                            f"group column {roles.group_column!r} not "
+                            f"found in dataset columns"
+                        ),
+                    )
+                groups = np.array(data[roles.group_column])
+        else:
+            # Legacy: infer by dropping label + timestamp.
+            label_col = "label" if "label" in columns else columns[-1]
+            ts_col = None
+            for candidate in ("timestamp", "decision_time", "ts", "event_ts"):
+                if candidate in columns:
+                    ts_col = candidate
+                    break
+            feature_cols = [c for c in columns if c != label_col and c != ts_col]
+            weights = None
+            groups = None
 
         y = np.array(data[label_col], dtype=np.float64)
-        feature_cols = [c for c in columns if c != label_col and c != ts_col]
-        X = np.column_stack([np.array(data[c], dtype=np.float64) for c in feature_cols])
+        X = np.column_stack(
+            [np.array(data[c], dtype=np.float64) for c in feature_cols],
+        )
 
-        if ts_col is not None:
+        if ts_col is not None and ts_col in available:
             timestamps = np.array(data[ts_col], dtype=np.int64)
         else:
             timestamps = np.arange(len(y), dtype=np.int64)
 
-        return X, y, timestamps
+        return X, y, timestamps, weights, groups
 
-    def _load_csv(self, path: Path) -> tuple[Any, Any, Any]:
+    def _load_csv(self, path: Path) -> tuple[Any, Any, Any, Any, Any]:
         """Load a CSV file using numpy.
 
         Expected layout: first column = timestamp, last column = label,
         middle columns = features. A header row is required.
+
+        When ``column_roles`` is set, the header row is read to map column
+        names to indices, and ONLY the declared ``feature_columns`` are
+        used as features (never inferred by dropping names).
         """
         import numpy as np
+
+        # Read the header to get column names (needed for column-roles
+        # mapping). The header is the first non-empty line.
+        with open(str(path), "r", encoding="utf-8", errors="replace") as fh:
+            header_line = fh.readline().strip()
+        header_cols = [c.strip() for c in header_line.split(",")] if header_line else []
 
         data = np.genfromtxt(str(path), delimiter=",", skip_header=1, dtype=float)
         if data.ndim == 1:
@@ -385,12 +913,89 @@ class RealLightGBMTrainer:
                 ),
             )
 
-        timestamps = data[:, 0].astype(np.int64)
-        y = data[:, -1].astype(np.float64)
-        X = data[:, 1:-1].astype(np.float64)
-        if X.ndim == 1:
-            X = X.reshape(-1, 1)
-        return X, y, timestamps
+        # --- Phase 8 / T-8.1: explicit column roles --------------------
+        if self.column_roles is not None and header_cols:
+            roles = self.column_roles
+            available = set(header_cols)
+            verdict = validate_column_roles(roles, available)
+            if not verdict.passed:
+                raise TrainingFailure(
+                    error_code="invalid_column_roles",
+                    error_summary=(
+                        "column roles validation failed: "
+                        + "; ".join(verdict.errors)
+                    ),
+                )
+            col_index = {name: i for i, name in enumerate(header_cols)}
+            # Label.
+            if self.task_spec is not None and self.task_spec.label_column:
+                label_col = self.task_spec.label_column
+            else:
+                label_col = roles.primary_label
+            if label_col not in col_index:
+                raise TrainingFailure(
+                    error_code="missing_label",
+                    error_summary=(
+                        f"label column {label_col!r} not found in CSV "
+                        f"header {header_cols!r} (missing label fails)"
+                    ),
+                )
+            y = data[:, col_index[label_col]].astype(np.float64)
+            # Features: ONLY the declared feature columns.
+            feature_indices = []
+            for fc in roles.feature_columns:
+                if fc not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_feature",
+                        error_summary=(
+                            f"feature column {fc!r} not found in CSV "
+                            f"header {header_cols!r}"
+                        ),
+                    )
+                feature_indices.append(col_index[fc])
+            X = data[:, feature_indices].astype(np.float64)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            # Timestamp.
+            if roles.timestamp_column and roles.timestamp_column in col_index:
+                timestamps = data[:, col_index[roles.timestamp_column]].astype(np.int64)
+            else:
+                timestamps = np.arange(len(y), dtype=np.int64)
+            # Weights.
+            weights = None
+            if roles.weight_column is not None:
+                if roles.weight_column not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_weight_column",
+                        error_summary=(
+                            f"weight column {roles.weight_column!r} not "
+                            f"found in CSV header"
+                        ),
+                    )
+                weights = data[:, col_index[roles.weight_column]].astype(np.float64)
+            # Groups.
+            groups = None
+            if roles.group_column is not None:
+                if roles.group_column not in col_index:
+                    raise TrainingFailure(
+                        error_code="missing_group_column",
+                        error_summary=(
+                            f"group column {roles.group_column!r} not "
+                            f"found in CSV header"
+                        ),
+                    )
+                groups = data[:, col_index[roles.group_column]]
+        else:
+            # Legacy: first column = timestamp, last = label, middle = features.
+            timestamps = data[:, 0].astype(np.int64)
+            y = data[:, -1].astype(np.float64)
+            X = data[:, 1:-1].astype(np.float64)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            weights = None
+            groups = None
+
+        return X, y, timestamps, weights, groups
 
     # --- LightGBM params -------------------------------------------------
 
@@ -605,6 +1210,10 @@ class RealLightGBMTrainer:
         seed: int,
         deadline_ns: int,
         req: RunPodTrainingRequest,
+        *,
+        weights: Any = None,
+        groups: Any = None,
+        fold_assignment: Any = None,
     ) -> dict[str, Any]:
         """Walk-forward validation with expanding window + purge gap.
 
@@ -621,6 +1230,19 @@ class RealLightGBMTrainer:
         Fold boundaries are delegated to the canonical
         ``fincept_core.datasets.cv.make_folds`` (fixing F4 — Path B now
         matches Path A and the backtester).
+
+        Phase 8 / T-8.1: when ``weights`` is provided, sample weights are
+        passed to the LightGBM ``Dataset``. When ``groups`` is provided
+        and the task is ranking, group boundaries are computed and passed
+        to the ``Dataset``.
+
+        T-8.4: when ``fold_assignment`` is not None, the manifest-declared
+        fold windows are consumed exactly (via ``get_fold_data``) instead
+        of re-deriving fold boundaries from the data.
+
+        T-8.2: when ``groups`` is provided, the validation groups +
+        timestamps are collected alongside predictions/labels so rank
+        metrics can be computed after validation.
         """
         import lightgbm as lgb
         import numpy as np
@@ -631,31 +1253,6 @@ class RealLightGBMTrainer:
                 error_code="insufficient_data",
                 error_summary=f"dataset too small for walk-forward validation: {n} rows",
             )
-
-        order = np.argsort(timestamps, kind="stable")
-        X_s = X[order]
-        y_s = y[order]
-
-        # Resolve the purge gap from the request. Default = horizon_bars
-        # (matches Path A: ``--purge-bars -1`` means "use --horizon-bars").
-        horizon_bars = self._resolve_horizon_bars(req.extra_constraints)
-        purge_bars = self._resolve_purge_bars(horizon_bars, req.extra_constraints)
-
-        # Canonical fold math (F2 + F4 fix). make_folds raises ValueError
-        # if the dataset is too small for the requested folds + purge; we
-        # translate that to a TrainingFailure so the handler returns a
-        # safe terminal status.
-        try:
-            folds = self._build_walk_forward_folds(
-                n_rows=n,
-                purge_bars=purge_bars,
-                n_folds=self.n_folds,
-            )
-        except ValueError as exc:
-            raise TrainingFailure(
-                error_code="insufficient_data",
-                error_summary=str(exc),
-            ) from exc
 
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
@@ -669,68 +1266,171 @@ class RealLightGBMTrainer:
 
         all_preds: list[float] = []
         all_labels: list[float] = []
+        all_groups: list[Any] = []
+        all_timestamps: list[Any] = []
         fold_train_acc: list[float] = []
         fold_val_acc: list[float] = []
         fold_best_iterations: list[int] = []
 
-        for fold in folds:
-            if time.time_ns() >= deadline_ns:
+        # --- T-8.4: manifest fold consumption path ----------------------
+        if fold_assignment is not None:
+            from quant_foundry.fold_consumer import get_fold_data
+
+            fold_ids = sorted(
+                fw.fold_id for fw in fold_assignment.fold_spec.folds
+            )
+            for fid in fold_ids:
+                if time.time_ns() >= deadline_ns:
+                    raise TrainingFailure(
+                        error_code="timeout",
+                        error_summary=f"training deadline breached during manifest fold {fid}",
+                    )
+                train_idx, val_idx = get_fold_data(fold_assignment, fid)
+                if not train_idx or not val_idx:
+                    continue
+                X_train = X[train_idx]
+                y_train = y[train_idx]
+                X_val = X[val_idx]
+                y_val = y[val_idx]
+
+                if len(np.unique(y_train)) < 2:
+                    continue
+
+                train_kwargs: dict[str, Any] = {}
+                if weights is not None:
+                    train_kwargs["weight"] = weights[train_idx]
+                train_set = lgb.Dataset(X_train, label=y_train, **train_kwargs)
+
+                if early_stopping_rounds and len(X_val) > 0:
+                    val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
+                    callbacks = [
+                        lgb.early_stopping(
+                            stopping_rounds=early_stopping_rounds,
+                            verbose=False,
+                        ),
+                        lgb.log_evaluation(period=0),
+                    ]
+                    model = lgb.train(
+                        params,
+                        train_set,
+                        num_boost_round=n_estimators,
+                        valid_sets=[val_set],
+                        callbacks=callbacks,
+                    )
+                    fold_best_iterations.append(model.best_iteration)
+                else:
+                    model = lgb.train(
+                        params,
+                        train_set,
+                        num_boost_round=n_estimators,
+                    )
+                    fold_best_iterations.append(n_estimators)
+
+                train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
+                train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
+                val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
+                val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+
+                fold_train_acc.append(train_acc)
+                fold_val_acc.append(val_acc)
+                all_preds.extend(val_pred.tolist())
+                all_labels.extend(y_val.tolist())
+                if groups is not None:
+                    all_groups.extend(groups[val_idx].tolist())
+                if timestamps is not None:
+                    all_timestamps.extend(timestamps[val_idx].tolist())
+        else:
+            # --- heuristic walk-forward fold path (existing) ------------
+            order = np.argsort(timestamps, kind="stable")
+            X_s = X[order]
+            y_s = y[order]
+            weights_s = weights[order] if weights is not None else None
+            groups_s = groups[order] if groups is not None else None
+            timestamps_s = timestamps[order] if timestamps is not None else None
+
+            horizon_bars = self._resolve_horizon_bars(req.extra_constraints)
+            purge_bars = self._resolve_purge_bars(horizon_bars, req.extra_constraints)
+
+            try:
+                folds = self._build_walk_forward_folds(
+                    n_rows=n,
+                    purge_bars=purge_bars,
+                    n_folds=self.n_folds,
+                )
+            except ValueError as exc:
                 raise TrainingFailure(
-                    error_code="timeout",
-                    error_summary=f"training deadline breached during fold {fold.index}",
-                )
+                    error_code="insufficient_data",
+                    error_summary=str(exc),
+                ) from exc
 
-            train_end = fold.train_end
-            val_start = fold.val_start
-            val_end = fold.val_end
+            for fold in folds:
+                if time.time_ns() >= deadline_ns:
+                    raise TrainingFailure(
+                        error_code="timeout",
+                        error_summary=f"training deadline breached during fold {fold.index}",
+                    )
 
-            if val_start >= n or val_end <= val_start:
-                break
+                train_end = fold.train_end
+                val_start = fold.val_start
+                val_end = fold.val_end
 
-            X_train = X_s[:train_end]
-            y_train = y_s[:train_end]
-            X_val = X_s[val_start:val_end]
-            y_val = y_s[val_start:val_end]
+                if val_start >= n or val_end <= val_start:
+                    break
 
-            if len(np.unique(y_train)) < 2:
-                continue
+                X_train = X_s[:train_end]
+                y_train = y_s[:train_end]
+                X_val = X_s[val_start:val_end]
+                y_val = y_s[val_start:val_end]
 
-            train_set = lgb.Dataset(X_train, label=y_train)
+                if len(np.unique(y_train)) < 2:
+                    continue
 
-            if early_stopping_rounds and len(X_val) > 0:
-                val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
-                callbacks = [
-                    lgb.early_stopping(
-                        stopping_rounds=early_stopping_rounds,
-                        verbose=False,
-                    ),
-                    lgb.log_evaluation(period=0),
-                ]
-                model = lgb.train(
-                    params,
-                    train_set,
-                    num_boost_round=n_estimators,
-                    valid_sets=[val_set],
-                    callbacks=callbacks,
-                )
-                fold_best_iterations.append(model.best_iteration)
-            else:
-                model = lgb.train(
-                    params,
-                    train_set,
-                    num_boost_round=n_estimators,
-                )
-                fold_best_iterations.append(n_estimators)
+                train_kwargs: dict[str, Any] = {}
+                if weights_s is not None:
+                    w_train = weights_s[:train_end]
+                    train_kwargs["weight"] = w_train
+                train_set = lgb.Dataset(X_train, label=y_train, **train_kwargs)
 
-            train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
-            train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
-            val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
-            val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+                if early_stopping_rounds and len(X_val) > 0:
+                    val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
+                    callbacks = [
+                        lgb.early_stopping(
+                            stopping_rounds=early_stopping_rounds,
+                            verbose=False,
+                        ),
+                        lgb.log_evaluation(period=0),
+                    ]
+                    model = lgb.train(
+                        params,
+                        train_set,
+                        num_boost_round=n_estimators,
+                        valid_sets=[val_set],
+                        callbacks=callbacks,
+                    )
+                    fold_best_iterations.append(model.best_iteration)
+                else:
+                    model = lgb.train(
+                        params,
+                        train_set,
+                        num_boost_round=n_estimators,
+                    )
+                    fold_best_iterations.append(n_estimators)
 
-            fold_train_acc.append(train_acc)
-            fold_val_acc.append(val_acc)
-            all_preds.extend(val_pred.tolist())
-            all_labels.extend(y_val.tolist())
+                train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
+                train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
+                val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
+                val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+
+                fold_train_acc.append(train_acc)
+                fold_val_acc.append(val_acc)
+                all_preds.extend(val_pred.tolist())
+                all_labels.extend(y_val.tolist())
+                if groups_s is not None:
+                    all_groups.extend(groups_s[val_start:val_end].tolist())
+                if timestamps_s is not None:
+                    all_timestamps.extend(
+                        timestamps_s[val_start:val_end].tolist()
+                    )
 
         if not all_preds:
             raise TrainingFailure(
@@ -757,6 +1457,16 @@ class RealLightGBMTrainer:
             sum(fold_best_iterations) / len(fold_best_iterations)
             if fold_best_iterations
             else n_estimators
+        )
+        # T-8.2: stash the out-of-sample predictions + groups +
+        # timestamps so rank metrics can be computed after validation.
+        result["_oos_preds"] = preds_arr
+        result["_oos_labels"] = labels_arr
+        result["_oos_groups"] = (
+            np.array(all_groups) if all_groups else None
+        )
+        result["_oos_timestamps"] = (
+            np.array(all_timestamps) if all_timestamps else None
         )
         # Store for final model training (use avg best iteration)
         self._last_avg_best_iteration = result["avg_best_iteration"]
@@ -891,6 +1601,8 @@ class RealLightGBMTrainer:
         y: Any,
         seed: int,
         req: RunPodTrainingRequest,
+        *,
+        weights: Any = None,
     ) -> Any:
         """Train the final LightGBM model on all available data.
 
@@ -898,6 +1610,9 @@ class RealLightGBMTrainer:
         average best iteration across folds as the number of boosting rounds
         for the final model. This prevents the final model from overfitting
         by training too many rounds on the full dataset.
+
+        Phase 8 / T-8.1: when ``weights`` is provided, sample weights are
+        passed to the LightGBM ``Dataset``.
         """
         import lightgbm as lgb
 
@@ -911,10 +1626,736 @@ class RealLightGBMTrainer:
             if avg_iter and avg_iter > 10:
                 n_estimators = int(avg_iter)
 
-        train_set = lgb.Dataset(X, label=y)
+        train_kwargs: dict[str, Any] = {}
+        if weights is not None:
+            train_kwargs["weight"] = weights
+        train_set = lgb.Dataset(X, label=y, **train_kwargs)
         model = lgb.train(
             params,
             train_set,
             num_boost_round=n_estimators,
         )
         return model
+
+    # --- T-8.4: production fail-closed ----------------------------------
+
+    def _require_fold_spec_for_production(self) -> None:
+        """Fail-closed guard: production manifests must declare a FoldSpec.
+
+        Delegates to
+        :func:`quant_foundry.fold_consumer.require_fold_spec_for_production`.
+        When ``is_production`` is True and ``fold_spec`` is None, raises
+        ``TrainingFailure`` (translated from the ``ValueError`` raised by
+        the guard).
+        """
+        from quant_foundry.fold_consumer import (
+            require_fold_spec_for_production,
+        )
+
+        try:
+            require_fold_spec_for_production(
+                self.fold_spec, is_production=self.is_production,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="missing_fold_spec",
+                error_summary=str(exc),
+            ) from exc
+
+    # --- T-7.2 / T-7.3: multi-backend dispatch --------------------------
+
+    def _train_with_backend(
+        self,
+        req: RunPodTrainingRequest,
+        *,
+        deadline_ns: int,
+    ) -> tuple[ArtifactManifest, ModelDossier]:
+        """Dispatch to the catboost or xgboost backend.
+
+        Both backends REQUIRE ``column_roles`` + ``task_spec`` (fail-closed
+        when None) because they have no legacy infer-by-dropping-names
+        fallback.
+        """
+        if self.column_roles is None or self.task_spec is None:
+            raise TrainingFailure(
+                error_code="missing_column_roles",
+                error_summary=(
+                    f"backend {self.backend!r} requires column_roles + "
+                    "task_spec (no legacy infer-by-dropping-names fallback)"
+                ),
+            )
+
+        if time.time_ns() >= deadline_ns:
+            raise TrainingFailure(
+                error_code="timeout",
+                error_summary="training deadline breached before backend dispatch",
+            )
+
+        if self.backend == "catboost":
+            return self._train_catboost(req, deadline_ns=deadline_ns)
+        elif self.backend == "xgboost":
+            return self._train_xgboost(req, deadline_ns=deadline_ns)
+        else:
+            raise TrainingFailure(
+                error_code="invalid_backend",
+                error_summary=(
+                    f"unknown backend {self.backend!r}; "
+                    f"supported: {list(TRAINER_BACKENDS)}"
+                ),
+            )
+
+    def _train_catboost(
+        self,
+        req: RunPodTrainingRequest,
+        *,
+        deadline_ns: int,
+    ) -> tuple[ArtifactManifest, ModelDossier]:
+        """Train via CatBoostTrainer and build the artifact + dossier."""
+        import tempfile
+
+        # Lazy import — catboost_trainer itself lazy-imports catboost.
+        from quant_foundry.catboost_trainer import CatBoostTrainer
+
+        # Dependency check.
+        if importlib.util.find_spec("catboost") is None:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="ML dependency not available: catboost",
+            )
+        if importlib.util.find_spec("numpy") is None:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="ML dependency not available: numpy",
+            )
+
+        # Load dataset (reuse the existing numpy-array loader).
+        if self.fold_spec is not None:
+            X, y, timestamps, weights, groups, _fa = (
+                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            )
+        else:
+            X, y, timestamps, weights, groups = self._load_dataset(
+                req.dataset_manifest_ref,
+            )
+
+        if time.time_ns() >= deadline_ns:
+            raise TrainingFailure(
+                error_code="timeout",
+                error_summary="training deadline breached after dataset load (catboost)",
+            )
+
+        # Build CatBoost params from the request search space.
+        seed = req.random_seed if req.random_seed is not None else 0
+        cb_params = self._build_catboost_params(req, seed)
+
+        # Save artifact to a temp .cbm file.
+        tmp_dir = tempfile.mkdtemp(prefix="qf_catboost_")
+        artifact_path = os.path.join(tmp_dir, "model.cbm")
+
+        trainer = CatBoostTrainer(
+            column_roles=self.column_roles,
+            task_spec=self.task_spec,
+            params=cb_params,
+            artifact_path=artifact_path,
+            strict_gpu=False,  # canary: allow CPU fallback
+            n_folds=self.n_folds,
+            random_seed=seed,
+        )
+
+        # CatBoost requires group ids to be string or integral (not
+        # float). Convert the groups array to int when present.
+        cb_groups = groups
+        if cb_groups is not None:
+            import numpy as np
+
+            cb_groups = np.asarray(cb_groups)
+            if cb_groups.dtype.kind == "f":
+                cb_groups = cb_groups.astype(np.int64)
+
+        try:
+            result = trainer.train(X, y, weights=weights, groups=cb_groups)
+        except ImportError as exc:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary=f"catboost training failed: {exc}",
+            ) from exc
+        except Exception as exc:
+            raise TrainingFailure(
+                error_code="training_error",
+                error_summary=f"catboost training failed: {exc}",
+            ) from exc
+
+        if time.time_ns() >= deadline_ns:
+            raise TrainingFailure(
+                error_code="timeout",
+                error_summary="training deadline breached after catboost fit",
+            )
+
+        # Read the saved artifact bytes.
+        model_bytes = b""
+        if os.path.exists(artifact_path):
+            with open(artifact_path, "rb") as fh:
+                model_bytes = fh.read()
+        if not model_bytes:
+            # Fallback: pickle the model.
+            model_bytes = pickle.dumps(
+                result.model, protocol=pickle.HIGHEST_PROTOCOL,
+            )
+
+        # Compute metrics from in-sample predictions.
+        metrics = self._compute_backend_metrics(
+            result.model, X, y, weights, groups, timestamps,
+            req, is_catboost=True,
+        )
+
+        # T-8.2: rank metrics for ranking tasks.
+        rank_report = self._maybe_compute_rank_metrics(metrics, groups, timestamps)
+        if rank_report is not None:
+            metrics["rank_report"] = rank_report
+
+        return self._build_backend_artifact_and_dossier(
+            req, model_bytes, metrics, result.n_features, result.n_rows,
+            artifact_format="catboost-cbm",
+            loader_family="catboost",
+            trainer_tag="real_catboost",
+            rank_report=rank_report,
+        )
+
+    def _train_xgboost(
+        self,
+        req: RunPodTrainingRequest,
+        *,
+        deadline_ns: int,
+    ) -> tuple[ArtifactManifest, ModelDossier]:
+        """Train via XGBoostTrainer and build the artifact + dossier."""
+        import tempfile
+
+        from quant_foundry.xgboost_trainer import XGBoostTrainer
+
+        # Dependency check.
+        if importlib.util.find_spec("xgboost") is None:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="ML dependency not available: xgboost",
+            )
+        if importlib.util.find_spec("numpy") is None:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="ML dependency not available: numpy",
+            )
+
+        # Load dataset.
+        if self.fold_spec is not None:
+            X, y, timestamps, weights, groups, _fa = (
+                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            )
+        else:
+            X, y, timestamps, weights, groups = self._load_dataset(
+                req.dataset_manifest_ref,
+            )
+
+        if time.time_ns() >= deadline_ns:
+            raise TrainingFailure(
+                error_code="timeout",
+                error_summary="training deadline breached after dataset load (xgboost)",
+            )
+
+        # Build XGBoost params from the request search space.
+        seed = req.random_seed if req.random_seed is not None else 0
+        xgb_params = self._build_xgboost_params(req, seed)
+
+        # Save artifact to a temp .ubj file.
+        tmp_dir = tempfile.mkdtemp(prefix="qf_xgboost_")
+        artifact_path = os.path.join(tmp_dir, "model.ubj")
+
+        trainer = XGBoostTrainer(
+            column_roles=self.column_roles,
+            task_spec=self.task_spec,
+            params=xgb_params,
+            artifact_path=artifact_path,
+            strict=False,  # canary: allow CPU fallback
+            n_folds=self.n_folds,
+            random_seed=seed,
+        )
+
+        try:
+            result = trainer.train(X, y, weights=weights, groups=groups)
+        except ImportError as exc:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary=f"xgboost training failed: {exc}",
+            ) from exc
+        except Exception as exc:
+            raise TrainingFailure(
+                error_code="training_error",
+                error_summary=f"xgboost training failed: {exc}",
+            ) from exc
+
+        if time.time_ns() >= deadline_ns:
+            raise TrainingFailure(
+                error_code="timeout",
+                error_summary="training deadline breached after xgboost fit",
+            )
+
+        # Read the saved artifact bytes.
+        model_bytes = b""
+        if os.path.exists(artifact_path):
+            with open(artifact_path, "rb") as fh:
+                model_bytes = fh.read()
+        if not model_bytes:
+            model_bytes = pickle.dumps(
+                result.model, protocol=pickle.HIGHEST_PROTOCOL,
+            )
+
+        # Compute metrics from in-sample predictions.
+        metrics = self._compute_backend_metrics(
+            result.model, X, y, weights, groups, timestamps,
+            req, is_catboost=False, xgb_result=result,
+        )
+
+        # T-8.2: rank metrics for ranking tasks.
+        rank_report = self._maybe_compute_rank_metrics(metrics, groups, timestamps)
+        if rank_report is not None:
+            metrics["rank_report"] = rank_report
+
+        return self._build_backend_artifact_and_dossier(
+            req, model_bytes, metrics,
+            n_features=len(self.column_roles.feature_columns),
+            n_rows=int(X.shape[0]) if hasattr(X, "shape") else len(y),
+            artifact_format="xgboost-ubj",
+            loader_family="xgboost",
+            trainer_tag="real_xgboost",
+            rank_report=rank_report,
+        )
+
+    # --- backend param builders -----------------------------------------
+
+    def _build_catboost_params(
+        self, req: RunPodTrainingRequest, seed: int,
+    ) -> dict[str, Any]:
+        """Build CatBoost hyper-parameters from the request search space."""
+        ss = req.search_space
+        params: dict[str, Any] = {
+            "iterations": int(ss.get("n_estimators", [100])[0]),
+            "depth": int(ss.get("max_depth", [6])[0]),
+            "learning_rate": float(ss.get("learning_rate", [0.1])[0]),
+            "random_seed": seed,
+            "verbose": False,
+            "allow_writing_files": False,
+            "task_type": "CPU",
+        }
+        if ss.get("num_leaves"):
+            params["num_leaves"] = int(ss["num_leaves"][0])
+        if ss.get("l2_leaf_reg"):
+            params["l2_leaf_reg"] = float(ss["l2_leaf_reg"][0])
+        return params
+
+    def _build_xgboost_params(
+        self, req: RunPodTrainingRequest, seed: int,
+    ) -> dict[str, Any]:
+        """Build XGBoost hyper-parameters from the request search space."""
+        ss = req.search_space
+        params: dict[str, Any] = {
+            "tree_method": "hist",
+            "device": "cpu",
+            "max_depth": int(ss.get("max_depth", [3])[0]),
+            "learning_rate": float(ss.get("learning_rate", [0.1])[0]),
+            "n_estimators": int(ss.get("n_estimators", [50])[0]),
+        }
+        if ss.get("subsample"):
+            params["subsample"] = float(ss["subsample"][0])
+        if ss.get("colsample_bytree"):
+            params["colsample_bytree"] = float(ss["colsample_bytree"][0])
+        if ss.get("min_child_weight"):
+            params["min_child_weight"] = float(ss["min_child_weight"][0])
+        return params
+
+    # --- backend metrics + artifact -------------------------------------
+
+    def _compute_backend_metrics(
+        self,
+        model: Any,
+        X: Any,
+        y: Any,
+        weights: Any,
+        groups: Any,
+        timestamps: Any,
+        req: RunPodTrainingRequest,
+        *,
+        is_catboost: bool,
+        xgb_result: Any = None,
+    ) -> dict[str, Any]:
+        """Compute standard metrics from a backend model's predictions.
+
+        For catboost: uses ``model.predict`` / ``predict_proba``.
+        For xgboost: builds a DMatrix and uses ``model.predict``.
+        """
+        import numpy as np
+
+        task_type = (
+            self.task_spec.task_type if self.task_spec else "binary"
+        )
+
+        preds: Any = None
+        if is_catboost:
+            try:
+                if task_type in ("binary", "multiclass") and hasattr(
+                    model, "predict_proba"
+                ):
+                    proba = model.predict_proba(X)
+                    proba_arr = np.asarray(proba)
+                    preds = proba_arr[:, -1] if proba_arr.ndim == 2 else proba_arr
+                else:
+                    preds = np.asarray(model.predict(X), dtype=np.float64)
+            except Exception:
+                preds = np.full(len(y), 0.5, dtype=np.float64)
+        else:
+            # xgboost
+            try:
+                import xgboost as xgb
+
+                feature_names = list(self.column_roles.feature_columns)
+                dmat = xgb.DMatrix(X, label=y, feature_names=feature_names)
+                preds = np.asarray(model.predict(dmat), dtype=np.float64)
+            except Exception:
+                preds = np.full(len(y), 0.5, dtype=np.float64)
+
+        preds_arr = np.asarray(preds, dtype=np.float64).ravel()
+        labels_arr = np.asarray(y, dtype=np.float64).ravel()
+
+        # Use the shared metrics computer.
+        periods_per_year = self._resolve_periods_per_year(req.extra_constraints)
+        result = self._compute_metrics(
+            preds_arr, labels_arr, [], [],
+            periods_per_year=periods_per_year,
+        )
+        # Stash OOS data for rank metrics (in-sample for backends).
+        result["_oos_preds"] = preds_arr
+        result["_oos_labels"] = labels_arr
+        result["_oos_groups"] = (
+            np.asarray(groups) if groups is not None else None
+        )
+        result["_oos_timestamps"] = (
+            np.asarray(timestamps) if timestamps is not None else None
+        )
+        return result
+
+    def _build_backend_artifact_and_dossier(
+        self,
+        req: RunPodTrainingRequest,
+        model_bytes: bytes,
+        metrics: dict[str, Any],
+        n_features: int,
+        n_rows: int,
+        *,
+        artifact_format: str,
+        loader_family: str,
+        trainer_tag: str,
+        rank_report: Any = None,
+    ) -> tuple[ArtifactManifest, ModelDossier]:
+        """Build the artifact manifest + dossier for a backend training."""
+        sha256 = hashlib.sha256(model_bytes).hexdigest()
+        size_bytes = len(model_bytes)
+
+        feature_schema_hash = hashlib.sha256(
+            f"{req.dataset_manifest_ref}:n_features={n_features}".encode(),
+        ).hexdigest()[:16]
+        label_schema_hash = hashlib.sha256(
+            f"{req.dataset_manifest_ref}:label={self.task_spec.task_type}".encode(),
+        ).hexdigest()[:16]
+
+        now_ns = time.time_ns()
+        artifact_id = f"artifact:{sha256[:16]}"
+        artifact = ArtifactManifest(
+            artifact_id=artifact_id,
+            sha256=sha256,
+            size_bytes=size_bytes,
+            uri=None,
+            model_family=req.model_family,
+            created_at_ns=now_ns,
+            feature_schema_hash=feature_schema_hash,
+            label_schema_hash=label_schema_hash,
+            code_git_sha=_git_sha_or_default(),
+            lockfile_hash=_lockfile_hash_or_default(),
+            container_image_digest=_container_digest_or_default(),
+        )
+
+        try:
+            typed_result = build_artifact_result(
+                artifact_id=artifact_id,
+                model_bytes=model_bytes,
+                model_family=req.model_family,
+                req=req,
+                artifact_uri=None,
+                artifact_format=artifact_format,
+                artifact_kind="model",
+                loader_family=loader_family,
+                created_at=now_ns,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="artifact_missing",
+                error_summary=(
+                    "successful training produced no artifact bytes "
+                    f"(fail closed): {exc}"
+                ),
+            ) from exc
+        self.last_artifact_result = typed_result
+        self.last_model_bytes = model_bytes
+
+        dossier = ModelDossier(
+            model_id=f"model:{req.job_id}",
+            artifact_manifest_id=artifact.artifact_id,
+            dataset_manifest_id=req.dataset_manifest_ref,
+            code_git_sha=artifact.code_git_sha or "unknown",
+            lockfile_hash=artifact.lockfile_hash or "unknown",
+            container_image_digest=artifact.container_image_digest or "unknown",
+            random_seed=req.random_seed,
+            hardware_class=req.hardware_class,
+            training_metrics=metrics["training_metrics"],
+            pbo=metrics["pbo"],
+            deflated_sharpe=metrics["deflated_sharpe"],
+            authority=Authority.SHADOW_ONLY,
+            metadata={
+                "model_family": req.model_family,
+                "trainer": trainer_tag,
+                "backend": self.backend,
+                "n_features": str(n_features),
+                "n_rows": str(n_rows),
+                "n_folds": str(self.n_folds),
+                "brier_score": str(metrics["brier_score"]),
+                "win_rate": str(metrics["win_rate"]),
+                "max_drawdown": str(metrics["max_drawdown"]),
+                "sharpe_ratio": str(metrics["sharpe_ratio"]),
+                "pbo_method": metrics.get("pbo_method", "fold_overfit_ratio"),
+                "deflated_sharpe_method": metrics.get(
+                    "deflated_sharpe_method",
+                    "sharpe_times_1_minus_fold_overfit_ratio",
+                ),
+                "fold_source": "manifest" if self.fold_spec else "heuristic",
+                "has_rank_report": str(rank_report is not None),
+            },
+        )
+        return artifact, dossier
+
+    # --- T-8.2: rank metrics --------------------------------------------
+
+    def _maybe_compute_rank_metrics(
+        self,
+        metrics: dict[str, Any],
+        groups: Any,
+        timestamps: Any,
+    ) -> Any:
+        """Compute rank metrics when task_type == 'ranking' and groups exist.
+
+        Returns a :class:`RankReport` or ``None`` when the task is not
+        ranking or groups are unavailable.
+        """
+        if self.task_spec is None or self.task_spec.task_type != "ranking":
+            return None
+        # Lazy import — rank_metrics imports numpy at module level.
+        from quant_foundry.rank_metrics import compute_rank_metrics
+
+        import numpy as np
+
+        preds = metrics.get("_oos_preds")
+        labels = metrics.get("_oos_labels")
+        oos_groups = metrics.get("_oos_groups")
+        oos_ts = metrics.get("_oos_timestamps")
+
+        # Prefer the OOS groups collected during validation; fall back
+        # to the full-dataset groups (for backend in-sample predictions).
+        grp = oos_groups if oos_groups is not None else groups
+        ts = oos_ts if oos_ts is not None else timestamps
+
+        if preds is None or labels is None or grp is None:
+            return None
+
+        preds_arr = np.asarray(preds, dtype=np.float64).ravel()
+        labels_arr = np.asarray(labels, dtype=np.float64).ravel()
+        grp_arr = np.asarray(grp).ravel()
+        ts_arr = np.asarray(ts).ravel() if ts is not None else None
+
+        if preds_arr.shape[0] == 0 or grp_arr.shape[0] == 0:
+            return None
+
+        try:
+            return compute_rank_metrics(
+                preds_arr, labels_arr, grp_arr, ts_arr,
+                top_k=10, cost_per_turnover=0.001,
+            )
+        except (ValueError, TypeError):
+            return None
+
+    # --- T-8.4: manifest fold dataset loading ---------------------------
+
+    def _load_dataset_with_folds(
+        self, ref: str,
+    ) -> tuple[Any, Any, Any, Any, Any, Any]:
+        """Load a dataset + consume manifest folds.
+
+        Returns ``(X, y, timestamps, weights, groups, fold_assignment)``
+        where the numpy arrays are in original dataframe row order (NOT
+        time-sorted) so the manifest fold indices align correctly.
+        """
+        import numpy as np
+
+        from quant_foundry.fold_consumer import consume_manifest_folds
+
+        df = self._load_dataframe(ref)
+        X, y, timestamps, weights, groups = self._extract_arrays_from_df(df)
+
+        # Consume manifest folds using the dataframe.
+        fold_assignment = consume_manifest_folds(
+            self.fold_spec, df,
+        )
+        return X, y, timestamps, weights, groups, fold_assignment
+
+    def _load_dataframe(self, ref: str) -> Any:
+        """Load a dataset as a pandas DataFrame (for manifest fold consumption).
+
+        Supports ``.parquet`` and ``.csv``. The dataframe retains all
+        columns (features, labels, timestamp, weights, groups, row-id
+        columns) so ``consume_manifest_folds`` can extract row keys.
+        """
+        path = self._resolve_path(ref)
+        if not path.exists():
+            raise TrainingFailure(
+                error_code="dataset_not_found",
+                error_summary=f"dataset file not found: {path}",
+            )
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="pandas is required for manifest fold consumption",
+            ) from exc
+
+        ext = path.suffix.lower()
+        if ext == ".parquet":
+            return pd.read_parquet(str(path))
+        elif ext == ".csv":
+            return pd.read_csv(str(path))
+        else:
+            raise TrainingFailure(
+                error_code="unsupported_format",
+                error_summary=f"unsupported dataset format: {ext} (expected .parquet or .csv)",
+            )
+
+    def _extract_arrays_from_df(
+        self, df: Any,
+    ) -> tuple[Any, Any, Any, Any, Any]:
+        """Extract (X, y, timestamps, weights, groups) from a DataFrame.
+
+        Uses ``column_roles`` to select feature / label / timestamp /
+        weight / group columns. Falls back to the legacy infer-by-
+        dropping-names behaviour when ``column_roles`` is None.
+        """
+        import numpy as np
+
+        columns = list(df.columns)
+        available = set(columns)
+
+        if self.column_roles is not None:
+            roles = self.column_roles
+            # Label.
+            if self.task_spec is not None and self.task_spec.label_column:
+                label_col = self.task_spec.label_column
+            else:
+                label_col = roles.primary_label
+            # Features.
+            feature_cols = list(roles.feature_columns)
+            # Timestamp.
+            ts_col = roles.timestamp_column
+            # Weights.
+            weights = None
+            if roles.weight_column is not None:
+                weights = np.array(
+                    df[roles.weight_column].values, dtype=np.float64,
+                )
+            # Groups.
+            groups = None
+            if roles.group_column is not None:
+                groups = np.array(df[roles.group_column].values)
+        else:
+            label_col = "label" if "label" in columns else columns[-1]
+            ts_col = None
+            for candidate in ("timestamp", "decision_time", "ts", "event_ts"):
+                if candidate in columns:
+                    ts_col = candidate
+                    break
+            feature_cols = [
+                c for c in columns if c != label_col and c != ts_col
+            ]
+            weights = None
+            groups = None
+
+        y = np.array(df[label_col].values, dtype=np.float64)
+        X = np.column_stack(
+            [np.array(df[c].values, dtype=np.float64) for c in feature_cols],
+        )
+
+        if ts_col is not None and ts_col in available:
+            # Handle both numeric and string (ISO date) timestamps.
+            try:
+                timestamps = np.array(
+                    df[ts_col].values, dtype=np.int64,
+                )
+            except (ValueError, TypeError):
+                # String timestamps (e.g. "2024-01-15") — convert via
+                # pandas to datetime, then to int64 epoch nanoseconds.
+                import pandas as pd
+
+                timestamps = np.array(
+                    pd.to_datetime(df[ts_col].values).astype("int64"),
+                    dtype=np.int64,
+                )
+        else:
+            timestamps = np.arange(len(y), dtype=np.int64)
+
+        return X, y, timestamps, weights, groups
+
+    # --- T-7.1: artifact loading via artifact_io ------------------------
+
+    def load_model(self, path: str, *, backend: str | None = None) -> Any:
+        """Load a saved model artifact using the appropriate artifact_io loader.
+
+        The loader is selected based on the ``backend`` argument (or the
+        trainer's ``self.backend`` when None):
+
+        - ``"lightgbm"`` -> :func:`load_lightgbm_model`
+        - ``"catboost"`` -> :func:`load_catboost_model`
+        - ``"xgboost"`` -> :func:`load_xgboost_model`
+
+        Raises:
+            TrainingFailure: if the backend is unknown or the loader
+                fails.
+        """
+        from quant_foundry.artifact_io import (
+            load_catboost_model,
+            load_lightgbm_model,
+            load_xgboost_model,
+        )
+
+        eff_backend = backend if backend is not None else self.backend
+        loaders = {
+            "lightgbm": load_lightgbm_model,
+            "catboost": load_catboost_model,
+            "xgboost": load_xgboost_model,
+        }
+        if eff_backend not in loaders:
+            raise TrainingFailure(
+                error_code="invalid_backend",
+                error_summary=(
+                    f"unknown backend {eff_backend!r} for artifact loading; "
+                    f"supported: {sorted(loaders)}"
+                ),
+            )
+        try:
+            return loaders[eff_backend](path)
+        except Exception as exc:
+            raise TrainingFailure(
+                error_code="artifact_load_failed",
+                error_summary=f"failed to load artifact from {path!r}: {exc}",
+            ) from exc

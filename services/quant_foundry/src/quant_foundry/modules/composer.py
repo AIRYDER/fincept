@@ -43,6 +43,9 @@ import pathlib
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from quant_foundry.dataset_manifest import ReadinessLevel
 from quant_foundry.modules.registry import (
     FeatureRowData,
     MediaItem,
@@ -74,6 +77,180 @@ DEFAULT_LABEL_HORIZON_NS: int = 5 * NS_PER_DAY
 #: How many days of price history to load before ``since_ns`` in an
 #: incremental build so β-estimation + labels still have enough lookback.
 _INCREMENTAL_PRICE_HISTORY_DAYS: int = 400
+
+
+#: Default corporate-action adjustment version applied when a source does
+#: not declare one explicitly.  ``"unadjusted"`` means raw prices with no
+#: split/dividend adjustment — a valid but low-trust vintage.
+DEFAULT_CORP_ACTION_ADJUSTMENT: str = "unadjusted"
+
+
+#: Maximum readiness level a fixture-mode dataset may be promoted to.
+#: Fixtures use flattened/synthetic timestamps that are not safe for
+#: production dispatch, so they are capped at L2 (validated).
+FIXTURE_MAX_READINESS: ReadinessLevel = ReadinessLevel.L2_VALIDATED
+
+
+# --------------------------------------------------------------------------- #
+# PIT metadata (T-3.4)                                                         #
+# --------------------------------------------------------------------------- #
+
+
+class PITMetadata(BaseModel):
+    """Point-in-time metadata for a dataset build (T-3.4).
+
+    Captures the five PIT invariants the composer must record so a
+    downstream consumer can prove the dataset is leakage-safe:
+
+    - ``observed_at``: the vendor-availability time of the feature values
+      (must be <= ``decision_time`` — enforced by the feature lake's
+      ``_assert_pit_proof``).
+    - ``available_at``: the time at which the data became available to the
+      trading system.  This may be later than ``observed_at`` due to data
+      delivery latency.  A feature whose ``available_at`` is after the
+      row's ``decision_time`` is a forward-looking leak and is rejected.
+    - ``source_vintage``: a human-readable identifier for the source
+      vintage (e.g. ``"source:mock-test:1.0.0"``), derived from the
+      composer's vintage refs.
+    - ``as_of_universe_membership``: the set of symbols that were members
+      of the universe at the build's as-of time.  A delisted symbol is
+      valid only during its historical membership period.
+    - ``corporate_action_adjustment_version``: the corp-action adjustment
+      version applied to the price data (e.g.
+      ``"split_adjusted_v3"``, ``"dividend_adjusted_v2"``).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    observed_at: int
+    available_at: int
+    source_vintage: str
+    as_of_universe_membership: tuple[str, ...] = Field(default_factory=tuple)
+    corporate_action_adjustment_version: str = DEFAULT_CORP_ACTION_ADJUSTMENT
+
+    @classmethod
+    def from_build(
+        cls,
+        *,
+        observed_at: int,
+        available_at: int,
+        source_vintage_refs: list[str],
+        symbols: list[str],
+        corporate_action_adjustment_version: str | None = None,
+    ) -> PITMetadata:
+        """Build a :class:`PITMetadata` from composer build outputs.
+
+        ``source_vintage`` is the joined vintage-ref string (stable
+        provenance identifier).  ``as_of_universe_membership`` is the
+        sorted tuple of symbols in the as-of universe.
+        """
+        return cls(
+            observed_at=observed_at,
+            available_at=available_at,
+            source_vintage="|".join(source_vintage_refs),
+            as_of_universe_membership=tuple(sorted(symbols)),
+            corporate_action_adjustment_version=(
+                corporate_action_adjustment_version
+                if corporate_action_adjustment_version is not None
+                else DEFAULT_CORP_ACTION_ADJUSTMENT
+            ),
+        )
+
+
+class PITMetadataError(ValueError):
+    """Raised when PIT metadata invariants are violated (T-3.4).
+
+    This is the composer-side guard against forward-looking data leaks
+    that the feature lake's ``_assert_pit_proof`` does not cover:
+    ``available_at > decision_time`` (data delivery leak) and delisted
+    symbols used outside their historical membership period.
+    """
+
+
+def validate_pit_metadata(
+    *,
+    pit_metadata: PITMetadata,
+    decision_time: int,
+    delisted_symbols: dict[str, int] | None = None,
+    fixture_mode: bool = False,
+) -> None:
+    """Check all PIT invariants for a build (T-3.4).
+
+    Fail-closed: raises :class:`PITMetadataError` on the first violation.
+
+    Invariants checked:
+    1. ``observed_at <= decision_time`` — the feature was knowable at the
+       decision time (mirrors the feature lake's ``_assert_pit_proof``).
+    2. ``available_at <= decision_time`` — the data was available to the
+       trading system at the decision time.  A feature with
+       ``available_at > decision_time`` is a forward-looking data leak
+       (acceptance criterion 3).
+    3. Delisted symbols are valid only during their historical membership
+       period: a symbol whose ``listed_until`` (delisting date) is before
+       the ``decision_time`` is rejected (acceptance criterion 4).
+    4. Fixture-mode datasets cannot be promoted beyond L2 — this is
+       enforced at promotion time, but the metadata is flagged here so a
+       downstream consumer knows the dataset is a fixture.
+
+    Args:
+        pit_metadata: the :class:`PITMetadata` for the build.
+        decision_time: the PIT cutoff (as-of time) for the build.
+        delisted_symbols: optional mapping of ``{symbol: listed_until_ns}``
+            for delisted symbols.  Only symbols present in this mapping
+            are checked (still-listed symbols have no delisting date).
+        fixture_mode: if True, the dataset is a fixture and its readiness
+            is capped at L2.  This does not raise but is recorded so the
+            caller can enforce the cap at promotion time.
+    """
+    # 1. observed_at <= decision_time (knowability).
+    if pit_metadata.observed_at > decision_time:
+        raise PITMetadataError(
+            f"PIT violation: observed_at={pit_metadata.observed_at} > "
+            f"decision_time={decision_time} (feature not knowable at "
+            "decision time)"
+        )
+    # 2. available_at <= decision_time (data delivery / forward-looking).
+    if pit_metadata.available_at > decision_time:
+        raise PITMetadataError(
+            f"PIT violation: available_at={pit_metadata.available_at} > "
+            f"decision_time={decision_time} (forward-looking data leak — "
+            "data not available to the trading system at decision time)"
+        )
+    # 3. Delisted symbols valid only during historical membership.
+    if delisted_symbols:
+        for sym, listed_until in delisted_symbols.items():
+            if decision_time > listed_until:
+                raise PITMetadataError(
+                    f"PIT violation: delisted symbol {sym!r} used at "
+                    f"decision_time={decision_time} after delisting "
+                    f"(listed_until={listed_until}) — valid only during "
+                    "historical membership period"
+                )
+    # 4. Fixture-mode cap is enforced at promotion time (see
+    #    ``_max_readiness_for_fixture``); no raise here, but the invariant
+    #    is that fixture_mode datasets never exceed L2.
+
+
+def _max_readiness_for_fixture(
+    fixture_mode: bool,
+    requested: ReadinessLevel | str = ReadinessLevel.L1_RAW,
+) -> ReadinessLevel:
+    """Return the effective readiness level, capping fixtures at L2 (T-3.4).
+
+    A fixture-mode dataset uses flattened/synthetic timestamps that are
+    not safe for production dispatch.  It may be promoted to at most L2
+    (validated) — never L3 (quality-gated) or L4 (production-ready).
+
+    Production readiness cannot be granted from flattened fixture
+    timestamps (acceptance criterion 6).
+    """
+    if isinstance(requested, str):
+        requested = ReadinessLevel.from_str(requested)
+    if not fixture_mode:
+        return requested
+    if requested.rank() > FIXTURE_MAX_READINESS.rank():
+        return FIXTURE_MAX_READINESS
+    return requested
 
 
 # --------------------------------------------------------------------------- #
@@ -172,6 +349,16 @@ class DatasetComposer:
         label: Label computer module ID.
         price_join: Price joiner module ID.
         config: Optional config overrides per module ID.
+        fixture_mode: When True, the resulting dataset is marked as a
+            fixture (``fixture_mode=true`` in the manifest) and cannot be
+            promoted beyond L2 (validated).  Fixture datasets use
+            flattened/synthetic timestamps that are not safe for
+            production dispatch (T-3.4, acceptance criterion 2 + 5).
+        corporate_action_adjustment_version: The corp-action adjustment
+            version applied to the price data (e.g.
+            ``"split_adjusted_v3"``).  Defaults to ``"unadjusted"``.
+            Recorded in the PIT metadata so a consumer can prove which
+            adjustment vintage was used (T-3.4).
     """
 
     universe: str
@@ -181,6 +368,8 @@ class DatasetComposer:
     label: str
     price_join: str
     config: dict[str, dict[str, Any]] = field(default_factory=dict)
+    fixture_mode: bool = False
+    corporate_action_adjustment_version: str = DEFAULT_CORP_ACTION_ADJUSTMENT
 
     def _create(self, full_id: str) -> Any:
         """Instantiate a module from the registry with optional config."""
@@ -209,6 +398,8 @@ class DatasetComposer:
             "label": self.label,
             "price_join": self.price_join,
             "config": self.config,
+            "fixture_mode": self.fixture_mode,
+            "corporate_action_adjustment_version": self.corporate_action_adjustment_version,
         }
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, default=str).encode("utf-8"),
@@ -227,7 +418,7 @@ class DatasetComposer:
         item_min_ns: int | None = None,
         price_start_ns: int | None = None,
         label_horizon_ns: int = DEFAULT_LABEL_HORIZON_NS,
-    ) -> tuple[list[FeatureRowData], list[str], list[str]]:
+    ) -> tuple[list[FeatureRowData], list[str], list[str], int]:
         """Run universe → source → sentiment → features → price → label.
 
         Args:
@@ -243,7 +434,10 @@ class DatasetComposer:
                 builds this is bumped back to retain β-estimation history.
             label_horizon_ns: Forward label horizon (ns).
 
-        Returns ``(labeled_rows, feature_names_ordered, symbols)``.
+        Returns ``(labeled_rows, feature_names_ordered, symbols,
+        max_available_at_ns)``.  ``max_available_at_ns`` is the latest
+        media-item availability time — the build-level ``available_at``
+        used for PIT metadata (T-3.4).
         """
         fetch_start = fetch_start_ns if fetch_start_ns is not None else start_ns
         price_start = price_start_ns if price_start_ns is not None else start_ns
@@ -343,7 +537,22 @@ class DatasetComposer:
         if not labeled_rows:
             raise ValueError("label module produced no labeled rows")
 
-        return labeled_rows, feature_names_ordered, symbols
+        # Build-level available_at: the latest media-item availability time
+        # among items that actually contributed to the final labeled rows.
+        # Items fetched but not used (e.g. dropped by the label module for
+        # lack of forward price bars) do NOT count — their data arrived but
+        # was never consumed at a decision point, so it is not a leak.
+        # In the fixture-flattened pattern, decision_time == available_at_ns,
+        # so this equals the max decision_time of the labeled rows (T-3.4).
+        max_decision_time = max(r.decision_time for r in labeled_rows)
+        contributing_items = [i for i in items if i.available_at_ns <= max_decision_time]
+        max_available_at_ns = (
+            max(i.available_at_ns for i in contributing_items)
+            if contributing_items
+            else max_decision_time
+        )
+
+        return labeled_rows, feature_names_ordered, symbols, max_available_at_ns
 
     # ------------------------------------------------------------------ #
     # Full build                                                         #
@@ -367,7 +576,7 @@ class DatasetComposer:
         output_dir = pathlib.Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        labeled_rows, feature_names, symbols = self._collect_rows(
+        labeled_rows, feature_names, symbols, available_at = self._collect_rows(
             start_ns=start_ns,
             end_ns=end_ns,
             label_horizon_ns=label_horizon_ns,
@@ -386,6 +595,7 @@ class DatasetComposer:
             label_horizon_ns=label_horizon_ns,
             parquet_path=parquet_path,
             source_vintage_refs=self._vintage_refs(),
+            available_at=available_at,
         )
 
     # ------------------------------------------------------------------ #
@@ -451,7 +661,7 @@ class DatasetComposer:
         max_existing_dt = int(existing_df["decision_time"].max())
 
         # --- collect NEW rows -------------------------------------------
-        new_rows, new_feature_names, symbols = self._collect_rows(
+        new_rows, new_feature_names, symbols, new_available_at = self._collect_rows(
             start_ns=since_ns,
             end_ns=end_ns,
             fetch_start_ns=since_ns,
@@ -503,6 +713,11 @@ class DatasetComposer:
             # Reconstruct the full row set for manifest/quality generation.
             all_rows = self._rows_from_df(combined_df, all_feature_names)
 
+        # Build-level available_at: the latest media-item availability time
+        # from the new fetch.  When no new rows were fetched, fall back to
+        # the existing max decision_time (no new data arrived).
+        available_at = new_available_at if new_rows else max_existing_dt
+
         return self._write_manifest_artifacts(
             rows=all_rows,
             feature_names=all_feature_names,
@@ -513,6 +728,7 @@ class DatasetComposer:
             label_horizon_ns=label_horizon_ns,
             parquet_path=parquet_path,
             source_vintage_refs=self._vintage_refs(),
+            available_at=available_at,
         )
 
     # ------------------------------------------------------------------ #
@@ -619,10 +835,19 @@ class DatasetComposer:
         label_horizon_ns: int,
         parquet_path: pathlib.Path,
         source_vintage_refs: list[str],
+        available_at: int | None = None,
     ) -> IngestionResult:
         """Build manifest + receipt + quality report for ``rows``.
 
         The parquet is assumed to already be written at ``parquet_path``.
+
+        T-3.4 — PIT metadata:
+        Builds a :class:`PITMetadata` record from the build outputs and
+        validates the PIT invariants (``available_at <= decision_time``,
+        delisted-symbol membership) via :func:`validate_pit_metadata`.
+        The ``fixture_mode`` flag and PIT metadata are embedded in the
+        manifest JSON so a downstream consumer can prove the dataset is
+        leakage-safe and know whether it is a fixture (capped at L2).
         """
         # Build universe entries
         universe = tuple(
@@ -645,6 +870,36 @@ class DatasetComposer:
                 features=features,
                 label_horizon_ns=label_horizon_ns,
             ))
+
+        # --- T-3.4: PIT metadata + validation ---------------------------
+        # The build-level decision_time (as-of cutoff) is the max
+        # decision_time across all rows.
+        as_of_dt = max((r.decision_time for r in rows), default=0)
+        # observed_at: the vendor-availability time.  In the current
+        # fixture-flattened pattern, observed_at == decision_time for every
+        # feature value, so the build-level observed_at is the as-of time.
+        observed_at = as_of_dt
+        # available_at: the time the data became available to the trading
+        # system.  If not provided (e.g. deprecated _build_dataset path),
+        # fall back to the as-of time (flattened fixture timestamps).
+        effective_available_at = available_at if available_at is not None else as_of_dt
+
+        pit_metadata = PITMetadata.from_build(
+            observed_at=observed_at,
+            available_at=effective_available_at,
+            source_vintage_refs=source_vintage_refs,
+            symbols=symbols,
+            corporate_action_adjustment_version=self.corporate_action_adjustment_version,
+        )
+        # Validate PIT invariants (fail-closed).  Delisted-symbol membership
+        # is checked by the FeatureLakeBuilder's _validate_universe_membership
+        # (forward-join guard); the composer-side check complements it for
+        # builds that carry explicit delisting dates.
+        validate_pit_metadata(
+            pit_metadata=pit_metadata,
+            decision_time=as_of_dt,
+            fixture_mode=self.fixture_mode,
+        )
 
         # Schema hashes
         f_hash = hashlib.sha256(
@@ -686,6 +941,14 @@ class DatasetComposer:
         body = json.loads(manifest.to_json())
         body["availability"] = json.loads(availability.to_json())
         body["feature_names"] = list(feature_names)
+        # T-3.4: embed fixture_mode + PIT metadata in the manifest.
+        body["fixture_mode"] = self.fixture_mode
+        body["pit_metadata"] = json.loads(pit_metadata.model_dump_json())
+        # The maximum readiness level this dataset may be promoted to.
+        # Fixture-mode datasets are capped at L2 (acceptance criterion 5).
+        body["max_readiness_level"] = _max_readiness_for_fixture(
+            self.fixture_mode, ReadinessLevel.L4_PRODUCTION_READY,
+        ).value
         manifest_path.write_text(
             json.dumps(body, sort_keys=True, indent=2), encoding="utf-8",
         )
@@ -730,6 +993,7 @@ class DatasetComposer:
             label_horizon_ns=label_horizon_ns,
             parquet_path=parquet_path,
             source_vintage_refs=source_vintage_refs,
+            available_at=None,
         )
 
     def _write_parquet(
@@ -807,6 +1071,9 @@ class DatasetComposer:
 __all__ = [
     "DatasetComposer",
     "IncrementalState",
+    "PITMetadata",
+    "PITMetadataError",
     "save_incremental_state",
     "load_incremental_state",
+    "validate_pit_metadata",
 ]

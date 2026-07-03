@@ -312,8 +312,13 @@ def test_ensemble_score_detailed_structure() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_ingest_media_sentiment_task_missing_fields() -> None:
+def test_ingest_media_sentiment_task_missing_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     """The ingest_media_sentiment task rejects missing required fields."""
+    # The bad_request path still builds a signed failure envelope, which
+    # requires the callback secret. Set a test-only value so the handler
+    # does not raise RuntimeError before reaching the field validation.
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "test-sentiment-secret")
+
     # Import the handler module — it should be importable without RunPod SDK
     import sys
     _HANDLER_DIR = str(pathlib.Path(_REPO_ROOT / "runpod" / "quant-foundry-training"))

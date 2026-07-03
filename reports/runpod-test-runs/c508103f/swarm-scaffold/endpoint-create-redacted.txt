@@ -1,0 +1,31 @@
+Using registry auth from z6xy0iflvxcjtr (fincept-qf-smoke-a62088d5)
+RunPod smoke endpoint create
+mode: LIVE
+image: ghcr.io/airyder/fincept/quant-foundry-training:c508103fbac4b38b8f3c369f216f6e18177f72a4
+endpoint name: qf-train-validate-c508103f
+gpuIds: ADA_24
+created endpoint id: 635ywogaldb3r2
+created endpoint name: qf-train-validate-c508103f
+created image: ghcr.io/airyder/fincept/quant-foundry-training:c508103fbac4b38b8f3c369f216f6e18177f72a4
+
+Probe command:
+python scripts/runpod_smoke_probe.py --endpoint-id 635ywogaldb3r2 --image-tag ghcr.io/airyder/fincept/quant-foundry-training:c508103fbac4b38b8f3c369f216f6e18177f72a4 --interval 5 --timeout 180
+
+health poll=1 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=2 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=3 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=4 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=5 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=6 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=7 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=8 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=9 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=10 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=11 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=12 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=13 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=14 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=15 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=16 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=17 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=18 ready=1 idle=1 running=0 initializing=0 unhealthy=0 inQueue=0

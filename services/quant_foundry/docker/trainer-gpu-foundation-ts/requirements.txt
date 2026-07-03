@@ -1,0 +1,14 @@
+# trainer-gpu-foundation-ts — Python package requirements (T-11.4)
+#
+# Source of truth: FoundationImageSpec.packages in
+#   src/quant_foundry/foundation_runtime.py
+#
+# torch is provided by the base image (pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime),
+# so it is NOT reinstalled here to avoid pulling the CPU-only wheel and
+# clobbering the CUDA build. The pins below match FoundationImageSpec.packages.
+
+numpy>=1.26
+pandas>=2.1
+pydantic>=2.7
+transformers>=4.36
+huggingface_hub>=0.20

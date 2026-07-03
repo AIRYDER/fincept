@@ -24,7 +24,6 @@ The router is also responsible for:
 
 from __future__ import annotations
 
-import contextlib
 from decimal import Decimal
 
 from fincept_bus.producer import Producer
@@ -130,23 +129,22 @@ class OrchestratorRouter:
         await self._producer.publish(
             STREAM_ORDERS, Event(type="order_intent", payload=intent)
         )
-        with contextlib.suppress(Exception):
-            await audit.append(
-                actor="orchestrator",
-                event_type="orchestrator.decision",
-                payload={
-                    "decision": decision.model_dump(mode="json"),
-                    "order_intent": intent.model_dump(mode="json"),
-                    "consensus": {
-                        "direction": consensus.direction,
-                        "confidence": consensus.confidence,
-                        "contributing_agents": list(consensus.contributing_agents),
-                    },
-                    "target_notional": str(new_target),
-                    "delta_notional": str(delta),
+        await audit.safe_append(
+            actor="orchestrator",
+            event_type="orchestrator.decision",
+            payload={
+                "decision": decision.model_dump(mode="json"),
+                "order_intent": intent.model_dump(mode="json"),
+                "consensus": {
+                    "direction": consensus.direction,
+                    "confidence": consensus.confidence,
+                    "contributing_agents": list(consensus.contributing_agents),
                 },
-                correlation_id=decision.decision_id,
-            )
+                "target_notional": str(new_target),
+                "delta_notional": str(delta),
+            },
+            correlation_id=decision.decision_id,
+        )
 
         self._target_state.update(prediction.symbol, new_target)
         log.info(
