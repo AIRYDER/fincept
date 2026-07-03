@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     ca-certificates \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
@@ -99,7 +100,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod==1.7.10" \
+    "runpod>=1.10.0,<2" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
@@ -294,16 +295,15 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the handler process is running. We do NOT import the
-# full handler module here — that takes >15s due to xgboost/catboost/lightgbm
-# imports and causes the healthcheck to time out, marking the worker
-# unhealthy within ~3 min of startup. Instead we just check that the handler
-# Python process is alive (pgrep). The handler's gpu_healthcheck task is the
-# authoritative GPU probe; this Docker HEALTHCHECK is only the container-level
-# liveness gate.
+# Healthcheck: verify the Python runtime + handler module load. We use a
+# 30s timeout because importing handler transitively imports xgboost,
+# catboost, and lightgbm, which can take 10-20s on a cold start. The
+# handler's gpu_healthcheck task is the authoritative GPU probe; this Docker
+# HEALTHCHECK is only the container-level liveness gate RunPod polls to
+# decide if the worker is eligible to receive jobs.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-  CMD pgrep -f "handler.py" > /dev/null 2>&1 || exit 1
+HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=3 \
+  CMD python3 -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless platform expects the container to start the handler.
 # We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
