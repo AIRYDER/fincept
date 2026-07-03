@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     curl \
     ca-certificates \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
@@ -71,8 +72,9 @@ COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
 # Copy the shared RunPod worker_status utility (sibling to this handler in
-# the monorepo). The handler adds runpod/shared to sys.path at import time.
-COPY runpod/shared/worker_status.py /worker/runpod/shared/worker_status.py
+# the monorepo). Copied to /worker/_shared/ (NOT /worker/runpod/shared/) to
+# avoid shadowing the pip-installed runpod SDK package when PYTHONPATH=/worker.
+COPY runpod/shared/worker_status.py /worker/_shared/worker_status.py
 
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
@@ -286,16 +288,14 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module load. We do NOT
-# require nvidia-smi here because the pytorch/pytorch:cuda-runtime base image
-# does not ship nvidia-smi in its PATH — the binary is mounted by the NVIDIA
-# container runtime at /usr/bin/nvidia-smi but may not be discoverable in all
-# base images. The handler's gpu_healthcheck task is the authoritative GPU
-# probe; this Docker HEALTHCHECK is only the container-level liveness gate
-# RunPod polls to decide if the worker is eligible to receive jobs.
+# Healthcheck: verify the handler process is still running. We use pgrep
+# instead of re-importing the handler module because the handler imports
+# heavy ML libraries (pandas, numpy, scikit-learn, quant_foundry). Running
+# a second Python process that re-imports these causes OOM on GPU pods with
+# limited system RAM, which kills the main handler process.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=15s --start-period=40s --retries=3 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=60s --timeout=10s --start-period=40s --retries=3 \
+  CMD pgrep -f "handler.py" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the

@@ -43,10 +43,12 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 # Add the shared RunPod utilities to sys.path so we can import
-# worker_status. In the container the shared module may be at different
-# paths (sibling to the handler, or under /app/runpod/shared). For local
-# testing it's under runpod/shared relative to the repo root.
+# worker_status. In the container the shared module is at /worker/_shared/
+# (copied there to avoid shadowing the pip-installed runpod SDK package
+# when PYTHONPATH=/worker). For local testing it's under runpod/shared
+# relative to the repo root.
 _shared_paths = [
+    "/worker/_shared",
     os.path.join(os.path.dirname(__file__), "..", "shared"),
     os.path.join(os.path.dirname(__file__), "shared"),
     "/app/runpod/shared",
@@ -3714,6 +3716,12 @@ if __name__ == "__main__":  # pragma: no cover
 
         _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
+        # Force flush and hard exit to avoid exit-code-1 race conditions
+        # during interpreter shutdown (daemon threads, atexit hooks).
+        # See: https://happyin.space/devops/runpod-serverless-python-silent-exit-1/
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
     except ImportError as e:
         _log(f"ImportError: {e}")
         # runpod SDK not installed — fall back to stdin mode for local testing
@@ -3724,4 +3732,6 @@ if __name__ == "__main__":  # pragma: no cover
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())
-        raise
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
