@@ -43,12 +43,10 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 # Add the shared RunPod utilities to sys.path so we can import
-# worker_status. In the container the shared module is at /worker/_shared/
-# (copied there to avoid shadowing the pip-installed runpod SDK package
-# when PYTHONPATH=/worker). For local testing it's under runpod/shared
-# relative to the repo root.
+# worker_status. In the container the shared module may be at different
+# paths (sibling to the handler, or under /app/runpod/shared). For local
+# testing it's under runpod/shared relative to the repo root.
 _shared_paths = [
-    "/worker/_shared",
     os.path.join(os.path.dirname(__file__), "..", "shared"),
     os.path.join(os.path.dirname(__file__), "shared"),
     "/app/runpod/shared",
@@ -3677,14 +3675,53 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 # the worker. When run as a script (local testing), accept JSON on stdin.
 if __name__ == "__main__":  # pragma: no cover
     import sys
+    import traceback
+
+    # Debug logging to network volume (try both mount paths)
+    def _log(msg):
+        print(msg, flush=True)  # noqa: T201 - CLI debug output
+        for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
+            try:
+                with open(path, "a") as f:
+                    f.write(msg + "\n")
+            except Exception:  # noqa: S110 - best-effort debug log
+                pass
+
+    _log(f"=== Handler starting at {__file__} ===")
+    _log(f"PYTHONPATH={os.environ.get('PYTHONPATH', 'NOT SET')}")
+    _log(f"sys.path={sys.path}")
+
+    # Check if handler file exists
+    _log(f"Handler file exists: {os.path.exists(__file__)}")
 
     # Try RunPod serverless mode first (uses runpod SDK)
     try:
         import runpod
 
+        _log(f"runpod SDK imported, version: {getattr(runpod, '__version__', 'unknown')}")
+
+        # Dump RUNPOD_* env vars to diagnose serverless vs local mode.
+        # The SDK checks for RUNPOD_WEBHOOK_GET_JOB to decide whether to
+        # poll the real job queue (serverless) or start a local FastAPI
+        # test server on :8000 (local mode). If this var is missing,
+        # jobs will stay IN_QUEUE forever while the worker looks "ready".
+        runpod_env = {k: v for k, v in os.environ.items() if k.startswith("RUNPOD_")}
+        _log(f"RUNPOD_* env vars: {json.dumps(runpod_env, indent=2)}")
+        if not runpod_env:
+            _log("WARNING: No RUNPOD_* env vars found! SDK will likely enter local/test mode.")
+            _log("  This means the worker will NOT poll the real job queue.")
+            _log("  Jobs will stay IN_QUEUE indefinitely while the worker shows 'ready'.")
+
+        _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
-    except ImportError:
+    except ImportError as e:
+        _log(f"ImportError: {e}")
         # runpod SDK not installed — fall back to stdin mode for local testing
-        event = json.loads(sys.stdin.read())
+        raw = sys.stdin.read()
+        event = json.loads(raw) if raw else {}
         result = handler(event)
-        sys.stdout.write(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+    except Exception as e:
+        _log(f"ERROR in runpod.serverless.start(): {e}")
+        _log(traceback.format_exc())
+        raise
