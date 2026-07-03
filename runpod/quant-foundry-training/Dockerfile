@@ -336,7 +336,6 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
 # ---------------------------------------------------------------------------
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
-# RunPod's dockerArgs field can't override it. The entrypoint runs the
-# security preflight, fixes volume ownership, then drops to the non-root
-# trainer user before execing the handler.
-ENTRYPOINT ["/worker/entrypoint.sh"]
+# RunPod's dockerArgs field can't override it. Direct entrypoint matches the
+# proven-working cuda-test pattern — no entrypoint.sh wrapper.
+ENTRYPOINT ["python", "-u", "/worker/handler.py"]
