@@ -2714,6 +2714,14 @@ def _build_task_rejection_callback(
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
+    """MINIMAL TEST: bypass all logic, return fixed response."""
+    import sys
+    print(f"[HANDLER] handler called with event keys: {list(event.keys()) if isinstance(event, dict) else type(event)}", flush=True)
+    sys.stdout.flush()
+    return {"status": "ok", "message": "minimal test handler", "job_id": event.get("id", "unknown") if isinstance(event, dict) else "unknown"}
+
+
+def _original_handler(event: dict[str, Any]) -> dict[str, Any]:
     """RunPod serverless handler entrypoint.
 
     Args:
