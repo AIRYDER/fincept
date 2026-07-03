@@ -100,7 +100,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod==1.7.10" \
+    "runpod>=1.6,<2" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
@@ -295,16 +295,12 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: lightweight process check. We do NOT import the handler
-# module here — that would start a second Python process importing xgboost,
-# catboost, and lightgbm (~500MB+ RSS), which can push the container over
-# its memory limit and trigger the OOM killer to kill the main handler
-# process. Instead, we just check that the handler Python process is alive
-# via pgrep. The handler's gpu_healthcheck task is the authoritative GPU
-# probe; this Docker HEALTHCHECK is only the container-level liveness gate.
+# No Docker HEALTHCHECK — RunPod's serverless platform has its own liveness
+# check. The Docker HEALTHCHECK was causing worker crashes: either OOM from
+# double-importing heavy ML libraries (xgboost/catboost/lightgbm), or
+# interfering with the handler process during job processing. The handler's
+# gpu_healthcheck task is the authoritative GPU probe.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-  CMD pgrep -f "handler.py" > /dev/null 2>&1 || exit 1
 
 # RunPod's serverless platform expects the container to start the handler.
 # We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
