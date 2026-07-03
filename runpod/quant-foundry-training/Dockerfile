@@ -70,9 +70,7 @@ COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 # (avoids importing storage/heartbeat which need redis).
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
-# Copy the shared RunPod worker_status utility (sibling to this handler in
-# the monorepo). The handler adds runpod/shared to sys.path at import time.
-COPY runpod/shared/worker_status.py /worker/runpod/shared/worker_status.py
+COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
@@ -97,7 +95,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod>=1.6,<2" \
+    "runpod==1.7.13" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
