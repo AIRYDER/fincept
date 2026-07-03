@@ -306,10 +306,10 @@ DATASET_UTILITY_TASKS: frozenset[str] = frozenset(
 #   job continues (canary/research are permissive by design). The redacted
 #   config summary is always printed so operators can audit the runtime.
 #
-# Redaction: secret-like env var names (matching SECRET_PATTERN) are redacted
-# to ``xx****yy`` (first 2 + last 2 chars). Forbidden vars that are present
-# are shown as ``FORBIDDEN:present`` (the value is never revealed). Non-secret
-# vars are shown in full.
+# Redaction: secret-like env var names (matching SECRET_PATTERN) and explicitly
+# sensitive platform config values are fully masked. Forbidden vars that are
+# present are shown as ``FORBIDDEN:present`` (the value is never revealed).
+# Non-secret vars are shown in full.
 
 # Env vars the worker must NEVER carry. Presence of any of these means the
 # image/env was misconfigured with trading/broker/storage/admin credentials,
@@ -359,21 +359,20 @@ _KNOWN_CONFIG_ENVS: tuple[str, ...] = (
     "RUNPOD_WEBHOOK_GET_JOB",
 )
 
+SENSITIVE_CONFIG_ENVS: frozenset[str] = frozenset({"RUNPOD_WEBHOOK_GET_JOB"})
+
 _CALLBACK_URL_ENV = "QUANT_FOUNDRY_CALLBACK_URL"
 _MODE_ENV = "QUANT_FOUNDRY_TRAINING_MODE"
 
 
 def _redact_secret_value(value: str) -> str:
-    """Redact a secret-like value to ``xx****yy`` (first 2 + last 2 chars).
+    """Redact a secret-like value without preserving prefix or suffix.
 
-    For very short values (<=4 chars) the whole value is masked as ``****``
-    so no full secret is ever revealed. Empty values return ``<empty>``.
+    Empty values return ``<empty>``.
     """
     if not value:
         return "<empty>"
-    if len(value) <= 4:
-        return "****"
-    return f"{value[:2]}****{value[-2:]}"
+    return "****"
 
 
 def _host_is_private(host: str) -> bool:
@@ -604,7 +603,7 @@ class SecurityPreflight:
 
         - Forbidden vars that are present → ``"FORBIDDEN:present"`` (value
           never revealed).
-        - Secret-like names (SECRET_PATTERN) → ``xx****yy``.
+        - Secret-like or explicitly sensitive names → ``****``.
         - Other vars → full value.
         """
         forbidden_set = set(forbidden_found)
@@ -615,7 +614,7 @@ class SecurityPreflight:
                 continue
             if name in forbidden_set:
                 redacted[name] = "FORBIDDEN:present"
-            elif SECRET_PATTERN.search(name):
+            elif name in SENSITIVE_CONFIG_ENVS or SECRET_PATTERN.search(name):
                 redacted[name] = _redact_secret_value(value)
             else:
                 redacted[name] = value
