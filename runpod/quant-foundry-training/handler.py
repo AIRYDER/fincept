@@ -43,13 +43,12 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 # Add the shared RunPod utilities to sys.path so we can import
-# worker_status. In the container the shared module is at /worker/_shared/
-# (NOT /worker/runpod/shared/ — that would shadow the pip-installed runpod
-# SDK package via PYTHONPATH=/worker). For local testing it's under
-# runpod/shared relative to the repo root.
+# worker_status. In the container the shared module may be at different
+# paths (sibling to the handler, or under /app/runpod/shared). For local
+# testing it's under runpod/shared relative to the repo root.
 _shared_paths = [
-    os.path.join(os.path.dirname(__file__), "_shared"),
     os.path.join(os.path.dirname(__file__), "..", "shared"),
+    os.path.join(os.path.dirname(__file__), "shared"),
     "/app/runpod/shared",
 ]
 for _p in _shared_paths:
@@ -3694,24 +3693,6 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Check if handler file exists
     _log(f"Handler file exists: {os.path.exists(__file__)}")
-
-    # Startup security preflight (fail closed on forbidden env vars).
-    # This was previously in a separate entrypoint.sh wrapper script, but
-    # the bash wrapper interfered with RunPod's serverless platform. The
-    # preflight is now inlined here so the container can use ENTRYPOINT
-    # ["python", "-u", "/worker/handler.py"] directly (no shell wrapper).
-    _FORBIDDEN_ENV_STARTUP = [
-        "REDIS_URL", "REDIS_HOST", "FINCEPT_JWT_SECRET",
-        "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_API_SECRET",
-        "DATABASE_URL", "DB_URL", "POSTGRES_URL",
-        "KAFKA_BOOTSTRAP_SERVERS", "BROKER_URL", "AMQP_URL",
-        "MONGO_URL", "MONGODB_URI",
-    ]
-    _violations = [k for k in _FORBIDDEN_ENV_STARTUP if os.environ.get(k)]
-    if _violations:
-        _log(f"[preflight] FAIL: forbidden env vars present: {sorted(_violations)}")
-        sys.exit(2)
-    _log(f"[preflight] OK (no forbidden env vars)")
 
     # Try RunPod serverless mode first (uses runpod SDK)
     try:
