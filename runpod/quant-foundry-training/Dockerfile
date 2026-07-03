@@ -295,15 +295,16 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module load. We use a
-# 30s timeout because importing handler transitively imports xgboost,
-# catboost, and lightgbm, which can take 10-20s on a cold start. The
-# handler's gpu_healthcheck task is the authoritative GPU probe; this Docker
-# HEALTHCHECK is only the container-level liveness gate RunPod polls to
-# decide if the worker is eligible to receive jobs.
+# Healthcheck: lightweight process check. We do NOT import the handler
+# module here — that would start a second Python process importing xgboost,
+# catboost, and lightgbm (~500MB+ RSS), which can push the container over
+# its memory limit and trigger the OOM killer to kill the main handler
+# process. Instead, we just check that the handler Python process is alive
+# via pgrep. The handler's gpu_healthcheck task is the authoritative GPU
+# probe; this Docker HEALTHCHECK is only the container-level liveness gate.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=3 \
-  CMD python3 -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD pgrep -f "handler.py" > /dev/null 2>&1 || exit 1
 
 # RunPod's serverless platform expects the container to start the handler.
 # We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
