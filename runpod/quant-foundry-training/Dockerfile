@@ -289,12 +289,11 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module can load.
-# Same pattern as the inference container (which works). The python:3.12-slim
-# base image has enough RAM for the double import (no CUDA libraries loaded).
+# No Docker HEALTHCHECK. The previous healthcheck ran
+# `python -c "import handler"` which loaded xgboost/catboost/lightgbm in a
+# separate process, causing OOM during job processing. RunPod's serverless
+# platform has its own liveness checks via the SDK's heartbeat mechanism.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=15s --start-period=40s --retries=3 \
-  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the
