@@ -97,11 +97,13 @@ RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'
 
 COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
-# Copy the production handler directly (no layered wrapper).
-# The layered handler was a diagnostic tool for isolating crash causes;
-# now that the root cause (base image + missing libgomp1) is identified
-# and fixed, the real handler is used directly.
-COPY runpod/quant-foundry-training/handler.py /worker/handler.py
+# Test E: sentinel handler copied to /worker/handler.py to isolate whether
+# the RunPod SDK job loop works inside the training image shape independent
+# of the production handler's heavy imports. See
+# docs/runpod-fix-plan/02-single-variable-tests.md Test E.
+# The production handler remains available as handler_full.py for reference.
+COPY runpod/quant-foundry-training/handler.py /worker/handler_full.py
+COPY runpod/quant-foundry-training/handler_sentinel.py /worker/handler.py
 
 # ---------------------------------------------------------------------------
 # Install GPU-capable ML libraries.
