@@ -41,3 +41,33 @@ jobs:
             ${{ steps.image_repo.outputs.value }}/quant-foundry-cuda-test:latest
           cache-from: type=gha,scope=quant-foundry-cuda-test
           cache-to: type=gha,mode=max,scope=quant-foundry-cuda-test
+
+  build-slim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image repository
+        id: image_repo
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runpod/quant-foundry-cuda-test/Dockerfile.slim
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ steps.image_repo.outputs.value }}/quant-foundry-cuda-test-slim:${{ github.sha }}
+            ${{ steps.image_repo.outputs.value }}/quant-foundry-cuda-test-slim:latest
+          cache-from: type=gha,scope=quant-foundry-cuda-test-slim
+          cache-to: type=gha,mode=max,scope=quant-foundry-cuda-test-slim
