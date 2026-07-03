@@ -1,111 +1,109 @@
-# RunPod Serverless Unhealthy Workers — Root Cause & Fix
+# RunPod Serverless Training Worker - Root Cause and Fix
 
 ## Date
 2026-07-03
 
-## Summary
-RunPod serverless workers using CUDA base images (`pytorch/pytorch`,
-`nvidia/cuda`, `runpod/base`) all fail on RunPod serverless ADA_24 GPUs.
-The `pytorch/pytorch` and `runpod/base` images cause workers to go
-unhealthy within 90 seconds. The `nvidia/cuda` image allows workers to
-become "ready" but the runpod SDK never picks up jobs (jobs stay
-`IN_QUEUE` forever while the worker shows `ready=1, idle=1`).
+## Current Conclusion
 
-The fix is to use `python:3.12-slim` as the base image and install
-PyTorch with CUDA 12.4 runtime libraries via pip from
-`download.pytorch.org/whl/cu124`. The torch wheel includes the CUDA
-runtime (~2GB) so no CUDA base image is needed.
+The `python:3.12-slim` image path was a false positive. It proved that a
+minimal smoke worker could receive and complete jobs, but commit `8c45c484`
+reproduced the production failure on the original training endpoint: the
+worker became ready, the full training job stayed `IN_QUEUE`, and health later
+dropped to zero active workers.
+
+The safe baseline is the `8bcb9c69` worker shape:
+
+- `nvidia/cuda:12.4.1-runtime-ubuntu22.04`
+- apt-installed Python 3.10 runtime
+- startup compatibility shims for `enum.StrEnum`, `datetime.UTC`, and
+  `typing.Self`
+- embedded startup preflight in the Dockerfile
+- layered handler entrypoint defaulting to the real training handler
+
+Do not promote an image from `/health` or canary-smoke success alone. The
+promotion gate for this worker is a completed full LightGBM training job on
+the original endpoint, `mxp0bv8itggwev`.
 
 ## Symptoms
-Two distinct failure modes were observed:
 
-### Failure Mode 1: Unhealthy (pytorch/pytorch, runpod/base)
-- Workers enter `initializing` state, then go `unhealthy` within 60-90 seconds
-- No jobs can be processed
-- Extending `RUNPOD_INIT_TIMEOUT` to 900s did not help
-- Disk size (10GB, 20GB, 40GB, 50GB) made no difference
+Several distinct failures were mixed together during debugging:
 
-### Failure Mode 2: Ready but no job pickup (nvidia/cuda)
-- Workers become `ready=1, idle=1` successfully
-- Jobs are submitted and stay `IN_QUEUE` indefinitely
-- The worker never transitions to `running` state
-- The runpod SDK's HTTP webhook for job dispatch is not functioning
-- This is the most deceptive failure mode — the worker looks healthy but
-  silently never processes any work
+### Unhealthy Before Job Pickup
 
-### Working (python:3.12-slim)
-- Workers become `ready=1, idle=1` in ~90 seconds (smoke) or ~14 minutes
-  (slim+CUDA with PyTorch)
-- Jobs are picked up and completed in ~15 seconds
-- All operations work as expected
+- `pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime` and some RunPod base images
+  caused workers to go unhealthy during initialization.
+- Increasing `RUNPOD_INIT_TIMEOUT` and changing healthchecks did not make that
+  image family reliable.
+- This was a container/runtime startup failure, not model-training logic.
+
+### Ready But Job Stuck In Queue
+
+- The worker reached `ready=1, idle=1`.
+- A training job was submitted.
+- The job stayed `IN_QUEUE`.
+- Worker health later dropped to zero active workers or became unhealthy.
+
+This is the most dangerous failure mode because health initially looks good,
+but the platform never completes the job.
+
+### Handler Import/runtime Mismatch
+
+The real training handler imports project code that expects newer Python
+symbols such as `enum.StrEnum`, `datetime.UTC`, and `typing.Self`. On the
+CUDA/Ubuntu image, Python 3.10 is installed from apt, so those symbols must be
+shimmed before project imports.
+
+## Evidence
+
+| Image / commit | Endpoint | Result |
+|---|---|---|
+| `8bcb9c69` training image | `mxp0bv8itggwev` | Completed full LightGBM training job `9c587ec9-c449-4050-b983-efba0638f634-u2` and returned artifact `artifact:8518eac762e77c78` |
+| `8c45c484` python:3.12-slim training image | `mxp0bv8itggwev` | Job `243dba18-ff96-4754-98eb-40abe1132dd5-u1` stayed `IN_QUEUE`; endpoint health dropped to zero active workers |
+| minimal python:3.12-slim smoke worker | isolated smoke endpoints | Completed smoke jobs, but this did not prove the real training image |
 
 ## Root Cause
-All CUDA base images tested break the runpod SDK's job dispatch mechanism
-on RunPod serverless ADA_24 GPUs (driver 550, CUDA 12.4 max). The exact
-mechanism differs by image:
 
-1. **`pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime`**: Workers go
-   unhealthy within 90 seconds. Likely related to the NVIDIA entrypoint
-   hook or conda environment initialization conflicting with RunPod's
-   serverless worker lifecycle.
+The practical root cause was a bad promotion signal. Minimal smoke endpoints
+proved that RunPod job dispatch could work in isolation, but they did not prove
+the real training container. The production worker needed both of these:
 
-2. **`runpod/base:1.0.2-cuda1281-ubuntu2204`**: Uses CUDA 12.8 which
-   exceeds driver 550's maximum (CUDA 12.4). The `nvidia_entrypoint.sh`
-   hook kills the container.
+1. a container base that can initialize on RunPod serverless GPU workers, and
+2. a Python/runtime shape compatible with the real handler import tree.
 
-3. **`nvidia/cuda:12.4.1-runtime-ubuntu22.04`**: Workers become ready
-   but the runpod SDK never picks up jobs. Despite overriding the
-   `nvidia_entrypoint.sh` with a direct Python entrypoint, something
-   in the nvidia/cuda base image prevents the SDK's HTTP webhook from
-   receiving job dispatches from RunPod's platform.
-
-4. **`python:3.12-slim` + pip PyTorch CUDA**: Works perfectly. The
-   runpod SDK's job dispatch mechanism functions correctly. PyTorch
-   CUDA wheels from `download.pytorch.org/whl/cu124` include the CUDA
-   runtime libraries, so GPU operations work without a CUDA base image.
+The `8bcb9c69` line satisfied both conditions. The later `8c45c484` rewrite
+changed too many variables at once and failed the real promotion gate.
 
 ## Fix
-Changed the training Dockerfile to use `python:3.12-slim` as the base
-image and install PyTorch with CUDA 12.4 via pip:
 
-### Training (`runpod/quant-foundry-training/Dockerfile`)
+Restore the training worker to the verified `8bcb9c69` shape and build a new
+image from the latest branch head. The Dockerfile should use:
+
 ```dockerfile
-# Before (broken — ready but no job pickup):
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
-
-# After (working — jobs picked up and completed):
-FROM python:3.12-slim
-
-# Install PyTorch with CUDA 12.4 runtime from pytorch.org
-RUN pip install --no-cache-dir "torch==2.4.1" \
-    --index-url https://download.pytorch.org/whl/cu124
 ```
 
-Additional changes:
-- Removed layered handler wrapper (`handler_layered.py`), use `handler.py` directly
-- Removed `entrypoint.sh` wrapper, use direct `ENTRYPOINT ["python", "-u", "/worker/handler.py"]`
-- Removed Python 3.10 compat shims (python:3.12 has `StrEnum`, `UTC`, `Self` natively)
-- Extracted `preflight.py` as a standalone file, run from handler `__main__` block
+It should keep the Python 3.10 compatibility shims and layered handler used by
+the verified full-training image.
 
-## Verification
-1. **Smoke endpoint** (`z6xy0iflvxcjtr`, python:3.12-slim): Job submitted →
-   `COMPLETED` in ~15 seconds with `ok: true` output
-2. **Slim+CUDA test endpoint** (`53ssdfywfn9gg8`, python:3.12-slim + pip torch):
-   Worker ready in ~14 minutes, job submitted → `COMPLETED` in ~15 seconds
-   with `ok: true` output
-3. **Training endpoint**: Pending new image build verification
+## Required Verification
 
-## Images Tested
-| Base Image | CUDA Version | Result |
-|---|---|---|
-| `python:3.12-slim` | None | ✅ Jobs picked up and completed |
-| `python:3.12-slim` + pip torch CUDA 12.4 | 12.4 (pip) | ✅ Jobs picked up and completed |
-| `pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime` | 12.4 | ❌ Unhealthy in 90s |
-| `runpod/base:1.0.2-cuda1281-ubuntu2204` | 12.8 | ❌ Unhealthy in 90s |
-| `nvidia/cuda:12.4.1-runtime-ubuntu22.04` | 12.4 | ❌ Ready but no job pickup |
+For every future candidate image:
 
-## Key Commits
-- `b6b0c5e2`: Switch cuda-test Dockerfile to nvidia/cuda base (partial fix)
-- `ad24f100`: Switch training Dockerfile to nvidia/cuda base (partial fix)
-- `349c194d`: Build slim+CUDA test image (python:3.12-slim + pip torch)
-- `8c45c484`: Switch training Dockerfile to python:3.12-slim + pip PyTorch CUDA (complete fix)
+1. Build and push `ghcr.io/airyder/fincept/quant-foundry-training:<git_sha>`.
+2. Deploy that exact image tag to `mxp0bv8itggwev`.
+3. Purge or cancel any stale queued jobs.
+4. Submit one full LightGBM training job.
+5. Poll `/status` and `/health` until the job reaches a terminal state.
+6. Promote only if the job is `COMPLETED` and the result includes a real
+   artifact id, artifact URI, model family, metrics, and no typed callback
+   failure code.
+
+Smoke-only endpoints remain useful for narrowing platform problems, but they
+are not release evidence for the training worker.
+
+## Operational Notes
+
+- Use bearer auth for RunPod API calls; do not put API keys in query strings.
+- Keep `QUANT_FOUNDRY_CALLBACK_SECRET` out of Docker `ENV` layers.
+- If diagnostic output ever includes API keys, callback secrets, or job-take
+  URLs, rotate the affected secrets before treating the environment as clean.
