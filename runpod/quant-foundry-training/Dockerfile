@@ -24,12 +24,15 @@
 #   QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
 
 # ---------------------------------------------------------------------------
-# Base image: PyTorch CUDA runtime gives us Python + CUDA 12.4 + cuDNN 9 in
-# one well-maintained layer. Python 3.11 is the conda interpreter; pip works
-# directly. This avoids hand-installing Python via deadsnakes on a bare
-# nvidia/cuda image (which is fragile and slow to build).
+# Base image: python:3.12-slim (same as the inference container which works).
+# The pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime base image was causing
+# worker crashes on job pickup — likely due to conda Python's interaction
+# with the RunPod SDK 1.10.0's new fitness checks and per-job stop features.
+# The inference container uses python:3.12-slim and has 8 completed jobs.
+# For GPU training, CUDA is injected by RunPod's NVIDIA container runtime;
+# the pip wheels for xgboost/catboost include CUDA support.
 # ---------------------------------------------------------------------------
-FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+FROM python:3.12-slim
 
 # Prevent Python from buffering stdout/stderr so RunPod captures logs live.
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -47,10 +50,8 @@ WORKDIR /worker
 #  - curl: used by the healthcheck fallback / diagnostics.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    gosu \
     curl \
     ca-certificates \
-    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
@@ -99,7 +100,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod>=1.6,<2" \
+    "runpod==1.7.13" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
@@ -288,14 +289,12 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the handler process is still running. We use pgrep
-# instead of re-importing the handler module because the handler imports
-# heavy ML libraries (pandas, numpy, scikit-learn, quant_foundry). Running
-# a second Python process that re-imports these causes OOM on GPU pods with
-# limited system RAM, which kills the main handler process.
+# Healthcheck: verify the Python runtime + handler module can load.
+# Same pattern as the inference container (which works). The python:3.12-slim
+# base image has enough RAM for the double import (no CUDA libraries loaded).
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=10s --start-period=40s --retries=3 \
-  CMD pgrep -f "handler.py" || exit 1
+HEALTHCHECK --interval=60s --timeout=15s --start-period=40s --retries=3 \
+  CMD python -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
 # RunPod's dockerArgs field can't override it. The entrypoint runs the
