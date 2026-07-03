@@ -241,7 +241,10 @@ Acceptance:
 
 ### 8. Write and consolidate the new receipt bundle
 
-Status: open
+Status: **DONE (uncommitted — receipt at `reports/runpod-test-runs/6dbec436/`,
+index updated pass #4)** — bundle contains `interpretation.md`,
+`canary-probe.jsonl`, `health-before.json`, `health-after.json`,
+`cleanup.json`. Index updated in pass #4. Needs committing.
 Type: evidence/documentation
 
 Files:

@@ -271,6 +271,18 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 - `runpod/tests/test_dockerfile_no_healthcheck.py` — fails if a Docker
   `HEALTHCHECK` is reintroduced (pre-existing).
 
+### Key receipt files for `6dbec436` (production canary — PASS, uncommitted)
+
+- `interpretation.md` — full analysis: 3/3 COMPLETED, timeline, job outputs,
+  operational note on full-SHA image tag, next-step prompt.
+- `canary-probe.jsonl` — 22 raw probe events across 3 canary runs (all
+  `final_status: COMPLETED`, worker `unhealthy=0` throughout).
+- `health-before.json` — `ready=1, idle=1, unhealthy=0` (pre-dispatch).
+- `health-after.json` — `completed=3, failed=0, unhealthy=0` (post-all-canaries).
+- `cleanup.json` — endpoint `4jc1opwj11zmai` scaled to `workersMin=0`;
+  broken short-SHA endpoint `jtr18cdh5lgov2` also cleaned up; no stuck jobs;
+  no secrets printed.
+
 ### Key receipt files for Test F (`c0f15fa7`)
 
 - `summary.json` — all 12 profile results (corrected: lightgbm = inconclusive_false_negative)
@@ -305,6 +317,16 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 ---
 
 ## Receipt Corrections Made This Pass
+
+**Pass #4 made no new receipt corrections.** The `6dbec436` receipt bundle
+(`reports/runpod-test-runs/6dbec436/`) was reviewed against its raw evidence
+(`canary-probe.jsonl`, `health-before.json`, `health-after.json`,
+`cleanup.json`) and is internally consistent — all 3 canary runs show
+`final_status: COMPLETED` with `unhealthy=0` throughout. No corrections
+needed.
+
+The corrections below were made in prior passes (pass #2/#3) and committed
+in `61dca0a4`.
 
 ### Test F summary.json + interpretation.md (`c0f15fa7`)
 
@@ -387,21 +409,33 @@ container exits immediately with `docker=None, unhealthy=1`.
 
 The remaining work is:
 
-1. **Live `gpu_healthcheck` / `train_model` job** — the canary path exercises
+1. **Commit the uncommitted receipt bundle and index updates.** The following
+   are uncommitted and should be committed as an evidence commit (separate
+   from any code changes):
+   - `reports/runpod-test-runs/6dbec436/` (live canary receipt — PASS 3/3)
+   - `runpod/quant-foundry-training/run_live_canary.py` (canary automation)
+   - `docs/runpod-fix-plan/RECEIPT_INDEX.md` (this index — pass #4)
+   - `docs/runpod-fix-plan/07-remaining-work.md` (pass #3 status updates)
+   - Delete `.tmp_canary_payload{,2,3}.json` (scratch files from the live run)
+   Suggested commit message: `evidence(runpod): commit 6dbec436 live canary receipt (3/3 PASS) + pass #4 index`
+
+2. **Live `gpu_healthcheck` / `train_model` job** — the canary path exercises
    preflight + callback signing but NOT actual model training or GPU access.
    Dispatch a `gpu_healthcheck` job (mode=canary) against the `6dbec436`
    image to verify the GPU is accessible, then a minimal `train_model` job to
    verify the full training pipeline (dataset loading, trainer execution,
-   model export) works live.
+   model export) works live. Reuse endpoint `4jc1opwj11zmai` (scale back up
+   to `workersMin=1`) or create a fresh one. Use the FULL 40-char SHA image
+   tag.
 
-2. **Repo hygiene (item 12 in `07-remaining-work.md`):** the worktree has
+3. **Repo hygiene (item 12 in `07-remaining-work.md`):** the worktree has
    uncommitted `infra/docker/api.Dockerfile` changes, `ruff.toml` +
    `runpod/quant-foundry-training/run_live_canary.py` (canary automation
    tooling from a prior session), and untracked `SESSION_HANDOFF.md`,
    `handoffs/`, `kimiSuggestionFix.md`, and `reports/ci-triage/`. Do NOT
    bundle these into the RunPod fix commit. Classify each before final ship.
 
-3. **CI lint debt:** the `ci` workflow fails on `6dbec436` with 1334 Ruff
+4. **CI lint debt:** the `ci` workflow fails on `6dbec436` with 1334 Ruff
    errors (pre-existing, identical count to `main` — NOT a regression). This
    does NOT block the RunPod fix path but should be addressed separately.
 

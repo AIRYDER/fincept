@@ -1,17 +1,17 @@
 {
-  "delayTime": 1923,
-  "executionTime": 43,
-  "id": "8641a636-790c-4aa9-bce1-030b6de068d9-u2",
+  "delayTime": 985,
+  "executionTime": 48,
+  "id": "050c1034-6fdc-4cbf-b4e1-b730fe80b295-u1",
   "output": {
-    "callback_payload": "{\"job_id\": \"qf:canary:6dbec436\", \"payload\": {\"nonce\": \"n-1783117999\"}, \"result_type\": \"callback_secret_canary\", \"schema_version\": 1, \"worker_id\": \"runpod-canary\"}",
-    "callback_signature": "a7e0b92fe60aa816084416833d8886a3f91efc22389302504b13868fb50bd96c",
-    "callback_ts": 1783118002,
+    "callback_payload": "{\"job_id\": \"qf:canary:6dbec436\", \"payload\": {\"nonce\": \"n-1783118054\"}, \"result_type\": \"callback_secret_canary\", \"schema_version\": 1, \"worker_id\": \"runpod-canary\"}",
+    "callback_signature": "1d9f951d6b08e971de5a8e8d124e63b6578719d9a93d1cc896e6976fd96ab64c",
+    "callback_ts": 1783118057,
     "canary": true,
     "job_id": "qf:canary:6dbec436",
-    "nonce": "n-1783117999",
+    "nonce": "n-1783118054",
     "preflight_result": {
       "callback_url_validated": false,
-      "checked_at_ns": 1783118002536257000,
+      "checked_at_ns": 1783118057073116200,
       "container_user": "root:0",
       "forbidden_vars_found": [],
       "mode": "canary",
@@ -32,5 +32,5 @@
     }
   },
   "status": "COMPLETED",
-  "workerId": "8k358bsz533d3s"
+  "workerId": "mtk6r8zemfr8ib"
 }
