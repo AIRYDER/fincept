@@ -2720,7 +2720,7 @@ def _build_task_rejection_callback(
 
 
 def handler(event: dict[str, Any]) -> dict[str, Any]:
-    """RunPod serverless handler entrypoint.
+    """RunPod serverless handler entrypoint (with crash logging wrapper).
 
     Args:
         event: RunPod event dict. `event["input"]` must be a dict matching
@@ -2731,6 +2731,32 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         callback_ts, job_id, artifact_id, dossier_id.
         On failure: dict with error_code, error_summary, job_id.
     """
+    try:
+        return _handler_impl(event)
+    except Exception as exc:
+        # Crash logging: print full traceback to stdout so it appears in
+        # container logs. The runpod SDK may still report the job as failed,
+        # but at least we can see WHY it crashed.
+        import traceback as _tb
+
+        _job_id = "unknown"
+        try:
+            _input = event.get("input") if isinstance(event, dict) else None
+            if isinstance(_input, dict):
+                _job_id = _input.get("job_id", "unknown")
+        except Exception:
+            pass
+        print(
+            f"[handler] CRASH job_id={_job_id}: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        print(_tb.format_exc(), flush=True)
+        # Re-raise so the SDK can handle the error appropriately
+        raise
+
+
+def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
+    """Actual handler implementation (called by the crash-logging wrapper)."""
     input_data = event.get("input") if isinstance(event, dict) else None
     if not isinstance(input_data, dict):
         # Phase 5 / T-5.3: signed failure envelope (mode unknown → canary,
@@ -3684,6 +3710,32 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 if __name__ == "__main__":  # pragma: no cover
     import sys
     import traceback
+
+    # Run the standalone security preflight before starting the SDK.
+    # This catches forbidden env vars early (before the SDK starts polling)
+    # so misconfigured images fail fast with a clear message.
+    # Skip with QF_DIAG_SKIP_PREFLIGHT=1 for diagnostic builds.
+    if os.environ.get("QF_DIAG_SKIP_PREFLIGHT", "0") != "1":
+        try:
+            import importlib.util
+
+            _pf_spec = importlib.util.spec_from_file_location(
+                "preflight", "/worker/preflight.py"
+            )
+            if _pf_spec and _pf_spec.loader:
+                _pf_mod = importlib.util.module_from_spec(_pf_spec)
+                _pf_spec.loader.exec_module(_pf_mod)
+                _pf_rc = _pf_mod.main()
+                if _pf_rc != 0:
+                    print(
+                        f"[handler] preflight failed (rc={_pf_rc}), exiting",
+                        file=sys.stderr, flush=True,
+                    )
+                    raise SystemExit(_pf_rc)
+        except FileNotFoundError:
+            print("[handler] preflight.py not found, skipping", flush=True)
+        except Exception as _pf_exc:
+            print(f"[handler] preflight error: {_pf_exc}", file=sys.stderr, flush=True)
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
