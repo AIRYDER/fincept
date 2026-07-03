@@ -99,7 +99,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod>=1.6,<2" \
+    "runpod==1.7.10" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
@@ -236,11 +236,12 @@ PREFLIGHT_EOF
 # ---------------------------------------------------------------------------
 # Entrypoint wrapper.
 #
-# Runs as root (RunPod mounts the network volume owned by root), performs the
-# security preflight, fixes ownership of the writable volume dirs so the
-# non-root `trainer` user can write artifacts/status, then drops privileges
-# via gosu and execs the handler. If the volume dirs are not mountpoints
-# (local test), chown is best-effort.
+# Runs as root (RunPod serverless workers run as root by default), performs
+# the security preflight, fixes ownership of the writable volume dirs, then
+# execs the handler directly as root (no gosu privilege drop — the gosu drop
+# caused the worker to go unhealthy within ~40s on RunPod's serverless
+# platform). If the volume dirs are not mountpoints (local test), chown is
+# best-effort.
 # ---------------------------------------------------------------------------
 RUN cat > /worker/entrypoint.sh <<'ENTRY_EOF'
 #!/usr/bin/env bash
@@ -293,13 +294,16 @@ ENV QUANT_FOUNDRY_CALLBACK_SECRET="" \
     PYTHONPATH=/worker
 
 # ---------------------------------------------------------------------------
-# Healthcheck: verify the Python runtime + handler module load. We do NOT
-# require nvidia-smi here — the handler's gpu_healthcheck task is the
-# authoritative GPU probe. This Docker HEALTHCHECK is only the
-# container-level liveness gate.
+# Healthcheck: verify the handler process is running. We do NOT import the
+# full handler module here — that takes >15s due to xgboost/catboost/lightgbm
+# imports and causes the healthcheck to time out, marking the worker
+# unhealthy within ~3 min of startup. Instead we just check that the handler
+# Python process is alive (pgrep). The handler's gpu_healthcheck task is the
+# authoritative GPU probe; this Docker HEALTHCHECK is only the container-level
+# liveness gate.
 # ---------------------------------------------------------------------------
-HEALTHCHECK --interval=60s --timeout=15s --start-period=60s --retries=3 \
-  CMD python3 -c "import sys; sys.path.insert(0, '/worker'); import handler; print('healthcheck ok')" || exit 1
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD pgrep -f "handler.py" > /dev/null 2>&1 || exit 1
 
 # RunPod's serverless platform expects the container to start the handler.
 # We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
