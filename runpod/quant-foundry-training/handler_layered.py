@@ -72,7 +72,8 @@ def _get_full() -> Any:
     try:
         import handler_full as mod  # type: ignore[import-not-found]
         _full = mod
-    except ImportError:
+    except Exception as exc:
+        print(f"[layered] import handler_full failed ({type(exc).__name__}: {exc}), trying file path...", flush=True)
         _spec = importlib.util.spec_from_file_location(
             "handler_full", os.path.join(_HERE, "handler_full.py")
         )
@@ -83,6 +84,12 @@ def _get_full() -> Any:
         _spec.loader.exec_module(_full)
     elapsed = int((time.monotonic() - t0) * 1000)
     print(f"[layered] production handler module imported OK in {elapsed}ms", flush=True)
+    if not hasattr(_full, "handler"):
+        attrs = [a for a in dir(_full) if not a.startswith("_")]
+        raise RuntimeError(
+            f"handler_full module loaded but has no 'handler' attribute. "
+            f"Available attrs: {attrs[:20]}"
+        )
     return _full
 
 
@@ -184,11 +191,23 @@ def _layer_4(event: Any) -> dict[str, Any]:
 
 
 def _layer_5(event: Any) -> dict[str, Any]:
-    full = _get_full()
-    result = full.handler(event)
-    if isinstance(result, dict):
-        result.setdefault("layer", "full_current_path")
-    return result
+    try:
+        full = _get_full()
+        result = full.handler(event)
+        if isinstance(result, dict):
+            result.setdefault("layer", "full_current_path")
+        return result
+    except Exception as exc:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[layered] _layer_5 ERROR: {exc}\n{tb}", flush=True)
+        return {
+            "ok": False,
+            "layer": "layer_5_exception",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "traceback": tb,
+        }
 
 
 _LAYERS = {0: _layer_0, 1: _layer_1, 2: _layer_2, 3: _layer_3, 4: _layer_4, 5: _layer_5}
