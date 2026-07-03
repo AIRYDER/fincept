@@ -1,9 +1,11 @@
 """Force-recycle RunPod endpoint workers by toggling workersMax."""
-import httpx
+
 import json
 import os
 import sys
 import time
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = sys.argv[1] if len(sys.argv) > 1 else os.environ["RUNPOD_ENDPOINT_ID"]
@@ -31,11 +33,12 @@ mutation($id: String!, $workersMin: Int!, $workersMax: Int!) {
 }
 """
 
+
 def graphql(query, variables):
     r = httpx.post(
-        f"https://api.runpod.io/graphql?api_key={api_key}",
+        "https://api.runpod.io/graphql",
         json={"query": query, "variables": variables},
-        headers={"Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         timeout=30.0,
     )
     r.raise_for_status()
@@ -43,6 +46,7 @@ def graphql(query, variables):
     if "errors" in data:
         raise RuntimeError(json.dumps(data["errors"], indent=2))
     return data["data"]
+
 
 # 1. Fetch current state
 result = graphql(query, {"id": endpoint_id})

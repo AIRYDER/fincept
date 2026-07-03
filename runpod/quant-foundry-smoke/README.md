@@ -44,6 +44,7 @@ $sourceEndpoint = "<existing-endpoint-with-ghcr-auth>"
 python scripts/runpod_create_smoke_endpoint.py `
   --image-tag "ghcr.io/airyder/fincept/quant-foundry-smoke:$sha" `
   --copy-registry-auth-from-endpoint-id $sourceEndpoint `
+  --workers-min 1 `
   --wait-health
 ```
 
@@ -77,6 +78,19 @@ The probe prints JSONL receipts for:
 
 Never put credentials or secrets inside the smoke payload. The handler echoes
 the received event by design.
+
+After the probe completes, lower the provisioned worker floor to avoid keeping
+a warm worker alive:
+
+```pwsh
+$endpoint = "<new-endpoint-id>"
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "https://rest.runpod.io/v1/endpoints/$endpoint/update" `
+  -Headers @{ Authorization = "Bearer $env:RUNPOD_API_KEY" } `
+  -ContentType "application/json" `
+  -Body '{"workersMin":0,"workersMax":1}'
+```
 
 ## Decision Rule
 

@@ -8,7 +8,6 @@ import os
 import sys
 import time
 from typing import Any
-from urllib.parse import quote
 
 GRAPHQL_HOST = "api.runpod.io"
 REST_HOST = "api.runpod.ai"
@@ -96,11 +95,10 @@ def _request_json(
 
 
 def _graphql(api_key: str, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    path = f"/graphql?api_key={quote(api_key, safe='')}"
     data = _request_json(
         method="POST",
         host=GRAPHQL_HOST,
-        path=path,
+        path="/graphql",
         api_key=api_key,
         payload={"query": query, "variables": variables},
         timeout=60.0,
@@ -148,7 +146,7 @@ def _endpoint_input(args: argparse.Namespace, registry_auth_id: str | None) -> d
         "name": args.template_name,
         "imageName": args.image_tag,
         "containerDiskInGb": args.container_disk_gb,
-        "dockerArgs": json.dumps({"cmd": ["python", "-u", "/worker/handler.py"]}),
+        "dockerArgs": args.docker_args,
         "env": template_env,
     }
     if registry_auth_id:
@@ -236,7 +234,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--gpu-ids", default=os.environ.get("RUNPOD_SMOKE_GPU_IDS", "ADA_24"))
     parser.add_argument("--workers-min", type=int, default=0)
     parser.add_argument("--workers-max", type=int, default=1)
-    parser.add_argument("--container-disk-gb", type=int, default=5)
+    parser.add_argument("--container-disk-gb", type=int, default=20)
+    parser.add_argument("--docker-args", default="")
     parser.add_argument("--idle-timeout", type=int, default=300)
     parser.add_argument("--scaler-type", default="QUEUE_DELAY")
     parser.add_argument("--scaler-value", type=int, default=4)
