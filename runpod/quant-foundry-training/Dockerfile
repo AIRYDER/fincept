@@ -63,9 +63,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # StrEnum compatibility shim for Python 3.10 (nvidia/cuda:12.4.1-runtime-ubuntu22.04
 # ships Python 3.10, but quant_foundry uses StrEnum from Python 3.11+).
-# This sitecustomize.py runs before any user code and adds StrEnum to enum
-# if it's missing.
-RUN python -c "import pathlib,enum; p=pathlib.Path('/usr/lib/python3/dist-packages/sitecustomize.py'); p.write_text('import enum\\nif not hasattr(enum, \"StrEnum\"):\\n    class StrEnum(str, enum.Enum):\\n        pass\\n    enum.StrEnum = StrEnum\\n', encoding='utf-8')"
+# We create a _strenum_compat.py that patches enum.StrEnum if missing,
+# and prepend it to PYTHONPATH so it's imported before any quant_foundry code.
+RUN python -c "import pathlib; p=pathlib.Path('/worker/_strenum_compat.py'); p.write_text('import enum, sys\\nif not hasattr(enum, \"StrEnum\"):\\n    class StrEnum(str, enum.Enum):\\n        pass\\n    enum.StrEnum = StrEnum\\n    sys.modules[\"enum\"].StrEnum = StrEnum\\n', encoding='utf-8')"
 
 # Copy the quant_foundry source from the monorepo.
 COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/

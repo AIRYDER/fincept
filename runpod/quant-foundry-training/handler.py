@@ -42,6 +42,14 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+# StrEnum compatibility shim — must run before any quant_foundry imports
+# (quant_foundry uses StrEnum which is Python 3.11+, but the Docker base
+# image ships Python 3.10).
+try:
+    import _strenum_compat  # type: ignore[import-not-found]  # noqa: F401
+except ImportError:
+    pass
+
 # Add the shared RunPod utilities to sys.path so we can import
 # worker_status. In the container the shared module may be at different
 # paths (sibling to the handler, or under /app/runpod/shared). For local

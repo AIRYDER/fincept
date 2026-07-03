@@ -29,6 +29,14 @@ Extra runtime diagnostics (to catch native crashes / forced exits):
 # ruff: noqa: T201 - stdout prints are the container's log channel
 from __future__ import annotations
 
+# StrEnum compatibility shim — must run before any quant_foundry imports
+# (quant_foundry uses StrEnum which is Python 3.11+, but the Docker base
+# image ships Python 3.10).
+try:
+    import _strenum_compat  # type: ignore[import-not-found]
+except ImportError:
+    pass
+
 import faulthandler
 import importlib.util
 import json
