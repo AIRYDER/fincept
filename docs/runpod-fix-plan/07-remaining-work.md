@@ -1,8 +1,8 @@
 # RunPod Training Worker Remaining Work
 
-Last updated: 2026-07-03
+Last updated: 2026-07-03 (consolidation pass #3)
 Branch observed: `fix/test-harness-optional-deps-guards`
-Newest committed evidence reviewed: `06646f1c`
+Newest committed evidence reviewed: `6dbec436`
 
 This is the active remaining-work checklist for the Quant Foundry RunPod
 training-worker dispatch investigation. It supersedes stale parts of
@@ -17,15 +17,26 @@ Read this with:
 
 ## Current State
 
-The latest evidence identifies the next code fix: `equities.py` and `news.py`
-use `pathlib.Path(__file__).resolve().parents[5]`, but inside the RunPod
-container those files live under `/worker/quant_foundry/data_ingestion/...`,
-which has only four parents. The unguarded index can raise `IndexError: 5`.
+**Items 1, 2, 9, 10, 11 are DONE (commit `6dbec436` + `61dca0a4`).** The
+`parents[5]` IndexError is fixed in `equities.py`/`news.py` (guarded index +
+`ModuleNotFoundError` fallback), the production handler is restored as the
+direct RunPod entrypoint in the Dockerfile, the bisection probe false-negative
+logic is fixed, the receipt-integrity guard test is added, and the Test F
+receipt corrections are committed. Local gates passed (ruff clean, pytest 7+4,
+local canary COMPLETED).
 
-The Dockerfile is still in diagnostic shape: it copies
-`handler_import_bisect.py` to `/worker/handler.py` and preserves the production
-handler as `/worker/handler_full.py`. That image shape is useful for evidence,
-but it is not production-ready.
+**The Dockerfile is now production-shaped** (copies `handler.py` to
+`/worker/handler.py`; `handler_import_bisect.py` is no longer copied in).
+
+**Items 1, 2, 3, 5, 6, 9, 10, 11 are DONE.** The live production-handler
+canary PASSED at `6dbec436` (3/3 COMPLETED, worker remained healthy). The
+`parents[5]` IndexError is confirmed as the root cause of the dispatch-time
+crash. See `reports/runpod-test-runs/6dbec436/interpretation.md`.
+
+**Remaining: items 4 (build — already green), 7 (conditional — not needed),
+8 (receipt consolidation — in progress), 12 (repo hygiene).** The next
+milestone is a live `gpu_healthcheck` / `train_model` job to verify the full
+training pipeline (not just the canary path).
 
 ## Do Not Re-Do
 
@@ -43,7 +54,7 @@ but it is not production-ready.
 
 ### 1. Fix the `parents[5]` container path crash
 
-Status: open
+Status: **DONE (commit `6dbec436`)**
 Type: focused code fix
 
 Files:
@@ -77,7 +88,7 @@ Acceptance:
 
 ### 2. Restore the production handler as the direct RunPod entrypoint
 
-Status: open
+Status: **DONE (commit `6dbec436`)**
 Type: Dockerfile production-shape restoration
 
 File:
@@ -105,7 +116,7 @@ Acceptance:
 
 ### 3. Run local gates before any live endpoint
 
-Status: open
+Status: **DONE (per `6dbec436` commit message)** — ruff clean, pytest 7+4, local canary COMPLETED, `git diff --check` clean.
 Type: local verification
 
 Commands:
@@ -128,7 +139,9 @@ Acceptance:
 
 ### 4. Build and publish an exact SHA training image
 
-Status: open
+Status: **DONE** — build run `28683991294` green (13m28s). Image:
+`ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`
+(full 40-char SHA tag — the workflow tags with `github.sha`, NOT a short SHA).
 Type: CI/image build
 
 Work:
@@ -150,7 +163,7 @@ Acceptance:
 
 ### 5. Run a fresh live production-handler canary
 
-Status: open
+Status: **DONE (commit pending — receipt at `reports/runpod-test-runs/6dbec436/`)**
 Type: senior/operator live RunPod validation
 
 Endpoint shape:
@@ -185,7 +198,8 @@ Acceptance:
 
 ### 6. Repeat canary for stability if the first production canary passes
 
-Status: open
+Status: **DONE** — 3/3 canaries COMPLETED (44ms, 43ms, 50ms executionTime),
+same worker ID `goi504hgln2q6x`, `unhealthy=0` throughout.
 Type: live stability confirmation
 
 Work:
@@ -261,7 +275,7 @@ Acceptance:
 
 ### 9. Fix the bisection probe false-negative logic before future bisection
 
-Status: open but not blocking the immediate production retest
+Status: **DONE (commit `6dbec436`)**
 Type: test tooling fix
 
 File:
@@ -291,7 +305,7 @@ Acceptance:
 
 ### 10. Add a receipt-integrity guard
 
-Status: open
+Status: **DONE (commit `6dbec436`)**
 Type: regression test
 
 Suggested file:
@@ -314,16 +328,17 @@ Acceptance:
 
 ### 11. Commit or classify the receipt corrections already in the worktree
 
-Status: open
+Status: **DONE (commit `61dca0a4`)**
 Type: repo hygiene
 
-Currently observed modified receipt files:
+The previously uncommitted receipt corrections
+(`reports/runpod-test-runs/c0f15fa7/import-bisection/summary.json`,
+`interpretation.md`, `reports/runpod-test-runs/d7ba5a2d/test-e-sentinel.md`)
+were committed in `61dca0a4` along with the raw bisection evidence for all 12
+profiles. The worktree no longer has ambiguous receipt corrections for these
+files.
 
-- `reports/runpod-test-runs/c0f15fa7/import-bisection/summary.json`
-- `reports/runpod-test-runs/c0f15fa7/import-bisection/interpretation.md`
-- `reports/runpod-test-runs/d7ba5a2d/test-e-sentinel.md`
-
-Work:
+Work (historical, kept for reference):
 
 - Review each diff against raw evidence.
 - Commit the valid corrections, or explicitly document why any correction is
@@ -340,14 +355,22 @@ Acceptance:
 Status: open
 Type: repo hygiene
 
-Currently observed unrelated or ambiguous worktree items:
+Currently observed worktree items at consolidation pass #3 (from `git status`):
 
-- `infra/docker/api.Dockerfile` modified to copy `experiments`.
-- many untracked `.tmp_*.py` RunPod scratch scripts.
-- untracked RunPod cleanup, health, probe, and status receipts.
-- `SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md`,
-  `docs/runpod-fix-plan/06-swarm-task-queue.md`, and
-  `docs/runpod-fix-plan/RECEIPT_INDEX.md`.
+- `infra/docker/api.Dockerfile` — modified (uncommitted). Unrelated to the
+  RunPod fix. Keep separate.
+- `SESSION_HANDOFF.md` — untracked.
+- `handoffs/2026-07-03_01-51_fix-runpod-training-crash/` — untracked session
+  handoff docs (predate the fix; describe the earlier bisect-`handler()`
+  approach — now superseded by the `parents[5]` root cause).
+- `kimiSuggestionFix.md` — untracked.
+- `reports/ci-triage/receipt-20260703T200535Z.md` — untracked CI triage
+  receipt (covers `c0f15fa7`; documents pre-existing CI debt, not the RunPod
+  fix path).
+
+Note: the previously uncommitted receipt corrections and the
+`docs/runpod-fix-plan/` plan docs are now committed (`61dca0a4` / `6dbec436`).
+The `.tmp_*.py` scratch scripts are no longer present in the worktree.
 
 Work:
 
