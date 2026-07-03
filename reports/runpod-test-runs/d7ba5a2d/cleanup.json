@@ -1,0 +1,20 @@
+{
+  "createdAt": "2026-07-03T19:14:15.161Z",
+  "flashboot": false,
+  "gpuCount": 1,
+  "gpuTypeIds": [
+    "NVIDIA GeForce RTX 4090"
+  ],
+  "id": "fqa18kqj9exo62",
+  "idleTimeout": 300,
+  "name": "qf-train-sentinel-d7ba5a2d",
+  "networkVolumeId": "",
+  "scalerType": "QUEUE_DELAY",
+  "scalerValue": 4,
+  "templateId": "29f7bzvkbr",
+  "userId": "user_32lBXOnFFDX3g9rIuiuE0xg1U1h",
+  "version": 1,
+  "workersMax": 0,
+  "workersMin": 0,
+  "workersStandby": 1
+}

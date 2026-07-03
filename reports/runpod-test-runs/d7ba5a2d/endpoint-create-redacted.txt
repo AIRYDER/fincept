@@ -1,0 +1,26 @@
+Using registry auth from z6xy0iflvxcjtr (fincept-qf-smoke-a62088d5)
+RunPod smoke endpoint create
+mode: LIVE
+image: ghcr.io/airyder/fincept/quant-foundry-training:d7ba5a2d1a5b85e4b26cb77196715f548015e01e
+endpoint name: qf-train-sentinel-d7ba5a2d
+gpuIds: ADA_24
+created endpoint id: fqa18kqj9exo62
+created endpoint name: qf-train-sentinel-d7ba5a2d
+created image: ghcr.io/airyder/fincept/quant-foundry-training:d7ba5a2d1a5b85e4b26cb77196715f548015e01e
+
+Probe command:
+python scripts/runpod_smoke_probe.py --endpoint-id fqa18kqj9exo62 --image-tag ghcr.io/airyder/fincept/quant-foundry-training:d7ba5a2d1a5b85e4b26cb77196715f548015e01e --interval 5 --timeout 180
+
+health poll=1 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=2 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=3 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=4 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=5 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=6 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=7 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=8 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=9 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=10 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=11 ready=0 idle=0 running=0 initializing=0 unhealthy=0 inQueue=0
+health poll=12 ready=0 idle=0 running=0 initializing=1 unhealthy=0 inQueue=0
+health poll=13 ready=1 idle=1 running=0 initializing=0 unhealthy=0 inQueue=0
