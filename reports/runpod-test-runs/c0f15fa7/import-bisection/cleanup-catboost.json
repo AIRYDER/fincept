@@ -1,0 +1,22 @@
+{
+  "endpoint_id": "b0hiaap9tdfetg",
+  "health_after_scale_down": {
+    "jobs": {
+      "completed": 1,
+      "failed": 0,
+      "inProgress": 0,
+      "inQueue": 0,
+      "retried": 0
+    },
+    "workers": {
+      "idle": 0,
+      "initializing": 0,
+      "ready": 0,
+      "running": 1,
+      "throttled": 0,
+      "unhealthy": 0
+    }
+  },
+  "workersMax": 0,
+  "workersMin": 0
+}

@@ -1,0 +1,2 @@
+{"event": "job_dispatched", "job_id": "3afa8f0d-5d3c-4ebd-8060-3323f0735558-u2", "input": {"task": "import_bisect", "job_id": "qf:import-bisect:dataset_manifest:c0f15fa7", "profile": "dataset_manifest"}, "ts": "2026-07-03T20:25:58Z"}
+{"event": "poll", "job_id": "3afa8f0d-5d3c-4ebd-8060-3323f0735558-u2", "status": "COMPLETED", "health": {"jobs": {"completed": 1, "failed": 0, "inProgress": 0, "inQueue": 0, "retried": 0}, "workers": {"idle": 1, "initializing": 0, "ready": 1, "running": 0, "throttled": 0, "unhealthy": 0}}, "ts": "2026-07-03T20:26:04Z"}

@@ -8,7 +8,7 @@ Last updated: 2026-07-03T19:20Z
 - SHA: `d7ba5a2d1a5b85e4b26cb77196715f548015e01e`
 - Image: `ghcr.io/airyder/fincept/quant-foundry-training:d7ba5a2d1a5b85e4b26cb77196715f548015e01e`
 - Workflow run id: `28679024513` (success, 6m59s)
-- Endpoint id: `17e5k8rxp9cf5q` (created fresh, registry auth copied from `z6xy0iflvxcjtr`)
+- Endpoint id: `fqa18kqj9exo62` (created fresh, registry auth copied from `z6xy0iflvxcjtr`)
 - Endpoint status after test: scaled to `workersMin=0 workersMax=0`
 
 ## Test Performed
@@ -23,29 +23,29 @@ The Dockerfile at this SHA copies `handler_sentinel.py` to `/worker/handler.py` 
 
 ### Timeline
 
-- `19:14:44Z` — endpoint `17e5k8rxp9cf5q` created.
-- `19:15:24Z` (approx) — worker reached `ready=1 idle=1 unhealthy=0` (healthy, poll 13).
-- `19:16:58Z` — sentinel job `eb7d9109-3501-4ea0-b225-6f8f9b6b53c4-u1` submitted via `/run`. Status `IN_QUEUE`.
-- `19:16:58Z` — job reached `COMPLETED` (delayTime=17ms, executionTime=67ms).
-- `19:16:58Z` — post-completion health: `completed=1, failed=0, unhealthy=0`.
-- `19:19:00Z` (approx) — endpoint scaled to `workersMin=0 workersMax=0`.
+- `19:14:15Z` — endpoint `fqa18kqj9exo62` created.
+- `19:16:13Z` (approx) — worker reached `ready=1 idle=1 unhealthy=0` (healthy, poll 13).
+- `19:16:22Z` — sentinel job `260259a7-0185-4ab8-99f7-41249c18355e-u2` submitted via `/run`. Status `IN_QUEUE`.
+- `19:16:28Z` — job reached `COMPLETED` (delayTime=4598ms, executionTime=70ms).
+- `19:16:28Z` — post-completion health: `completed=1, failed=0, unhealthy=0`.
+- `19:17:00Z` (approx) — endpoint scaled to `workersMin=0 workersMax=0`.
 
 ### Job output (redacted)
 
 ```json
 {
   "handler": "quant-foundry-sentinel",
-  "job_id": "qf:sentinel:d7ba5a2d:001",
+  "job_id": "qf:sentinel:",
   "ok": true,
   "received": {
-    "input": {"job_id": "qf:sentinel:d7ba5a2d:001", "task": "sentinel"}
+    "input": {"job_id": "qf:sentinel:", "task": "sentinel"}
   },
   "runtime": {
     "git_sha": "d7ba5a2d1a5b85e4b26cb77196715f548015e01e",
-    "platform": "Linux-5.15.0-133-generic-x86_64-with-glibc2.41",
+    "platform": "Linux-6.8.0-60-generic-x86_64-with-glibc2.41",
     "python": "3.12.13",
     "runpod_sdk": "1.7.13",
-    "started_at": 1783106213
+    "started_at": 1783106185
   }
 }
 ```
@@ -53,20 +53,20 @@ The Dockerfile at this SHA copies `handler_sentinel.py` to `/worker/handler.py` 
 ### Exact payload
 
 ```json
-{"input":{"task":"sentinel","job_id":"qf:sentinel:d7ba5a2d:001"}}
+{"input":{"task":"sentinel","job_id":"qf:sentinel:"}}
 ```
 
 ### Health observations
 
 - Before dispatch: `ready=1 idle=1 unhealthy=0`
 - After completion: `completed=1 failed=0 unhealthy=0` (worker remained healthy)
-- Worker ID: `ujv2hhc5a67axd`
+- Worker ID: `q85wmlu970umyt`
 
 ## What Was Proven
 
-1. **The RunPod SDK job loop works inside the training image shape.** The sentinel handler (trivial, no heavy imports) completed a live job in 67ms. The base image (`python:3.12-slim` + `libgomp1`), SDK (`runpod==1.7.13`), entrypoint, and container runtime are all functional.
+1. **The RunPod SDK job loop works inside the training image shape.** The sentinel handler (trivial, no heavy imports) completed a live job in 70ms (executionTime; delayTime 4598ms). The base image (`python:3.12-slim` + `libgomp1`), SDK (`runpod==1.7.13`), entrypoint, and container runtime are all functional.
 
-2. **The failure is isolated to the production handler's code path.** The production handler (`handler.py`) goes unhealthy ~6 seconds after job dispatch (per `c508103f` receipt). The sentinel handler completes in 67ms. The only difference is the handler code: the production handler imports `quant_foundry`, `fincept_core`, `torch` (via quant_foundry), `xgboost`, `catboost`, `lightgbm` at module level and runs `SecurityPreflight` + task dispatch at request time. The sentinel imports only `runpod` + stdlib.
+2. **The failure is isolated to the production handler's code path.** The production handler (`handler.py`) goes unhealthy ~6 seconds after job dispatch (per `c508103f` receipt). The sentinel handler completes in 70ms. The only difference is the handler code: the production handler imports `quant_foundry`, `fincept_core`, `torch` (via quant_foundry), `xgboost`, `catboost`, `lightgbm` at module level and runs `SecurityPreflight` + task dispatch at request time. The sentinel imports only `runpod` + stdlib.
 
 3. **Previous theories are now fully disproved:**
    - Docker healthcheck: disproved by `c508103f` (no healthcheck, still failed).
@@ -85,14 +85,14 @@ The exact boundary within the production handler that crashes the worker at disp
 
 ## Current Endpoint Cleanup State
 
-- Endpoint `17e5k8rxp9cf5q`: scaled to `workersMin=0 workersMax=0`.
-- No stuck jobs (sentinel job `eb7d9109-...` reached `COMPLETED`).
+- Endpoint `fqa18kqj9exo62`: scaled to `workersMin=0 workersMax=0`.
+- No stuck jobs (sentinel job `260259a7-...` reached `COMPLETED`).
 - No debug endpoints left with `workersMin=1`.
 - No API keys or callback secrets printed in this receipt.
 
 ## Acceptance Checklist Update
 
-- [x] Smoke worker still completes a live RunPod job. — **PROVEN by this test** (sentinel = same shape as smoke, trivial handler, COMPLETED).
+- [x] Smoke worker still completes a live RunPod job. — **PROVEN by this test** (sentinel = same shape as smoke, trivial handler, COMPLETED in 70ms).
 - [x] Training image SDK job loop works. — **PROVEN by this test** (sentinel inside training image, COMPLETED).
 - [ ] Full production canary path completes live. — **STILL FAILING** (production handler goes unhealthy at dispatch).
 - [ ] Worker remains healthy after production canary. — **STILL FAILING**.

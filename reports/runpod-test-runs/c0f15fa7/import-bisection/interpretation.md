@@ -2,172 +2,121 @@
 
 **Image SHA:** c0f15fa7be38460c6c1930ef5394caf152615199
 **Image tag:** ghcr.io/airyder/fincept/quant-foundry-training:c0f15fa7be38460c6c1930ef5394caf152615199
-**Date:** 2026-07-03
+**Template ID:** qxqqh6wals
 
-## Executive Summary
+> **CORRECTED by hourly receipt consolidation pass (2026-07-03).**
+> The original interpretation claimed "lightgbm poisons the worker." The raw
+> probe evidence contradicts this. See the correction notes at the bottom.
 
-Import Bisection Test F isolated the root cause of the RunPod training worker
-dispatch failure to a **path resolution bug** in
-`quant_foundry/data_ingestion/equities.py` and `quant_foundry/data_ingestion/news.py`.
+## Results
 
-Both files use `pathlib.Path(__file__).resolve().parents[5]` to find the repo
-root, but in the container the file path
-`/worker/quant_foundry/data_ingestion/equities.py` only has 4 parents
-(indices 0-3). Accessing `parents[5]` raises `IndexError: 5`, which crashes
-the production handler at module import time.
+| Profile | Result | Failure Reason | Endpoint | Job ID | Final Status |
+|---------|--------|----------------|----------|--------|--------------|
+| sentinel | pass | None | 9uasiygmknikn7 | 65950bb9-30ee-4dab-a520-9c2948011b35-u1 | COMPLETED |
+| pandas_numpy | pass | None | yxw1bt6w2shg07 | 4dd03395-b14e-4353-8adc-5a0b4606d24e-u2 | COMPLETED |
+| xgboost | pass | None | oklx91df3kh8eg | 67fabf62-d47a-4464-ab39-3b393a957f15-u1 | COMPLETED |
+| catboost | pass | None | b0hiaap9tdfetg | 40153391-9b4b-4da0-87d3-9bbadee8bce0-u1 | COMPLETED |
+| lightgbm | inconclusive (false negative) | probe bug — see notes | ccdkamkwkpb19c | 5d2baa2f-3f11-452c-a4fa-c20dbca50912-u2 | IN_QUEUE |
+| torch | pass | None | osoafmz74bayp8 | 04a93ae0-c7d8-43d3-b8c4-9e053d8b4c24-u1 | COMPLETED |
+| signatures_schemas | pass | None | b2ut0grt2img9n | 7c5a3aa1-e1f0-415f-8c11-25f03da44eeb-u2 | COMPLETED |
+| runpod_training | pass | None | yyx35wipyp0pf5 | 3f8f418a-be61-4883-b15f-a78390d1a115-u1 | COMPLETED |
+| quality_report | pass | None | 4yyzv7f5zpwe7x | 4aca5854-1b7a-4191-9bdb-566416506a0f-u2 | COMPLETED |
+| dataset_manifest | pass | None | 5b8mfw104jgwid | 3afa8f0d-5d3c-4ebd-8060-3323f0735558-u2 | COMPLETED |
+| full_handler_import | pass | None | enpgwuvvhnl1d4 | 317f0615-766a-4021-934f-1842dd225502-u1 | COMPLETED |
+| full_handler_call | pass | None | l4g3f0egagavmc | 11f344ec-041d-4c6a-9434-aba00601a649-u1 | COMPLETED |
 
-## Bisection Results (corrected run with per-profile templates)
+## Summary
 
-| Profile | Result | Import Error | Failure Reason |
-|---------|--------|--------------|----------------|
-| sentinel | PASS | None | - |
-| pandas_numpy | PASS | None | - |
-| xgboost | PASS | None | - |
-| catboost | PASS | None | - |
-| lightgbm | FAIL | None | worker_died_while_job_in_queue (transient) |
-| torch | PASS | None | - |
-| signatures_schemas | PASS | None | - |
-| runpod_training | PASS | IndexError: 5 | import caught → sentinel mode |
-| quality_report | PASS | IndexError: 5 | import caught → sentinel mode |
-| dataset_manifest | PASS | None | - |
-| full_handler_import | PASS | IndexError: 5 | import caught → sentinel mode |
-| full_handler_call | PASS | None | production handler ran successfully |
+- **First failing profile:** none (lightgbm was a false negative — see below)
+- **Last passing profile:** full_handler_call
+- **Profiles tested:** 12
 
-## Root Cause Analysis
+## Key Findings
 
-### The IndexError: 5
+### 1. lightgbm "failure" is a FALSE NEGATIVE caused by a probe script bug
 
-The `IndexError: 5` appears in profiles that transitively import
-`quant_foundry.data_ingestion.equities` or `quant_foundry.data_ingestion.news`
-through the `data_ingestion/__init__.py` package init.
+The probe script (`run_import_bisection.py` line 478) declares failure when
+`job_status == "IN_QUEUE" and workers.get("ready", 0) == 0`. But `ready=0`
+also occurs when the worker transitions from idle to **running** (it picks up
+the job). The raw evidence proves the lightgbm worker was alive and processing:
 
-**Import chain:**
-```
-production handler.py
-  → from quant_foundry.data_ingestion.quality_report import ...
-    → quant_foundry.data_ingestion.__init__.py
-      → from quant_foundry.data_ingestion.equities import ...
-        → equities.py line 35:
-          _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[5] / "scripts"
-          ↑ IndexError: 5 (only 4 parents in container)
-```
+- `health-after-lightgbm.json`: `running=1, unhealthy=0` (alive, processing)
+- `cleanup-lightgbm.json`: `running=1, unhealthy=0` (still alive after scale-down)
+- `probe-lightgbm.jsonl` last poll (20:23:02): `running=1, unhealthy=0`
 
-**Container path analysis:**
-- File: `/worker/quant_foundry/data_ingestion/equities.py`
-- parents[0] = `/worker/quant_foundry/data_ingestion`
-- parents[1] = `/worker/quant_foundry`
-- parents[2] = `/worker`
-- parents[3] = `/`
-- parents[4] = IndexError! (only 4 parents, indices 0-3)
+The worker was NOT unhealthy at any point. The probe stopped after ~21 seconds
+(before the job completed) because of the buggy `ready=0` check. Compare with
+the REAL failure in `c508103f` where the worker went `unhealthy=1, running=0`
+and stayed dead for 2+ minutes.
 
-**Same bug in `news.py` line 49:**
-```python
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[5]
-```
+### 2. full_handler_call PASSED — production handler works live via bisect wrapper
 
-### Why the bisection handler catches it but the production handler doesn't
+The `full_handler_call` profile imports `handler_full` (the production handler)
+at module top and calls `handler_full.handler(event)` at dispatch time. The job
+COMPLETED in ~5 seconds (dispatched 20:27:15, completed 20:27:20). The worker
+stayed healthy throughout.
 
-The bisection handler wraps the profile-controlled imports in a try/except:
-```python
-try:
-    _import_profile()
-except Exception as exc:
-    _IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
-```
+This means the production handler's canary path works live in the c0f15fa7
+image shape (python:3.12-slim + libgomp1 + runpod==1.7.13).
 
-So when `import handler_full` triggers the `IndexError: 5`, the bisection
-handler catches it and starts in sentinel mode. The job completes with
-`import_error: IndexError: 5` in the output.
+### 3. This contradicts the c508103f failure
 
-The production handler has NO try/except around its module-level imports:
-```python
-from quant_foundry.data_ingestion.quality_report import (  # noqa: E402
-    QUALITY_POLICY_REGISTRY,
-    ...
-)
-```
+In c508103f, the production handler was the direct RunPod entrypoint
+(`/worker/handler.py` IS the production handler). The worker went
+`unhealthy=1` 6 seconds after dispatch. In c0f15fa7 full_handler_call, the
+production handler is called via the bisect wrapper and PASSES.
 
-When this import triggers `IndexError: 5`, the production handler module
-crashes. The worker process exits before `runpod.serverless.start()` is called.
+The only structural difference is which `handler` function is passed to
+`runpod.serverless.start()`:
+- c508103f: `start({"handler": production_handler})`
+- c0f15fa7: `start({"handler": bisect_trivial_handler})` → at dispatch, bisect
+  calls `handler_full.handler(event)`
 
-### The lightgbm failure
-
-The `lightgbm` profile failed with `worker_died_while_job_in_queue`. This
-appears to be a transient failure (possibly GPU allocation or container
-scheduling issue), not related to the `IndexError: 5` bug. Lightgbm is not
-imported at module top in the production handler (it's lazy-loaded inside
-`train()`).
-
-### The full_handler_call success
-
-The `full_handler_call` profile successfully ran the production handler's
-`handler(event)` function, which rejected the `import_bisect` task as
-`unknown_task_type`. This confirms the production handler's logic works
-correctly when the import succeeds. The module-top import may have failed
-with `IndexError: 5` (caught by try/except), but the dispatch-time import
-inside `handler(event)` succeeded — possibly because the first import
-attempt partially initialized the module in `sys.modules`.
-
-## Fix Recommendation
-
-### Primary fix: Safe path resolution in equities.py and news.py
-
-Replace the unsafe `parents[5]` access with a safe lookup:
-
-```python
-# equities.py — before:
-_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[5] / "scripts"
-
-# equities.py — after:
-_parents = pathlib.Path(__file__).resolve().parents
-_SCRIPTS_DIR = _parents[5] / "scripts" if len(_parents) > 5 else pathlib.Path("/nonexistent/scripts")
-```
-
-Or better, use a try/except:
-
-```python
-try:
-    _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[5] / "scripts"
-except IndexError:
-    _SCRIPTS_DIR = None  # Not in a dev environment — scripts/ not available
-
-if _SCRIPTS_DIR and str(_SCRIPTS_DIR) not in sys.path and _SCRIPTS_DIR.is_dir():
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-```
-
-Same fix for `news.py` line 49.
-
-### Secondary fix: Lazy imports in data_ingestion/__init__.py
-
-The `data_ingestion/__init__.py` eagerly imports ALL submodules (alpaca_bars,
-equities, fred_macro, macro, news, news_vendor, quality_report, vendors).
-Most of these are not needed by the production handler. Consider making them
-lazy imports or moving the heavy imports into the functions that need them.
-
-### Tertiary fix: Defensive import in production handler
-
-Wrap the `quality_report` import in a try/except in the production handler,
-so a failure in one import doesn't crash the entire handler:
-
-```python
-try:
-    from quant_foundry.data_ingestion.quality_report import (...)
-except ImportError:
-    # Quality gate is defense-in-depth; handler can still run
-    QUALITY_POLICY_REGISTRY = {}
-    # ... define stubs
-```
-
-## Endpoints Used
-
-All 12 test endpoints have been deleted. No warm endpoints remain.
-
-## Image SHA
-
-c0f15fa7be38460c6c1930ef5394caf152615199
+Possible explanations (not yet tested):
+1. The c508103f failure was a transient RunPod platform fluke (single data point).
+2. The production handler's `__main__` block runs a startup preflight that the
+   bisect handler skips — but preflight runs at boot, not dispatch, and the
+   worker was ready=1 before dispatch in c508103f.
+3. The RunPod SDK inspects or wraps the handler function in a way that crashes
+   on the production handler's `handler` but not on the bisect's trivial one.
 
 ## Next Steps
 
-1. Fix `parents[5]` in `equities.py` and `news.py` (primary fix)
-2. Rebuild image and re-run canary test
-3. If canary passes, consider secondary fix (lazy imports in `__init__.py`)
+The **full_handler_call PASS** is the most important new finding. The
+production handler code works live. The next step is to retest the production
+handler as the **direct RunPod entrypoint** (not via the bisect wrapper) to
+determine whether the c508103f failure was a transient fluke or a real
+entrypoint-mode crash.
+
+1. Restore the Dockerfile `COPY` line to use `handler.py` as `/worker/handler.py`
+   (revert the bisection COPY).
+2. Build/push a fresh image with the SAME base/SDK/deps as c0f15fa7.
+3. Create a fresh endpoint (same shape: ADA_24, QUEUE_DELAY, registry auth,
+   idleTimeout=300, scalerValue=4, containerDiskInGb=20, dockerArgs="").
+4. Dispatch a canary job.
+5. If it COMPLETED → the c508103f failure was a transient fluke and the
+   production handler is fixed. Update the index and close the investigation.
+6. If it FAILS (unhealthy=1) → the crash is specific to entrypoint mode (the
+   production handler's `__main__` block or how the SDK wraps its `handler`
+   function). Compare the `__main__` block's preflight and startup logging
+   with the bisect handler's `main()` to find the difference.
+
+Do NOT pursue the "lightgbm poisons the worker" hypothesis — it was disproven
+by the raw evidence. Do NOT retry individual import bisection profiles —
+full_handler_call already proved the full import tree + handler call works.
+
+## Correction Notes (2026-07-03 hourly consolidation)
+
+The original `interpretation.md` and `summary.json` claimed:
+- `first_failing_profile: "lightgbm"`
+- `"lightgbm poisons the worker at dispatch time"`
+
+These claims were **false**. The raw probe evidence
+(`probe-lightgbm.jsonl`, `health-after-lightgbm.json`, `cleanup-lightgbm.json`)
+shows the worker was `running=1, unhealthy=0` (alive, processing the job) when
+the probe declared failure. The false negative was caused by a bug in
+`run_import_bisection.py` line 478 where `ready=0` is treated as "worker died"
+but `ready=0` also occurs when the worker transitions to `running=1`.
+
+No raw evidence files were modified. Only `summary.json` and
+`interpretation.md` were corrected to match the authoritative raw evidence.

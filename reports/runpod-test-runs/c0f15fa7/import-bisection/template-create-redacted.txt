@@ -1,0 +1,5 @@
+Template ID: qxqqh6wals
+Name: qf-bisect-c0f15fa7-tpl
+Image: ghcr.io/airyder/fincept/quant-foundry-training:c0f15fa7be38460c6c1930ef5394caf152615199
+Registry Auth: ***REDACTED***
+Env keys: PYTHONUNBUFFERED, PYTHONPATH, RUNPOD_SMOKE_IMAGE_TAG, QUANT_FOUNDRY_GIT_SHA, QUANT_FOUNDRY_CALLBACK_SECRET, QF_IMPORT_PROFILE
