@@ -72,8 +72,8 @@ RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'
 
 COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
-# Copy the handler.
-COPY runpod/quant-foundry-training/handler.py /worker/handler.py
+# Copy the handler (diagnostic version for crash isolation).
+COPY runpod/quant-foundry-training/handler_diagnostic.py /worker/handler.py
 
 # ---------------------------------------------------------------------------
 # Install GPU-capable ML libraries.
