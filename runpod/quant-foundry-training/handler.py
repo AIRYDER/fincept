@@ -3685,6 +3685,32 @@ if __name__ == "__main__":  # pragma: no cover
     import sys
     import traceback
 
+    # Run the standalone security preflight before starting the SDK.
+    # This catches forbidden env vars early (before the SDK starts polling)
+    # so misconfigured images fail fast with a clear message.
+    # Skip with QF_DIAG_SKIP_PREFLIGHT=1 for diagnostic builds.
+    if os.environ.get("QF_DIAG_SKIP_PREFLIGHT", "0") != "1":
+        try:
+            import importlib.util
+
+            _pf_spec = importlib.util.spec_from_file_location(
+                "preflight", "/worker/preflight.py"
+            )
+            if _pf_spec and _pf_spec.loader:
+                _pf_mod = importlib.util.module_from_spec(_pf_spec)
+                _pf_spec.loader.exec_module(_pf_mod)
+                _pf_rc = _pf_mod.main()
+                if _pf_rc != 0:
+                    print(
+                        f"[handler] preflight failed (rc={_pf_rc}), exiting",
+                        file=sys.stderr, flush=True,
+                    )
+                    raise SystemExit(_pf_rc)
+        except FileNotFoundError:
+            print("[handler] preflight.py not found, skipping", flush=True)
+        except Exception as _pf_exc:
+            print(f"[handler] preflight error: {_pf_exc}", file=sys.stderr, flush=True)
+
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
         print(msg, flush=True)  # noqa: T201 - CLI debug output
