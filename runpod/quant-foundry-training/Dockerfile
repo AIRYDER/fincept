@@ -97,13 +97,15 @@ RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'
 
 COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
-# Test E: sentinel handler copied to /worker/handler.py to isolate whether
-# the RunPod SDK job loop works inside the training image shape independent
-# of the production handler's heavy imports. See
-# docs/runpod-fix-plan/02-single-variable-tests.md Test E.
-# The production handler remains available as handler_full.py for reference.
+# Test F: import bisection handler copied to /worker/handler.py to isolate
+# which production handler import group poisons the worker at dispatch time.
+# The handler reads QF_IMPORT_PROFILE from the env and imports exactly one
+# controlled group at module top, then defines a trivial handler(event).
+# See docs/runpod-fix-plan/02-single-variable-tests.md Test F.
+# The production handler remains available as handler_full.py for reference
+# and for the full_handler_import / full_handler_call profiles.
 COPY runpod/quant-foundry-training/handler.py /worker/handler_full.py
-COPY runpod/quant-foundry-training/handler_sentinel.py /worker/handler.py
+COPY runpod/quant-foundry-training/handler_import_bisect.py /worker/handler.py
 
 # ---------------------------------------------------------------------------
 # Install GPU-capable ML libraries.
