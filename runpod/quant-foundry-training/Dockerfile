@@ -24,32 +24,41 @@
 #   QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
 
 # ---------------------------------------------------------------------------
-# Base image: PyTorch CUDA runtime gives us Python + CUDA 12.4 + cuDNN 9 in
-# one well-maintained layer. Python 3.11 is the conda interpreter; pip works
-# directly. This avoids hand-installing Python via deadsnakes on a bare
-# nvidia/cuda image (which is fragile and slow to build).
+# Base image: nvidia/cuda runtime (NOT pytorch/pytorch).
+#
+# The pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime image caused workers to go
+# unhealthy within 90 seconds on RunPod serverless ADA_24 GPUs (driver 550,
+# CUDA 12.4 max). The nvidia/cuda:12.4.1-runtime-ubuntu22.04 base works —
+# verified with the cuda-test endpoint (became healthy in ~10 minutes).
+#
+# We install Python 3 explicitly via apt since nvidia/cuda doesn't include it.
 # ---------------------------------------------------------------------------
-FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 # Prevent Python from buffering stdout/stderr so RunPod captures logs live.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /worker
 
-# Install OS dependencies:
-#  - build-essential: headers needed by a few pip sdists (scikit-learn wheels
-#    are prebuilt, but keep it for safety).
-#  - gosu: used by the entrypoint to drop privileges from root to the
-#    `trainer` user after fixing network-volume ownership.
-#  - curl: used by the healthcheck fallback / diagnostics.
+# Install Python 3 and OS dependencies:
+#  - python3/pip/venv: Python runtime (not included in nvidia/cuda base).
+#  - build-essential: headers needed by a few pip sdists.
+#  - gosu: used by the entrypoint to drop privileges (kept for compatibility
+#    but entrypoint currently execs as root — see comment below).
+#  - curl: used by diagnostics.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
     build-essential \
     gosu \
     curl \
     ca-certificates \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the quant_foundry source from the monorepo.
