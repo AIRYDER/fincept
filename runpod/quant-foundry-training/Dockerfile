@@ -74,8 +74,11 @@ COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
 # Copy the shared RunPod worker_status utility (sibling to this handler in
-# the monorepo). The handler adds runpod/shared to sys.path at import time.
-COPY runpod/shared/worker_status.py /worker/runpod/shared/worker_status.py
+# the monorepo). IMPORTANT: copy to /worker/_shared/ (NOT /worker/runpod/shared/)
+# because PYTHONPATH=/worker would make /worker/runpod/ a namespace package
+# that can interfere with the pip-installed runpod SDK. The handler looks for
+# /worker/_shared/ in its sys.path setup.
+COPY runpod/shared/worker_status.py /worker/_shared/worker_status.py
 
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
@@ -235,48 +238,8 @@ if __name__ == "__main__":
 PREFLIGHT_EOF
 
 # ---------------------------------------------------------------------------
-# Entrypoint wrapper.
-#
-# Runs as root (RunPod serverless workers run as root by default), performs
-# the security preflight, fixes ownership of the writable volume dirs, then
-# execs the handler directly as root (no gosu privilege drop — the gosu drop
-# caused the worker to go unhealthy within ~40s on RunPod's serverless
-# platform). If the volume dirs are not mountpoints (local test), chown is
-# best-effort.
-# ---------------------------------------------------------------------------
-RUN cat > /worker/entrypoint.sh <<'ENTRY_EOF'
-#!/usr/bin/env bash
-
-# 1. Security preflight (fail closed on forbidden env vars).
-#    Don't use set -e — if preflight fails, we want the error message
-#    to reach RunPod's logs before the container exits.
-python /worker/preflight.py
-preflight_rc=$?
-if [ $preflight_rc -ne 0 ]; then
-  echo "[entrypoint] Preflight failed (rc=$preflight_rc), exiting." >&2
-  exit $preflight_rc
-fi
-
-# 2. Best-effort ownership fix for RunPod network volumes.
-for d in /runpod-volume /workspace; do
-  if [ -d "$d" ]; then
-    chown -R trainer:trainer "$d" 2>/dev/null || true
-  fi
-done
-
-# 3. Exec the handler. Run as root (RunPod serverless workers run as
-#    root by default). Forward all arguments to the Python handler
-#    so RunPod's platform can pass --rp_log_level etc.
-exec python -u /worker/handler.py "$@"
-ENTRY_EOF
-RUN chmod +x /worker/entrypoint.sh
-
-# ---------------------------------------------------------------------------
-# Non-root user. RunPod network volumes are mounted with permissive perms and
-# the entrypoint chowns them at startup, so a non-root user is safe. The
-# security boundary is still the container itself (no broker creds, no Redis),
-# but running as non-root adds defense in depth against privilege escalation
-# inside the container.
+# Non-root user (defense in depth). RunPod serverless workers run as root by
+# default, but we create a trainer user for potential future use.
 # ---------------------------------------------------------------------------
 RUN useradd --create-home --shell /bin/bash --uid 1000 trainer \
     && chown -R trainer:trainer /worker
@@ -307,7 +270,8 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
   CMD pgrep -f "handler.py" > /dev/null 2>&1 || exit 1
 
 # RunPod's serverless platform expects the container to start the handler.
-# We use ENTRYPOINT for the entrypoint wrapper (preflight + volume chown),
-# which then execs the Python handler. Arguments from RunPod's platform
-# (e.g. --rp_log_level) are forwarded via "$@".
-ENTRYPOINT ["/worker/entrypoint.sh"]
+# We use ENTRYPOINT to start the Python handler directly (no bash wrapper).
+# The startup security preflight is inlined in the handler's __main__ block.
+# This matches RunPod's recommended pattern and avoids shell wrapper issues
+# that caused the worker to not pick up jobs from the queue.
+ENTRYPOINT ["python", "-u", "/worker/handler.py"]
