@@ -103,7 +103,7 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7,<3" \
     "pydantic-settings>=2.0,<3" \
     "httpx>=0.27,<1" \
-    "runpod>=1.10.0,<2" \
+    "runpod==1.7.10" \
     "numpy>=1.26,<3" \
     "pandas>=2.0,<3" \
     "pyarrow>=14.0,<20" \
@@ -274,4 +274,4 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
 # The startup security preflight is inlined in the handler's __main__ block.
 # This matches RunPod's recommended pattern and avoids shell wrapper issues
 # that caused the worker to not pick up jobs from the queue.
-ENTRYPOINT ["python", "-u", "/worker/handler.py"]
+ENTRYPOINT ["python3", "-u", "/worker/handler.py"]

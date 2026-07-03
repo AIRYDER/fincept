@@ -3733,6 +3733,12 @@ if __name__ == "__main__":  # pragma: no cover
 
         _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
+        # Force flush and hard exit to avoid exit-code-1 race conditions
+        # during interpreter shutdown (daemon threads, atexit hooks).
+        # See: https://happyin.space/devops/runpod-serverless-python-silent-exit-1/
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
     except ImportError as e:
         _log(f"ImportError: {e}")
         # runpod SDK not installed — fall back to stdin mode for local testing
@@ -3743,4 +3749,6 @@ if __name__ == "__main__":  # pragma: no cover
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())
-        raise
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
