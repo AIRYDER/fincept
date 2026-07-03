@@ -24,15 +24,12 @@
 #   QUANT_FOUNDRY_CALLBACK_SECRET (HMAC signing key).
 
 # ---------------------------------------------------------------------------
-# Base image: python:3.12-slim (same as the inference container which works).
-# The pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime base image was causing
-# worker crashes on job pickup — likely due to conda Python's interaction
-# with the RunPod SDK 1.10.0's new fitness checks and per-job stop features.
-# The inference container uses python:3.12-slim and has 8 completed jobs.
-# For GPU training, CUDA is injected by RunPod's NVIDIA container runtime;
-# the pip wheels for xgboost/catboost include CUDA support.
+# Base image: PyTorch CUDA runtime gives us Python + CUDA 12.4 + cuDNN 9 in
+# one well-maintained layer. Python 3.11 is the conda interpreter; pip works
+# directly. This avoids hand-installing Python via deadsnakes on a bare
+# nvidia/cuda image (which is fragile and slow to build).
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim
+FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
 
 # Prevent Python from buffering stdout/stderr so RunPod captures logs live.
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -50,6 +47,7 @@ WORKDIR /worker
 #  - curl: used by the healthcheck fallback / diagnostics.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gosu \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -73,9 +71,8 @@ COPY libs/fincept-core/src/fincept_core/config.py /worker/fincept_core/config.py
 RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'); p.write_text('from . import datasets, naming, prediction_log, schemas, errors, clock, config\n__all__=[\"datasets\",\"naming\",\"prediction_log\",\"schemas\",\"errors\",\"clock\",\"config\"]\n', encoding='utf-8')"
 
 # Copy the shared RunPod worker_status utility (sibling to this handler in
-# the monorepo). Copied to /worker/_shared/ (NOT /worker/runpod/shared/) to
-# avoid shadowing the pip-installed runpod SDK package when PYTHONPATH=/worker.
-COPY runpod/shared/worker_status.py /worker/_shared/worker_status.py
+# the monorepo). The handler adds runpod/shared to sys.path at import time.
+COPY runpod/shared/worker_status.py /worker/runpod/shared/worker_status.py
 
 # Copy the handler.
 COPY runpod/quant-foundry-training/handler.py /worker/handler.py
@@ -298,8 +295,7 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=40s --retries=3 \
   CMD python -c "print('healthcheck ok')" || exit 1
 
 # RunPod's serverless loader calls handler(event). Use ENTRYPOINT (not CMD) so
-# RunPod's dockerArgs field can't override it. We start the Python handler
-# directly (no bash wrapper) — same pattern as the inference container which
-# works. The bash wrapper was potentially interfering with the SDK's signal
-# handling and job processing.
-ENTRYPOINT ["python", "-u", "/worker/handler.py"]
+# RunPod's dockerArgs field can't override it. The entrypoint runs the
+# security preflight, fixes volume ownership, then drops to the non-root
+# trainer user before execing the handler.
+ENTRYPOINT ["/worker/entrypoint.sh"]
