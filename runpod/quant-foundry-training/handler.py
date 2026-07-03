@@ -3677,61 +3677,14 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 # the worker. When run as a script (local testing), accept JSON on stdin.
 if __name__ == "__main__":  # pragma: no cover
     import sys
-    import traceback
-
-    # Debug logging to network volume (try both mount paths)
-    def _log(msg):
-        print(msg, flush=True)  # noqa: T201 - CLI debug output
-        for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
-            try:
-                with open(path, "a") as f:
-                    f.write(msg + "\n")
-            except Exception:  # noqa: S110 - best-effort debug log
-                pass
-
-    _log(f"=== Handler starting at {__file__} ===")
-    _log(f"PYTHONPATH={os.environ.get('PYTHONPATH', 'NOT SET')}")
-    _log(f"sys.path={sys.path}")
-
-    # Check if handler file exists
-    _log(f"Handler file exists: {os.path.exists(__file__)}")
 
     # Try RunPod serverless mode first (uses runpod SDK)
     try:
         import runpod
 
-        _log(f"runpod SDK imported, version: {getattr(runpod, '__version__', 'unknown')}")
-
-        # Dump RUNPOD_* env vars to diagnose serverless vs local mode.
-        # The SDK checks for RUNPOD_WEBHOOK_GET_JOB to decide whether to
-        # poll the real job queue (serverless) or start a local FastAPI
-        # test server on :8000 (local mode). If this var is missing,
-        # jobs will stay IN_QUEUE forever while the worker looks "ready".
-        runpod_env = {k: v for k, v in os.environ.items() if k.startswith("RUNPOD_")}
-        _log(f"RUNPOD_* env vars: {json.dumps(runpod_env, indent=2)}")
-        if not runpod_env:
-            _log("WARNING: No RUNPOD_* env vars found! SDK will likely enter local/test mode.")
-            _log("  This means the worker will NOT poll the real job queue.")
-            _log("  Jobs will stay IN_QUEUE indefinitely while the worker shows 'ready'.")
-
-        _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
-        # Force flush and hard exit to avoid exit-code-1 race conditions
-        # during interpreter shutdown (daemon threads, atexit hooks).
-        # See: https://happyin.space/devops/runpod-serverless-python-silent-exit-1/
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
-    except ImportError as e:
-        _log(f"ImportError: {e}")
+    except ImportError:
         # runpod SDK not installed — fall back to stdin mode for local testing
-        raw = sys.stdin.read()
-        event = json.loads(raw) if raw else {}
+        event = json.loads(sys.stdin.read())
         result = handler(event)
-        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
-    except Exception as e:
-        _log(f"ERROR in runpod.serverless.start(): {e}")
-        _log(traceback.format_exc())
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(1)
+        sys.stdout.write(json.dumps(result, indent=2))
