@@ -1,9 +1,18 @@
-"""Minimal training handler for debugging — no heavy imports."""
+"""Minimal handler with heavy ML imports to test OOM hypothesis."""
 import json
 import time
 import hashlib
 import hmac
 import os
+
+# Heavy ML imports — same as the real training handler
+import numpy as np
+import pandas as pd
+import sklearn
+import lightgbm
+import xgboost
+import catboost
+import pyarrow
 
 
 def handler(event):
@@ -12,20 +21,18 @@ def handler(event):
     task = input_data.get("task", "")
     job_id = input_data.get("job_id", "unknown")
     
-    # Simple canary response
     nonce = input_data.get("nonce", "")
     secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
     
     callback_payload = json.dumps({
         "schema_version": 1,
         "job_id": job_id,
-        "worker_id": "runpod-canary-minimal",
+        "worker_id": "runpod-canary-heavy",
         "result_type": "callback_secret_canary",
         "payload": {"nonce": nonce},
     }, sort_keys=True)
     
     callback_ts = int(time.time())
-    msg = f"{callback_ts}:{job_id}".encode()
     sig = hmac.new(secret.encode(), callback_payload.encode(), hashlib.sha256).hexdigest()
     
     return {
@@ -34,7 +41,15 @@ def handler(event):
         "callback_signature": sig,
         "callback_ts": callback_ts,
         "status": "ok",
-        "handler": "minimal",
+        "handler": "heavy-imports",
+        "versions": {
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+            "sklearn": sklearn.__version__,
+            "lightgbm": lightgbm.__version__,
+            "xgboost": xgboost.__version__,
+            "catboost": catboost.__version__,
+        },
     }
 
 

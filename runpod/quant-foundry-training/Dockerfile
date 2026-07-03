@@ -13,11 +13,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy minimal handler
+# Copy minimal handler with heavy imports
 COPY runpod/quant-foundry-training/handler_minimal.py /worker/handler.py
 
 RUN pip install --no-cache-dir \
-    "runpod>=1.6,<2"
+    "runpod>=1.6,<2" \
+    "numpy>=1.26,<3" \
+    "pandas>=2.0,<3" \
+    "pyarrow>=14.0,<20" \
+    "scikit-learn>=1.4,<2" \
+    "lightgbm>=4.0,<5" \
+    "xgboost>=2.0,<3" \
+    "catboost>=1.2,<2"
 
 ARG GIT_SHA=unknown
 ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA}
