@@ -3714,12 +3714,16 @@ if __name__ == "__main__":  # pragma: no cover
 
         _log("Starting runpod.serverless.start()...")
         runpod.serverless.start({"handler": handler})
-        # Force flush and hard exit to avoid exit-code-1 race conditions
-        # during interpreter shutdown (daemon threads, atexit hooks).
-        # See: https://happyin.space/devops/runpod-serverless-python-silent-exit-1/
+        # If start() returns, it means the worker loop exited. This should
+        # NOT happen in normal serverless operation. Keep the process alive
+        # so the healthcheck passes and we can debug why start() returned.
+        _log("WARNING: runpod.serverless.start() RETURNED! This should not happen in serverless mode.")
+        _log("Keeping process alive for debugging...")
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(0)
+        while True:
+            time.sleep(60)
+            _log("Still alive (start() returned, worker loop exited)")
     except ImportError as e:
         _log(f"ImportError: {e}")
         # runpod SDK not installed — fall back to stdin mode for local testing
@@ -3730,6 +3734,10 @@ if __name__ == "__main__":  # pragma: no cover
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())
+        # Keep alive for debugging instead of exiting
+        _log("Keeping process alive after error for debugging...")
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(1)
+        while True:
+            time.sleep(60)
+            _log(f"Still alive after error: {e}")
