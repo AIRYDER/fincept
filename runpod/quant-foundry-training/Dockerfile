@@ -88,6 +88,12 @@ if not hasattr(typing, "Self"):
     sys.modules["typing"].Self = Self
 PY_COMPAT
 
+# Also install as a .pth file in site-packages so it runs at Python startup
+# before any user code, guaranteeing StrEnum is available even if the handler
+# import order changes.
+RUN SITE_DIR=$(python -c "import site; print(site.getsitepackages()[0])") && \
+    printf 'import enum, datetime, typing, sys\nif not hasattr(enum,"StrEnum"): enum.StrEnum=type("StrEnum",(str,enum.Enum),{}); sys.modules["enum"].StrEnum=enum.StrEnum\nif not hasattr(datetime,"UTC"): datetime.UTC=datetime.timezone.utc; sys.modules["datetime"].UTC=datetime.timezone.utc\nif not hasattr(typing,"Self"):\n try:\n  from typing_extensions import Self\n except ImportError:\n  Self=object\n typing.Self=Self; sys.modules["typing"].Self=Self\n' > "$SITE_DIR/_compat_shim.pth"
+
 # Copy the quant_foundry source from the monorepo.
 COPY services/quant_foundry/src/quant_foundry/ /worker/quant_foundry/
 
