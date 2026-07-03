@@ -81,14 +81,12 @@ RUN python -c "import pathlib; p=pathlib.Path('/worker/fincept_core/__init__.py'
 
 COPY runpod/shared/worker_status.py /worker/shared/worker_status.py
 
-# Copy the handlers (layered isolation build for crash hunt):
-#   - handler_full.py: the unmodified production handler (real code paths).
-#   - handler.py: the layered dispatcher (handler_layered.py) that selects
-#     a code-path layer per job via QF_DIAG_LAYER env or input.diag_layer.
-# Only the handler code path varies between layer tests — base image, SDK,
-# healthcheck, and entrypoint are held constant.
-COPY runpod/quant-foundry-training/handler.py /worker/handler_full.py
-COPY runpod/quant-foundry-training/handler_layered.py /worker/handler.py
+# Copy the production handler directly (no layered wrapper).
+# The layered handler (handler_layered.py) was used for crash hunting but
+# caused infinite recursion when import handler_full fell back to loading
+# handler.py (itself). Now that the base image issue is fixed, use the
+# real handler directly.
+COPY runpod/quant-foundry-training/handler.py /worker/handler.py
 
 # ---------------------------------------------------------------------------
 # Install GPU-capable ML libraries.
