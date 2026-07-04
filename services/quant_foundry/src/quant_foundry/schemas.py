@@ -62,6 +62,15 @@ class RunPodTrainingRequest(BaseModel):
     random_seed: int | None = None
     hardware_class: str | None = None
     extra_constraints: dict[str, str] = Field(default_factory=dict)
+    # Tier 1A: presigned S3/R2 PUT URL for the trained model artifact.
+    # When present, the RunPod worker's handler.py pops this field from
+    # the job input and uses PresignedUploadArtifactWriter to upload the
+    # artifact via HTTP PUT (TLS required — http:// is rejected). When
+    # absent, the handler falls back to VolumeArtifactWriter (if
+    # output_prefix is set) or FakeArtifactWriter (canary). This field
+    # satisfies the /tmp deny gate in handler.py which requires a durable
+    # output_prefix or a presigned URL.
+    presigned_artifact_url: str | None = None
 
 
 class RunPodInferenceRequest(BaseModel):

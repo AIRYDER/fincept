@@ -33,6 +33,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
 from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.runpod_policy import build_job_policy
 from quant_foundry.telemetry import CostTelemetry, PhaseTiming, TimingPhase, infer_gpu_type
 
 # --- helpers --------------------------------------------------------------- #
@@ -294,7 +295,13 @@ class HttpRunPodClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        body = json.dumps({"input": request_payload})
+        # Tier 1A: include the per-request execution timeout policy so
+        # RunPod never inherits its 600s default. The policy.executionTimeout
+        # is in milliseconds and is always >= 1860000 (1860s = handler
+        # deadline 1800s + 60s slack). This is the documented, reliable
+        # per-job override; the endpoint-level executionTimeout is a
+        # best-effort fallback. See runpod_policy.build_job_policy().
+        body = json.dumps({"input": request_payload, "policy": build_job_policy()})
 
         try:
             client = self._build_client()
