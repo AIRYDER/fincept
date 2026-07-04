@@ -3349,6 +3349,40 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     if output_prefix:
         output_prefix = resolve_volume_path(output_prefix)
 
+    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
+    # Fail closed BEFORE training starts: for non-canary jobs, deny /tmp as
+    # a final destination and validate output_prefix resolves to a durable
+    # location (network volume or presigned URL). A real job that writes to
+    # /tmp produces a signed receipt pointing at nothing — worse than no
+    # job. Moving this gate before training avoids wasting GPU time on a
+    # job whose artifact will be rejected. Canary jobs may use /tmp
+    # (FakeArtifactWriter is canary-only by design).
+    raw_mode = req.extra_constraints.get("training_mode") or "canary"
+    _deny_error = _validate_output_prefix_durable(
+        output_prefix=output_prefix,
+        presigned_artifact_url=presigned_artifact_url,
+        training_mode=raw_mode,
+    )
+    if _deny_error is not None:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code="artifact_destination_not_durable",
+            error_summary=_deny_error,
+        )
+        return _build_signed_failure(
+            error_code="artifact_destination_not_durable",
+            error_message=_deny_error,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "artifact_destination_deny_gate_pre_training",
+                "output_prefix": output_prefix or "",
+                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
+                "training_mode": raw_mode,
+            },
+        )
+
     # Worker-side status file: mark the job as started so the gateway
     # can detect crashed workers via stale heartbeat_at timestamps.
     write_status(req.job_id, "started")
@@ -3481,39 +3515,6 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
                     },
                 )
             model_bytes = typed_artifact.model_bytes
-
-    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
-    # Fail closed BEFORE any writer is selected: for non-canary jobs, deny
-    # /tmp as a final destination and validate output_prefix resolves to a
-    # durable location (network volume or presigned URL). A real job that
-    # writes to /tmp produces a signed receipt pointing at nothing — worse
-    # than no job. Canary jobs may use /tmp (FakeArtifactWriter is canary-
-    # only by design).
-    raw_mode = req.extra_constraints.get("training_mode") or "canary"
-    _deny_error = _validate_output_prefix_durable(
-        output_prefix=output_prefix,
-        presigned_artifact_url=presigned_artifact_url,
-        training_mode=raw_mode,
-    )
-    if _deny_error is not None:
-        write_status(
-            req.job_id,
-            "failed",
-            error_code="artifact_destination_not_durable",
-            error_summary=_deny_error,
-        )
-        return _build_signed_failure(
-            error_code="artifact_destination_not_durable",
-            error_message=_deny_error,
-            mode=raw_mode,
-            context={
-                "job_id": req.job_id,
-                "stage": "artifact_destination_deny_gate",
-                "output_prefix": output_prefix or "",
-                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
-                "training_mode": raw_mode,
-            },
-        )
 
     # --- Phase 1 / T-1.2: persist the artifact via the writer interface -----
     # Select a writer backend based on the available inputs + run mode:
