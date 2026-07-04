@@ -72,7 +72,7 @@ def _make_oof_rows(
 ) -> list[OOFRow]:
     """Build a list of OOFRow objects for a single model family."""
     rows: list[OOFRow] = []
-    for rid, pred, lbl in zip(row_ids, predictions, labels):
+    for rid, pred, lbl in zip(row_ids, predictions, labels, strict=False):
         rows.append(
             OOFRow(
                 row_id=rid,
@@ -1071,7 +1071,7 @@ class TestDeterminism:
 
     def test_ensemble_hash_deterministic_same_setup(self, tmp_path: Any) -> None:
         """Two ensembles with the same specs + meta produce the same hash."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
+        specs, _oof_arts, _labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         # We need to freeze created_at to compare hashes. Build manifests
         # manually with the same timestamp.
 

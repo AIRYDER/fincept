@@ -463,12 +463,14 @@ def test_build_incremental_deduplication(tmp_path: pathlib.Path) -> None:
             zip(
                 df1["symbol"].to_list(),
                 df1["decision_time"].to_list(),
+                strict=False,
             )
         )
         pairs2 = list(
             zip(
                 df2["symbol"].to_list(),
                 df2["decision_time"].to_list(),
+                strict=False,
             )
         )
 

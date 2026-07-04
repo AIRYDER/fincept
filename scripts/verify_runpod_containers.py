@@ -266,7 +266,7 @@ def poll_until_complete(
     Returns the final status dict (with 'status' == 'COMPLETED' or 'FAILED').
     Raises RunPodAPIError if polling exhausts all attempts.
     """
-    for attempt in range(max_attempts):
+    for _attempt in range(max_attempts):
         status = runpod_status(endpoint_id, api_key, runpod_job_id)
         state = status.get("status", "UNKNOWN")
         if state == "COMPLETED":

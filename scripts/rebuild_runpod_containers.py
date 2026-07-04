@@ -233,7 +233,7 @@ def build_container(
 
     Returns a BuildResult.
     """
-    dockerfile_rel, context_rel = CONTAINERS[container]
+    dockerfile_rel, _context_rel = CONTAINERS[container]
     image_name = f"fincept/quant-foundry-{container}:{tag}"
 
     # Build from the repo root so COPY paths in the Dockerfile resolve.

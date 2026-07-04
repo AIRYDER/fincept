@@ -436,7 +436,7 @@ class _LinearDummyModel:
     def predict(self, X: list[list[float]]) -> list[float]:
         results = []
         for row in X:
-            pred = sum(c * v for c, v in zip(self._coefs, row))
+            pred = sum(c * v for c, v in zip(self._coefs, row, strict=False))
             results.append(pred)
         return results
 

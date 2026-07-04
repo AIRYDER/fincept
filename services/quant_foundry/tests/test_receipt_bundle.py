@@ -517,7 +517,7 @@ def test_load_bundle_round_trip(tmp_path: pathlib.Path) -> None:
     assert loaded.bundle_id == bundle.bundle_id
     assert len(loaded.items) == len(bundle.items)
     # content hashes recomputed from disk match
-    for a, b in zip(loaded.items, bundle.items):
+    for a, b in zip(loaded.items, bundle.items, strict=False):
         assert a.content_hash == b.content_hash
         assert a.size_bytes == b.size_bytes
 

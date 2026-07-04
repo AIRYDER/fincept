@@ -468,7 +468,7 @@ class EventTextEncoder:
         per_item = duration / len(texts) if texts else 0.0
 
         results: list[EmbeddingResult] = []
-        for text, event_id, emb in zip(texts, event_ids, embeddings):
+        for _text, event_id, emb in zip(texts, event_ids, embeddings, strict=False):
             results.append(
                 EmbeddingResult(
                     event_id=event_id,

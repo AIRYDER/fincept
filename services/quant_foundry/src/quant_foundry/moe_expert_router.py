@@ -407,7 +407,7 @@ def _compute_brier(probs: list[float], labels: list[float]) -> float:
     if len(probs) == 0:
         return 0.0
     acc = 0.0
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         d = float(p) - float(y)
         acc += d * d
     return float(acc / len(probs))
@@ -543,7 +543,7 @@ class MoERouter:
         vals = vals - np.max(vals)
         exp = np.exp(vals)
         probs = exp / np.sum(exp)
-        return {k: float(p) for k, p in zip(scores.keys(), probs)}
+        return {k: float(p) for k, p in zip(scores.keys(), probs, strict=False)}
 
     def _confidence(self, raw_weights: dict[str, float]) -> float:
         """Confidence = max raw weight (concentration of belief)."""
@@ -608,7 +608,7 @@ class MoERouter:
         # Store calibration data (combined predictions vs targets).
         self._calib_predictions = []
         self._calib_actuals = []
-        for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+        for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
             out = self.route(eis, rf)
             if not out.abstain:
                 self._calib_predictions.append(out.combined_prediction)
@@ -634,10 +634,10 @@ class MoERouter:
         y_rows: list[int] = []
         # Label: 1 if this expert's error is below the median error at that
         # timestep (i.e. the expert is "good" for this regime).
-        for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+        for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
             errors = [abs(float(ei.prediction) - float(tgt)) for ei in eis]
             med = float(np.median(errors)) if errors else 0.0
-            for ei, err in zip(eis, errors):
+            for ei, err in zip(eis, errors, strict=False):
                 X_rows.append(self._expert_feature(ei, rf))
                 y_rows.append(1 if err <= med + _EPS else 0)
 
@@ -677,21 +677,23 @@ class MoERouter:
             reg_names = ["volatility", "trend", "liquidity", "dispersion"]
             R: list[list[float]] = []
             g: list[float] = []
-            for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+            for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
                 rv = self._regime_vector(rf)
                 errors = [abs(float(ei.prediction) - float(tgt)) for ei in eis]
                 order = np.argsort(errors)
                 # goodness: 1.0 for best expert, 0.0 for worst.
                 rank = np.empty(len(eis))
                 rank[order] = np.linspace(1.0, 0.0, len(eis))
-                for ei_val, gi in zip(eis, rank):
+                for _ei_val, gi in zip(eis, rank, strict=False):
                     R.append(rv)
                     g.append(float(gi))
             R_arr = np.array(R, dtype=float)
             g_arr = np.array(g, dtype=float)
             if R_arr.shape[0] >= 4:
                 coef, *_ = np.linalg.lstsq(R_arr, g_arr, rcond=None)
-                self._regime_coefs = {name: float(c) for name, c in zip(reg_names, coef)}
+                self._regime_coefs = {
+                    name: float(c) for name, c in zip(reg_names, coef, strict=False)
+                }
             else:
                 self._regime_coefs = {name: 0.0 for name in reg_names}
         else:

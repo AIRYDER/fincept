@@ -506,7 +506,7 @@ def test_composer_end_to_end(tmp_path: pathlib.Path) -> None:
         async def fetch(self, *, symbols, start_ns, end_ns):
             NS_PER_DAY = 86_400_000_000_000
             items = []
-            for i, sym in enumerate(symbols[:3]):
+            for _i, sym in enumerate(symbols[:3]):
                 for day in range(280, 285):
                     items.append(
                         MediaItem(

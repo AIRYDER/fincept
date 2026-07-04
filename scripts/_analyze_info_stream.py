@@ -14,7 +14,7 @@ print(f"Total info.enriched entries: {len(entries)}")
 
 # Parse all entries
 events = []
-for entry_id, fields in entries:
+for _entry_id, fields in entries:
     payload_raw = fields.get("payload", "")
     if isinstance(payload_raw, bytes):
         payload_raw = payload_raw.decode()

@@ -646,7 +646,7 @@ def test_duplicate_callback_does_not_double_process(tmp_path: pathlib.Path) -> N
 
 def test_unknown_job_lands_in_dlq(tmp_path: pathlib.Path) -> None:
     secret = "dlq-unknown-secret"
-    gateway, client = _build_gateway_with_dlq(tmp_path, secret=secret)
+    gateway, _client = _build_gateway_with_dlq(tmp_path, secret=secret)
 
     output = _signed_inference_output("qf:infer:dlq:unknown:1", secret=secret)
     receipt = gateway.receive_callback(

@@ -86,7 +86,7 @@ def extract_redis_data() -> dict:
     print("Extracting sig.sentiment stream...")
     entries = r.xrange("sig.sentiment")
     sentiment_signals = []
-    for entry_id, fields in entries:
+    for _entry_id, fields in entries:
         payload_raw = fields.get("payload", "")
         if isinstance(payload_raw, bytes):
             payload_raw = payload_raw.decode()
@@ -148,7 +148,7 @@ def extract_redis_data() -> dict:
     print("Extracting md.bars.1m stream...")
     entries = r.xrange("md.bars.1m")
     bars = []
-    for entry_id, fields in entries:
+    for _entry_id, fields in entries:
         payload_raw = fields.get("payload", "")
         if isinstance(payload_raw, bytes):
             payload_raw = payload_raw.decode()

@@ -517,7 +517,7 @@ class RolloutManager:
         out.parent.mkdir(parents=True, exist_ok=True)
         cumulative = 0.0
         steps: list[dict[str, Any]] = []
-        for i, (action, reward) in enumerate(zip(rollout.actions, rollout.rewards)):
+        for i, (action, reward) in enumerate(zip(rollout.actions, rollout.rewards, strict=False)):
             cumulative += float(reward)
             steps.append(
                 {

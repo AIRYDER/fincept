@@ -415,7 +415,7 @@ def compute_tournament_metrics(
     crps_values: list[float] = []
     pinball_values: list[float] = []
 
-    for forecast, actual in zip(forecasts, actuals):
+    for forecast, actual in zip(forecasts, actuals, strict=False):
         actual_f = float(actual)
         point = float(forecast.median)
         err = actual_f - point
@@ -489,7 +489,7 @@ def settle_predictions(
             raise TypeError("each actual must be a number")
 
     records: list[dict[str, Any]] = []
-    for forecast, actual in zip(forecasts, actuals):
+    for forecast, actual in zip(forecasts, actuals, strict=False):
         actual_f = float(actual)
         point = float(forecast.median)
         err = actual_f - point

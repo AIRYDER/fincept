@@ -587,7 +587,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"end:{args.end_date}",
     ]
 
-    manifest, availability, feature_rows, data_rows = build_dataset_manifest(
+    manifest, availability, _feature_rows, data_rows = build_dataset_manifest(
         bars_by_symbol,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,

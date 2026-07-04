@@ -231,7 +231,9 @@ def build_job_policy(
 
             {"input": {...}, "policy": build_job_policy()}
     """
-    timeout_s = execution_timeout_s if execution_timeout_s is not None else compute_execution_timeout()
+    timeout_s = (
+        execution_timeout_s if execution_timeout_s is not None else compute_execution_timeout()
+    )
     validated = validate_execution_timeout(timeout_s)
     policy: dict[str, Any] = {
         "executionTimeout": validated * 1000,

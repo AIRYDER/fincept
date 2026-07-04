@@ -505,7 +505,7 @@ def compute_contributions(
         scores = _permutation_importance(meta_learner, X_arr, y_arr)
 
     # Build reports sorted by score descending.
-    indexed = list(zip(feature_names, scores))
+    indexed = list(zip(feature_names, scores, strict=False))
     indexed.sort(key=lambda kv: (-float(kv[1]), kv[0]))
     reports: list[ContributionReport] = []
     for rank, (name, score) in enumerate(indexed, start=1):

@@ -936,7 +936,7 @@ def test_production_mode_with_fold_spec_succeeds(tmp_path: Path) -> None:
         n_folds=3,
     )
     deadline = time.time_ns() + 120_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline)
 
     assert dossier.metadata["fold_source"] == "manifest"
 

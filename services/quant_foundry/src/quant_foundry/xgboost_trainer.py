@@ -743,7 +743,7 @@ class XGBoostTrainer:
         """Multiclass logloss (preds is the predicted class probabilities)."""
         y = np.asarray(y, dtype=int)
         preds = np.asarray(preds, dtype=np.float64)
-        n, c = preds.shape
+        n, _c = preds.shape
         eps = 1e-15
         preds = np.clip(preds, eps, 1 - eps)
         rows = np.arange(n)

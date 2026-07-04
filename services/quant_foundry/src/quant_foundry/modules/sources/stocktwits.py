@@ -102,7 +102,7 @@ class StockTwitsSource:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for sym in symbols:
                 params = dict(base_params)
-                for page in range(1, self.max_pages + 1):
+                for _page in range(1, self.max_pages + 1):
                     try:
                         resp = await client.get(
                             f"{STOCKTWITS_BASE_URL}/streams/symbol/{sym}.json",

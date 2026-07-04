@@ -189,7 +189,7 @@ def compute_brier_score(probs: list[float], labels: list[float]) -> float:
         return 0.0
     total = len(probs)
     acc = 0.0
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         d = float(p) - float(y)
         acc += d * d
     return float(acc / total)
@@ -210,7 +210,7 @@ def compute_logloss(probs: list[float], labels: list[float]) -> float:
         return 0.0
     total = len(probs)
     acc = 0.0
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         pc = _clip_prob(float(p))
         yc = float(y)
         acc += yc * math.log(pc) + (1.0 - yc) * math.log(1.0 - pc)
@@ -248,11 +248,15 @@ def compute_reliability_buckets(
         upper = (i + 1) * width
         if i == n_bins - 1:
             in_bin = [
-                (float(p), float(y)) for p, y in zip(probs, labels) if lower <= float(p) <= upper
+                (float(p), float(y))
+                for p, y in zip(probs, labels, strict=False)
+                if lower <= float(p) <= upper
             ]
         else:
             in_bin = [
-                (float(p), float(y)) for p, y in zip(probs, labels) if lower <= float(p) < upper
+                (float(p), float(y))
+                for p, y in zip(probs, labels, strict=False)
+                if lower <= float(p) < upper
             ]
         count = len(in_bin)
         if count == 0:

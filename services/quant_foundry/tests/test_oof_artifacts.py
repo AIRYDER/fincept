@@ -716,7 +716,7 @@ def test_merge_oof_artifacts_two_families():
     )
     merged = merge_oof_artifacts([art_a, art_b])
     assert set(merged.keys()) == {r.row_id for r in rows_a}
-    for row_id, preds in merged.items():
+    for _row_id, preds in merged.items():
         assert preds == [0.1, 0.2]
 
 
@@ -726,7 +726,7 @@ def test_merge_oof_artifacts_three_families():
     families = ["lightgbm", "catboost", "xgboost"]
     preds_vals = [0.1, 0.2, 0.3]
     arts = []
-    for fam, pv in zip(families, preds_vals):
+    for fam, pv in zip(families, preds_vals, strict=False):
         rows = _valid_oof_rows_for_assignment(assignment, model_family=fam, prediction=pv)
         arts.append(
             OOFArtifact(

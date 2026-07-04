@@ -23,7 +23,7 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"**/tests/**/*.py" = ["S", "T20"]
+"**/tests/**/*.py" = ["S", "T20", "B017"]
 "**/scripts/**/*.py" = ["T20"]
 "**/notebooks/**/*.py" = ["T20", "E402"]
 "runpod/quant-foundry-training/run_import_bisection.py" = ["T20", "S310", "S110", "E741"]

@@ -94,7 +94,7 @@ def _make_fit_data(
     eis_list: list[list[ExpertInput]] = []
     rfs: list[RegimeFeatures] = []
     targets: list[float] = []
-    for i in range(n):
+    for _i in range(n):
         trend = float(rng.choice([1.0, -1.0]))
         target = float(trend * 0.5 + rng.normal(scale=0.05))
         # expert 0 good in trending (trend>0), expert 1 good in ranging.

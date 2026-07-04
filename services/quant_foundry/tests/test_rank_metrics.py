@@ -274,7 +274,7 @@ def test_turnover_full_rotation():
     preds = np.array([2.0, 1.0, 1.0, 2.0])
     groups = np.array([0, 0, 1, 1])
     item_ids = np.array([0, 1, 0, 1])
-    mean, per_period = turnover(preds, groups, timestamps=None, item_ids=item_ids, k=1)
+    _mean, per_period = turnover(preds, groups, timestamps=None, item_ids=item_ids, k=1)
     # deploy = 1.0; rotation: w0 {0:+1, 1:-1}, w1 {0:-1, 1:+1} -> |−2|+|2| /2 = 2.0
     assert per_period[0] == pytest.approx(1.0)
     assert per_period[1] == pytest.approx(2.0)
@@ -286,7 +286,7 @@ def test_turnover_partial_change():
     preds = np.array([5.0, 4.0, 2.0, 1.0, 5.0, 4.0, 2.0, 1.0])
     groups = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     item_ids = np.array([0, 1, 2, 3, 0, 4, 2, 3])
-    mean, per_period = turnover(preds, groups, timestamps=None, item_ids=item_ids, k=2)
+    _mean, per_period = turnover(preds, groups, timestamps=None, item_ids=item_ids, k=2)
     # deploy 1.0; change: item1 0->-0.5 (diff 0.5), item4 0->+0.5 (diff 0.5)
     # sum|diff|/2 = (0.5+0.5)/2 = 0.5
     assert per_period[1] == pytest.approx(0.5)
@@ -298,7 +298,7 @@ def test_turnover_timestamps_ordering():
     groups = np.array([1, 1, 0, 0])  # group 1 appears first but is later
     timestamps = np.array([200, 200, 100, 100])
     item_ids = np.array([0, 1, 0, 1])
-    mean, per_period = turnover(preds, groups, timestamps=timestamps, item_ids=item_ids, k=1)
+    _mean, per_period = turnover(preds, groups, timestamps=timestamps, item_ids=item_ids, k=1)
     # Ordered: group 0 (ts=100) then group 1 (ts=200). Both identical portfolio.
     assert per_period[0] == pytest.approx(1.0)
     assert per_period[1] == pytest.approx(0.0)
@@ -336,7 +336,7 @@ def test_cost_adjusted_return_multi_period_cumulative():
     labels = np.array([0.04, 0.03, 0.02, 0.01, 0.04, 0.03, 0.02, 0.01])
     groups = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     item_ids = np.array([0, 1, 2, 3, 0, 1, 2, 3])
-    cum, net, turn = cost_adjusted_long_short_return(
+    cum, net, _turn = cost_adjusted_long_short_return(
         preds,
         labels,
         groups,
@@ -357,7 +357,7 @@ def test_cost_adjusted_return_with_rotation_cost():
     labels = np.array([0.02, 0.01, 0.01, 0.02])
     groups = np.array([0, 0, 1, 1])
     item_ids = np.array([0, 1, 0, 1])
-    cum, net, turn = cost_adjusted_long_short_return(
+    cum, net, _turn = cost_adjusted_long_short_return(
         preds,
         labels,
         groups,

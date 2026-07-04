@@ -364,15 +364,17 @@ def _compute_metrics(
     if task_type == "regression":
         if not labels_list:
             return {"rmse": float("nan"), "mae": float("nan")}
-        sq_errors = [(p - y) ** 2 for p, y in zip(predictions, labels_list)]
-        abs_errors = [abs(p - y) for p, y in zip(predictions, labels_list)]
+        sq_errors = [(p - y) ** 2 for p, y in zip(predictions, labels_list, strict=False)]
+        abs_errors = [abs(p - y) for p, y in zip(predictions, labels_list, strict=False)]
         metrics["rmse"] = float(sum(sq_errors) / len(sq_errors)) ** 0.5
         metrics["mae"] = float(sum(abs_errors) / len(abs_errors))
     else:
         # binary / multiclass — round predictions to nearest class index.
         if not labels_list:
             return {"accuracy": float("nan")}
-        correct = sum(1 for p, y in zip(predictions, labels_list) if round(p) == round(y))
+        correct = sum(
+            1 for p, y in zip(predictions, labels_list, strict=False) if round(p) == round(y)
+        )
         metrics["accuracy"] = float(correct) / len(labels_list)
     return metrics
 

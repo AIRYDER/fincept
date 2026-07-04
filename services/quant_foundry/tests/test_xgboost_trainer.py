@@ -317,7 +317,7 @@ class TestCanaryBinary:
         X, y = _synthetic_binary()
         result = t.train(X, y)
         assert set(result.feature_importance) == {"f1", "f2", "f3"}
-        for fname, entry in result.feature_importance.items():
+        for _fname, entry in result.feature_importance.items():
             assert set(entry) == {"gain", "weight", "cover"}
 
     def test_train_emits_fold_metrics(self) -> None:

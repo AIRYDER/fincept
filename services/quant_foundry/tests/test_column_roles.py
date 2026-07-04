@@ -567,7 +567,7 @@ def test_trainer_excluded_column_never_used_as_feature(tmp_path):
     req = _make_training_request("qf:train:excl:1", data_path.as_uri())
 
     deadline = time.time_ns() + 60_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline)
     # 3 features, not 4 (leakage_col excluded).
     assert dossier.metadata["n_features"] == "3"
 
@@ -667,7 +667,7 @@ def test_trainer_backward_compat_without_column_roles(tmp_path):
     deadline = time.time_ns() + 60_000_000_000
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        artifact, dossier = trainer.train(req, deadline_ns=deadline)
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline)
 
     # Legacy mode infers features by dropping label + timestamp.
     # Dataset has: timestamp, f1, f2, f3, leakage_col, weight, label
@@ -754,7 +754,7 @@ def test_trainer_explicit_features_not_inferred(tmp_path):
     req = _make_training_request("qf:train:onefeat:1", data_path.as_uri())
 
     deadline = time.time_ns() + 60_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline)
     assert dossier.metadata["n_features"] == "1"
 
 

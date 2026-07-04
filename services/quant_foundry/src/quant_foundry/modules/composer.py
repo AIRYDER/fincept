@@ -652,6 +652,7 @@ class DatasetComposer:
             zip(
                 existing_df["symbol"].to_list(),
                 [int(v) for v in existing_df["decision_time"].to_list()],
+                strict=False,
             )
         )
         # Max decision_time in the existing dataset (informational + state).

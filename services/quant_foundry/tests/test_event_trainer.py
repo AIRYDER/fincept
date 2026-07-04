@@ -744,7 +744,7 @@ class TestEventTrainerArtifact:
             preds1 = trainer.predict(emb)
             preds2 = trainer2.predict(emb)
             assert len(preds1) == len(preds2)
-            for r1, r2 in zip(preds1, preds2):
+            for r1, r2 in zip(preds1, preds2, strict=False):
                 assert np.allclose(r1, r2, atol=1e-5)
 
     def test_save_without_model_raises(self) -> None:

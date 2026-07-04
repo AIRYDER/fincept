@@ -591,7 +591,7 @@ class ReceiptBundleStore:
         """Current UTC timestamp in ISO 8601 format (deterministic-ish)."""
         import datetime
 
-        return datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 # ---------------------------------------------------------------------------

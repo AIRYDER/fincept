@@ -560,7 +560,7 @@ def compute_lob_metrics(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     accuracy = correct / n
 
     # Macro-averaged precision / recall / f1.
@@ -568,9 +568,9 @@ def compute_lob_metrics(
     recalls: list[float] = []
     f1s: list[float] = []
     for c in range(n_classes):
-        tp = sum(1 for p, a in zip(predictions, actuals) if p == c and a == c)
-        fp = sum(1 for p, a in zip(predictions, actuals) if p == c and a != c)
-        fn = sum(1 for p, a in zip(predictions, actuals) if p != c and a == c)
+        tp = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == c and a == c)
+        fp = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == c and a != c)
+        fn = sum(1 for p, a in zip(predictions, actuals, strict=False) if p != c and a == c)
         prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
@@ -590,7 +590,7 @@ def compute_lob_metrics(
     # it generalizes to n_classes != 3.
     stationary = 1 if n_classes >= 3 else None
     dir_correct = 0
-    for p, a in zip(predictions, actuals):
+    for p, a in zip(predictions, actuals, strict=False):
         if stationary is not None and p == stationary and a == stationary:
             dir_correct += 1
         elif stationary is not None and (p == stationary or a == stationary):
@@ -658,7 +658,7 @@ def compute_spread_adjusted_return(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    n_correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    n_correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     n_incorrect = n - n_correct
     gross = (n_correct - n_incorrect) / n
     spread_cost = spread_bps / 1e4
@@ -698,7 +698,7 @@ def compute_fee_adjusted_return(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    n_correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    n_correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     n_incorrect = n - n_correct
     gross = (n_correct - n_incorrect) / n
     fee_cost = fee_bps / 1e4

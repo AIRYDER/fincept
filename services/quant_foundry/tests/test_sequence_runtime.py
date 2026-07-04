@@ -337,7 +337,7 @@ def _write_synthetic_parquet_shards(dir_path: Path) -> None:
 
     dir_path.mkdir(parents=True, exist_ok=True)
     rows = []
-    for i in range(20):
+    for _i in range(20):
         rows.append(
             {
                 "sequence": np.random.randn(8).astype(np.float32).tolist(),

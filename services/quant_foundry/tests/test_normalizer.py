@@ -543,7 +543,7 @@ class TestNormalizerFitTransform:
 
     def test_fit_transform_standard(self, clean_df: pd.DataFrame) -> None:
         norm = Normalizer(method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.FAIL)
-        out, art = norm.fit_transform(clean_df, ["x"])
+        out, _art = norm.fit_transform(clean_df, ["x"])
         # x = [1,2,3,4,5], mean=3, std~1.4142 (population)
         np.testing.assert_allclose(
             out["x"].to_numpy(), (clean_df["x"].to_numpy() - 3.0) / np.std(clean_df["x"].to_numpy())
@@ -753,7 +753,7 @@ class TestEdgeCases:
     def test_all_missing_with_mean_fill_falls_back_to_zero(self) -> None:
         df = pd.DataFrame({"a": [np.nan, np.nan]})
         norm = Normalizer(method=NormalizationMethod.NONE, missing_policy=MissingPolicy.MEAN_FILL)
-        out, art = norm.fit_transform(df, ["a"])
+        out, _art = norm.fit_transform(df, ["a"])
         # mean is None -> falls back to 0.0
         assert not out["a"].isna().any()
 

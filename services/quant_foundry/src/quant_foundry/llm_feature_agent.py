@@ -864,7 +864,7 @@ class LLMFeatureAgent:
         if len(source_texts) != len(source_hashes):
             raise ValueError("source_texts and source_hashes must have the same length")
         features: list[LLMFeature] = []
-        for text, shash in zip(source_texts, source_hashes):
+        for text, shash in zip(source_texts, source_hashes, strict=False):
             features.append(
                 self.extract(
                     source_text=text,

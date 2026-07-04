@@ -55,7 +55,7 @@ async def test_readiness_returns_categories_and_states(
     }
     assert required_ids.issubset(checks.keys())
 
-    for cid, check in checks.items():
+    for _cid, check in checks.items():
         assert "state" in check
         assert check["state"] in {
             "pass",
