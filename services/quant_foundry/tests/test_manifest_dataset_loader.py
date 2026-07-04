@@ -214,7 +214,7 @@ class TestManifestDatasetLoaderHappyPath:
     """Acceptance: fetch manifest, verify sha, load data, verify hashes + row count."""
 
     def test_load_csv_with_full_verification(self, tmp_path: pathlib.Path) -> None:
-        pd = pytest.importorskip("pandas")
+        pytest.importorskip("pandas")
         _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=5)
         _manifest_path, manifest_uri, manifest_sha = _write_manifest(
             tmp_path,

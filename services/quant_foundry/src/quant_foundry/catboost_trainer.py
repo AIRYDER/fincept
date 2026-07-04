@@ -424,7 +424,7 @@ class CatBoostTrainer:
 
         Raises ValueError on any mismatch (when ``strict_categorical``).
         """
-        np = self._require_numpy()
+        self._require_numpy()
         n_features = X_feat.shape[1]
 
         # Determine which positional columns are categorical by dtype.

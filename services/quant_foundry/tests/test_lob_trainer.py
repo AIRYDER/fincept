@@ -1014,7 +1014,7 @@ class TestEdgeCases:
         trainer = DeepLOBTrainer(cfg, venue="NASDAQ", symbol="AAPL")
         snapshots = _synthetic_snapshots(seq_len=8, n_features=20)
         labels = [0, 1, 0, 1, 0, 1, 0, 1]
-        result = trainer.train(snapshots, labels)
+        trainer.train(snapshots, labels)
         preds = trainer.predict(snapshots)
         assert all(p in (0, 1) for p in preds)
 

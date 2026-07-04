@@ -1000,7 +1000,7 @@ def test_load_model_lightgbm(tmp_path: Path) -> None:
     import lightgbm as lgb
 
     # Re-create a booster from the pickled bytes and save in native format.
-    model = (
+    (
         lgb.Booster(model_str=trainer.last_model_bytes.decode("utf-8", errors="replace"))
         if False
         else None

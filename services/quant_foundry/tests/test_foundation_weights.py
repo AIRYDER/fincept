@@ -403,7 +403,7 @@ class TestRegisterWeight:
         assert r.policy_compliant is True
 
     def test_forbidden_source_rejected(self, permissive_policy):
-        mgr = WeightManager(permissive_policy)
+        WeightManager(permissive_policy)
         # Cannot even build a spec with FORBIDDEN_NETWORK, so simulate the
         # defense-in-depth path via object.__setattr__ is not possible on a
         # frozen pydantic model. Instead confirm the manager rejects a spec

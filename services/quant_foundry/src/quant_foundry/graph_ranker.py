@@ -281,8 +281,6 @@ class GraphRankerModel:
         gnn_module = gnn.module
         head = nn.Linear(self.hidden_dim, 1)
 
-        planner = self
-
         class _GraphRankerNet(nn.Module):
             """Inner nn.Module implementing the graph ranker forward pass."""
 

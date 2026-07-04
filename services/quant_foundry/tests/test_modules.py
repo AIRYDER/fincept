@@ -422,7 +422,6 @@ def test_per_year_features() -> None:
     load_all_modules()
     mod = ModuleRegistry.instance().create("feature:per-year:1.0.0")
 
-    NS_PER_DAY = 86_400_000_000_000
     dt_2023 = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
     dt_2024 = int(dt.datetime(2024, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 

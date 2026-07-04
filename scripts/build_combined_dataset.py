@@ -306,7 +306,6 @@ def compute_technical_features(
     if spy_bars is not None and len(spy_bars) > 60:
         spy_ts = {b["ts_event"]: b["close"] for b in spy_bars}
         spy_close = []
-        spy_ret = []
         for i in range(n):
             t = ts[i]
             if t in spy_ts:

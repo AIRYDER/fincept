@@ -279,8 +279,8 @@ def walk_forward_cv(
             fold_metrics.append(
                 {
                     "fold": fold_idx,
-                    "train_rows": int(len(X_tr)),
-                    "val_rows": int(len(X_va)),
+                    "train_rows": len(X_tr),
+                    "val_rows": len(X_va),
                     "best_iter": None,
                     "best_auc": None,
                     "reason_skipped": "single-class fold",
@@ -327,8 +327,8 @@ def walk_forward_cv(
                 json.dumps(
                     {
                         "fold": fold_idx,
-                        "train_rows": int(len(X_tr)),
-                        "val_rows": int(len(X_va)),
+                        "train_rows": len(X_tr),
+                        "val_rows": len(X_va),
                         "best_iter": int(booster.best_iteration or num_boost_round),
                         "best_auc": float(best_score)
                         if best_score is not None
@@ -341,8 +341,8 @@ def walk_forward_cv(
         fold_metrics.append(
             {
                 "fold": fold_idx,
-                "train_rows": int(len(X_tr)),
-                "val_rows": int(len(X_va)),
+                "train_rows": len(X_tr),
+                "val_rows": len(X_va),
                 "best_iter": int(booster.best_iteration or num_boost_round),
                 "best_auc": float(best_score) if best_score is not None else None,
             }
@@ -729,7 +729,7 @@ def main(argv: list[str] | None = None) -> None:
             "eval_mode": "walk_forward",
             "cv_folds": folds,
             "cv_summary": cv_summary,
-            "final_train_rows": int(len(X)),
+            "final_train_rows": len(X),
             "final_num_boost_round": int(median_iter),
             "purge_bars": int(purge_bars),
             "embargo_bars": int(args.embargo_bars),

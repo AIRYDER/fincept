@@ -602,7 +602,7 @@ def _advance_history(outbox, job_id: str, statuses, start_ns: int, step_ns: int)
     # Rewrite history with controlled timestamps: first entry (QUEUED)
     # at start_ns, subsequent entries at start_ns + k*step_ns.
     history = []
-    queued_ts = rec.history[0]["ts_ns"] if rec.history else start_ns
+    rec.history[0]["ts_ns"] if rec.history else start_ns
     history.append({"status": "queued", "ts_ns": start_ns})
     ts = start_ns
     for st in statuses:

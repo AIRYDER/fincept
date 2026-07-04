@@ -3890,7 +3890,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
-        print(msg, flush=True)  # noqa: T201 - CLI debug output
+        print(msg, flush=True)
         for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
             try:
                 with open(path, "a") as f:
@@ -3931,7 +3931,7 @@ if __name__ == "__main__":  # pragma: no cover
         raw = sys.stdin.read()
         event = json.loads(raw) if raw else {}
         result = handler(event)
-        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+        print(json.dumps(result, indent=2))
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())

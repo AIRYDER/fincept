@@ -892,7 +892,7 @@ class TestOptunaTunerPruning:
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_pruning_objective)
-        pruned = [t for t in artifact.trials if t.state == "PRUNED"]
+        [t for t in artifact.trials if t.state == "PRUNED"]
         # With median pruning and a deliberately bad value, at least one
         # trial should be pruned once enough trials have completed.
         assert len(artifact.trials) > 0

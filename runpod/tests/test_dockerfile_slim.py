@@ -143,7 +143,7 @@ def test_slim_has_no_import_based_healthcheck() -> None:
     jobs stayed IN_QUEUE). This reuses the same detector that guards the
     production Dockerfile.
     """
-    text = _read_dockerfile(_SLIM_DOCKERFILE)
+    _read_dockerfile(_SLIM_DOCKERFILE)
     offending = find_import_based_healthcheck(_SLIM_DOCKERFILE)
     assert offending == [], (
         "Dockerfile.slim reintroduced an import-based HEALTHCHECK, which "

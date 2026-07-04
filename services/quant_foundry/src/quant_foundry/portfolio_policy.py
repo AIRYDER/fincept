@@ -385,10 +385,10 @@ class PortfolioPolicy:
             # Step 1: clip over-weight assets.
             over_mask = clipped > self._max_weight + _EPS
             if over_mask.any():
-                excess = float((clipped[over_mask] - self._max_weight).sum())
+                float((clipped[over_mask] - self._max_weight).sum())
                 clipped[over_mask] = self._max_weight
             else:
-                excess = 0.0
+                pass
             # Step 2: redistribute the excess (plus any residual to
             # reach 1.0) to the un-clipped assets.
             residual = 1.0 - clipped.sum()

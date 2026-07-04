@@ -554,7 +554,7 @@ class TestForecastDistributionWriter:
 
     def test_constructor_creates_dir(self, tmp_path):
         nested = tmp_path / "nested" / "dir"
-        w = ForecastDistributionWriter(str(nested))
+        ForecastDistributionWriter(str(nested))
         assert os.path.isdir(str(nested))
 
     def test_constructor_empty_dir_rejected(self):

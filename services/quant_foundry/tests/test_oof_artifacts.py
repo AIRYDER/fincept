@@ -507,7 +507,7 @@ def test_read_oof_artifact_hash_mismatch(tmp_path):
     """read_oof_artifact fails-closed when the stored hash is wrong."""
     rows = [_row(row_id="r1")]
     path = str(tmp_path / "oof.json")
-    written = write_oof_artifact(rows, "lightgbm", path)
+    write_oof_artifact(rows, "lightgbm", path)
     # Tamper with the stored hash.
     with open(path, encoding="utf-8") as fh:
         payload = json.load(fh)

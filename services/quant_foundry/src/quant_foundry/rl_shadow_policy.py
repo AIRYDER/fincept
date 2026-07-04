@@ -597,7 +597,7 @@ class RLShadowPolicy:
         start = time.perf_counter()
         # Fail-closed: re-validate separation at train time.
         self.separator.validate_separation()
-        train_data = self.separator.get_train_data(returns_data, timestamp_field)
+        self.separator.get_train_data(returns_data, timestamp_field)
         n_episodes = self.config.n_train_episodes
         rewards_all: list[float] = []
         turnovers_all: list[float] = []
@@ -702,7 +702,7 @@ class RLShadowPolicy:
         Returns:
             A dict of metric name -> float value.
         """
-        eval_data = self.separator.get_eval_data(returns_data, timestamp_field)
+        self.separator.get_eval_data(returns_data, timestamp_field)
         n_episodes = self.config.n_eval_episodes
         rewards_all: list[float] = []
         turnovers_all: list[float] = []

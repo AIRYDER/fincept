@@ -42,7 +42,7 @@ sys.stdout.flush()
 def handler(event):
     """Minimal handler that just returns a canary response."""
     input_data = event.get("input", {})
-    task = input_data.get("task", "")
+    input_data.get("task", "")
     job_id = input_data.get("job_id", "unknown")
 
     nonce = input_data.get("nonce", "")

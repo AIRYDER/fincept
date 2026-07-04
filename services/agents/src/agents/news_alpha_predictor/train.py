@@ -242,7 +242,7 @@ def _train_command(args: argparse.Namespace) -> None:
     meta.update(
         {
             "dataset_path": str(args.input),
-            "rows": int(len(X)),
+            "rows": len(X),
             "eval_mode": "time_ordered_holdout",
         }
     )

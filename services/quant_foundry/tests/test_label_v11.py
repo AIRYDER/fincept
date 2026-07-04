@@ -233,7 +233,6 @@ def test_v11_trading_day_horizons() -> None:
     load_all_modules()
     label_mod = ModuleRegistry.instance().create("label:abnormal-return:1.1.0")
 
-    NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Create bars with a gap after bar 260 (simulating weekend)
@@ -285,7 +284,6 @@ def test_v11_open_to_close_returns() -> None:
         config={"return_type": "open_to_close"},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
@@ -333,7 +331,6 @@ def test_v11_car_method() -> None:
         config={"ar_method": "endpoint"},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
@@ -532,7 +529,6 @@ def test_v11_thin_trading_guard() -> None:
         config={"min_beta_window": 100},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
     start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Only 50 bars — below the min_beta_window of 100

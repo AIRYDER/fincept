@@ -463,7 +463,6 @@ class TournamentView:
             A new sorted list; the input list is not mutated.
         """
         metric = self.config.sort_by
-        higher_is_better = metric in _HIGHER_IS_BETTER
         descending = self.config.sort_order == "desc"
 
         def _key(row: TournamentRow) -> tuple[int, float]:

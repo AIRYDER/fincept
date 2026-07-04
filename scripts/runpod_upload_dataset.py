@@ -66,7 +66,7 @@ def main() -> int:
 
     # 4. Get the header (first line) — only include in chunk 0
     header_end = csv_text.index("\n") + 1
-    header = csv_text[:header_end]
+    csv_text[:header_end]
 
     # 5. Dispatch chunk upload jobs
     print(f"\nSTEP 2: Upload {n_chunks} chunks to /workspace/dataset.csv")

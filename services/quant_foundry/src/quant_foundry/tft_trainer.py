@@ -654,7 +654,7 @@ def _make_tft_module_class() -> Any:
 
         def forward(self, x: Any, static_data: Any = None) -> Any:
             # x: (batch, seq_len, n_features)
-            batch = x.shape[0]
+            x.shape[0]
 
             # Variable selection over temporal features.
             selected = self.vsn(x)  # (batch, seq_len, d_model)

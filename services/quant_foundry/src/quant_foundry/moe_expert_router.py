@@ -299,7 +299,6 @@ def enforce_max_weight(weights: dict[str, float], max_weight: float) -> dict[str
         return {k: 1.0 / n for k in weights}
     w = {k: v / total for k, v in w.items()}
 
-    capped: dict[str, float] = {}
     for _ in range(n + 5):  # converges in at most n iterations
         over = {k: v for k, v in w.items() if v > max_weight + _EPS}
         if not over:

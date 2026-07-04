@@ -1068,7 +1068,7 @@ class TestLOBManifestBuilder:
 
     def test_build_fail_closed_crossed_book(self) -> None:
         train = _make_train_session()
-        val = _make_validation_session()
+        _make_validation_session()
         # A crossed book record cannot even be constructed (fail-closed
         # at the record level).
         with pytest.raises(ValidationError, match="crossed/locked book"):

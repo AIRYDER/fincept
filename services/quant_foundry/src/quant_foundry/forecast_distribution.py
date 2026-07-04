@@ -203,7 +203,7 @@ class ForecastDistributionArtifact(BaseModel):
             try:
                 lvl = float(key)
             except (TypeError, ValueError):
-                raise ValueError(f"quantile level {key!r} is not a number")
+                raise ValueError(f"quantile level {key!r} is not a number") from None
             if not (0.0 < lvl < 1.0):
                 raise ValueError(f"quantile level {lvl!r} must be strictly in (0, 1)")
             if not isinstance(val, (int, float)):

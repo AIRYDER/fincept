@@ -229,8 +229,8 @@ def bootstrap_sharpe_ci(
 
     # Percentile method
     alpha = 1.0 - confidence
-    lower_idx = max(0, int(math.floor((alpha / 2.0) * n_bootstrap)))
-    upper_idx = min(n_bootstrap - 1, int(math.ceil((1.0 - alpha / 2.0) * n_bootstrap)) - 1)
+    lower_idx = max(0, math.floor((alpha / 2.0) * n_bootstrap))
+    upper_idx = min(n_bootstrap - 1, math.ceil((1.0 - alpha / 2.0) * n_bootstrap) - 1)
 
     return {
         "mean": float(_mean(sharpe_ratios)),
@@ -297,8 +297,8 @@ def bootstrap_sharpe_difference_ci(
     diffs.sort()
 
     alpha = 1.0 - confidence
-    lower_idx = max(0, int(math.floor((alpha / 2.0) * n_bootstrap)))
-    upper_idx = min(n_bootstrap - 1, int(math.ceil((1.0 - alpha / 2.0) * n_bootstrap)) - 1)
+    lower_idx = max(0, math.floor((alpha / 2.0) * n_bootstrap))
+    upper_idx = min(n_bootstrap - 1, math.ceil((1.0 - alpha / 2.0) * n_bootstrap) - 1)
 
     lower = diffs[lower_idx]
     upper = diffs[upper_idx]

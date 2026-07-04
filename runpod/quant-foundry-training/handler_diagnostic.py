@@ -156,7 +156,7 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
                 "diagnostic_mode": diagnostic_mode,
                 "job_id": job_id,
                 "task": task,
-                "input_keys": sorted(str(key) for key in input_data.keys()),
+                "input_keys": sorted(str(key) for key in input_data),
                 "runtime": {
                     "git_sha": os.environ.get("QUANT_FOUNDRY_GIT_SHA", "unknown"),
                     "python": sys.version.split()[0],
@@ -266,4 +266,4 @@ if __name__ == "__main__":
         print(traceback.format_exc(), flush=True)
         sys.stdout.flush()
         sys.stderr.flush()
-        raise SystemExit(1)
+        raise SystemExit(1) from e

@@ -126,7 +126,7 @@ async def list_jobs(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"invalid status filter: {status_filter}",
-            )
+            ) from None
     return gw.list_jobs(status=job_status)
 
 
@@ -161,7 +161,7 @@ async def list_dossiers(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"invalid status filter: {status_filter}",
-            )
+            ) from None
     return gw.list_dossiers(status=dossier_status)
 
 
@@ -339,7 +339,7 @@ async def receive_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-QF-Timestamp must be an integer (unix seconds)",
-        )
+        ) from None
 
     payload = await request.body()
     receipt = gw.receive_callback(

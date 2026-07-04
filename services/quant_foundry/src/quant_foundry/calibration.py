@@ -342,7 +342,7 @@ class Calibrator:
 
             est = LogisticRegression(C=1e10, solver="lbfgs", max_iter=10000)
             X = [[float(p)] for p in raw_probs]
-            y = [int(round(float(v))) for v in labels]
+            y = [round(float(v)) for v in labels]
             # Need at least two classes for logistic regression.
             if len(set(y)) < 2:
                 # Degenerate: all one class. Platt scaling collapses to a

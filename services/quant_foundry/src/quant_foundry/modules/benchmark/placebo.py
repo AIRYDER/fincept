@@ -171,7 +171,7 @@ class PlaceboTest:
                 - ``p_value``: fraction of permuted metrics >= real metric.
                 - ``significant_at_5pct``: whether ``p_value < 0.05``.
         """
-        rng = random.Random(seed)
+        random.Random(seed)
 
         # Real model
         real_model = self._clone_model(model)
@@ -240,7 +240,7 @@ class PlaceboTest:
             feature name to its importance (metric drop).  Higher
             importance = more important feature.
         """
-        rng = random.Random(seed)
+        random.Random(seed)
 
         # Fit the model once on real data
         trained_model = self._clone_model(model)

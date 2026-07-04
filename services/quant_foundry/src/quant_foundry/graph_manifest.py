@@ -442,7 +442,7 @@ class GraphDatasetManifest(BaseModel):
     @model_validator(mode="after")
     def _no_future_edges(self) -> GraphDatasetManifest:
         """Every edge's edge_available_at must be <= graph_snapshot_time."""
-        snapshot_epoch = _parse_temporal(self.graph_snapshot_time)
+        _parse_temporal(self.graph_snapshot_time)
         for edge in self.edges:
             validate_no_future_edge(edge, self.graph_snapshot_time)
         return self

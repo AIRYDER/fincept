@@ -176,7 +176,6 @@ def main() -> int:
 
     # --- 7. Parse the callback envelope ---
     envelope = json.loads(result.callback_payload)
-    payload_dict = envelope
     print("-" * 70)
     print("CALLBACK ENVELOPE")
     print("-" * 70)

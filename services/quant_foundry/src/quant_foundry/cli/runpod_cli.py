@@ -734,7 +734,7 @@ class RunPodCLI:
             issued_at=issued_at,
             expires_at=expires_at,
         )
-        upload_request = {
+        {
             "dataset_id": dataset_id,
             "manifest_uri": entry.manifest_uri,
             "data_uri": entry.data_uri,

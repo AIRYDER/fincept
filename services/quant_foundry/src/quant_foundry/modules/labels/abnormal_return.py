@@ -166,7 +166,7 @@ class AbnormalReturnLabel:
             base_idx = _last_idx_at_or_before([b.ts_ns for b in bars], dt)
             if base_idx is None:
                 continue
-            base_asset = bars[base_idx]
+            bars[base_idx]
 
             base_bench_idx = _last_idx_at_or_before(bench_ts, dt)
             if base_bench_idx is None:

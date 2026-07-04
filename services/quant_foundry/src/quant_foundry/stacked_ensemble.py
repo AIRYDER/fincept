@@ -927,7 +927,7 @@ class StackedEnsemble:
             ) from exc
 
         # Coerce labels to 0/1 integers for logistic regression.
-        y_int = np.array([int(round(float(v))) for v in y], dtype=np.int64)
+        y_int = np.array([round(float(v)) for v in y], dtype=np.int64)
         # Need at least 2 classes; if degenerate, fall back to a
         # constant predictor wrapper.
         if len(set(y_int.tolist())) < 2:

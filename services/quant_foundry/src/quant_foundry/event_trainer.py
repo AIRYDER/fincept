@@ -699,7 +699,7 @@ class EventTrainer:
         model.to(device)
         model.train()
 
-        loss_fn = nn.MSELoss()
+        nn.MSELoss()
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=self.config.learning_rate,

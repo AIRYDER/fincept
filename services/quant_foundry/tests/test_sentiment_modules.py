@@ -174,7 +174,7 @@ def test_openai_raises_on_missing_api_key() -> None:
     from quant_foundry.modules.sentiment.llm_openai import OpenAISentiment
 
     mod = OpenAISentiment()
-    items = [
+    [
         MediaItem(
             item_id="1",
             source="test",
