@@ -47,6 +47,7 @@ __all__ = [
     "EndpointConfig",
     "TemplateConfig",
     "build_endpoint_input",
+    "build_job_policy",
     "build_template_input",
     "compute_execution_timeout",
     "make_unique_name",
@@ -199,6 +200,46 @@ def build_endpoint_input(config: EndpointConfig) -> dict[str, Any]:
         "scalerType": config.scaler_type,
         "scalerValue": config.scaler_value,
     }
+
+
+def build_job_policy(
+    execution_timeout_s: int | None = None,
+    *,
+    ttl_s: int | None = None,
+    low_priority: bool = False,
+) -> dict[str, Any]:
+    """Build the per-request ``policy`` dict for a RunPod ``/run`` or
+    ``/runsync`` request.
+
+    RunPod's documented way to override the execution timeout per job is the
+    ``policy.executionTimeout`` field in the request body (see
+    https://docs.runpod.io/serverless/endpoints/send-requests#execution-policies).
+    The value is in **milliseconds**, not seconds. The endpoint-level
+    ``executionTimeout`` in ``build_endpoint_input`` is kept as a best-effort
+    undocumented field — the per-request policy is the reliable, documented
+    path.
+
+    Args:
+        execution_timeout_s: Execution timeout in **seconds**. Defaults to
+            ``compute_execution_timeout()`` (>= 1860). Converted to ms.
+        ttl_s: Optional job TTL in seconds. Converted to ms.
+        low_priority: If True, the job won't trigger worker scaling.
+
+    Returns:
+        Dict suitable for inclusion as the ``policy`` key in a ``/run`` or
+        ``/runsync`` request body::
+
+            {"input": {...}, "policy": build_job_policy()}
+    """
+    timeout_s = execution_timeout_s if execution_timeout_s is not None else compute_execution_timeout()
+    validated = validate_execution_timeout(timeout_s)
+    policy: dict[str, Any] = {
+        "executionTimeout": validated * 1000,
+        "lowPriority": low_priority,
+    }
+    if ttl_s is not None:
+        policy["ttl"] = ttl_s * 1000
+    return policy
 
 
 # --- Unique naming -----------------------------------------------------------

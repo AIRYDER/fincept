@@ -33,6 +33,7 @@ from runpod.runpod_lifecycle import (  # noqa: E402
     EndpointConfig,
     TemplateConfig,
     build_endpoint_input,
+    build_job_policy,
     build_template_input,
     compute_execution_timeout,
     format_timeout_receipt,
@@ -159,7 +160,7 @@ def get_endpoint_health(endpoint_id: str) -> dict[str, Any]:
 
 def run_job(endpoint_id: str, input_data: dict[str, Any]) -> str:
     api_key = os.environ.get("RUNPOD_API_KEY", "")
-    body = json.dumps({"input": input_data}).encode()
+    body = json.dumps({"input": input_data, "policy": build_job_policy()}).encode()
     url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
     req = urllib.request.Request(
         url,
