@@ -183,6 +183,121 @@ def resolve_volume_path(ref: str) -> str:
     return ref
 
 
+def _is_under_tmp(path_str: str) -> bool:
+    """Check whether a path string resolves under ``/tmp``.
+
+    Used by the durable-storage deny gate to detect ``output_prefix``
+    values that would let the artifact die with the worker. Handles
+    both ``/tmp`` and ``/tmp/...`` forms, and ``file://`` URIs that
+    point at ``/tmp``.
+    """
+    if not path_str:
+        return False
+    cleaned = path_str
+    if cleaned.startswith("file://"):
+        cleaned = cleaned[len("file://"):]
+    try:
+        p = Path(cleaned)
+    except Exception:
+        return False
+    # Normalize to forward slashes (Path uses backslashes on Windows, but
+    # the handler runs on Linux where /tmp is a real path — this makes the
+    # check cross-platform for testing).
+    resolved = str(p).replace("\\", "/")
+    return resolved == "/tmp" or resolved.startswith("/tmp/")
+
+
+def _validate_output_prefix_durable(
+    *,
+    output_prefix: str | None,
+    presigned_artifact_url: str | None,
+    training_mode: str,
+) -> str | None:
+    """Validate that the artifact destination is durable for real jobs.
+
+    Returns an error message string if the destination is not durable
+    (fail-closed gate), or ``None`` if the destination is acceptable.
+
+    Hard rules (from the durable-artifact skill):
+
+    1. **Deny /tmp for real jobs.** ``training_mode == "canary"`` may use
+       ``/tmp`` (the FakeArtifactWriter path is canary-only by design).
+       For any other mode, if the resolved ``output_prefix`` is under
+       ``/tmp`` (or ``runpod_data_root()`` fell back to ``/tmp`` because
+       no volume is mounted), the handler must fail closed.
+
+    2. **Validate output_prefix before training starts.** For non-canary
+       jobs, ``output_prefix`` must resolve to either:
+       - a path under ``/runpod-volume/`` or ``/workspace/`` (network
+         volume mounted), or
+       - an ``s3://`` / ``https://`` presigned URL, or
+       - a ``file://`` URI to a mounted volume (not ``/tmp``).
+       Reject anything else.
+    """
+    is_canary = training_mode == "canary"
+    if is_canary:
+        # Canary may use /tmp — no durable destination required.
+        return None
+
+    # A presigned URL is always durable (https:// is enforced by the
+    # PresignedUploadArtifactWriter; s3:// is a durable scheme). Let
+    # the writer handle non-https schemes with its own signed failure.
+    if presigned_artifact_url:
+        return None
+
+    # No presigned URL → output_prefix must be a durable volume path.
+    if not output_prefix:
+        data_root = runpod_data_root()
+        if str(data_root) == "/tmp":
+            return (
+                "durable artifact destination required for real jobs: "
+                "no RunPod network volume mounted (/runpod-volume, "
+                "/workspace) and no presigned artifact URL supplied — "
+                "refusing to write to /tmp (artifact would die with "
+                "the worker). Wire a network volume or pass "
+                "presigned_artifact_url."
+            )
+        return (
+            "durable artifact destination required for real jobs: "
+            "no output_prefix and no presigned_artifact_url supplied. "
+            "Set output_prefix to a /runpod-volume/ or /workspace/ "
+            "path, or pass presigned_artifact_url."
+        )
+
+    # output_prefix is set — reject /tmp.
+    if _is_under_tmp(output_prefix):
+        return (
+            f"output_prefix {output_prefix!r} resolves under /tmp — "
+            "refusing to persist artifact to /tmp for a real job "
+            "(artifact would die with the worker). Set output_prefix "
+            "to a /runpod-volume/ or /workspace/ path, or pass "
+            "presigned_artifact_url."
+        )
+
+    # Accept volume paths and durable URI schemes.
+    if output_prefix.startswith("/runpod-volume/") or output_prefix.startswith("/workspace/"):
+        return None
+    if output_prefix.startswith("s3://") or output_prefix.startswith("https://"):
+        return None
+    if output_prefix.startswith("file://"):
+        inner = output_prefix[len("file://"):]
+        if inner.startswith("/runpod-volume/") or inner.startswith("/workspace/"):
+            return None
+        return (
+            f"output_prefix {output_prefix!r} is a file:// URI to a "
+            "non-volume path — must point to /runpod-volume/ or "
+            "/workspace/. Pass presigned_artifact_url for S3/R2 uploads."
+        )
+
+    # Anything else is rejected.
+    return (
+        f"output_prefix {output_prefix!r} is not a durable destination "
+        "(must be /runpod-volume/, /workspace/, s3://, https://, or "
+        "file:// to a mounted volume). Refusing to persist artifact "
+        "for a real job."
+    )
+
+
 def _get_callback_secret() -> str:
     secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
     if not secret:
@@ -3369,6 +3484,39 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
                 )
             model_bytes = typed_artifact.model_bytes
 
+    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
+    # Fail closed BEFORE any writer is selected: for non-canary jobs, deny
+    # /tmp as a final destination and validate output_prefix resolves to a
+    # durable location (network volume or presigned URL). A real job that
+    # writes to /tmp produces a signed receipt pointing at nothing — worse
+    # than no job. Canary jobs may use /tmp (FakeArtifactWriter is canary-
+    # only by design).
+    raw_mode = req.extra_constraints.get("training_mode") or "canary"
+    _deny_error = _validate_output_prefix_durable(
+        output_prefix=output_prefix,
+        presigned_artifact_url=presigned_artifact_url,
+        training_mode=raw_mode,
+    )
+    if _deny_error is not None:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code="artifact_destination_not_durable",
+            error_summary=_deny_error,
+        )
+        return _build_signed_failure(
+            error_code="artifact_destination_not_durable",
+            error_message=_deny_error,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "artifact_destination_deny_gate",
+                "output_prefix": output_prefix or "",
+                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
+                "training_mode": raw_mode,
+            },
+        )
+
     # --- Phase 1 / T-1.2: persist the artifact via the writer interface -----
     # Select a writer backend based on the available inputs + run mode:
     #   - presigned_artifact_url → PresignedUploadArtifactWriter (prod)
@@ -3575,6 +3723,12 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         ).hexdigest()
 
     # Metrics summary from the dossier training_metrics.
+    # Tier 0 / metric sanity bounds: build_callback runs
+    # validate_metric_sanity() on this dict before signing — implausible
+    # metrics (e.g. Sharpe 769) are flagged, raw values preserved, and
+    # promotion_eligible forced False. No mutation happens here; the
+    # sanity report is embedded under metrics_summary["metric_sanity"]
+    # inside the signed callback payload.
     metrics_summary = dict(dossier_data.get("training_metrics", {}))
 
     # Quality gate passed flag (fail-closed when unknown).
