@@ -1,0 +1,31 @@
+{
+  "artifact_id": "artifact:ac0b69ba8b52f20e",
+  "artifact_result": {
+    "artifact_format": "pickle",
+    "artifact_id": "artifact:ac0b69ba8b52f20e",
+    "artifact_kind": "model",
+    "artifact_sha256": "ac0b69ba8b52f20e898ccde31fabc92f574129a3e9a741f7b769e2519921274f",
+    "artifact_size_bytes": 337368,
+    "artifact_uri": "file:///tmp/a7-train-artifacts/model.pkl",
+    "created_at": 1783160420318608600,
+    "dataset_manifest_hash": "33ae9f65a7d21ad7918689165dd1e16e6dea91efdaebaf60dfca9b387f76c39d",
+    "loader_family": "lightgbm",
+    "model_family": "lightgbm",
+    "training_manifest_hash": null,
+    "write_receipt": "0196331085d614773a25343a7be8d6a786ae1ba16e2fd7e6de073152c94c3d2c"
+  },
+  "artifact_write_receipt_present": true,
+  "callback_signature_present": true,
+  "dossier_id": "model:qf:a7-train:6dbec436:001",
+  "job_id": "qf:a7-train:6dbec436:001",
+  "metrics_summary": {
+    "accuracy": 0.8350515463917526,
+    "brier_score": 0.12201145626177778,
+    "logloss": 0.3863049387003034,
+    "max_drawdown": -1.3034772673566977,
+    "sharpe_ratio": 769.5358987417395,
+    "win_rate": 0.8350515463917526
+  },
+  "output_prefix": "/tmp/a7-train-artifacts",
+  "preflight_passed": true
+}
