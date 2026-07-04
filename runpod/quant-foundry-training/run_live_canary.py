@@ -20,12 +20,37 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# Shared lifecycle helpers (unique naming, retry cleanup, timeout config).
+# The scripts/ package is added to sys.path below so this works when the
+# probe tools are run from the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCRIPTS_DIR = str(_REPO_ROOT / "scripts")
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+from runpod.runpod_lifecycle import (  # noqa: E402
+    DEFAULT_IDLE_TIMEOUT_S,
+    EndpointConfig,
+    TemplateConfig,
+    build_endpoint_input,
+    build_template_input,
+    compute_execution_timeout,
+    format_timeout_receipt,
+    make_unique_name,
+    retry_delete_endpoint,
+    safe_scale_to_zero,
+)
+
 # --- Config ------------------------------------------------------------------
 
 GPU_TYPE = "ADA_24"
 WORKERS_MIN = 1
 WORKERS_MAX = 1
-IDLE_TIMEOUT = 300
+IDLE_TIMEOUT = DEFAULT_IDLE_TIMEOUT_S
+# executionTimeout >= 1860s (handler deadline 1800s + 60s slack) so the
+# handler's signed failure envelope always fires before RunPod times the
+# job out. RunPod's default is 600s — never inherit it.
+EXECUTION_TIMEOUT = compute_execution_timeout()
 SCALER_TYPE = "QUEUE_DELAY"
 SCALER_VALUE = 4
 CONTAINER_DISK_GB = 20
@@ -66,7 +91,11 @@ def _gql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
 def _redact(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {
-            k: ("****" if any(s in k.lower() for s in ("secret", "key", "token", "password", "auth")) else _redact(v))
+            k: (
+                "****"
+                if any(s in k.lower() for s in ("secret", "key", "token", "password", "auth"))
+                else _redact(v)
+            )
             for k, v in obj.items()
         }
     if isinstance(obj, list):
@@ -75,36 +104,37 @@ def _redact(obj: Any) -> Any:
 
 
 def save_template(name: str, image_name: str, env_vars: list[dict], registry_auth_id: str) -> str:
-    input_obj = {
-        "name": name,
-        "imageName": image_name,
-        "env": env_vars,
-        "containerRegistryAuthId": registry_auth_id,
-        "dockerArgs": "",
-        "volumeInGb": 0,
-        "containerDiskInGb": CONTAINER_DISK_GB,
-        "isServerless": True,
-    }
+    config = TemplateConfig(
+        name=name,
+        image_name=image_name,
+        env_vars=env_vars,
+        registry_auth_id=registry_auth_id,
+        container_disk_gb=CONTAINER_DISK_GB,
+    )
+    input_obj = build_template_input(config)
     data = _gql(
-        'mutation SaveTemplate($input: SaveTemplateInput) { saveTemplate(input: $input) { id } }',
+        "mutation SaveTemplate($input: SaveTemplateInput) { saveTemplate(input: $input) { id } }",
         {"input": input_obj},
     )
     return data["saveTemplate"]["id"]
 
 
 def create_endpoint(name: str, template_id: str) -> str:
-    input_obj = {
-        "name": name,
-        "templateId": template_id,
-        "gpuIds": GPU_TYPE,
-        "workersMin": WORKERS_MIN,
-        "workersMax": WORKERS_MAX,
-        "idleTimeout": IDLE_TIMEOUT,
-        "scalerType": SCALER_TYPE,
-        "scalerValue": SCALER_VALUE,
-    }
+    config = EndpointConfig(
+        name=name,
+        template_id=template_id,
+        gpu_ids=GPU_TYPE,
+        workers_min=WORKERS_MIN,
+        workers_max=WORKERS_MAX,
+        idle_timeout=IDLE_TIMEOUT,
+        execution_timeout=EXECUTION_TIMEOUT,
+        scaler_type=SCALER_TYPE,
+        scaler_value=SCALER_VALUE,
+        container_disk_gb=CONTAINER_DISK_GB,
+    )
+    input_obj = build_endpoint_input(config)
     data = _gql(
-        'mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id } }',
+        "mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id } }",
         {"input": input_obj},
     )
     return data["saveEndpoint"]["id"]
@@ -161,7 +191,7 @@ def get_job_status(endpoint_id: str, job_id: str) -> dict[str, Any]:
 
 def _get_endpoint_by_id(endpoint_id: str) -> dict[str, Any]:
     data = _gql(
-        'query GetEndpoints { myself { endpoints { id name templateId workersMin workersMax } } }',
+        "query GetEndpoints { myself { endpoints { id name templateId workersMin workersMax } } }",
     )
     for ep in data["myself"]["endpoints"]:
         if ep["id"] == endpoint_id:
@@ -179,7 +209,7 @@ def update_endpoint_workers(endpoint_id: str, workers_min: int, workers_max: int
         "workersMax": workers_max,
     }
     data = _gql(
-        'mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id workersMin workersMax } }',
+        "mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id workersMin workersMax } }",
         {"input": input_obj},
     )
     return data["saveEndpoint"]
@@ -221,7 +251,7 @@ def main() -> int:
         template_id = args.template_id
         print(f"  Reusing template: {template_id}")
     else:
-        template_name = f"qf-canary-{sha[:8]}-tpl"
+        template_name = make_unique_name("qf-canary", sha, suffix="tpl")
         env_vars = [
             {"key": "PYTHONUNBUFFERED", "value": "1"},
             {"key": "PYTHONPATH", "value": "/worker"},
@@ -238,23 +268,30 @@ def main() -> int:
     )
 
     # Create endpoint
-    endpoint_name = f"qf-canary-{sha[:8]}"
+    endpoint_name = make_unique_name("qf-canary", sha)
     endpoint_id = create_endpoint(endpoint_name, template_id)
     print(f"  Endpoint created: {endpoint_id}")
 
     # Write endpoint receipt
     (receipt_dir / "endpoint-create-redacted.json").write_text(
-        json.dumps(_redact({
-            "endpoint_id": endpoint_id,
-            "name": endpoint_name,
-            "template_id": template_id,
-            "gpu_type": GPU_TYPE,
-            "workers_min": WORKERS_MIN,
-            "workers_max": WORKERS_MAX,
-            "idle_timeout": IDLE_TIMEOUT,
-            "scaler_type": SCALER_TYPE,
-            "scaler_value": SCALER_VALUE,
-        }), indent=2),
+        json.dumps(
+            _redact(
+                {
+                    "endpoint_id": endpoint_id,
+                    "name": endpoint_name,
+                    "template_id": template_id,
+                    "gpu_type": GPU_TYPE,
+                    "workers_min": WORKERS_MIN,
+                    "workers_max": WORKERS_MAX,
+                    "idle_timeout": IDLE_TIMEOUT,
+                    "execution_timeout": EXECUTION_TIMEOUT,
+                    "scaler_type": SCALER_TYPE,
+                    "scaler_value": SCALER_VALUE,
+                    "timeout_config": format_timeout_receipt(EXECUTION_TIMEOUT, IDLE_TIMEOUT),
+                }
+            ),
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
@@ -267,27 +304,34 @@ def main() -> int:
             workers = health.get("workers", {})
             ready = workers.get("ready", 0)
             unhealthy = workers.get("unhealthy", 0)
-            print(f"    [{i*POLL_INTERVAL_S}] ready={ready} idle={workers.get('idle',0)} "
-                  f"running={workers.get('running',0)} unhealthy={unhealthy} "
-                  f"initializing={workers.get('initializing',0)}")
+            print(
+                f"    [{i * POLL_INTERVAL_S}] ready={ready} idle={workers.get('idle', 0)} "
+                f"running={workers.get('running', 0)} unhealthy={unhealthy} "
+                f"initializing={workers.get('initializing', 0)}"
+            )
             if ready >= 1 and unhealthy == 0:
                 health_before = health
                 break
             if unhealthy > 0:
                 print("  FAIL: worker went unhealthy before dispatch")
                 (receipt_dir / "health-before.json").write_text(
-                    json.dumps(_redact(health), indent=2, sort_keys=True), encoding="utf-8")
+                    json.dumps(_redact(health), indent=2, sort_keys=True), encoding="utf-8"
+                )
                 return 1
             time.sleep(POLL_INTERVAL_S)
         else:
             print(f"  FAIL: worker not ready after {READY_TIMEOUT_S}s")
             (receipt_dir / "health-before.json").write_text(
-                json.dumps(_redact(health), indent=2, sort_keys=True), encoding="utf-8")
+                json.dumps(_redact(health), indent=2, sort_keys=True), encoding="utf-8"
+            )
             return 1
 
-        print(f"  Health before: ready={workers.get('ready',0)} idle={workers.get('idle',0)} unhealthy={workers.get('unhealthy',0)}")
+        print(
+            f"  Health before: ready={workers.get('ready', 0)} idle={workers.get('idle', 0)} unhealthy={workers.get('unhealthy', 0)}"
+        )
         (receipt_dir / "health-before.json").write_text(
-            json.dumps(_redact(health_before), indent=2, sort_keys=True), encoding="utf-8")
+            json.dumps(_redact(health_before), indent=2, sort_keys=True), encoding="utf-8"
+        )
 
         # Dispatch callback_secret_canary
         canary_input = {
@@ -312,19 +356,23 @@ def main() -> int:
             job_status = status_resp.get("status", "UNKNOWN")
             final_status = job_status
 
-            probe_log.append({
-                "event": "poll",
-                "job_id": job_id,
-                "status": job_status,
-                "health": _redact(health),
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            })
+            probe_log.append(
+                {
+                    "event": "poll",
+                    "job_id": job_id,
+                    "status": job_status,
+                    "health": _redact(health),
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
 
-            print(f"  [{i*POLL_INTERVAL_S}] status={job_status} "
-                  f"ready={workers.get('ready',0)} running={workers.get('running',0)} "
-                  f"unhealthy={workers.get('unhealthy',0)} "
-                  f"inQueue={health.get('jobs',{}).get('inQueue',0)} "
-                  f"completed={health.get('jobs',{}).get('completed',0)}")
+            print(
+                f"  [{i * POLL_INTERVAL_S}] status={job_status} "
+                f"ready={workers.get('ready', 0)} running={workers.get('running', 0)} "
+                f"unhealthy={workers.get('unhealthy', 0)} "
+                f"inQueue={health.get('jobs', {}).get('inQueue', 0)} "
+                f"completed={health.get('jobs', {}).get('completed', 0)}"
+            )
 
             if workers.get("unhealthy", 0) > 0:
                 print("  FAIL: worker went unhealthy")
@@ -354,10 +402,13 @@ def main() -> int:
 
         # Final health
         health_after = get_endpoint_health(endpoint_id)
-        print(f"  Health after: ready={health_after['workers'].get('ready',0)} "
-              f"unhealthy={health_after['workers'].get('unhealthy',0)}")
+        print(
+            f"  Health after: ready={health_after['workers'].get('ready', 0)} "
+            f"unhealthy={health_after['workers'].get('unhealthy', 0)}"
+        )
         (receipt_dir / "health-after.json").write_text(
-            json.dumps(_redact(health_after), indent=2, sort_keys=True), encoding="utf-8",
+            json.dumps(_redact(health_after), indent=2, sort_keys=True),
+            encoding="utf-8",
         )
 
         # Result
@@ -369,19 +420,26 @@ def main() -> int:
             return 1
 
     finally:
-        # Scale down and delete
-        try:
-            update_endpoint_workers(endpoint_id, 0, 0)
-            print("  Scaled down to 0/0")
-        except Exception as e:
-            print(f"  WARNING: could not scale down: {e}")
-        try:
-            delete_endpoint(endpoint_id)
-            print("  Endpoint deleted")
-        except Exception as e:
-            print(f"  WARNING: could not delete endpoint: {e}")
+        # Scale down and delete (with retry on transient failures)
+        scaled_down = safe_scale_to_zero(
+            endpoint_id,
+            update_endpoint_workers,
+            logger=print,
+        )
+        endpoint_deleted = retry_delete_endpoint(
+            endpoint_id,
+            delete_endpoint,
+            logger=print,
+        )
         (receipt_dir / "cleanup.json").write_text(
-            json.dumps({"endpoint_id": endpoint_id, "scaled_down": True, "deleted": True}, indent=2),
+            json.dumps(
+                {
+                    "endpoint_id": endpoint_id,
+                    "scaled_down": scaled_down,
+                    "deleted": endpoint_deleted,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
