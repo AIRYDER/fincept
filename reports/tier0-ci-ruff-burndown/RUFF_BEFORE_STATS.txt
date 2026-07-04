@@ -1,0 +1,56 @@
+429	B017    	[ ] assert-raises-exception
+218	F401    	[-] unused-import
+208	I001    	[*] unsorted-imports
+157	RUF102  	[*] invalid-rule-code
+104	UP017   	[*] datetime-timezone-utc
+ 74	F541    	[*] f-string-missing-placeholders
+ 68	UP037   	[*] quoted-annotation
+ 58	T201    	[ ] print
+ 48	RUF100  	[*] unused-noqa
+ 45	RUF059  	[ ] unused-unpacked-variable
+ 41	RUF022  	[*] unsorted-dunder-all
+ 40	F841    	[-] unused-variable
+ 38	B905    	[ ] zip-without-explicit-strict
+ 36	E402    	[ ] module-import-not-at-top-of-file
+ 26	S110    	[ ] try-except-pass
+ 19	RUF001  	[ ] ambiguous-unicode-character-string
+ 19	SIM108  	[ ] if-else-block-instead-of-if-exp
+ 18	SIM117  	[-] multiple-with-statements
+ 17	SIM102  	[ ] collapsible-if
+ 12	B007    	[ ] unused-loop-control-variable
+ 12	SIM103  	[ ] needless-bool
+ 11	S112    	[ ] try-except-continue
+ 10	E741    	[ ] ambiguous-variable-name
+ 10	RUF002  	[ ] ambiguous-unicode-character-docstring
+ 10	UP015   	[*] redundant-open-modes
+ 10	UP035   	[*] deprecated-import
+  9	E701    	[ ] multiple-statements-on-one-line-colon
+  8	RUF005  	[ ] collection-literal-concatenation
+  8	S311    	[ ] suspicious-non-cryptographic-random-usage
+  7	RUF043  	[ ] pytest-raises-ambiguous-pattern
+  7	S108    	[ ] hardcoded-temp-file
+  7	S607    	[ ] start-process-with-partial-path
+  6	RUF046  	[ ] unnecessary-cast-to-int
+  6	S603    	[ ] subprocess-without-shell-equals-true
+  6	UP012   	[*] unnecessary-encode-utf8
+  5	RUF003  	[ ] ambiguous-unicode-character-comment
+  5	S310    	[ ] suspicious-url-open-usage
+  5	SIM105  	[ ] suppressible-exception
+  3	E731    	[ ] lambda-assignment
+  3	F821    	[ ] undefined-name
+  3	RUF015  	[ ] unnecessary-iterable-allocation-for-first-element
+  3	S301    	[ ] suspicious-pickle-usage
+  3	UP042   	[ ] replace-str-enum
+  2	B904    	[ ] raise-without-from-inside-except
+  2	SIM114  	[*] if-with-same-arms
+  1	ASYNC251	[ ] blocking-sleep-in-async-function
+  1	B009    	[*] get-attr-with-constant
+  1	RUF010  	[*] explicit-f-string-type-conversion
+  1	RUF012  	[ ] mutable-class-default
+  1	S104    	[ ] hardcoded-bind-all-interfaces
+  1	S306    	[ ] suspicious-mktemp-usage
+  1	SIM118  	[ ] in-dict-keys
+  1	SIM300  	[*] yoda-conditions
+  1	UP024   	[*] os-error-alias
+Found 1845 errors.
+[*] 955 fixable with the `--fix` option (245 hidden fixes can be enabled with the `--unsafe-fixes` option).
