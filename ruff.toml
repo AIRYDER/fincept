@@ -1,6 +1,6 @@
 line-length = 100
 target-version = "py312"
-extend-exclude = ["**/migrations/**", ".venv", "node_modules", "build", "dist"]
+extend-exclude = ["**/migrations/**", ".venv", "node_modules", "build", "dist", ".tmp"]
 
 [lint]
 select = [
@@ -23,13 +23,19 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"**/tests/**/*.py" = ["S", "T20"]
+"**/tests/**/*.py" = ["S", "T20", "B017"]
 "**/scripts/**/*.py" = ["T20"]
 "**/notebooks/**/*.py" = ["T20", "E402"]
 "runpod/quant-foundry-training/run_import_bisection.py" = ["T20", "S310", "S110", "E741"]
 "runpod/quant-foundry-training/run_live_canary.py" = ["T20", "S310", "S110"]
 "runpod/quant-foundry-training/run_gpu_healthcheck.py" = ["T20", "S310", "S110"]
 "runpod/quant-foundry-training/run_train_model.py" = ["T20", "S310", "S110", "S311"]
+"runpod/quant-foundry-training/handler.py" = ["T20"]
+"runpod/quant-foundry-training/handler_diagnostic.py" = ["T20"]
+"runpod/quant-foundry-training/handler_minimal.py" = ["T20"]
+"services/agents/src/agents/gbm_predictor/train.py" = ["T20"]
+"services/agents/src/agents/news_alpha_predictor/train.py" = ["T20"]
+"services/agents/src/agents/news_alpha_predictor/evaluate.py" = ["T20"]
 
 [lint.isort]
 known-first-party = [

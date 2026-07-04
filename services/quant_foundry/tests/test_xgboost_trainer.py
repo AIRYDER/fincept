@@ -31,12 +31,10 @@ from __future__ import annotations
 import importlib.util
 import os
 import tempfile
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
-
 from quant_foundry.artifact_io import load_xgboost_model
 from quant_foundry.dataset_manifest import ColumnRoles
 from quant_foundry.training_manifest import ModelTaskSpec
@@ -220,10 +218,14 @@ class TestConstruction:
 
     def test_negative_n_folds(self) -> None:
         with pytest.raises(ValueError, match="n_folds must be >= 0"):
-            XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=-1)
+            XGBoostTrainer(
+                _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=-1
+            )
 
     def test_zero_n_folds_allowed(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0
+        )
         assert t.n_folds == 0
 
     def test_ranking_without_group_column_raises(self) -> None:
@@ -271,7 +273,9 @@ class TestGpuCapability:
         assert t._resolve_device() == "cuda"
 
     def test_cpu_device_passes_through(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(device="cpu"), _tmp_artifact())
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(device="cpu"), _tmp_artifact()
+        )
         assert t._resolve_device() == "cpu"
 
     @pytest.mark.filterwarnings("ignore")
@@ -313,11 +317,13 @@ class TestCanaryBinary:
         X, y = _synthetic_binary()
         result = t.train(X, y)
         assert set(result.feature_importance) == {"f1", "f2", "f3"}
-        for fname, entry in result.feature_importance.items():
+        for _fname, entry in result.feature_importance.items():
             assert set(entry) == {"gain", "weight", "cover"}
 
     def test_train_emits_fold_metrics(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3
+        )
         X, y = _synthetic_binary(n=60)
         result = t.train(X, y)
         assert len(result.fold_metrics) == 3
@@ -454,7 +460,9 @@ class TestRegression:
         assert result.task_type == "regression"
 
     def test_regression_fold_metrics_have_mse_mae(self) -> None:
-        t = XGBoostTrainer(_regression_roles(), _regression_spec(), _base_params(), _tmp_artifact(), n_folds=3)
+        t = XGBoostTrainer(
+            _regression_roles(), _regression_spec(), _base_params(), _tmp_artifact(), n_folds=3
+        )
         X, y = _synthetic_regression(n=60)
         result = t.train(X, y)
         for fm in result.fold_metrics:
@@ -489,7 +497,9 @@ class TestRanking:
         assert result.task_type == "ranking"
 
     def test_ranking_fold_metrics_have_ndcg(self) -> None:
-        t = XGBoostTrainer(_ranking_roles(), _ranking_spec(), _base_params(), _tmp_artifact(), n_folds=2)
+        t = XGBoostTrainer(
+            _ranking_roles(), _ranking_spec(), _base_params(), _tmp_artifact(), n_folds=2
+        )
         X, y, groups = _synthetic_ranking(n=40)
         result = t.train(X, y, groups=groups)
         for fm in result.fold_metrics:
@@ -502,7 +512,9 @@ class TestRanking:
             t.train(X, y)
 
     def test_ranking_group_sizes_vector_accepted(self) -> None:
-        t = XGBoostTrainer(_ranking_roles(), _ranking_spec(), _base_params(), _tmp_artifact(), n_folds=0)
+        t = XGBoostTrainer(
+            _ranking_roles(), _ranking_spec(), _base_params(), _tmp_artifact(), n_folds=0
+        )
         X, y, _ = _synthetic_ranking()
         # Pass explicit sizes (4 groups of 10 → [10,10,10,10]).
         sizes = np.array([10, 10, 10, 10], dtype=np.uint32)
@@ -551,7 +563,9 @@ class TestMulticlass:
         assert set(np.unique(preds)).issubset({0.0, 1.0, 2.0})
 
     def test_multiclass_fold_metrics_have_merror(self) -> None:
-        t = XGBoostTrainer(_multiclass_roles(), _multiclass_spec(), _base_params(), _tmp_artifact(), n_folds=2)
+        t = XGBoostTrainer(
+            _multiclass_roles(), _multiclass_spec(), _base_params(), _tmp_artifact(), n_folds=2
+        )
         X, y = _synthetic_multiclass(n=60)
         result = t.train(X, y)
         for fm in result.fold_metrics:
@@ -565,7 +579,9 @@ class TestMulticlass:
 
 class TestSampleWeights:
     def test_weights_are_applied(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0
+        )
         X, y = _synthetic_binary()
         weights = np.ones(len(y), dtype=np.float32)
         weights[: len(y) // 2] = 2.0  # upweight the first half
@@ -600,25 +616,33 @@ class TestSampleWeights:
 
 class TestFoldMetrics:
     def test_zero_folds_emits_empty_tuple(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0
+        )
         X, y = _synthetic_binary()
         result = t.train(X, y)
         assert result.fold_metrics == ()
 
     def test_too_few_rows_emits_empty_tuple(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3
+        )
         X, y = _synthetic_binary(n=4)  # < 3*2
         result = t.train(X, y)
         assert result.fold_metrics == ()
 
     def test_fold_ids_are_sequential(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3
+        )
         X, y = _synthetic_binary(n=60)
         result = t.train(X, y)
         assert [fm.fold_id for fm in result.fold_metrics] == [0, 1, 2]
 
     def test_fold_sizes_partition_the_data(self) -> None:
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=3
+        )
         X, y = _synthetic_binary(n=60)
         result = t.train(X, y)
         total_val = sum(fm.val_size for fm in result.fold_metrics)
@@ -702,10 +726,14 @@ class TestLazyImport:
         assert hasattr(mod, "TrainingResult")
         assert hasattr(mod, "FoldMetric")
 
-    def test_get_feature_importance_without_xgboost_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_get_feature_importance_without_xgboost_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Train first (xgboost is available), then simulate xgboost being
         # unavailable on the save path by making the import fail.
-        t = XGBoostTrainer(_binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0)
+        t = XGBoostTrainer(
+            _binary_roles(), _binary_spec(), _base_params(), _tmp_artifact(), n_folds=0
+        )
         X, y = _synthetic_binary()
         t.train(X, y)
         # get_feature_importance uses the already-trained model, no import.

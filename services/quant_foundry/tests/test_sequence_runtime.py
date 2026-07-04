@@ -31,7 +31,6 @@ from quant_foundry.sequence_runtime import (
     SequenceTensorLoader,
 )
 
-
 # ---------------------------------------------------------------------------
 # SequenceImageSpec
 # ---------------------------------------------------------------------------
@@ -41,10 +40,7 @@ class TestSequenceImageSpec:
     def test_defaults(self) -> None:
         spec = SequenceImageSpec()
         assert spec.image_name == "trainer-gpu-sequence"
-        assert (
-            spec.base_image
-            == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
-        )
+        assert spec.base_image == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
         assert spec.python_version == "3.12"
         assert spec.gpu_required is True
         assert spec.supports_mixed_precision is True
@@ -316,11 +312,13 @@ def _parquet_available() -> bool:
     """Return True if a parquet engine (pyarrow / fastparquet) is installed."""
     try:
         import pyarrow  # noqa: F401
+
         return True
     except Exception:
         pass
     try:
         import fastparquet  # noqa: F401
+
         return True
     except Exception:
         return False
@@ -339,7 +337,7 @@ def _write_synthetic_parquet_shards(dir_path: Path) -> None:
 
     dir_path.mkdir(parents=True, exist_ok=True)
     rows = []
-    for i in range(20):
+    for _i in range(20):
         rows.append(
             {
                 "sequence": np.random.randn(8).astype(np.float32).tolist(),
@@ -427,9 +425,7 @@ class TestCheckpointManager:
         mgr = CheckpointManager(cfg)
         assert mgr.latest_checkpoint() is None
 
-    def test_latest_checkpoint_returns_highest_epoch(
-        self, tmp_path: Path
-    ) -> None:
+    def test_latest_checkpoint_returns_highest_epoch(self, tmp_path: Path) -> None:
         cfg = CheckpointConfig(checkpoint_dir=str(tmp_path / "ckpt"))
         mgr = CheckpointManager(cfg)
         mgr.save({}, {}, epoch=0, metrics={})
@@ -440,9 +436,7 @@ class TestCheckpointManager:
         assert "checkpoint_epoch_2" in latest
 
     def test_cleanup_removes_old(self, tmp_path: Path) -> None:
-        cfg = CheckpointConfig(
-            checkpoint_dir=str(tmp_path / "ckpt"), max_checkpoints=2
-        )
+        cfg = CheckpointConfig(checkpoint_dir=str(tmp_path / "ckpt"), max_checkpoints=2)
         mgr = CheckpointManager(cfg)
         for epoch in range(5):
             mgr.save({}, {}, epoch=epoch, metrics={})
@@ -450,15 +444,11 @@ class TestCheckpointManager:
         remaining = list((tmp_path / "ckpt").glob("checkpoint_epoch_*.pt"))
         assert len(remaining) == 2
         # Should keep epochs 3 and 4.
-        epochs = sorted(
-            int(f.stem.replace("checkpoint_epoch_", "")) for f in remaining
-        )
+        epochs = sorted(int(f.stem.replace("checkpoint_epoch_", "")) for f in remaining)
         assert epochs == [3, 4]
 
     def test_cleanup_noop_when_under_max(self, tmp_path: Path) -> None:
-        cfg = CheckpointConfig(
-            checkpoint_dir=str(tmp_path / "ckpt"), max_checkpoints=5
-        )
+        cfg = CheckpointConfig(checkpoint_dir=str(tmp_path / "ckpt"), max_checkpoints=5)
         mgr = CheckpointManager(cfg)
         mgr.save({}, {}, epoch=0, metrics={})
         mgr.save({}, {}, epoch=1, metrics={})

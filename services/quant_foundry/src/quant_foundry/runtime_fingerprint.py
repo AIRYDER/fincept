@@ -33,11 +33,10 @@ import os
 import platform
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -242,7 +241,7 @@ class RuntimeFingerprintBuilder:
         installed.
         """
         try:
-            import torch  # noqa: WPS433 lazy import
+            import torch
         except Exception:
             return (None, None)
         cuda_version = torch.version.cuda
@@ -263,7 +262,7 @@ class RuntimeFingerprintBuilder:
         import) so the module remains importable without torch.
         """
         try:
-            from quant_foundry.tabular_neural_runtime import check_gpu  # noqa: WPS433
+            from quant_foundry.tabular_neural_runtime import check_gpu
         except Exception:
             return None
         status = check_gpu()
@@ -383,37 +382,27 @@ class RuntimeFingerprintBuilder:
 
         git_sha = self.collect_git_sha() if cfg.include_git_sha else None
         image_digest = self.collect_image_digest() if cfg.include_image_digest else None
-        dockerfile_hash = (
-            self.collect_dockerfile_hash() if cfg.include_dockerfile_hash else None
-        )
+        dockerfile_hash = self.collect_dockerfile_hash() if cfg.include_dockerfile_hash else None
         dependency_lock_hash = (
             self.collect_dependency_hash() if cfg.include_dependency_hash else None
         )
-        python_version = (
-            self.collect_python_version() if cfg.include_python_version else ""
-        )
+        python_version = self.collect_python_version() if cfg.include_python_version else ""
         os_info = self.collect_os_info() if cfg.include_os_info else ""
         cuda_version: str | None = None
         driver_version: str | None = None
         if cfg.include_cuda_info:
             cuda_version, driver_version = self.collect_cuda_info()
         gpu_model = self.collect_gpu_info() if cfg.include_gpu_info else None
-        library_versions = (
-            self.collect_library_versions() if cfg.include_library_versions else {}
-        )
+        library_versions = self.collect_library_versions() if cfg.include_library_versions else {}
         seeds = (
             random_seeds
             if random_seeds is not None
             else (self.collect_random_seeds() if cfg.include_random_seeds else {})
         )
-        dataset_hash = (
-            dataset_manifest_hash if cfg.include_dataset_hash else None
-        )
-        training_hash = (
-            training_manifest_hash if cfg.include_training_manifest_hash else None
-        )
+        dataset_hash = dataset_manifest_hash if cfg.include_dataset_hash else None
+        training_hash = training_manifest_hash if cfg.include_training_manifest_hash else None
 
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         # Determine promotion eligibility: canaries are never eligible; production
         # builds are eligible only when image digest and git sha are present.
@@ -510,15 +499,11 @@ def validate_fingerprint(
                 "image_digest is 'placeholder' (not allowed in production mode)"
             )
         if fingerprint.git_sha is None:
-            raise FingerprintValidationError(
-                "git_sha is missing (required in production mode)"
-            )
+            raise FingerprintValidationError("git_sha is missing (required in production mode)")
 
     if expected_hash is not None:
         if not hmac.compare_digest(expected_hash, fingerprint.fingerprint_hash):
-            raise FingerprintValidationError(
-                "fingerprint_hash does not match expected hash"
-            )
+            raise FingerprintValidationError("fingerprint_hash does not match expected hash")
 
 
 def verify_signature(fingerprint: RuntimeFingerprint, secret: str) -> bool:

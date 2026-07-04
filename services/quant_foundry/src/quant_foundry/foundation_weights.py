@@ -30,7 +30,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -98,9 +98,7 @@ class FoundationWeightSpec(BaseModel):
     @classmethod
     def _weight_hash_hex256(cls, v: str) -> str:
         if not isinstance(v, str) or not _HEX256_RE.match(v):
-            raise ValueError(
-                "weight_hash must be a 64-character lowercase hex SHA-256 digest"
-            )
+            raise ValueError("weight_hash must be a 64-character lowercase hex SHA-256 digest")
         return v
 
     @field_validator("weight_uri")
@@ -118,12 +116,10 @@ class FoundationWeightSpec(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _reject_forbidden_network(self) -> "FoundationWeightSpec":
+    def _reject_forbidden_network(self) -> FoundationWeightSpec:
         # Fail-closed: a FORBIDDEN_NETWORK source can never be pinned.
         if self.source is WeightSource.FORBIDDEN_NETWORK:
-            raise ValueError(
-                "FORBIDDEN_NETWORK source is never allowed for a foundation weight"
-            )
+            raise ValueError("FORBIDDEN_NETWORK source is never allowed for a foundation weight")
         return self
 
 
@@ -144,11 +140,9 @@ class WeightPolicy(BaseModel):
     offline_mode: bool = True
 
     @model_validator(mode="after")
-    def _no_forbidden_network(self) -> "WeightPolicy":
+    def _no_forbidden_network(self) -> WeightPolicy:
         if WeightSource.FORBIDDEN_NETWORK in self.allowed_sources:
-            raise ValueError(
-                "FORBIDDEN_NETWORK must not appear in allowed_sources"
-            )
+            raise ValueError("FORBIDDEN_NETWORK must not appear in allowed_sources")
         return self
 
 
@@ -171,7 +165,7 @@ class WeightReceipt(BaseModel):
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def compute_weight_hash(file_path: str) -> str:
@@ -254,8 +248,7 @@ def validate_no_network_download(policy: WeightPolicy, attempted_source: str) ->
         raise ValueError("attempted_source must be a non-empty string")
     if policy.offline_mode and _is_network_url(attempted_source):
         raise ValueError(
-            "network download attempted while offline_mode is enabled: "
-            f"{attempted_source!r}"
+            f"network download attempted while offline_mode is enabled: {attempted_source!r}"
         )
     return True
 
@@ -319,9 +312,7 @@ class WeightManager:
 
         # Defense in depth: FORBIDDEN_NETWORK can never be registered.
         if spec.source is WeightSource.FORBIDDEN_NETWORK:
-            raise ValueError(
-                "FORBIDDEN_NETWORK source is never allowed for a foundation weight"
-            )
+            raise ValueError("FORBIDDEN_NETWORK source is never allowed for a foundation weight")
 
         # Source must be in the policy's allow-list.
         if self._policy.allowed_sources and spec.source not in self._policy.allowed_sources:
@@ -340,9 +331,7 @@ class WeightManager:
         # Fail-closed: approval required by policy.
         if self._policy.require_approval:
             if not spec.approved_by or not spec.approved_by.strip():
-                raise ValueError(
-                    "policy requires an approver but approved_by is empty"
-                )
+                raise ValueError("policy requires an approver but approved_by is empty")
 
         # Offline policy: a network URI may never be registered.
         if self._policy.offline_mode and _is_network_url(spec.weight_uri):
@@ -406,8 +395,7 @@ class WeightManager:
 
         if not os.path.exists(spec.weight_uri):
             raise ValueError(
-                f"weight file missing on disk for model_id={model_id!r}: "
-                f"{spec.weight_uri!r}"
+                f"weight file missing on disk for model_id={model_id!r}: {spec.weight_uri!r}"
             )
 
         if not verify_weight(spec, spec.weight_uri):

@@ -68,6 +68,7 @@ import hashlib
 import json
 import re
 import time
+from datetime import UTC
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -329,8 +330,7 @@ class FeatureLakeManifest(BaseModel):
             )
         if not self.data_uri or not self.data_uri.strip():
             errors.append(
-                "production mode requires data_uri "
-                "(data location must be declared in the manifest)"
+                "production mode requires data_uri (data location must be declared in the manifest)"
             )
         if not self.pit_proof_verified:
             errors.append(
@@ -338,9 +338,7 @@ class FeatureLakeManifest(BaseModel):
                 "(point-in-time proof is mandatory)"
             )
         if errors:
-            raise ValueError(
-                "production mode manifest validation failed: " + "; ".join(errors)
-            )
+            raise ValueError("production mode manifest validation failed: " + "; ".join(errors))
 
     # --- hashing ---------------------------------------------------------
 
@@ -363,9 +361,7 @@ class FeatureLakeManifest(BaseModel):
             # a changed data location or format alters the manifest hash.
             "manifest_uri": self.manifest_uri,
             "data_uri": self.data_uri,
-            "data_format": (
-                self.data_format.value if self.data_format is not None else None
-            ),
+            "data_format": (self.data_format.value if self.data_format is not None else None),
             "data_sha256": self.data_sha256,
             "quality_report_uri": self.quality_report_uri,
             "quality_report_sha256": self.quality_report_sha256,
@@ -419,13 +415,11 @@ class FeatureLakeManifest(BaseModel):
         """
         if not self.manifest_uri:
             raise ValueError(
-                "cannot build DatasetLoadSpec: manifest_uri is not set on "
-                "this FeatureLakeManifest"
+                "cannot build DatasetLoadSpec: manifest_uri is not set on this FeatureLakeManifest"
             )
         if not self.data_uri:
             raise ValueError(
-                "cannot build DatasetLoadSpec: data_uri is not set on "
-                "this FeatureLakeManifest"
+                "cannot build DatasetLoadSpec: data_uri is not set on this FeatureLakeManifest"
             )
         if manifest_sha256 is None:
             manifest_sha256 = hashlib.sha256(
@@ -596,8 +590,7 @@ class DatasetLoadSpec(BaseModel):
             )
         if errors:
             raise ValueError(
-                "production mode DatasetLoadSpec validation failed: "
-                + "; ".join(errors)
+                "production mode DatasetLoadSpec validation failed: " + "; ".join(errors)
             )
         return self
 
@@ -620,9 +613,7 @@ class DatasetLoadSpec(BaseModel):
                 encoded as UTF-8 before hashing.
         """
         if not self.manifest_sha256:
-            raise ValueError(
-                "cannot verify manifest hash: manifest_sha256 is not set"
-            )
+            raise ValueError("cannot verify manifest hash: manifest_sha256 is not set")
         if isinstance(manifest_json, str):
             manifest_bytes = manifest_json.encode("utf-8")
         else:
@@ -637,9 +628,7 @@ class DatasetLoadSpec(BaseModel):
         ``data_sha256`` is not set.
         """
         if not self.data_sha256:
-            raise ValueError(
-                "cannot verify data hash: data_sha256 is not set"
-            )
+            raise ValueError("cannot verify data hash: data_sha256 is not set")
         actual = hashlib.sha256(data_bytes).hexdigest()
         return actual == self.data_sha256
 
@@ -650,9 +639,7 @@ class DatasetLoadSpec(BaseModel):
         ``row_count`` is not set.
         """
         if self.row_count is None:
-            raise ValueError(
-                "cannot verify row count: row_count is not set"
-            )
+            raise ValueError("cannot verify row count: row_count is not set")
         return actual_row_count == self.row_count
 
     def to_dict(self) -> dict[str, Any]:
@@ -860,7 +847,9 @@ class UploadReceipt(BaseModel):
     def receipt_hash(self) -> str:
         """Stable SHA-256 over the canonical receipt payload."""
         payload = json.dumps(
-            self._canonical_payload(), sort_keys=True, separators=(",", ":"),
+            self._canonical_payload(),
+            sort_keys=True,
+            separators=(",", ":"),
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -1111,8 +1100,7 @@ class DatasetRegistry:
         entries = self._entries.get(dataset_id)
         if not entries:
             raise ValueError(
-                f"dataset not registered: {dataset_id!r} "
-                "(inspect requires a registered dataset id)"
+                f"dataset not registered: {dataset_id!r} (inspect requires a registered dataset id)"
             )
         if version is not None:
             for e in entries:
@@ -1249,17 +1237,13 @@ class DatasetRegistry:
         if receipt.is_stale(now=current, expected_hash=expected_hash):
             reasons: list[str] = []
             if current >= receipt.expires_at:
-                reasons.append(
-                    f"expired (now={current}, expires_at={receipt.expires_at})"
-                )
+                reasons.append(f"expired (now={current}, expires_at={receipt.expires_at})")
             if expected_hash is not None and receipt.receipt_hash() != expected_hash:
                 reasons.append(
-                    f"hash mismatch (expected {expected_hash!r}, "
-                    f"got {receipt.receipt_hash()!r})"
+                    f"hash mismatch (expected {expected_hash!r}, got {receipt.receipt_hash()!r})"
                 )
             raise ValueError(
-                f"stale upload receipt rejected for dataset {dataset_id!r}: "
-                + "; ".join(reasons)
+                f"stale upload receipt rejected for dataset {dataset_id!r}: " + "; ".join(reasons)
             )
         updated = entry.model_copy(
             update={
@@ -1432,8 +1416,7 @@ class DatasetRegistry:
         # Deprecated / rejected entries are never dispatchable.
         if entry.status in (RegistryStatus.DEPRECATED, RegistryStatus.REJECTED):
             raise ValueError(
-                f"dataset {dataset_id!r} status is {entry.status.value} — "
-                "not dispatchable"
+                f"dataset {dataset_id!r} status is {entry.status.value} — not dispatchable"
             )
 
         if mode == TrainingMode.PRODUCTION:
@@ -1452,10 +1435,7 @@ class DatasetRegistry:
                         f"(expired at {entry.upload_receipt.expires_at})"
                     )
             if errors:
-                raise ValueError(
-                    "production dispatch validation failed: "
-                    + "; ".join(errors)
-                )
+                raise ValueError("production dispatch validation failed: " + "; ".join(errors))
 
         return entry
 
@@ -1527,9 +1507,7 @@ class ColumnRolesValidationResult(BaseModel):
     def raise_if_failed(self) -> None:
         """Raise ``ValueError`` if validation did not pass (fail-closed)."""
         if not self.passed:
-            raise ValueError(
-                "column roles validation failed: " + "; ".join(self.errors)
-            )
+            raise ValueError("column roles validation failed: " + "; ".join(self.errors))
 
 
 class ColumnRoles(BaseModel):
@@ -1584,9 +1562,7 @@ class ColumnRoles(BaseModel):
             raise ValueError(f"{info.field_name} must be non-empty")
         for name in v:
             if not isinstance(name, str) or not name.strip():
-                raise ValueError(
-                    f"{info.field_name} entries must be non-empty strings"
-                )
+                raise ValueError(f"{info.field_name} entries must be non-empty strings")
         return v
 
     @field_validator("excluded_columns")
@@ -1594,9 +1570,7 @@ class ColumnRoles(BaseModel):
     def _excluded_entries_nonempty(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         for name in v:
             if not isinstance(name, str) or not name.strip():
-                raise ValueError(
-                    "excluded_columns entries must be non-empty strings"
-                )
+                raise ValueError("excluded_columns entries must be non-empty strings")
         return v
 
     @model_validator(mode="after")
@@ -1631,26 +1605,16 @@ class ColumnRoles(BaseModel):
     def _no_duplicate_features(self) -> ColumnRoles:
         """Feature columns must be unique (no duplicate feature names)."""
         if len(set(self.feature_columns)) != len(self.feature_columns):
-            dupes = sorted(
-                {c for c in self.feature_columns
-                 if self.feature_columns.count(c) > 1}
-            )
-            raise ValueError(
-                f"feature_columns must not contain duplicates: {dupes!r}"
-            )
+            dupes = sorted({c for c in self.feature_columns if self.feature_columns.count(c) > 1})
+            raise ValueError(f"feature_columns must not contain duplicates: {dupes!r}")
         return self
 
     @model_validator(mode="after")
     def _no_duplicate_labels(self) -> ColumnRoles:
         """Label columns must be unique."""
         if len(set(self.label_columns)) != len(self.label_columns):
-            dupes = sorted(
-                {c for c in self.label_columns
-                 if self.label_columns.count(c) > 1}
-            )
-            raise ValueError(
-                f"label_columns must not contain duplicates: {dupes!r}"
-            )
+            dupes = sorted({c for c in self.label_columns if self.label_columns.count(c) > 1})
+            raise ValueError(f"label_columns must not contain duplicates: {dupes!r}")
         return self
 
     # --- convenience -----------------------------------------------------
@@ -1714,16 +1678,12 @@ def validate_column_roles(
     # Check feature columns exist.
     for col in roles.feature_columns:
         if col not in available:
-            errors.append(
-                f"feature column {col!r} not found in available columns"
-            )
+            errors.append(f"feature column {col!r} not found in available columns")
 
     # Check label columns exist.
     for col in roles.label_columns:
         if col not in available:
-            errors.append(
-                f"label column {col!r} not found in available columns"
-            )
+            errors.append(f"label column {col!r} not found in available columns")
 
     # Check optional role columns exist (if declared).
     optional_roles: list[tuple[str | None, str]] = [
@@ -1736,17 +1696,14 @@ def validate_column_roles(
     ]
     for col, role_name in optional_roles:
         if col is not None and col not in available:
-            errors.append(
-                f"{role_name} {col!r} not found in available columns"
-            )
+            errors.append(f"{role_name} {col!r} not found in available columns")
 
     # Check excluded columns exist (warning if not — an excluded column
     # that is absent is harmless but may indicate a stale manifest).
     for col in roles.excluded_columns:
         if col not in available:
             warnings.append(
-                f"excluded column {col!r} not found in available columns "
-                "(stale manifest?)"
+                f"excluded column {col!r} not found in available columns (stale manifest?)"
             )
 
     # Defence in depth: re-check no excluded column is a feature.
@@ -1755,18 +1712,14 @@ def validate_column_roles(
     overlap = feature_set & excluded_set
     if overlap:
         errors.append(
-            "excluded columns must not appear in feature_columns "
-            f"(leakage): {sorted(overlap)!r}"
+            f"excluded columns must not appear in feature_columns (leakage): {sorted(overlap)!r}"
         )
 
     # Defence in depth: re-check no label is a feature.
     label_set = set(roles.label_columns)
     lf_overlap = feature_set & label_set
     if lf_overlap:
-        errors.append(
-            "label columns must not appear in feature_columns: "
-            f"{sorted(lf_overlap)!r}"
-        )
+        errors.append(f"label columns must not appear in feature_columns: {sorted(lf_overlap)!r}")
 
     passed = len(errors) == 0
     return ColumnRolesValidationResult(
@@ -1877,6 +1830,7 @@ def _parse_temporal(value: str) -> float:
     # Try full datetime first, then date-only.
     try:
         from datetime import datetime
+
         # Handle trailing 'Z' (UTC) and timezone offsets.
         normalized = text.replace("Z", "+00:00")
         dt = datetime.fromisoformat(normalized)
@@ -1884,14 +1838,14 @@ def _parse_temporal(value: str) -> float:
     except ValueError:
         pass
     try:
-        from datetime import datetime, timezone
         from datetime import date as _date
+        from datetime import datetime
+
         d = _date.fromisoformat(text)
-        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
+        return datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp()
     except ValueError as exc:
         raise ValueError(
-            f"temporal value must be an ISO date or datetime string; "
-            f"got {value!r}: {exc}"
+            f"temporal value must be an ISO date or datetime string; got {value!r}: {exc}"
         ) from exc
 
 
@@ -1937,7 +1891,10 @@ class FoldWindow(BaseModel):
         return v
 
     @field_validator(
-        "train_start", "train_end", "validation_start", "validation_end",
+        "train_start",
+        "train_end",
+        "validation_start",
+        "validation_end",
     )
     @classmethod
     def _temporal_nonempty(cls, v: str, info: Any) -> str:
@@ -2041,9 +1998,7 @@ class FoldSpec(BaseModel):
             raise ValueError("FoldSpec.row_id_columns must be non-empty")
         for col in v:
             if not isinstance(col, str) or not col.strip():
-                raise ValueError(
-                    "FoldSpec.row_id_columns entries must be non-empty strings"
-                )
+                raise ValueError("FoldSpec.row_id_columns entries must be non-empty strings")
         return v
 
     @field_validator("fold_assignment_hash")
@@ -2059,9 +2014,7 @@ class FoldSpec(BaseModel):
         ids = [f.fold_id for f in self.folds]
         if len(set(ids)) != len(ids):
             dupes = sorted({i for i in ids if ids.count(i) > 1})
-            raise ValueError(
-                f"FoldSpec.folds must not contain duplicate fold_ids: {dupes!r}"
-            )
+            raise ValueError(f"FoldSpec.folds must not contain duplicate fold_ids: {dupes!r}")
         expected = list(range(len(self.folds)))
         if ids != expected:
             raise ValueError(

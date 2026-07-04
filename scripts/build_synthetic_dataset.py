@@ -205,7 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"n_days:{args.n_days}",
     ]
 
-    manifest, availability, feature_rows, data_rows = build_dataset_manifest(
+    manifest, availability, _feature_rows, data_rows = build_dataset_manifest(
         bars_by_symbol,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,
@@ -215,8 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not data_rows:
         raise SystemExit(
-            "no usable rows after feature/label computation "
-            "(increase --n-days).",
+            "no usable rows after feature/label computation (increase --n-days).",
         )
 
     # --- export parquet + manifest ---------------------------------------

@@ -30,18 +30,17 @@ Fail-closed behaviour:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from datetime import date as _date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.dataset_manifest import (
     FoldSpec,
     FoldWindow,
     _parse_temporal,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,10 +74,10 @@ def _row_timestamp(df_row: Any, timestamp_column: str) -> float:
         return float(raw)
     if isinstance(raw, datetime):
         if raw.tzinfo is None:
-            raw = raw.replace(tzinfo=timezone.utc)
+            raw = raw.replace(tzinfo=UTC)
         return raw.timestamp()
     if isinstance(raw, _date):
-        return datetime(raw.year, raw.month, raw.day, tzinfo=timezone.utc).timestamp()
+        return datetime(raw.year, raw.month, raw.day, tzinfo=UTC).timestamp()
     raise ValueError(
         f"unsupported timestamp value in column {timestamp_column!r}: "
         f"{raw!r} (type {type(raw).__name__})"
@@ -255,8 +254,7 @@ def consume_manifest_folds(
     for col in cols:
         if col not in df_columns:
             raise ValueError(
-                f"row_id_column {col!r} not found in dataframe columns "
-                f"{sorted(df_columns)!r}"
+                f"row_id_column {col!r} not found in dataframe columns {sorted(df_columns)!r}"
             )
 
     # Determine the timestamp column for fold matching.
@@ -265,20 +263,21 @@ def consume_manifest_folds(
         ts_col = _find_timestamp_column(fold_spec, df_columns)
     elif ts_col not in df_columns:
         raise ValueError(
-            f"timestamp_column {ts_col!r} not found in dataframe columns "
-            f"{sorted(df_columns)!r}"
+            f"timestamp_column {ts_col!r} not found in dataframe columns {sorted(df_columns)!r}"
         )
 
     # Pre-compute fold window epochs for fast comparison.
     fold_epochs: list[dict[str, float]] = []
     for fw in fold_spec.folds:
-        fold_epochs.append({
-            "fold_id": fw.fold_id,
-            "train_start": _to_epoch(fw.train_start),
-            "train_end": _to_epoch(fw.train_end),
-            "validation_start": _to_epoch(fw.validation_start),
-            "validation_end": _to_epoch(fw.validation_end),
-        })
+        fold_epochs.append(
+            {
+                "fold_id": fw.fold_id,
+                "train_start": _to_epoch(fw.train_start),
+                "train_end": _to_epoch(fw.train_end),
+                "validation_start": _to_epoch(fw.validation_start),
+                "validation_end": _to_epoch(fw.validation_end),
+            }
+        )
 
     row_keys: list[tuple] = []
     fold_ids: list[int] = []
@@ -347,8 +346,7 @@ def validate_fold_assignment(
     bad = sorted({fid for fid in assignment.fold_ids if fid not in valid_ids})
     if bad:
         raise ValueError(
-            f"assignment contains invalid fold_ids: {bad!r} "
-            f"(valid: {sorted(valid_ids)!r})"
+            f"assignment contains invalid fold_ids: {bad!r} (valid: {sorted(valid_ids)!r})"
         )
 
     # Check no train/validation overlap after embargo for each fold.
@@ -376,8 +374,7 @@ def validate_fold_assignment(
     for fw in fold_spec.folds:
         if counts.get(fw.fold_id, 0) == 0:
             raise ValueError(
-                f"fold {fw.fold_id} has no rows assigned — every fold must "
-                "have at least one row"
+                f"fold {fw.fold_id} has no rows assigned — every fold must have at least one row"
             )
 
     return True
@@ -413,10 +410,7 @@ def get_fold_data(
     """
     valid_ids = {f.fold_id for f in assignment.fold_spec.folds}
     if fold_id not in valid_ids:
-        raise ValueError(
-            f"fold_id {fold_id} not in fold spec "
-            f"(valid: {sorted(valid_ids)!r})"
-        )
+        raise ValueError(f"fold_id {fold_id} not in fold spec (valid: {sorted(valid_ids)!r})")
 
     # Find the fold window for this fold_id.
     fold_window: FoldWindow | None = None
@@ -474,10 +468,10 @@ def _coerce_key_timestamp(value: Any) -> float:
         return float(value)
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.replace(tzinfo=UTC)
         return value.timestamp()
     if isinstance(value, _date):
-        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()
+        return datetime(value.year, value.month, value.day, tzinfo=UTC).timestamp()
     raise ValueError(f"cannot coerce row-key timestamp value {value!r} to epoch")
 
 
@@ -520,25 +514,21 @@ def verify_fold_determinism(
     baseline: FoldAssignment | None = None
     for run in range(n_runs):
         current = consume_manifest_folds(
-            fold_spec, df, row_id_columns, timestamp_column=timestamp_column,
+            fold_spec,
+            df,
+            row_id_columns,
+            timestamp_column=timestamp_column,
         )
         if baseline is None:
             baseline = current
             continue
         if current.row_keys != baseline.row_keys:
-            raise ValueError(
-                f"fold consumption is non-deterministic: row_keys differ "
-                f"on run {run}"
-            )
+            raise ValueError(f"fold consumption is non-deterministic: row_keys differ on run {run}")
         if current.fold_ids != baseline.fold_ids:
-            raise ValueError(
-                f"fold consumption is non-deterministic: fold_ids differ "
-                f"on run {run}"
-            )
+            raise ValueError(f"fold consumption is non-deterministic: fold_ids differ on run {run}")
         if current.fold_spec.fold_assignment_hash != baseline.fold_spec.fold_assignment_hash:
             raise ValueError(
-                f"fold consumption is non-deterministic: fold_spec hash "
-                f"differs on run {run}"
+                f"fold consumption is non-deterministic: fold_spec hash differs on run {run}"
             )
     return True
 
@@ -606,6 +596,4 @@ def _iter_rows(df: Any):
         for i, row in enumerate(df):
             yield i, row
         return
-    raise ValueError(
-        f"unsupported dataframe type {type(df).__name__} — cannot iterate rows"
-    )
+    raise ValueError(f"unsupported dataframe type {type(df).__name__} — cannot iterate rows")

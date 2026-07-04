@@ -20,11 +20,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.forecast_distribution import (
     AlphaAdapter,
     AlphaAdapterPolicy,
@@ -513,8 +511,9 @@ class TestForecastDistributionWriter:
         w = ForecastDistributionWriter(str(tmp_path))
         path = w.write(valid_artifact)
         assert isinstance(path, str)
-        assert valid_artifact.artifact_id.replace("-", "_") in os.path.basename(path) or \
-            valid_artifact.artifact_id in os.path.basename(path)
+        assert valid_artifact.artifact_id.replace("-", "_") in os.path.basename(
+            path
+        ) or valid_artifact.artifact_id in os.path.basename(path)
 
     def test_read_round_trip(self, tmp_path, valid_artifact):
         w = ForecastDistributionWriter(str(tmp_path))
@@ -555,7 +554,7 @@ class TestForecastDistributionWriter:
 
     def test_constructor_creates_dir(self, tmp_path):
         nested = tmp_path / "nested" / "dir"
-        w = ForecastDistributionWriter(str(nested))
+        ForecastDistributionWriter(str(nested))
         assert os.path.isdir(str(nested))
 
     def test_constructor_empty_dir_rejected(self):
@@ -569,7 +568,7 @@ class TestForecastDistributionWriter:
     def test_json_is_valid(self, tmp_path, valid_artifact):
         w = ForecastDistributionWriter(str(tmp_path))
         path = w.write(valid_artifact)
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         assert data["artifact_id"] == valid_artifact.artifact_id
 
@@ -913,9 +912,7 @@ class TestValidateForecastArtifact:
         tmp = ForecastDistributionArtifact(**{**valid_artifact_payload, "artifact_hash": "0" * 64})
         real = compute_forecast_hash(tmp)
         bad = real[:-1] + ("a" if real[-1] != "a" else "b")
-        art = ForecastDistributionArtifact(
-            **{**valid_artifact_payload, "artifact_hash": bad}
-        )
+        art = ForecastDistributionArtifact(**{**valid_artifact_payload, "artifact_hash": bad})
         with pytest.raises(ValueError):
             validate_forecast_artifact(art)
 

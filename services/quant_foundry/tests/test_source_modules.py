@@ -49,9 +49,7 @@ def test_all_source_modules_registered() -> None:
         "source:reddit:1.0.0",
         "source:x-twitter:1.0.0",
     }
-    assert expected.issubset(set(source_modules)), (
-        f"missing: {expected - set(source_modules)}"
-    )
+    assert expected.issubset(set(source_modules)), f"missing: {expected - set(source_modules)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -151,7 +149,6 @@ def test_stocktwits_normalize_empty_body() -> None:
 def test_stocktwits_fetch_graceful_on_error() -> None:
     """StockTwits fetch returns empty list on API errors (no crash)."""
     import httpx
-
     from quant_foundry.modules.sources.stocktwits import StockTwitsSource
 
     mod = StockTwitsSource()
@@ -164,11 +161,13 @@ def test_stocktwits_fetch_graceful_on_error() -> None:
         mock_client.get = AsyncMock(side_effect=httpx.HTTPError("API error"))
         mock_client_cls.return_value = mock_client
 
-        items = asyncio.run(mod.fetch(
-            symbols=["AAPL"],
-            start_ns=1_000_000_000,
-            end_ns=2_000_000_000,
-        ))
+        items = asyncio.run(
+            mod.fetch(
+                symbols=["AAPL"],
+                start_ns=1_000_000_000,
+                end_ns=2_000_000_000,
+            )
+        )
         assert items == []
 
 
@@ -179,7 +178,7 @@ def test_stocktwits_fetch_graceful_on_error() -> None:
 
 def test_reddit_importable_without_httpx() -> None:
     """RedditSource must be importable and instantiable without httpx."""
-    from quant_foundry.modules.sources.reddit import RedditSource, DEFAULT_SUBREDDITS
+    from quant_foundry.modules.sources.reddit import RedditSource
 
     mod = RedditSource()
     assert "wallstreetbets" in mod.subreddits
@@ -250,7 +249,6 @@ def test_reddit_extract_symbols_cashtag() -> None:
 def test_reddit_fetch_graceful_on_error() -> None:
     """Reddit fetch returns empty list on API errors (no crash)."""
     import httpx
-
     from quant_foundry.modules.sources.reddit import RedditSource
 
     mod = RedditSource(config={"delay_seconds": 0})  # no delay for test
@@ -262,11 +260,13 @@ def test_reddit_fetch_graceful_on_error() -> None:
         mock_client.get = AsyncMock(side_effect=httpx.HTTPError("API error"))
         mock_client_cls.return_value = mock_client
 
-        items = asyncio.run(mod.fetch(
-            symbols=["AAPL"],
-            start_ns=1_000_000_000,
-            end_ns=2_000_000_000,
-        ))
+        items = asyncio.run(
+            mod.fetch(
+                symbols=["AAPL"],
+                start_ns=1_000_000_000,
+                end_ns=2_000_000_000,
+            )
+        )
         assert items == []
 
 
@@ -370,18 +370,19 @@ def test_x_twitter_fetch_graceful_on_missing_token() -> None:
 
     mod = XTwitterSource()
     with patch.dict("os.environ", {}, clear=True):
-        items = asyncio.run(mod.fetch(
-            symbols=["AAPL"],
-            start_ns=1_000_000_000,
-            end_ns=2_000_000_000,
-        ))
+        items = asyncio.run(
+            mod.fetch(
+                symbols=["AAPL"],
+                start_ns=1_000_000_000,
+                end_ns=2_000_000_000,
+            )
+        )
         assert items == []
 
 
 def test_x_twitter_fetch_graceful_on_api_error() -> None:
     """X/Twitter fetch returns empty list on API errors (no crash)."""
     import httpx
-
     from quant_foundry.modules.sources.x_twitter import XTwitterSource
 
     mod = XTwitterSource()
@@ -394,11 +395,13 @@ def test_x_twitter_fetch_graceful_on_api_error() -> None:
             mock_client.get = AsyncMock(side_effect=httpx.HTTPError("API error"))
             mock_client_cls.return_value = mock_client
 
-            items = asyncio.run(mod.fetch(
-                symbols=["AAPL"],
-                start_ns=1_000_000_000,
-                end_ns=2_000_000_000,
-            ))
+            items = asyncio.run(
+                mod.fetch(
+                    symbols=["AAPL"],
+                    start_ns=1_000_000_000,
+                    end_ns=2_000_000_000,
+                )
+            )
             assert items == []
 
 

@@ -158,7 +158,7 @@ def summarise(entries: list[dict[str, Any]]) -> dict[str, Any]:
     p95: int | None = None
     if latencies:
         p50 = latencies[len(latencies) // 2]
-        p95_index = max(0, int(round(len(latencies) * 0.95)) - 1)
+        p95_index = max(0, round(len(latencies) * 0.95) - 1)
         p95 = latencies[min(p95_index, len(latencies) - 1)]
     last_error = next(
         (e["error_type"] for e in reversed(entries) if not e["ok"]),

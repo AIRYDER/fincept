@@ -12,6 +12,7 @@ failure is in the SDK/image runtime itself.
 
 See docs/runpod-fix-plan/02-single-variable-tests.md Test E.
 """
+
 from __future__ import annotations
 
 import json

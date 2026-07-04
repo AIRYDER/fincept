@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.ui.model_tournament_view import (
     TournamentRow,
     TournamentView,
@@ -30,7 +29,6 @@ from quant_foundry.ui.model_tournament_view import (
     format_metric,
     validate_no_inflated_confidence,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -127,9 +125,7 @@ class TestTournamentViewConfig:
         assert cfg.sort_order == "desc"
 
     def test_custom_values(self) -> None:
-        cfg = TournamentViewConfig(
-            max_rows=10, sort_by="mse", sort_order="asc"
-        )
+        cfg = TournamentViewConfig(max_rows=10, sort_by="mse", sort_order="asc")
         assert cfg.max_rows == 10
         assert cfg.sort_by == "mse"
         assert cfg.sort_order == "asc"
@@ -187,9 +183,7 @@ class TestTournamentRow:
         assert row.promotion_eligible is True
 
     def test_construction_minimal(self) -> None:
-        row = TournamentRow(
-            model_id="m", model_family="f", is_baseline=True
-        )
+        row = TournamentRow(model_id="m", model_family="f", is_baseline=True)
         assert row.mse is None
         assert row.sharpe_ratio is None
         assert row.shadow_eligible is False
@@ -327,9 +321,7 @@ class TestFindBestInColumn:
 
 class TestValidateNoInflatedConfidence:
     def test_honest_all_false(self) -> None:
-        row = TournamentRow(
-            model_id="m", model_family="f", is_baseline=True
-        )
+        row = TournamentRow(model_id="m", model_family="f", is_baseline=True)
         assert validate_no_inflated_confidence(row) is True
 
     def test_honest_full_hierarchy(self) -> None:
@@ -547,7 +539,11 @@ class TestRender:
         view = TournamentView(TournamentViewConfig(max_rows=3))
         out = view.render(rows)
         # Only 3 data rows + header + separator
-        data_lines = [l for l in out.split("\n") if l.startswith("| ") and "[BASELINE]" not in l and "[CHALLENGER]" in l]
+        data_lines = [
+            l
+            for l in out.split("\n")
+            if l.startswith("| ") and "[BASELINE]" not in l and "[CHALLENGER]" in l
+        ]
         assert len(data_lines) == 3
 
     def test_single_model(self) -> None:

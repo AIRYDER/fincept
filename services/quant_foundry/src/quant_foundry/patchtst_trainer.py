@@ -70,7 +70,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 
-
 # ---------------------------------------------------------------------------
 # Config + result models
 # ---------------------------------------------------------------------------
@@ -225,13 +224,11 @@ class PatchTSTConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
     @model_validator(mode="after")
-    def _patch_len_le_seq_len(self) -> "PatchTSTConfig":
+    def _patch_len_le_seq_len(self) -> PatchTSTConfig:
         """patch_len must be <= seq_len."""
         if self.patch_len > self.seq_len:
             raise ValueError(
@@ -241,7 +238,7 @@ class PatchTSTConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _d_model_divisible_by_n_heads(self) -> "PatchTSTConfig":
+    def _d_model_divisible_by_n_heads(self) -> PatchTSTConfig:
         """d_model must be divisible by n_heads."""
         if self.d_model % self.n_heads != 0:
             raise ValueError(
@@ -361,9 +358,6 @@ class PatchEmbedding:
         if self._module is not None:
             return self._module
 
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-
         net = _make_patch_embedding_module_class()(
             seq_len=self.seq_len,
             patch_len=self.patch_len,
@@ -400,17 +394,17 @@ class PatchEmbedding:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "PatchEmbedding":
+    def to(self, device: Any) -> PatchEmbedding:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "PatchEmbedding":
+    def train(self, mode: bool = True) -> PatchEmbedding:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "PatchEmbedding":
+    def eval(self) -> PatchEmbedding:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -421,8 +415,8 @@ def _make_patch_embedding_module_class() -> Any:
     Lazily imports torch. Called from
     :meth:`PatchEmbedding._build_module` each time a new embedding is built.
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch
+    import torch.nn as nn
 
     class _PatchEmbeddingNet(nn.Module):
         """Inner nn.Module implementing the patch embedding forward pass."""
@@ -448,9 +442,7 @@ def _make_patch_embedding_module_class() -> Any:
             # -> d_model.
             self.proj = nn.Linear(patch_len * input_dim, d_model)
             # Learned positional encoding (one row per patch).
-            self.pos_embedding = nn.Parameter(
-                torch.randn(1, num_patches, d_model) * 0.02
-            )
+            self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, d_model) * 0.02)
             self.dropout = nn.Dropout(dropout)
 
         def forward(self, x: Any) -> Any:
@@ -467,9 +459,7 @@ def _make_patch_embedding_module_class() -> Any:
             # Stack along a new patch dimension -> (batch, num_patches,
             # patch_len, input_dim) then flatten the last two dims.
             stacked = torch.stack(patches, dim=1)
-            flattened = stacked.reshape(
-                batch, self.num_patches, self.patch_len * self.input_dim
-            )
+            flattened = stacked.reshape(batch, self.num_patches, self.patch_len * self.input_dim)
             # Linear projection -> (batch, num_patches, d_model).
             projected = self.proj(flattened)
             # Add positional encoding (broadcast over batch).
@@ -557,7 +547,7 @@ class PatchTSTModel:
         if self._module is not None:
             return self._module
 
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         patch_embedding = PatchEmbedding(
             seq_len=self.seq_len,
@@ -574,9 +564,7 @@ class PatchTSTModel:
             dropout=self.dropout,
             batch_first=True,
         )
-        encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=self.n_layers
-        )
+        encoder = nn.TransformerEncoder(encoder_layer, num_layers=self.n_layers)
         head = nn.Linear(self.d_model, self.output_dim)
 
         net = _make_patchtst_module_class()(
@@ -611,17 +599,17 @@ class PatchTSTModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "PatchTSTModel":
+    def to(self, device: Any) -> PatchTSTModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "PatchTSTModel":
+    def train(self, mode: bool = True) -> PatchTSTModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "PatchTSTModel":
+    def eval(self) -> PatchTSTModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -632,8 +620,7 @@ def _make_patchtst_module_class() -> Any:
     Lazily imports torch. Called from
     :meth:`PatchTSTModel._build_module` each time a new model is built.
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch.nn as nn
 
     class _PatchTSTNet(nn.Module):
         """Inner nn.Module implementing the PatchTST forward pass."""
@@ -674,7 +661,7 @@ def _resolve_device(config: PatchTSTConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -729,9 +716,9 @@ class PatchTSTTrainer:
             A :class:`PatchTSTTrainingResult` with epoch losses, GPU
             status, and promotion eligibility.
         """
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
+        import torch.nn as nn
 
         start = time.perf_counter()
 
@@ -744,18 +731,15 @@ class PatchTSTTrainer:
         X_arr = np.array(X, dtype=float)
         if X_arr.ndim != 3:
             raise ValueError(
-                f"X must be 3-D (n_samples, seq_len, input_dim); "
-                f"got shape {X_arr.shape}"
+                f"X must be 3-D (n_samples, seq_len, input_dim); got shape {X_arr.shape}"
             )
         if X_arr.shape[1] != self.config.seq_len:
             raise ValueError(
-                f"X.shape[1] must equal seq_len={self.config.seq_len}; "
-                f"got {X_arr.shape[1]}"
+                f"X.shape[1] must equal seq_len={self.config.seq_len}; got {X_arr.shape[1]}"
             )
         if X_arr.shape[2] != self.config.input_dim:
             raise ValueError(
-                f"X.shape[2] must equal input_dim={self.config.input_dim}; "
-                f"got {X_arr.shape[2]}"
+                f"X.shape[2] must equal input_dim={self.config.input_dim}; got {X_arr.shape[2]}"
             )
         y_arr = np.array(y, dtype=float).reshape(-1, 1)
         w_arr = (
@@ -784,7 +768,7 @@ class PatchTSTTrainer:
         model.to(device)
         model.train()
 
-        loss_fn = nn.MSELoss()
+        nn.MSELoss()
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=self.config.learning_rate,
@@ -872,20 +856,16 @@ class PatchTSTTrainer:
         Returns:
             A list of floats (one prediction per sample).
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
 
         X_arr = np.array(X, dtype=float)
         if X_arr.ndim != 3:
             raise ValueError(
-                f"X must be 3-D (n_samples, seq_len, input_dim); "
-                f"got shape {X_arr.shape}"
+                f"X must be 3-D (n_samples, seq_len, input_dim); got shape {X_arr.shape}"
             )
         x_tensor = torch.from_numpy(X_arr).float()
 
@@ -912,12 +892,10 @@ class PatchTSTTrainer:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -933,7 +911,7 @@ class PatchTSTTrainer:
         Returns:
             The loaded :class:`PatchTSTModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = PatchTSTModel(
             input_dim=self.config.input_dim,
@@ -1005,10 +983,7 @@ class PatchTSTTrainer:
                 "labels, and horizons must all have the same length"
             )
         if weights is not None and len(weights) != n:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="patchtst", output_dir=output_dir)
@@ -1115,11 +1090,11 @@ def register_patchtst_family() -> dict[str, Any]:
 
 
 __all__ = [
-    "PatchTSTConfig",
-    "PatchTSTTrainingResult",
     "PatchEmbedding",
+    "PatchTSTConfig",
     "PatchTSTModel",
     "PatchTSTTrainer",
-    "validate_promotion_eligibility",
+    "PatchTSTTrainingResult",
     "register_patchtst_family",
+    "validate_promotion_eligibility",
 ]

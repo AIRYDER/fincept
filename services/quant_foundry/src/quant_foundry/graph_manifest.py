@@ -34,9 +34,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import UTC
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.dataset_manifest import _parse_temporal
 
@@ -72,9 +73,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char hex SHA-256; got {value!r}")
     return value.lower()
 
 
@@ -92,10 +91,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         ValueError: if ``value`` is not a parseable ISO temporal.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{field_name} must be a non-empty ISO datetime string; "
-            f"got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a non-empty ISO datetime string; got {value!r}")
     _parse_temporal(value)
     return value
 
@@ -141,8 +137,7 @@ class NodeFeatureSchema(BaseModel):
     def _dtype_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_DTYPES:
             raise ValueError(
-                f"NodeFeatureSchema.dtype must be one of "
-                f"{sorted(_ALLOWED_DTYPES)!r}; got {v!r}"
+                f"NodeFeatureSchema.dtype must be one of {sorted(_ALLOWED_DTYPES)!r}; got {v!r}"
             )
         return v
 
@@ -194,9 +189,7 @@ class GraphEdge(BaseModel):
     @classmethod
     def _nonempty_str(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("edge_type")
@@ -204,8 +197,7 @@ class GraphEdge(BaseModel):
     def _edge_type_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_EDGE_TYPES:
             raise ValueError(
-                f"GraphEdge.edge_type must be one of "
-                f"{sorted(_ALLOWED_EDGE_TYPES)!r}; got {v!r}"
+                f"GraphEdge.edge_type must be one of {sorted(_ALLOWED_EDGE_TYPES)!r}; got {v!r}"
             )
         return v
 
@@ -377,9 +369,7 @@ class GraphDatasetManifest(BaseModel):
 
     @field_validator("node_feature_schema")
     @classmethod
-    def _schema_nonempty(
-        cls, v: list[NodeFeatureSchema]
-    ) -> list[NodeFeatureSchema]:
+    def _schema_nonempty(cls, v: list[NodeFeatureSchema]) -> list[NodeFeatureSchema]:
         if not v:
             raise ValueError("node_feature_schema must contain at least 1 feature")
         return v
@@ -414,12 +404,8 @@ class GraphDatasetManifest(BaseModel):
     def _no_duplicate_node_ids(self) -> GraphDatasetManifest:
         """node_ids must be unique (no duplicate nodes)."""
         if len(set(self.node_ids)) != len(self.node_ids):
-            dupes = sorted(
-                {nid for nid in self.node_ids if self.node_ids.count(nid) > 1}
-            )
-            raise ValueError(
-                f"node_ids must not contain duplicates: {dupes!r}"
-            )
+            dupes = sorted({nid for nid in self.node_ids if self.node_ids.count(nid) > 1})
+            raise ValueError(f"node_ids must not contain duplicates: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -429,8 +415,7 @@ class GraphDatasetManifest(BaseModel):
         if len(set(names)) != len(names):
             dupes = sorted({n for n in names if names.count(n) > 1})
             raise ValueError(
-                f"node_feature_schema must not contain duplicate "
-                f"feature names: {dupes!r}"
+                f"node_feature_schema must not contain duplicate feature names: {dupes!r}"
             )
         return self
 
@@ -457,7 +442,7 @@ class GraphDatasetManifest(BaseModel):
     @model_validator(mode="after")
     def _no_future_edges(self) -> GraphDatasetManifest:
         """Every edge's edge_available_at must be <= graph_snapshot_time."""
-        snapshot_epoch = _parse_temporal(self.graph_snapshot_time)
+        _parse_temporal(self.graph_snapshot_time)
         for edge in self.edges:
             validate_no_future_edge(edge, self.graph_snapshot_time)
         return self
@@ -501,9 +486,7 @@ def validate_no_future_edge(edge: GraphEdge, snapshot_time: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def validate_node_id_mapping(
-    edges: list[GraphEdge], node_ids: list[str]
-) -> bool:
+def validate_node_id_mapping(edges: list[GraphEdge], node_ids: list[str]) -> bool:
     """Check that all edge src/dst nodes are declared in ``node_ids``.
 
     Args:
@@ -520,15 +503,9 @@ def validate_node_id_mapping(
     node_set = set(node_ids)
     for edge in edges:
         if edge.src_node not in node_set:
-            raise ValueError(
-                f"edge {edge.edge_id!r} src_node {edge.src_node!r} is not "
-                f"in node_ids"
-            )
+            raise ValueError(f"edge {edge.edge_id!r} src_node {edge.src_node!r} is not in node_ids")
         if edge.dst_node not in node_set:
-            raise ValueError(
-                f"edge {edge.edge_id!r} dst_node {edge.dst_node!r} is not "
-                f"in node_ids"
-            )
+            raise ValueError(f"edge {edge.edge_id!r} dst_node {edge.dst_node!r} is not in node_ids")
     return True
 
 
@@ -537,9 +514,7 @@ def validate_node_id_mapping(
 # ---------------------------------------------------------------------------
 
 
-def compute_graph_data_hash(
-    edges: list[GraphEdge], nodes: list[GraphNode]
-) -> str:
+def compute_graph_data_hash(edges: list[GraphEdge], nodes: list[GraphNode]) -> str:
     """Compute a deterministic SHA-256 hash of graph data.
 
     The hash is computed over canonical JSON of the edges and nodes,
@@ -554,12 +529,8 @@ def compute_graph_data_hash(
     Returns:
         A 64-character lowercase hex SHA-256 digest.
     """
-    edges_sorted = sorted(
-        (e.model_dump() for e in edges), key=lambda d: d["edge_id"]
-    )
-    nodes_sorted = sorted(
-        (n.model_dump() for n in nodes), key=lambda d: d["node_id"]
-    )
+    edges_sorted = sorted((e.model_dump() for e in edges), key=lambda d: d["edge_id"])
+    nodes_sorted = sorted((n.model_dump() for n in nodes), key=lambda d: d["node_id"])
     # Sort node features by key for determinism.
     for n in nodes_sorted:
         n["features"] = {k: n["features"][k] for k in sorted(n["features"])}
@@ -642,9 +613,7 @@ class GraphManifestBuilder:
         self._edges = list(edges)
         return self
 
-    def with_feature_schema(
-        self, schema: list[NodeFeatureSchema]
-    ) -> Self:
+    def with_feature_schema(self, schema: list[NodeFeatureSchema]) -> Self:
         """Set the node feature schema.
 
         Args:
@@ -718,9 +687,9 @@ class GraphManifestBuilder:
         """
         if not self._created_at:
             # Default to now if not set.
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            self._created_at = datetime.now(timezone.utc).isoformat()
+            self._created_at = datetime.now(UTC).isoformat()
 
         return GraphDatasetManifest(
             dataset_id=self._dataset_id,
@@ -741,9 +710,7 @@ class GraphManifestBuilder:
 # ---------------------------------------------------------------------------
 
 
-def filter_edges_point_in_time(
-    edges: list[GraphEdge], snapshot_time: str
-) -> list[GraphEdge]:
+def filter_edges_point_in_time(edges: list[GraphEdge], snapshot_time: str) -> list[GraphEdge]:
     """Filter edges to only those available at or before the snapshot time.
 
     Returns only edges where ``edge_available_at <= snapshot_time``. This
@@ -760,7 +727,4 @@ def filter_edges_point_in_time(
         ``snapshot_time``, preserving input order.
     """
     snap_epoch = _parse_temporal(snapshot_time)
-    return [
-        e for e in edges
-        if _parse_temporal(e.edge_available_at) <= snap_epoch
-    ]
+    return [e for e in edges if _parse_temporal(e.edge_available_at) <= snap_epoch]

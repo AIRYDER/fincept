@@ -101,10 +101,12 @@ class XTwitterSource:
         import datetime as dt
 
         start_time = dt.datetime.fromtimestamp(
-            start_ns / 1_000_000_000, tz=dt.timezone.utc,
+            start_ns / 1_000_000_000,
+            tz=dt.UTC,
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
         end_time = dt.datetime.fromtimestamp(
-            end_ns / 1_000_000_000, tz=dt.timezone.utc,
+            end_ns / 1_000_000_000,
+            tz=dt.UTC,
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Determine endpoint
@@ -158,8 +160,12 @@ class XTwitterSource:
 
             # Tweet ID
             tweet_id = tweet.get("id", "")
-            item_id = f"x_twitter:{tweet_id}" if tweet_id else (
-                f"x_twitter:{hashlib.sha256((text + str(available_at_ns)).encode()).hexdigest()[:20]}"
+            item_id = (
+                f"x_twitter:{tweet_id}"
+                if tweet_id
+                else (
+                    f"x_twitter:{hashlib.sha256((text + str(available_at_ns)).encode()).hexdigest()[:20]}"
+                )
             )
 
             # Extract all cashtag symbols from the tweet
@@ -209,10 +215,10 @@ def _parse_x_iso_to_ns(iso_str: str) -> int:
     normalized = iso_str.strip().replace("Z", "+00:00")
     parsed = dt.datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        parsed = parsed.replace(tzinfo=dt.UTC)
     else:
-        parsed = parsed.astimezone(dt.timezone.utc)
+        parsed = parsed.astimezone(dt.UTC)
     return int(parsed.timestamp() * 1_000_000_000)
 
 
-__all__ = ["XTwitterSource", "X_API_BASE_URL"]
+__all__ = ["X_API_BASE_URL", "XTwitterSource"]

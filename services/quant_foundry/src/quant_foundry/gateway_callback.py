@@ -201,8 +201,7 @@ class GatewayCallbackMixin:
                         manifest_hash=ob_rec.idempotency_key,
                         rejection_reason=DLQRejectionReason.DUPLICATE_CALLBACK,
                         rejection_detail=(
-                            "duplicate callback for job_id "
-                            f"{job_id} (same payload hash)"
+                            f"duplicate callback for job_id {job_id} (same payload hash)"
                         ),
                         callback_id=in_rec.callback_id,
                         is_retryable=False,

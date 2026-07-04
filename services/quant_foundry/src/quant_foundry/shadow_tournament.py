@@ -47,17 +47,15 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.forecast_distribution import (
     ForecastDistributionArtifact,
-    compute_forecast_hash,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,7 +64,7 @@ from quant_foundry.forecast_distribution import (
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # The primary metric used to determine the tournament winner. Lower is
@@ -158,9 +156,7 @@ class TournamentEntry(BaseModel):
         if not isinstance(v, dict) or not v:
             raise ValueError("metrics must be a non-empty dict")
         if _PRIMARY_METRIC not in v:
-            raise ValueError(
-                f"metrics must contain the primary metric {_PRIMARY_METRIC!r}"
-            )
+            raise ValueError(f"metrics must contain the primary metric {_PRIMARY_METRIC!r}")
         for key, val in v.items():
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("metric names must be non-empty strings")
@@ -169,14 +165,12 @@ class TournamentEntry(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _promotion_always_false_in_shadow(self) -> "TournamentEntry":
+    def _promotion_always_false_in_shadow(self) -> TournamentEntry:
         # Defense in depth: the shadow tournament never marks an entry as
         # promotion-eligible. If someone tries to construct an entry with
         # promotion_eligible=True directly, we reject it (fail-closed).
         if self.promotion_eligible:
-            raise ValueError(
-                "promotion_eligible must be False in the shadow tournament"
-            )
+            raise ValueError("promotion_eligible must be False in the shadow tournament")
         return self
 
 
@@ -239,58 +233,44 @@ class TournamentResult(BaseModel):
 
     @field_validator("tree_stack_baseline")
     @classmethod
-    def _tree_stack_baseline_has_primary(
-        cls, v: dict[str, float]
-    ) -> dict[str, float]:
+    def _tree_stack_baseline_has_primary(cls, v: dict[str, float]) -> dict[str, float]:
         if not isinstance(v, dict) or not v:
             raise ValueError("tree_stack_baseline must be a non-empty dict")
         if _PRIMARY_METRIC not in v:
-            raise ValueError(
-                f"tree_stack_baseline must contain {_PRIMARY_METRIC!r}"
-            )
+            raise ValueError(f"tree_stack_baseline must contain {_PRIMARY_METRIC!r}")
         return v
 
     @field_validator("sequence_baseline")
     @classmethod
-    def _sequence_baseline_has_primary(
-        cls, v: dict[str, float]
-    ) -> dict[str, float]:
+    def _sequence_baseline_has_primary(cls, v: dict[str, float]) -> dict[str, float]:
         if not isinstance(v, dict) or not v:
             raise ValueError("sequence_baseline must be a non-empty dict")
         if _PRIMARY_METRIC not in v:
-            raise ValueError(
-                f"sequence_baseline must contain {_PRIMARY_METRIC!r}"
-            )
+            raise ValueError(f"sequence_baseline must contain {_PRIMARY_METRIC!r}")
         return v
 
     @model_validator(mode="after")
-    def _no_duplicate_models(self) -> "TournamentResult":
+    def _no_duplicate_models(self) -> TournamentResult:
         models = [e.model for e in self.entries]
         if len(set(models)) != len(models):
             raise ValueError("duplicate foundation models in entries")
         return self
 
     @model_validator(mode="after")
-    def _winner_improvement_consistency(self) -> "TournamentResult":
+    def _winner_improvement_consistency(self) -> TournamentResult:
         if self.winner is not None and self.winner_improvement is None:
-            raise ValueError(
-                "winner_improvement must be set when winner is set"
-            )
+            raise ValueError("winner_improvement must be set when winner is set")
         if self.winner is None and self.winner_improvement is not None:
-            raise ValueError(
-                "winner_improvement must be None when winner is None"
-            )
+            raise ValueError("winner_improvement must be None when winner is None")
         return self
 
     @model_validator(mode="after")
-    def _promotion_always_false_in_shadow(self) -> "TournamentResult":
+    def _promotion_always_false_in_shadow(self) -> TournamentResult:
         # Defense in depth: the tournament-level promotion flag is always
         # False in the shadow tournament. A direct construction with
         # promotion_eligible=True is rejected (fail-closed).
         if self.promotion_eligible:
-            raise ValueError(
-                "promotion_eligible must be False in the shadow tournament"
-            )
+            raise ValueError("promotion_eligible must be False in the shadow tournament")
         return self
 
 
@@ -421,14 +401,11 @@ def compute_tournament_metrics(
         raise ValueError("actuals must not be empty")
     if len(forecasts) != len(actuals):
         raise ValueError(
-            f"forecasts and actuals must have equal length "
-            f"({len(forecasts)} != {len(actuals)})"
+            f"forecasts and actuals must have equal length ({len(forecasts)} != {len(actuals)})"
         )
     for f in forecasts:
         if not isinstance(f, ForecastDistributionArtifact):
-            raise TypeError(
-                "each forecast must be a ForecastDistributionArtifact"
-            )
+            raise TypeError("each forecast must be a ForecastDistributionArtifact")
     for a in actuals:
         if not isinstance(a, (int, float)) or isinstance(a, bool):
             raise TypeError("each actual must be a number")
@@ -438,7 +415,7 @@ def compute_tournament_metrics(
     crps_values: list[float] = []
     pinball_values: list[float] = []
 
-    for forecast, actual in zip(forecasts, actuals):
+    for forecast, actual in zip(forecasts, actuals, strict=False):
         actual_f = float(actual)
         point = float(forecast.median)
         err = actual_f - point
@@ -502,20 +479,17 @@ def settle_predictions(
         raise ValueError("actuals must not be empty")
     if len(forecasts) != len(actuals):
         raise ValueError(
-            f"forecasts and actuals must have equal length "
-            f"({len(forecasts)} != {len(actuals)})"
+            f"forecasts and actuals must have equal length ({len(forecasts)} != {len(actuals)})"
         )
     for f in forecasts:
         if not isinstance(f, ForecastDistributionArtifact):
-            raise TypeError(
-                "each forecast must be a ForecastDistributionArtifact"
-            )
+            raise TypeError("each forecast must be a ForecastDistributionArtifact")
     for a in actuals:
         if not isinstance(a, (int, float)) or isinstance(a, bool):
             raise TypeError("each actual must be a number")
 
     records: list[dict[str, Any]] = []
-    for forecast, actual in zip(forecasts, actuals):
+    for forecast, actual in zip(forecasts, actuals, strict=False):
         actual_f = float(actual)
         point = float(forecast.median)
         err = actual_f - point
@@ -620,9 +594,7 @@ class ShadowTournament:
         # Reject duplicate models — one entry per foundation model.
         for existing in self._entries:
             if existing.model == model:
-                raise ValueError(
-                    f"model {model!r} already has an entry in this tournament"
-                )
+                raise ValueError(f"model {model!r} already has an entry in this tournament")
         entry = TournamentEntry(
             model=model,
             model_id=model_id,
@@ -682,13 +654,9 @@ class ShadowTournament:
         if not isinstance(sequence_metrics, dict) or not sequence_metrics:
             raise ValueError("sequence_metrics must be a non-empty dict")
         if _PRIMARY_METRIC not in tree_stack_metrics:
-            raise ValueError(
-                f"tree_stack_metrics must contain {_PRIMARY_METRIC!r}"
-            )
+            raise ValueError(f"tree_stack_metrics must contain {_PRIMARY_METRIC!r}")
         if _PRIMARY_METRIC not in sequence_metrics:
-            raise ValueError(
-                f"sequence_metrics must contain {_PRIMARY_METRIC!r}"
-            )
+            raise ValueError(f"sequence_metrics must contain {_PRIMARY_METRIC!r}")
 
         # Compute metrics for each entry and build settled entries.
         settled_entries: list[TournamentEntry] = []
@@ -750,9 +718,7 @@ class ShadowTournament:
         )
         return result
 
-    def generate_scorecards(
-        self, result: TournamentResult
-    ) -> list[ShadowScorecard]:
+    def generate_scorecards(self, result: TournamentResult) -> list[ShadowScorecard]:
         """Generate per-model, per-metric scorecards from a tournament result.
 
         For each entry and each metric present in the entry's ``metrics``,
@@ -833,9 +799,7 @@ class ShadowTournament:
         for entry in payload.get("entries", []):
             for fc in entry.get("forecasts", []):
                 if isinstance(fc.get("quantiles"), dict):
-                    fc["quantiles"] = {
-                        str(float(k)): v for k, v in fc["quantiles"].items()
-                    }
+                    fc["quantiles"] = {str(float(k)): v for k, v in fc["quantiles"].items()}
         parent = os.path.dirname(os.path.abspath(path))
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -859,15 +823,13 @@ class ShadowTournament:
             raise ValueError("path must be a non-empty string")
         if not os.path.exists(path):
             raise ValueError(f"result file not found: {path!r}")
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
         # Coerce string quantile keys back to floats.
         for entry in raw.get("entries", []):
             for fc in entry.get("forecasts", []):
                 if isinstance(fc.get("quantiles"), dict):
-                    fc["quantiles"] = {
-                        float(k): v for k, v in fc["quantiles"].items()
-                    }
+                    fc["quantiles"] = {float(k): v for k, v in fc["quantiles"].items()}
         return TournamentResult.model_validate(raw)
 
 
@@ -934,10 +896,7 @@ def validate_no_live_signal(result: TournamentResult) -> bool:
     if not isinstance(result, TournamentResult):
         raise TypeError("result must be a TournamentResult")
     if result.promotion_eligible:
-        raise ValueError(
-            "result.promotion_eligible is True — live signal possible "
-            "(fail-closed)"
-        )
+        raise ValueError("result.promotion_eligible is True — live signal possible (fail-closed)")
     for entry in result.entries:
         if entry.promotion_eligible:
             raise ValueError(

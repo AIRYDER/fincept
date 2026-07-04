@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import asdict, dataclass, field
 import json
-from math import isfinite
-from pathlib import Path
-from typing import Any, Callable
-from urllib.parse import unquote, urlparse
+from collections import Counter
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from math import isfinite
+from pathlib import Path
+from typing import Any
+from urllib.parse import unquote, urlparse
 
 from news_impact_model.analogs import AnalogScoringWeights, HistoricalAnalogIndex
 from news_impact_model.data import load_historical_outcomes
@@ -23,7 +24,6 @@ from news_impact_model.training import (
     optimize_analog_weights,
     walk_forward_optimize_analog_weights,
 )
-
 
 HORIZON_ORDER = {
     "1m": 1,
@@ -190,7 +190,7 @@ def make_workbench_handler(
             try:
                 payload = self._read_json()
                 self._send_json(route(payload))
-            except Exception as exc:  # noqa: BLE001 - local workbench API boundary.
+            except Exception as exc:
                 self._send_json(
                     {"error": str(exc)},
                     status=HTTPStatus.BAD_REQUEST,
@@ -340,17 +340,11 @@ def _prediction_to_dict(prediction: NewsImpactPrediction) -> dict[str, Any]:
         "event_id": prediction.event_id,
         "symbol": prediction.symbol,
         "event_type": prediction.event_type,
-        "horizons": {
-            horizon: asdict(impact)
-            for horizon, impact in prediction.horizons.items()
-        },
+        "horizons": {horizon: asdict(impact) for horizon, impact in prediction.horizons.items()},
         "volatility_impact": prediction.volatility_impact,
         "volume_impact": prediction.volume_impact,
         "confidence": prediction.confidence,
-        "similar_events": [
-            asdict(event)
-            for event in prediction.similar_events
-        ],
+        "similar_events": [asdict(event) for event in prediction.similar_events],
         "model_version": prediction.model_version,
     }
 

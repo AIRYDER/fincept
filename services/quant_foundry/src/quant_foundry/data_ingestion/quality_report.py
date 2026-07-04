@@ -212,8 +212,7 @@ def compute_quality_report(
         if non_null_labels > 0:
             value_counts = label_col.drop_nulls().value_counts()
             counts_map: dict[Any, int] = {
-                row[label_column]: int(row["count"])
-                for row in value_counts.iter_rows(named=True)
+                row[label_column]: int(row["count"]) for row in value_counts.iter_rows(named=True)
             }
             for key in (0.0, 1.0):
                 frac = counts_map.get(key, 0) / non_null_labels
@@ -232,9 +231,7 @@ def compute_quality_report(
     if total_rows > 0 and ts_column in df.columns:
         ts_series = df[ts_column]
         for fold in folds:
-            train_mask = (ts_series >= fold.train_start) & (
-                ts_series < fold.train_end
-            )
+            train_mask = (ts_series >= fold.train_start) & (ts_series < fold.train_end)
             val_mask = (ts_series >= fold.val_start) & (ts_series < fold.val_end)
             fold_train_counts.append(int(train_mask.sum()))
             fold_val_counts.append(int(val_mask.sum()))
@@ -268,8 +265,7 @@ def compute_quality_report(
     # every declared feature, so a future two-report drift comparison
     # is possible. Vacuously true when there are no features.
     drift_baseline_available = all(
-        name in mean_feature_values and name in std_feature_values
-        for name in feature_names
+        name in mean_feature_values and name in std_feature_values for name in feature_names
     )
 
     return DatasetQualityReport(
@@ -451,9 +447,7 @@ class QualityPolicyRegistry:
 
     def __init__(self, policies: tuple[QualityPolicy, ...]) -> None:
         self._by_id: dict[str, QualityPolicy] = {p.policy_id: p for p in policies}
-        self._by_mode: dict[TrainingMode, QualityPolicy] = {
-            p.mode: p for p in policies
-        }
+        self._by_mode: dict[TrainingMode, QualityPolicy] = {p.mode: p for p in policies}
 
     def get(self, policy_id: str) -> QualityPolicy | None:
         """Return the policy for *policy_id*, or ``None`` if unknown."""
@@ -610,8 +604,7 @@ def validate_quality_policy(
                 f"fold_count={report.fold_count}, "
                 f"train_counts={list(report.fold_train_counts)}, "
                 f"val_counts={list(report.fold_val_counts)}",
-                "policy requires every fold to have non-empty train and "
-                "validation partitions",
+                "policy requires every fold to have non-empty train and validation partitions",
             )
 
     # --- duplicate rows --------------------------------------------------
@@ -668,10 +661,8 @@ def validate_quality_policy(
             _fail(
                 "quality_report",
                 "populated report (dataset_id + generated_at_ns)",
-                f"dataset_id={report.dataset_id!r}, "
-                f"generated_at_ns={report.generated_at_ns}",
-                "policy requires a generated quality report to accompany "
-                "the dataset",
+                f"dataset_id={report.dataset_id!r}, generated_at_ns={report.generated_at_ns}",
+                "policy requires a generated quality report to accompany the dataset",
             )
 
     return QualityGateResult(
@@ -683,9 +674,9 @@ def validate_quality_policy(
 
 
 __all__ = [
+    "QUALITY_POLICY_REGISTRY",
     "DatasetQualityReport",
     "FailedCheck",
-    "QUALITY_POLICY_REGISTRY",
     "QualityGateResult",
     "QualityPolicy",
     "QualityPolicyRegistry",

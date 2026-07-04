@@ -38,6 +38,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+# Phase 8 / T-8.1: explicit column roles + task spec. Imported lazily-safe
+# (dataset_manifest / training_manifest do not import real_trainer, so
+# there is no circular import). These are OPTIONAL inputs — when None the
+# trainer falls back to the legacy infer-by-dropping-names behaviour with
+# a deprecation warning.
+from quant_foundry.dataset_manifest import (
+    ColumnRoles,
+    FoldSpec,
+    validate_column_roles,
+)
 from quant_foundry.runpod_training import (
     TrainingFailure,
     _container_digest_or_default,
@@ -49,16 +59,6 @@ from quant_foundry.schemas import (
     Authority,
     ModelDossier,
     RunPodTrainingRequest,
-)
-# Phase 8 / T-8.1: explicit column roles + task spec. Imported lazily-safe
-# (dataset_manifest / training_manifest do not import real_trainer, so
-# there is no circular import). These are OPTIONAL inputs — when None the
-# trainer falls back to the legacy infer-by-dropping-names behaviour with
-# a deprecation warning.
-from quant_foundry.dataset_manifest import (
-    ColumnRoles,
-    FoldSpec,
-    validate_column_roles,
 )
 from quant_foundry.training_manifest import (
     ModelTaskSpec,
@@ -260,6 +260,7 @@ def build_artifact_result(
         model_bytes=model_bytes,
     )
 
+
 # Canonical walk-forward fold math (single shared home — see
 # ``fincept_core.datasets.cv``). Delegating here keeps Path B (RunPod real
 # trainer) consistent with Path A (agents.gbm_predictor.train) and the
@@ -368,8 +369,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="invalid_backend",
                 error_summary=(
-                    f"unknown backend {self.backend!r}; "
-                    f"supported: {list(TRAINER_BACKENDS)}"
+                    f"unknown backend {self.backend!r}; supported: {list(TRAINER_BACKENDS)}"
                 ),
             )
 
@@ -411,8 +411,8 @@ class RealLightGBMTrainer:
         # mode — heuristic walk-forward folds).
         fold_assignment = None
         if self.fold_spec is not None:
-            X, y, timestamps, weights, groups, fold_assignment = (
-                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            X, y, timestamps, weights, groups, fold_assignment = self._load_dataset_with_folds(
+                req.dataset_manifest_ref
             )
         else:
             X, y, timestamps, weights, groups = self._load_dataset(
@@ -508,8 +508,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="artifact_missing",
                 error_summary=(
-                    "successful training produced no artifact bytes "
-                    f"(fail closed): {exc}"
+                    f"successful training produced no artifact bytes (fail closed): {exc}"
                 ),
             ) from exc
         # Stash for the handler (mutable dataclass — safe per-job).
@@ -631,8 +630,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="label_in_features",
                 error_summary=(
-                    "label columns must not appear in feature_columns: "
-                    f"{sorted(lf_overlap)!r}"
+                    f"label columns must not appear in feature_columns: {sorted(lf_overlap)!r}"
                 ),
             )
 
@@ -642,10 +640,7 @@ class RealLightGBMTrainer:
             if not verdict.passed:
                 raise TrainingFailure(
                     error_code="invalid_task_spec",
-                    error_summary=(
-                        "task spec validation failed: "
-                        + "; ".join(verdict.errors)
-                    ),
+                    error_summary=("task spec validation failed: " + "; ".join(verdict.errors)),
                 )
             # Fail-closed: ranking without group column.
             if self.task_spec.task_type == "ranking":
@@ -737,7 +732,8 @@ class RealLightGBMTrainer:
             )
 
     def _load_dataset(
-        self, ref: str,
+        self,
+        ref: str,
     ) -> tuple[Any, Any, Any, Any, Any]:
         """Load dataset from a URI.
 
@@ -803,10 +799,7 @@ class RealLightGBMTrainer:
             if not verdict.passed:
                 raise TrainingFailure(
                     error_code="invalid_column_roles",
-                    error_summary=(
-                        "column roles validation failed: "
-                        + "; ".join(verdict.errors)
-                    ),
+                    error_summary=("column roles validation failed: " + "; ".join(verdict.errors)),
                 )
             # Label: prefer task_spec.label_column, else roles.primary_label.
             if self.task_spec is not None and self.task_spec.label_column:
@@ -841,8 +834,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="missing_weight_column",
                         error_summary=(
-                            f"weight column {roles.weight_column!r} not "
-                            f"found in dataset columns"
+                            f"weight column {roles.weight_column!r} not found in dataset columns"
                         ),
                     )
                 weights = np.array(data[roles.weight_column], dtype=np.float64)
@@ -853,8 +845,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="missing_group_column",
                         error_summary=(
-                            f"group column {roles.group_column!r} not "
-                            f"found in dataset columns"
+                            f"group column {roles.group_column!r} not found in dataset columns"
                         ),
                     )
                 groups = np.array(data[roles.group_column])
@@ -896,7 +887,7 @@ class RealLightGBMTrainer:
 
         # Read the header to get column names (needed for column-roles
         # mapping). The header is the first non-empty line.
-        with open(str(path), "r", encoding="utf-8", errors="replace") as fh:
+        with open(str(path), encoding="utf-8", errors="replace") as fh:
             header_line = fh.readline().strip()
         header_cols = [c.strip() for c in header_line.split(",")] if header_line else []
 
@@ -921,10 +912,7 @@ class RealLightGBMTrainer:
             if not verdict.passed:
                 raise TrainingFailure(
                     error_code="invalid_column_roles",
-                    error_summary=(
-                        "column roles validation failed: "
-                        + "; ".join(verdict.errors)
-                    ),
+                    error_summary=("column roles validation failed: " + "; ".join(verdict.errors)),
                 )
             col_index = {name: i for i, name in enumerate(header_cols)}
             # Label.
@@ -948,8 +936,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="missing_feature",
                         error_summary=(
-                            f"feature column {fc!r} not found in CSV "
-                            f"header {header_cols!r}"
+                            f"feature column {fc!r} not found in CSV header {header_cols!r}"
                         ),
                     )
                 feature_indices.append(col_index[fc])
@@ -968,8 +955,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="missing_weight_column",
                         error_summary=(
-                            f"weight column {roles.weight_column!r} not "
-                            f"found in CSV header"
+                            f"weight column {roles.weight_column!r} not found in CSV header"
                         ),
                     )
                 weights = data[:, col_index[roles.weight_column]].astype(np.float64)
@@ -980,8 +966,7 @@ class RealLightGBMTrainer:
                     raise TrainingFailure(
                         error_code="missing_group_column",
                         error_summary=(
-                            f"group column {roles.group_column!r} not "
-                            f"found in CSV header"
+                            f"group column {roles.group_column!r} not found in CSV header"
                         ),
                     )
                 groups = data[:, col_index[roles.group_column]]
@@ -1276,9 +1261,7 @@ class RealLightGBMTrainer:
         if fold_assignment is not None:
             from quant_foundry.fold_consumer import get_fold_data
 
-            fold_ids = sorted(
-                fw.fold_id for fw in fold_assignment.fold_spec.folds
-            )
+            fold_ids = sorted(fw.fold_id for fw in fold_assignment.fold_spec.folds)
             for fid in fold_ids:
                 if time.time_ns() >= deadline_ns:
                     raise TrainingFailure(
@@ -1428,9 +1411,7 @@ class RealLightGBMTrainer:
                 if groups_s is not None:
                     all_groups.extend(groups_s[val_start:val_end].tolist())
                 if timestamps_s is not None:
-                    all_timestamps.extend(
-                        timestamps_s[val_start:val_end].tolist()
-                    )
+                    all_timestamps.extend(timestamps_s[val_start:val_end].tolist())
 
         if not all_preds:
             raise TrainingFailure(
@@ -1462,12 +1443,8 @@ class RealLightGBMTrainer:
         # timestamps so rank metrics can be computed after validation.
         result["_oos_preds"] = preds_arr
         result["_oos_labels"] = labels_arr
-        result["_oos_groups"] = (
-            np.array(all_groups) if all_groups else None
-        )
-        result["_oos_timestamps"] = (
-            np.array(all_timestamps) if all_timestamps else None
-        )
+        result["_oos_groups"] = np.array(all_groups) if all_groups else None
+        result["_oos_timestamps"] = np.array(all_timestamps) if all_timestamps else None
         # Store for final model training (use avg best iteration)
         self._last_avg_best_iteration = result["avg_best_iteration"]
         return result
@@ -1654,7 +1631,8 @@ class RealLightGBMTrainer:
 
         try:
             require_fold_spec_for_production(
-                self.fold_spec, is_production=self.is_production,
+                self.fold_spec,
+                is_production=self.is_production,
             )
         except ValueError as exc:
             raise TrainingFailure(
@@ -1699,8 +1677,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="invalid_backend",
                 error_summary=(
-                    f"unknown backend {self.backend!r}; "
-                    f"supported: {list(TRAINER_BACKENDS)}"
+                    f"unknown backend {self.backend!r}; supported: {list(TRAINER_BACKENDS)}"
                 ),
             )
 
@@ -1730,8 +1707,8 @@ class RealLightGBMTrainer:
 
         # Load dataset (reuse the existing numpy-array loader).
         if self.fold_spec is not None:
-            X, y, timestamps, weights, groups, _fa = (
-                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            X, y, timestamps, weights, groups, _fa = self._load_dataset_with_folds(
+                req.dataset_manifest_ref
             )
         else:
             X, y, timestamps, weights, groups = self._load_dataset(
@@ -1799,13 +1776,20 @@ class RealLightGBMTrainer:
         if not model_bytes:
             # Fallback: pickle the model.
             model_bytes = pickle.dumps(
-                result.model, protocol=pickle.HIGHEST_PROTOCOL,
+                result.model,
+                protocol=pickle.HIGHEST_PROTOCOL,
             )
 
         # Compute metrics from in-sample predictions.
         metrics = self._compute_backend_metrics(
-            result.model, X, y, weights, groups, timestamps,
-            req, is_catboost=True,
+            result.model,
+            X,
+            y,
+            weights,
+            groups,
+            timestamps,
+            req,
+            is_catboost=True,
         )
 
         # T-8.2: rank metrics for ranking tasks.
@@ -1814,7 +1798,11 @@ class RealLightGBMTrainer:
             metrics["rank_report"] = rank_report
 
         return self._build_backend_artifact_and_dossier(
-            req, model_bytes, metrics, result.n_features, result.n_rows,
+            req,
+            model_bytes,
+            metrics,
+            result.n_features,
+            result.n_rows,
             artifact_format="catboost-cbm",
             loader_family="catboost",
             trainer_tag="real_catboost",
@@ -1846,8 +1834,8 @@ class RealLightGBMTrainer:
 
         # Load dataset.
         if self.fold_spec is not None:
-            X, y, timestamps, weights, groups, _fa = (
-                self._load_dataset_with_folds(req.dataset_manifest_ref)
+            X, y, timestamps, weights, groups, _fa = self._load_dataset_with_folds(
+                req.dataset_manifest_ref
             )
         else:
             X, y, timestamps, weights, groups = self._load_dataset(
@@ -1904,13 +1892,21 @@ class RealLightGBMTrainer:
                 model_bytes = fh.read()
         if not model_bytes:
             model_bytes = pickle.dumps(
-                result.model, protocol=pickle.HIGHEST_PROTOCOL,
+                result.model,
+                protocol=pickle.HIGHEST_PROTOCOL,
             )
 
         # Compute metrics from in-sample predictions.
         metrics = self._compute_backend_metrics(
-            result.model, X, y, weights, groups, timestamps,
-            req, is_catboost=False, xgb_result=result,
+            result.model,
+            X,
+            y,
+            weights,
+            groups,
+            timestamps,
+            req,
+            is_catboost=False,
+            xgb_result=result,
         )
 
         # T-8.2: rank metrics for ranking tasks.
@@ -1919,7 +1915,9 @@ class RealLightGBMTrainer:
             metrics["rank_report"] = rank_report
 
         return self._build_backend_artifact_and_dossier(
-            req, model_bytes, metrics,
+            req,
+            model_bytes,
+            metrics,
             n_features=len(self.column_roles.feature_columns),
             n_rows=int(X.shape[0]) if hasattr(X, "shape") else len(y),
             artifact_format="xgboost-ubj",
@@ -1931,7 +1929,9 @@ class RealLightGBMTrainer:
     # --- backend param builders -----------------------------------------
 
     def _build_catboost_params(
-        self, req: RunPodTrainingRequest, seed: int,
+        self,
+        req: RunPodTrainingRequest,
+        seed: int,
     ) -> dict[str, Any]:
         """Build CatBoost hyper-parameters from the request search space."""
         ss = req.search_space
@@ -1951,7 +1951,9 @@ class RealLightGBMTrainer:
         return params
 
     def _build_xgboost_params(
-        self, req: RunPodTrainingRequest, seed: int,
+        self,
+        req: RunPodTrainingRequest,
+        seed: int,
     ) -> dict[str, Any]:
         """Build XGBoost hyper-parameters from the request search space."""
         ss = req.search_space
@@ -1992,16 +1994,12 @@ class RealLightGBMTrainer:
         """
         import numpy as np
 
-        task_type = (
-            self.task_spec.task_type if self.task_spec else "binary"
-        )
+        task_type = self.task_spec.task_type if self.task_spec else "binary"
 
         preds: Any = None
         if is_catboost:
             try:
-                if task_type in ("binary", "multiclass") and hasattr(
-                    model, "predict_proba"
-                ):
+                if task_type in ("binary", "multiclass") and hasattr(model, "predict_proba"):
                     proba = model.predict_proba(X)
                     proba_arr = np.asarray(proba)
                     preds = proba_arr[:, -1] if proba_arr.ndim == 2 else proba_arr
@@ -2026,18 +2024,17 @@ class RealLightGBMTrainer:
         # Use the shared metrics computer.
         periods_per_year = self._resolve_periods_per_year(req.extra_constraints)
         result = self._compute_metrics(
-            preds_arr, labels_arr, [], [],
+            preds_arr,
+            labels_arr,
+            [],
+            [],
             periods_per_year=periods_per_year,
         )
         # Stash OOS data for rank metrics (in-sample for backends).
         result["_oos_preds"] = preds_arr
         result["_oos_labels"] = labels_arr
-        result["_oos_groups"] = (
-            np.asarray(groups) if groups is not None else None
-        )
-        result["_oos_timestamps"] = (
-            np.asarray(timestamps) if timestamps is not None else None
-        )
+        result["_oos_groups"] = np.asarray(groups) if groups is not None else None
+        result["_oos_timestamps"] = np.asarray(timestamps) if timestamps is not None else None
         return result
 
     def _build_backend_artifact_and_dossier(
@@ -2096,8 +2093,7 @@ class RealLightGBMTrainer:
             raise TrainingFailure(
                 error_code="artifact_missing",
                 error_summary=(
-                    "successful training produced no artifact bytes "
-                    f"(fail closed): {exc}"
+                    f"successful training produced no artifact bytes (fail closed): {exc}"
                 ),
             ) from exc
         self.last_artifact_result = typed_result
@@ -2154,9 +2150,9 @@ class RealLightGBMTrainer:
         if self.task_spec is None or self.task_spec.task_type != "ranking":
             return None
         # Lazy import — rank_metrics imports numpy at module level.
-        from quant_foundry.rank_metrics import compute_rank_metrics
-
         import numpy as np
+
+        from quant_foundry.rank_metrics import compute_rank_metrics
 
         preds = metrics.get("_oos_preds")
         labels = metrics.get("_oos_labels")
@@ -2181,8 +2177,12 @@ class RealLightGBMTrainer:
 
         try:
             return compute_rank_metrics(
-                preds_arr, labels_arr, grp_arr, ts_arr,
-                top_k=10, cost_per_turnover=0.001,
+                preds_arr,
+                labels_arr,
+                grp_arr,
+                ts_arr,
+                top_k=10,
+                cost_per_turnover=0.001,
             )
         except (ValueError, TypeError):
             return None
@@ -2190,7 +2190,8 @@ class RealLightGBMTrainer:
     # --- T-8.4: manifest fold dataset loading ---------------------------
 
     def _load_dataset_with_folds(
-        self, ref: str,
+        self,
+        ref: str,
     ) -> tuple[Any, Any, Any, Any, Any, Any]:
         """Load a dataset + consume manifest folds.
 
@@ -2198,7 +2199,6 @@ class RealLightGBMTrainer:
         where the numpy arrays are in original dataframe row order (NOT
         time-sorted) so the manifest fold indices align correctly.
         """
-        import numpy as np
 
         from quant_foundry.fold_consumer import consume_manifest_folds
 
@@ -2207,7 +2207,8 @@ class RealLightGBMTrainer:
 
         # Consume manifest folds using the dataframe.
         fold_assignment = consume_manifest_folds(
-            self.fold_spec, df,
+            self.fold_spec,
+            df,
         )
         return X, y, timestamps, weights, groups, fold_assignment
 
@@ -2244,7 +2245,8 @@ class RealLightGBMTrainer:
             )
 
     def _extract_arrays_from_df(
-        self, df: Any,
+        self,
+        df: Any,
     ) -> tuple[Any, Any, Any, Any, Any]:
         """Extract (X, y, timestamps, weights, groups) from a DataFrame.
 
@@ -2272,7 +2274,8 @@ class RealLightGBMTrainer:
             weights = None
             if roles.weight_column is not None:
                 weights = np.array(
-                    df[roles.weight_column].values, dtype=np.float64,
+                    df[roles.weight_column].values,
+                    dtype=np.float64,
                 )
             # Groups.
             groups = None
@@ -2285,9 +2288,7 @@ class RealLightGBMTrainer:
                 if candidate in columns:
                     ts_col = candidate
                     break
-            feature_cols = [
-                c for c in columns if c != label_col and c != ts_col
-            ]
+            feature_cols = [c for c in columns if c != label_col and c != ts_col]
             weights = None
             groups = None
 
@@ -2300,7 +2301,8 @@ class RealLightGBMTrainer:
             # Handle both numeric and string (ISO date) timestamps.
             try:
                 timestamps = np.array(
-                    df[ts_col].values, dtype=np.int64,
+                    df[ts_col].values,
+                    dtype=np.int64,
                 )
             except (ValueError, TypeError):
                 # String timestamps (e.g. "2024-01-15") — convert via

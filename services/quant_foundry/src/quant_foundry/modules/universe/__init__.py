@@ -7,4 +7,4 @@ from quant_foundry.modules.universe.sp500 import (
     SP500Universe,
 )
 
-__all__ = ["SP500Universe", "SP500PointInTimeUniverse"]
+__all__ = ["SP500PointInTimeUniverse", "SP500Universe"]

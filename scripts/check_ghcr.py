@@ -1,4 +1,5 @@
 """Check if ghcr.io image is publicly pullable."""
+
 import httpx
 
 r = httpx.get(

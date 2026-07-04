@@ -1,6 +1,8 @@
 """Test NewsAPI key — check how far back we can fetch articles."""
-import os
+
 import datetime as dt
+import os
+
 import httpx
 
 os.environ["NEWSAPI_KEY"] = "e25076a3f6b8426083f86079f8a5bf36"
@@ -9,12 +11,12 @@ key = os.environ["NEWSAPI_KEY"]
 
 # Test different date ranges to see what the key allows
 test_ranges = [
-    ("Last 30 days", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30), dt.datetime.now(dt.timezone.utc)),
-    ("Last 90 days", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=90), dt.datetime.now(dt.timezone.utc)),
-    ("Last 6 months", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=180), dt.datetime.now(dt.timezone.utc)),
-    ("Last 1 year", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=365), dt.datetime.now(dt.timezone.utc)),
-    ("Last 2 years", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=730), dt.datetime.now(dt.timezone.utc)),
-    ("Last 5 years", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1825), dt.datetime.now(dt.timezone.utc)),
+    ("Last 30 days", dt.datetime.now(dt.UTC) - dt.timedelta(days=30), dt.datetime.now(dt.UTC)),
+    ("Last 90 days", dt.datetime.now(dt.UTC) - dt.timedelta(days=90), dt.datetime.now(dt.UTC)),
+    ("Last 6 months", dt.datetime.now(dt.UTC) - dt.timedelta(days=180), dt.datetime.now(dt.UTC)),
+    ("Last 1 year", dt.datetime.now(dt.UTC) - dt.timedelta(days=365), dt.datetime.now(dt.UTC)),
+    ("Last 2 years", dt.datetime.now(dt.UTC) - dt.timedelta(days=730), dt.datetime.now(dt.UTC)),
+    ("Last 5 years", dt.datetime.now(dt.UTC) - dt.timedelta(days=1825), dt.datetime.now(dt.UTC)),
 ]
 
 import time
@@ -48,7 +50,10 @@ for label, start, end in test_ranges:
         articles = data.get("articles", [])
         earliest = articles[-1].get("publishedAt", "n/a") if articles else "n/a"
         latest = articles[0].get("publishedAt", "n/a") if articles else "n/a"
-        print(f"  {label:20s}: HTTP 200, totalResults={total}, earliest={earliest}, latest={latest}", flush=True)
+        print(
+            f"  {label:20s}: HTTP 200, totalResults={total}, earliest={earliest}, latest={latest}",
+            flush=True,
+        )
     else:
         try:
             error = r.json().get("message", r.text[:200])

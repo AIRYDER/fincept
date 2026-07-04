@@ -1,7 +1,9 @@
 """Probe RunPod inference endpoint with a minimal job."""
-import httpx
+
 import json
 import os
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = os.environ["RUNPOD_INFERENCE_ENDPOINT_ID"]

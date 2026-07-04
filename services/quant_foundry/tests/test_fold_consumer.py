@@ -21,10 +21,6 @@ Covers:
 
 from __future__ import annotations
 
-import hashlib
-import json
-from datetime import datetime, timezone
-
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -473,9 +469,11 @@ def test_consume_manifest_folds_row_outside_all_folds_rejected():
     spec = _basic_fold_spec()
     import pandas as pd
 
-    df = pd.DataFrame([
-        {"symbol": "AAPL", "decision_time": "2023-01-01", "horizon": 5, "f1": 0.1, "label": 1},
-    ])
+    df = pd.DataFrame(
+        [
+            {"symbol": "AAPL", "decision_time": "2023-01-01", "horizon": 5, "f1": 0.1, "label": 1},
+        ]
+    )
     with pytest.raises(ValueError, match="does not fit in any fold window"):
         consume_manifest_folds(spec, df, spec.row_id_columns)
 
@@ -488,11 +486,13 @@ def test_consume_manifest_folds_with_numeric_timestamp():
     import pandas as pd
 
     # 2024-01-15 ~ 1705276800; 2024-04-15 ~ 1713139200; 2024-06-15 ~ 1718409600
-    df = pd.DataFrame([
-        {"symbol": "AAPL", "decision_time": 1705276800, "horizon": 5, "f1": 0.1, "label": 1},
-        {"symbol": "AAPL", "decision_time": 1713139200, "horizon": 5, "f1": 0.3, "label": 1},
-        {"symbol": "AAPL", "decision_time": 1718409600, "horizon": 5, "f1": 0.4, "label": 0},
-    ])
+    df = pd.DataFrame(
+        [
+            {"symbol": "AAPL", "decision_time": 1705276800, "horizon": 5, "f1": 0.1, "label": 1},
+            {"symbol": "AAPL", "decision_time": 1713139200, "horizon": 5, "f1": 0.3, "label": 1},
+            {"symbol": "AAPL", "decision_time": 1718409600, "horizon": 5, "f1": 0.4, "label": 0},
+        ]
+    )
     assignment = consume_manifest_folds(spec, df, spec.row_id_columns)
     assert assignment.fold_ids == [0, 0, 1]
 
@@ -601,8 +601,6 @@ def test_validate_fold_assignment_empty_fold_rejected():
 
 def test_validate_fold_assignment_overlap_detected():
     """validate_fold_assignment detects train/val overlap (no embargo)."""
-    from quant_foundry.fold_consumer import FoldAssignment, validate_fold_assignment
-
     # Build a fold spec where fold 0 has train_end >= validation_start by
     # constructing the FoldWindow with a valid gap, then bypassing the
     # window validator by using a malformed spec. We instead test the
@@ -612,7 +610,7 @@ def test_validate_fold_assignment_overlap_detected():
     # we test the validate function's defence-in-depth by monkeypatching
     # the fold window's validation. Simpler: build a valid assignment and
     # a *separate* overlapping fold_spec.
-    from quant_foundry.dataset_manifest import FoldSpec, compute_fold_hash
+    from quant_foundry.fold_consumer import FoldAssignment, validate_fold_assignment
 
     # FoldWindow construction rejects overlap, so we cannot easily build an
     # overlapping spec. Instead verify that validate_fold_assignment raises
@@ -783,9 +781,11 @@ def test_embargo_period_separates_train_and_validation():
     # validation_start (2024-04-10). It is in the validation window only
     # if >= validation_start. 2024-04-07 < 2024-04-10, so it's in the gap
     # and should NOT be assigned to fold 0. It should fail (no fold).
-    df = pd.DataFrame([
-        {"symbol": "AAPL", "decision_time": "2024-04-07", "horizon": 5, "f1": 0.1, "label": 1},
-    ])
+    df = pd.DataFrame(
+        [
+            {"symbol": "AAPL", "decision_time": "2024-04-07", "horizon": 5, "f1": 0.1, "label": 1},
+        ]
+    )
     with pytest.raises(ValueError, match="does not fit in any fold window"):
         consume_manifest_folds(spec, df, spec.row_id_columns)
 
@@ -805,12 +805,14 @@ def test_embargo_period_row_in_validation_after_embargo():
     spec = _basic_fold_spec(folds=[f0, f1])
     import pandas as pd
 
-    df = pd.DataFrame([
-        {"symbol": "AAPL", "decision_time": "2024-01-15", "horizon": 5, "f1": 0.1, "label": 1},
-        {"symbol": "AAPL", "decision_time": "2024-04-15", "horizon": 5, "f1": 0.3, "label": 1},
-        {"symbol": "AAPL", "decision_time": "2024-06-15", "horizon": 5, "f1": 0.4, "label": 0},
-        {"symbol": "AAPL", "decision_time": "2024-09-15", "horizon": 5, "f1": 0.6, "label": 0},
-    ])
+    df = pd.DataFrame(
+        [
+            {"symbol": "AAPL", "decision_time": "2024-01-15", "horizon": 5, "f1": 0.1, "label": 1},
+            {"symbol": "AAPL", "decision_time": "2024-04-15", "horizon": 5, "f1": 0.3, "label": 1},
+            {"symbol": "AAPL", "decision_time": "2024-06-15", "horizon": 5, "f1": 0.4, "label": 0},
+            {"symbol": "AAPL", "decision_time": "2024-09-15", "horizon": 5, "f1": 0.6, "label": 0},
+        ]
+    )
     assignment = consume_manifest_folds(spec, df, spec.row_id_columns)
     assert assignment.fold_ids == [0, 0, 1, 1]
     train_idx, val_idx = get_fold_data(assignment, 0)
@@ -866,7 +868,13 @@ def test_full_round_trip_consume_validate_get_data():
         train_idx, val_idx = get_fold_data(assignment, fold_id)
         assert len(train_idx) > 0 or len(val_idx) > 0
     # Fold 0: 2 train + 1 val; Fold 1: 2 train + 1 val.
-    assert sum(len(get_fold_data(assignment, f)[0]) + len(get_fold_data(assignment, f)[1]) for f in range(2)) == 6
+    assert (
+        sum(
+            len(get_fold_data(assignment, f)[0]) + len(get_fold_data(assignment, f)[1])
+            for f in range(2)
+        )
+        == 6
+    )
 
 
 def test_fold_spec_hash_matches_compute_fold_hash():
@@ -884,7 +892,10 @@ def test_consume_with_explicit_timestamp_column():
     spec = _basic_fold_spec()
     df = _synthetic_df()
     assignment = consume_manifest_folds(
-        spec, df, spec.row_id_columns, timestamp_column="decision_time",
+        spec,
+        df,
+        spec.row_id_columns,
+        timestamp_column="decision_time",
     )
     assert assignment.fold_ids == [0, 0, 0, 1, 1, 1]
 
@@ -897,7 +908,10 @@ def test_consume_explicit_timestamp_column_missing_rejected():
     df = _synthetic_df()
     with pytest.raises(ValueError, match="not found in dataframe"):
         consume_manifest_folds(
-            spec, df, spec.row_id_columns, timestamp_column="nonexistent",
+            spec,
+            df,
+            spec.row_id_columns,
+            timestamp_column="nonexistent",
         )
 
 
@@ -914,11 +928,13 @@ def test_single_fold_spec():
     )
     import pandas as pd
 
-    df = pd.DataFrame([
-        {"symbol": "AAPL", "decision_time": "2024-01-15", "f1": 0.1, "label": 1},
-        {"symbol": "AAPL", "decision_time": "2024-02-15", "f1": 0.2, "label": 0},
-        {"symbol": "AAPL", "decision_time": "2024-04-15", "f1": 0.3, "label": 1},
-    ])
+    df = pd.DataFrame(
+        [
+            {"symbol": "AAPL", "decision_time": "2024-01-15", "f1": 0.1, "label": 1},
+            {"symbol": "AAPL", "decision_time": "2024-02-15", "f1": 0.2, "label": 0},
+            {"symbol": "AAPL", "decision_time": "2024-04-15", "f1": 0.3, "label": 1},
+        ]
+    )
     assignment = consume_manifest_folds(spec, df, spec.row_id_columns)
     assert assignment.fold_ids == [0, 0, 0]
     train_idx, val_idx = get_fold_data(assignment, 0)

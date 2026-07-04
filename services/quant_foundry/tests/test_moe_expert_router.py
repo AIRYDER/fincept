@@ -21,7 +21,6 @@ import tempfile
 import numpy as np
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.moe_expert_router import (
     CalibrationReport,
     ExpertInput,
@@ -36,6 +35,7 @@ from quant_foundry.moe_expert_router import (
 
 try:
     import sklearn  # noqa: F401
+
     _HAS_SKLEARN = True
 except ImportError:
     _HAS_SKLEARN = False
@@ -94,7 +94,7 @@ def _make_fit_data(
     eis_list: list[list[ExpertInput]] = []
     rfs: list[RegimeFeatures] = []
     targets: list[float] = []
-    for i in range(n):
+    for _i in range(n):
         trend = float(rng.choice([1.0, -1.0]))
         target = float(trend * 0.5 + rng.normal(scale=0.05))
         # expert 0 good in trending (trend>0), expert 1 good in ranging.
@@ -263,8 +263,11 @@ class TestRouterOutput:
 
     def test_frozen(self) -> None:
         out = RouterOutput(
-            expert_weights={}, combined_prediction=0.0,
-            combined_uncertainty=0.0, abstain=True, confidence=0.0,
+            expert_weights={},
+            combined_prediction=0.0,
+            combined_uncertainty=0.0,
+            abstain=True,
+            confidence=0.0,
         )
         with pytest.raises((TypeError, ValueError)):
             out.abstain = False  # type: ignore[misc]
@@ -272,15 +275,21 @@ class TestRouterOutput:
     def test_extra_forbid(self) -> None:
         with pytest.raises(ValidationError):
             RouterOutput(
-                expert_weights={}, combined_prediction=0.0,
-                combined_uncertainty=0.0, abstain=True, confidence=0.0,
+                expert_weights={},
+                combined_prediction=0.0,
+                combined_uncertainty=0.0,
+                abstain=True,
+                confidence=0.0,
                 foo=1.0,  # type: ignore[call-arg]
             )
 
     def test_regime_features_optional(self) -> None:
         out = RouterOutput(
-            expert_weights={}, combined_prediction=0.0,
-            combined_uncertainty=0.0, abstain=True, confidence=0.0,
+            expert_weights={},
+            combined_prediction=0.0,
+            combined_uncertainty=0.0,
+            abstain=True,
+            confidence=0.0,
             regime_features=_regime(),
         )
         assert out.regime_features is not None
@@ -298,8 +307,16 @@ class TestCalibrationReport:
             n_samples=100,
             before_calibration={"ece": 0.2, "brier_score": 0.3},
             after_calibration={"ece": 0.05, "brier_score": 0.1},
-            reliability_bins=[{"lower": 0.0, "upper": 0.1, "mean_prob": 0.05,
-                               "mean_label": 0.06, "count": 10, "gap": 0.01}],
+            reliability_bins=[
+                {
+                    "lower": 0.0,
+                    "upper": 0.1,
+                    "mean_prob": 0.05,
+                    "mean_label": 0.06,
+                    "count": 10,
+                    "gap": 0.01,
+                }
+            ],
         )
         assert rep.method == "isotonic"
         assert rep.n_samples == 100
@@ -309,8 +326,11 @@ class TestCalibrationReport:
 
     def test_frozen(self) -> None:
         rep = CalibrationReport(
-            method="none", n_samples=0,
-            before_calibration={}, after_calibration={}, reliability_bins=[],
+            method="none",
+            n_samples=0,
+            before_calibration={},
+            after_calibration={},
+            reliability_bins=[],
         )
         with pytest.raises((TypeError, ValueError)):
             rep.method = "platt"  # type: ignore[misc]
@@ -318,9 +338,12 @@ class TestCalibrationReport:
     def test_extra_forbid(self) -> None:
         with pytest.raises(ValidationError):
             CalibrationReport(
-                method="none", n_samples=0,
-                before_calibration={}, after_calibration={},
-                reliability_bins=[], foo=1.0,  # type: ignore[call-arg]
+                method="none",
+                n_samples=0,
+                before_calibration={},
+                after_calibration={},
+                reliability_bins=[],
+                foo=1.0,  # type: ignore[call-arg]
             )
 
 
@@ -488,10 +511,7 @@ class TestMoERouterFitRoute:
         eis, rfs, targets = _make_fit_data(n=40)
         router.fit(eis, rfs, targets)
         out = router.route(eis[0], rfs[0])
-        expected = sum(
-            out.expert_weights.get(ei.expert_id, 0.0) * ei.prediction
-            for ei in eis[0]
-        )
+        expected = sum(out.expert_weights.get(ei.expert_id, 0.0) * ei.prediction for ei in eis[0])
         assert out.combined_prediction == pytest.approx(expected, rel=1e-6)
 
     def test_fit_inconsistent_lengths(self) -> None:
@@ -518,7 +538,9 @@ class TestAbstention:
     def test_abstain_below_threshold(self) -> None:
         # 4 experts with equal OOF -> uniform softmax -> max = 0.25 < 0.3.
         cfg = RouterConfig(
-            router_type="logistic", n_experts=4, max_weight=0.4,
+            router_type="logistic",
+            n_experts=4,
+            max_weight=0.4,
             abstention_threshold=0.3,
         )
         router = MoERouter(cfg)
@@ -529,8 +551,7 @@ class TestAbstention:
         assert out.combined_prediction == 0.0
 
     def test_no_abstain_above_threshold(self) -> None:
-        cfg = _config(router_type="logistic", n_experts=2, max_weight=0.7,
-                      abstention_threshold=0.3)
+        cfg = _config(router_type="logistic", n_experts=2, max_weight=0.7, abstention_threshold=0.3)
         router = MoERouter(cfg)
         eis = [_expert("e0", oof_performance=0.9), _expert("e1", oof_performance=0.1)]
         out = router.route(eis)
@@ -539,7 +560,9 @@ class TestAbstention:
 
     def test_abstain_confidence_recorded(self) -> None:
         cfg = RouterConfig(
-            router_type="logistic", n_experts=4, max_weight=0.4,
+            router_type="logistic",
+            n_experts=4,
+            max_weight=0.4,
             abstention_threshold=0.3,
         )
         router = MoERouter(cfg)
@@ -550,7 +573,9 @@ class TestAbstention:
 
     def test_threshold_zero_never_abstain(self) -> None:
         cfg = RouterConfig(
-            router_type="logistic", n_experts=4, max_weight=0.4,
+            router_type="logistic",
+            n_experts=4,
+            max_weight=0.4,
             abstention_threshold=0.0,
         )
         router = MoERouter(cfg)
@@ -677,9 +702,7 @@ class TestSaveLoad:
             router2 = MoERouter(_config(router_type="logistic", n_experts=2, max_weight=0.7))
             router2.load(path)
             out_after = router2.route(eis[0], rfs[0])
-        assert out_after.expert_weights == pytest.approx(
-            out_before.expert_weights, rel=1e-6
-        )
+        assert out_after.expert_weights == pytest.approx(out_before.expert_weights, rel=1e-6)
         assert out_after.combined_prediction == pytest.approx(
             out_before.combined_prediction, rel=1e-6
         )
@@ -722,7 +745,9 @@ class TestEdgeCases:
 
     def test_all_abstain_uniform(self) -> None:
         cfg = RouterConfig(
-            router_type="logistic", n_experts=5, max_weight=0.3,
+            router_type="logistic",
+            n_experts=5,
+            max_weight=0.3,
             abstention_threshold=0.3,
         )
         router = MoERouter(cfg)
@@ -741,8 +766,9 @@ class TestEdgeCases:
         assert out.regime_features.trend_regime == 0.8
 
     def test_use_regime_features_false(self) -> None:
-        cfg = _config(router_type="logistic", n_experts=2, max_weight=0.7,
-                      use_regime_features=False)
+        cfg = _config(
+            router_type="logistic", n_experts=2, max_weight=0.7, use_regime_features=False
+        )
         router = MoERouter(cfg)
         eis = [_expert("e0", oof_performance=0.9), _expert("e1", oof_performance=0.1)]
         out = router.route(eis, _regime(trend=0.8))
@@ -796,8 +822,7 @@ class TestFailClosed:
     def test_regime_aware_routing_prefers_correct_expert(self) -> None:
         """Router improves settled outcomes by regime: in trending regime
         the trending-expert gets more weight; in ranging the ranging-expert."""
-        cfg = _config(router_type="logistic", n_experts=2, max_weight=0.7,
-                      abstention_threshold=0.3)
+        cfg = _config(router_type="logistic", n_experts=2, max_weight=0.7, abstention_threshold=0.3)
         router = MoERouter(cfg)
         eis, rfs, targets = _make_fit_data(n=60, seed=3)
         router.fit(eis, rfs, targets)

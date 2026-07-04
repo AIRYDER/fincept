@@ -1,11 +1,12 @@
 """Test script: dispatch a real training job to RunPod and poll for results (longer window)."""
+
 from __future__ import annotations
 
 import json
 import os
 import time
 
-from quant_foundry.runpod_client import HttpRunPodClient, DispatchStatus
+from quant_foundry.runpod_client import DispatchStatus, HttpRunPodClient
 
 
 def main() -> None:
@@ -67,7 +68,7 @@ def main() -> None:
         try:
             status = client.check_status(runpod_job_id)
             state = status.get("status", "UNKNOWN")
-            print(f"  [{attempt+1}/30] status: {state}", end="")
+            print(f"  [{attempt + 1}/30] status: {state}", end="")
             if state == "COMPLETED":
                 print("\n\n=== Job completed! ===")
                 output = status.get("output", {})
@@ -81,9 +82,11 @@ def main() -> None:
             # Check worker health
             health = client.check_health()
             workers = health.get("workers", {})
-            print(f"  workers: init={workers.get('initializing',0)} ready={workers.get('ready',0)} running={workers.get('running',0)} unhealthy={workers.get('unhealthy',0)} throttled={workers.get('throttled',0)}")
+            print(
+                f"  workers: init={workers.get('initializing', 0)} ready={workers.get('ready', 0)} running={workers.get('running', 0)} unhealthy={workers.get('unhealthy', 0)} throttled={workers.get('throttled', 0)}"
+            )
         except Exception as e:
-            print(f"  [{attempt+1}/30] poll error: {e}")
+            print(f"  [{attempt + 1}/30] poll error: {e}")
 
     print("\nJob did not complete within polling window. Check RunPod console.")
 

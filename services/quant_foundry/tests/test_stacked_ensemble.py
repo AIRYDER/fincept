@@ -30,7 +30,6 @@ import pickle
 from typing import Any
 
 import pytest
-
 from quant_foundry.oof_artifacts import (
     OOFArtifact,
     OOFRow,
@@ -43,14 +42,13 @@ from quant_foundry.stacked_ensemble import (
     EnsembleManifest,
     EnsembleResult,
     StackedEnsemble,
-    SUPPORTED_CALIBRATION_POLICIES,
-    SUPPORTED_META_LEARNER_FAMILIES,
     compute_contributions,
     compute_ensemble_hash,
 )
 
 try:
     import sklearn  # noqa: F401
+
     _HAS_SKLEARN = True
 except ImportError:
     _HAS_SKLEARN = False
@@ -74,7 +72,7 @@ def _make_oof_rows(
 ) -> list[OOFRow]:
     """Build a list of OOFRow objects for a single model family."""
     rows: list[OOFRow] = []
-    for rid, pred, lbl in zip(row_ids, predictions, labels):
+    for rid, pred, lbl in zip(row_ids, predictions, labels, strict=False):
         rows.append(
             OOFRow(
                 row_id=rid,
@@ -100,9 +98,7 @@ def _write_oof(
     fold_id: int = 0,
 ) -> str:
     """Write an OOF artifact and return its path."""
-    rows = _make_oof_rows(
-        model_family, row_ids, predictions, labels, fold_id=fold_id
-    )
+    rows = _make_oof_rows(model_family, row_ids, predictions, labels, fold_id=fold_id)
     path = os.path.join(output_dir, f"oof_{model_family}.json")
     write_oof_artifact(rows=rows, model_family=model_family, output_path=path)
     return path
@@ -116,11 +112,9 @@ def _make_base_spec(
     labels: list[float],
 ) -> BaseModelSpec:
     """Build a BaseModelSpec with real OOF artifact + dummy model artifact."""
-    oof_path = _write_oof(
-        model_family, row_ids, predictions, labels, output_dir
-    )
+    oof_path = _write_oof(model_family, row_ids, predictions, labels, output_dir)
     # Compute the OOF artifact hash by reading it back.
-    with open(oof_path, "r", encoding="utf-8") as fh:
+    with open(oof_path, encoding="utf-8") as fh:
         oof_payload = json.load(fh)
     oof_hash = oof_payload["artifact_hash"]
 
@@ -224,7 +218,13 @@ class TestBaseModelSpec:
 
     @pytest.mark.parametrize(
         "field",
-        ["model_family", "artifact_path", "artifact_hash", "oof_artifact_path", "oof_artifact_hash"],
+        [
+            "model_family",
+            "artifact_path",
+            "artifact_hash",
+            "oof_artifact_path",
+            "oof_artifact_hash",
+        ],
     )
     def test_empty_string_rejected(self, field: str) -> None:
         kwargs = {
@@ -240,7 +240,13 @@ class TestBaseModelSpec:
 
     @pytest.mark.parametrize(
         "field",
-        ["model_family", "artifact_path", "artifact_hash", "oof_artifact_path", "oof_artifact_hash"],
+        [
+            "model_family",
+            "artifact_path",
+            "artifact_hash",
+            "oof_artifact_path",
+            "oof_artifact_hash",
+        ],
     )
     def test_whitespace_string_rejected(self, field: str) -> None:
         kwargs = {
@@ -595,14 +601,10 @@ class TestTrainMetaLearner:
     """Tests for meta-learner training on merged OOF predictions."""
 
     def test_train_lightgbm_meta_learner(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs, meta_learner_family="lightgbm")
         meta_path = str(tmp_path / "meta.pkl")
-        result = ensemble.train_meta_learner(
-            oof_arts, labels, meta_learner_artifact_path=meta_path
-        )
+        result = ensemble.train_meta_learner(oof_arts, labels, meta_learner_artifact_path=meta_path)
         assert isinstance(result, EnsembleResult)
         assert len(result.meta_learner_predictions) == 20
         assert len(result.contributions) == 2
@@ -620,9 +622,7 @@ class TestTrainMetaLearner:
         assert len(result.meta_learner_predictions) == 20
 
     def test_train_three_base_models(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         assert len(result.contributions) == 3
@@ -630,9 +630,7 @@ class TestTrainMetaLearner:
 
     def test_meta_learner_only_sees_oof_features(self, tmp_path: Any) -> None:
         """The meta-learner feature matrix has exactly n_models columns."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=15
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=15)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         # feature_names == base model families (sorted).
@@ -640,34 +638,26 @@ class TestTrainMetaLearner:
         assert len(ensemble.feature_names) == 3
 
     def test_label_length_mismatch_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         with pytest.raises(ValueError, match="labels length"):
             ensemble.train_meta_learner(oof_arts, labels[:10])
 
     def test_label_value_mismatch_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         bad_labels = [lbl + 100.0 for lbl in labels]
         with pytest.raises(ValueError, match="label mismatch"):
             ensemble.train_meta_learner(oof_arts, bad_labels)
 
     def test_wrong_number_of_oof_artifacts_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=20)
         ensemble = StackedEnsemble(specs)
         with pytest.raises(ValueError, match="expected 3 OOF artifacts"):
             ensemble.train_meta_learner(oof_arts[:2], labels)
 
     def test_oof_artifact_wrong_family_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         # Replace one OOF artifact with a wrong-family one.
         wrong_rows = _make_oof_rows(
@@ -685,17 +675,13 @@ class TestTrainMetaLearner:
             ensemble.train_meta_learner([wrong_art, oof_arts[1]], labels)
 
     def test_duplicate_oof_artifact_family_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         with pytest.raises(ValueError, match="duplicate OOF artifact"):
             ensemble.train_meta_learner([oof_arts[0], oof_arts[0]], labels)
 
     def test_missing_base_artifact_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         # Delete a base model artifact file.
         os.remove(specs[0].artifact_path)
         ensemble = StackedEnsemble(specs)
@@ -703,9 +689,7 @@ class TestTrainMetaLearner:
             ensemble.train_meta_learner(oof_arts, labels)
 
     def test_missing_oof_artifact_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         # Delete an OOF artifact file.
         os.remove(specs[0].oof_artifact_path)
         ensemble = StackedEnsemble(specs)
@@ -713,9 +697,7 @@ class TestTrainMetaLearner:
             ensemble.train_meta_learner(oof_arts, labels)
 
     def test_empty_base_artifact_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         # Truncate a base model artifact to 0 bytes.
         with open(specs[0].artifact_path, "w") as fh:
             fh.write("")
@@ -724,31 +706,23 @@ class TestTrainMetaLearner:
             ensemble.train_meta_learner(oof_arts, labels)
 
     def test_ensemble_metrics_are_finite(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         for key, val in result.ensemble_metrics.items():
             assert math.isfinite(val), f"{key} is not finite: {val}"
 
     def test_manifest_built_after_training(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         meta_path = str(tmp_path / "meta.pkl")
-        result = ensemble.train_meta_learner(
-            oof_arts, labels, meta_learner_artifact_path=meta_path
-        )
+        result = ensemble.train_meta_learner(oof_arts, labels, meta_learner_artifact_path=meta_path)
         assert result.manifest.meta_learner_artifact_path == meta_path
         assert result.manifest.meta_learner_artifact_hash != "0" * 64
         assert len(result.manifest.ensemble_hash) == 64
 
     def test_manifest_in_memory_no_artifact(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         assert result.manifest.meta_learner_artifact_path == "<in-memory>"
@@ -765,9 +739,7 @@ class TestPredict:
     """Tests for ensemble prediction."""
 
     def test_predict_after_training(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         base_preds = {
@@ -779,18 +751,14 @@ class TestPredict:
         assert all(math.isfinite(p) for p in preds)
 
     def test_predict_missing_family_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         with pytest.raises(ValueError, match="missing model families"):
             ensemble.predict({"lightgbm": [0.1, 0.2]})
 
     def test_predict_extra_family_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         with pytest.raises(ValueError, match="unexpected model families"):
@@ -803,9 +771,7 @@ class TestPredict:
             )
 
     def test_predict_length_mismatch_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         with pytest.raises(ValueError, match="same length"):
@@ -817,9 +783,7 @@ class TestPredict:
             )
 
     def test_predict_empty_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         ensemble.train_meta_learner(oof_arts, labels)
         with pytest.raises(ValueError, match="empty"):
@@ -833,14 +797,10 @@ class TestPredict:
 
     def test_predict_loads_from_artifact(self, tmp_path: Any) -> None:
         """predict works after loading a meta-learner from a saved artifact."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         meta_path = str(tmp_path / "meta.pkl")
-        ensemble.train_meta_learner(
-            oof_arts, labels, meta_learner_artifact_path=meta_path
-        )
+        ensemble.train_meta_learner(oof_arts, labels, meta_learner_artifact_path=meta_path)
         # Simulate a fresh ensemble that only has the manifest.
         ensemble2 = StackedEnsemble(specs)
         # Load the manifest so predict can find the artifact path.
@@ -866,14 +826,10 @@ class TestManifestSaveLoad:
     """Tests for manifest save / load round-trip."""
 
     def test_save_load_round_trip(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         meta_path = str(tmp_path / "meta.pkl")
-        ensemble.train_meta_learner(
-            oof_arts, labels, meta_learner_artifact_path=meta_path
-        )
+        ensemble.train_meta_learner(oof_arts, labels, meta_learner_artifact_path=meta_path)
         manifest_path = str(tmp_path / "manifest.json")
         ensemble.save_manifest(manifest_path)
         assert os.path.isfile(manifest_path)
@@ -906,9 +862,7 @@ class TestManifestSaveLoad:
             StackedEnsemble.load_manifest(path)
 
     def test_manifest_contains_all_base_hashes(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         manifest = result.manifest
@@ -1022,7 +976,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=True
         )
         ensemble = StackedEnsemble(
-            specs, meta_learner_family="logistic_regression",
+            specs,
+            meta_learner_family="logistic_regression",
             calibration_policy="optional",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
@@ -1035,7 +990,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=True
         )
         ensemble = StackedEnsemble(
-            specs, meta_learner_family="logistic_regression",
+            specs,
+            meta_learner_family="logistic_regression",
             calibration_policy="required",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
@@ -1048,7 +1004,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=True
         )
         ensemble = StackedEnsemble(
-            specs, meta_learner_family="logistic_regression",
+            specs,
+            meta_learner_family="logistic_regression",
             calibration_policy="none",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
@@ -1061,7 +1018,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=False
         )
         ensemble = StackedEnsemble(
-            specs, calibration_policy="optional",
+            specs,
+            calibration_policy="optional",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
         assert result.calibration_report.calibration_result is None
@@ -1072,7 +1030,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=False
         )
         ensemble = StackedEnsemble(
-            specs, calibration_policy="required",
+            specs,
+            calibration_policy="required",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
         assert result.calibration_report.calibration_result is None
@@ -1083,7 +1042,8 @@ class TestCalibrationReport:
             tmp_path, n_models=2, n_rows=20, binary=False
         )
         ensemble = StackedEnsemble(
-            specs, calibration_policy="none",
+            specs,
+            calibration_policy="none",
         )
         result = ensemble.train_meta_learner(oof_arts, labels)
         assert result.calibration_report.calibration_result is None
@@ -1111,12 +1071,9 @@ class TestDeterminism:
 
     def test_ensemble_hash_deterministic_same_setup(self, tmp_path: Any) -> None:
         """Two ensembles with the same specs + meta produce the same hash."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, _oof_arts, _labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         # We need to freeze created_at to compare hashes. Build manifests
         # manually with the same timestamp.
-        from quant_foundry.stacked_ensemble import EnsembleManifest
 
         manifest_data_1 = {
             "schema_version": 1,
@@ -1161,9 +1118,7 @@ class TestEnsembleResultValidation:
 
     def test_contributions_must_match_base_families(self, tmp_path: Any) -> None:
         """EnsembleResult rejects contributions that don't match base models."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         manifest = result.manifest
@@ -1182,9 +1137,7 @@ class TestEnsembleResultValidation:
             )
 
     def test_contribution_ranks_must_be_contiguous(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         manifest = result.manifest
@@ -1202,9 +1155,7 @@ class TestEnsembleResultValidation:
             )
 
     def test_non_finite_predictions_rejected(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=2, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=2, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         with pytest.raises(Exception):
@@ -1227,14 +1178,10 @@ class TestIntegration:
     """End-to-end integration tests."""
 
     def test_full_train_predict_save_load(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=30
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=30)
         ensemble = StackedEnsemble(specs, meta_learner_family="lightgbm")
         meta_path = str(tmp_path / "meta_model.pkl")
-        result = ensemble.train_meta_learner(
-            oof_arts, labels, meta_learner_artifact_path=meta_path
-        )
+        result = ensemble.train_meta_learner(oof_arts, labels, meta_learner_artifact_path=meta_path)
 
         # Predict.
         base_preds = {
@@ -1253,9 +1200,7 @@ class TestIntegration:
         assert len(loaded_manifest.base_models) == 3
 
     def test_manifest_lists_all_base_artifact_hashes(self, tmp_path: Any) -> None:
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=20)
         ensemble = StackedEnsemble(specs)
         result = ensemble.train_meta_learner(oof_arts, labels)
         manifest = result.manifest
@@ -1265,9 +1210,7 @@ class TestIntegration:
 
     def test_deterministic_ordering_inference(self, tmp_path: Any) -> None:
         """Inference loads base artifacts in sorted-by-family order."""
-        specs, oof_arts, labels = _synthetic_ensemble_setup(
-            tmp_path, n_models=3, n_rows=20
-        )
+        specs, oof_arts, labels = _synthetic_ensemble_setup(tmp_path, n_models=3, n_rows=20)
         # Pass specs in reverse; the ensemble should still sort them.
         ensemble = StackedEnsemble(list(reversed(specs)))
         result = ensemble.train_meta_learner(oof_arts, labels)

@@ -132,7 +132,7 @@ def _recipe_from_request(body: StartSweepRequest) -> Any:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"recipe failed allowlist validation: {exc}",
-        )
+        ) from exc
 
 
 # --- endpoints -------------------------------------------------------------
@@ -251,7 +251,7 @@ async def register_dossier(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"dossier failed validation: {exc}",
-        )
+        ) from exc
 
     try:
         result = gw.register_recipe_candidate(dossier)
@@ -260,7 +260,7 @@ async def register_dossier(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
-        )
+        ) from exc
 
     if not result.get("enabled", True):
         raise HTTPException(

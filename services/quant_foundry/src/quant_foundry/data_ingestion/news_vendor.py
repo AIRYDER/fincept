@@ -47,8 +47,7 @@ def _resolve_api_key(api_key: str | None) -> str:
     key = api_key or os.environ.get(_NEWSAPI_KEY_ENV, "")
     if not key:
         raise ValueError(
-            f"NewsAPI key not provided; pass api_key= or set "
-            f"{_NEWSAPI_KEY_ENV}",
+            f"NewsAPI key not provided; pass api_key= or set {_NEWSAPI_KEY_ENV}",
         )
     return key
 
@@ -134,8 +133,7 @@ async def fetch_newsapi_articles(
     raw_articles = body.get("articles") or []
     if not raw_articles:
         raise ValueError(
-            f"no articles returned from NewsAPI for query {query!r} "
-            f"in [{start}, {end}]",
+            f"no articles returned from NewsAPI for query {query!r} in [{start}, {end}]",
         )
 
     normalized = [_normalize_newsapi_article(a) for a in raw_articles]

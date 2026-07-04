@@ -18,6 +18,7 @@ ledger, dossier registry) from reports/quant-foundry/.
 Usage:
     QUANT_FOUNDRY_ENABLED=true uv run python scripts/close_the_loop.py
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -111,6 +112,7 @@ def _make_synthetic_bars(predictions: list[dict]) -> dict[str, list[PricePoint]]
 def _make_bar_reader(bars: dict[str, list[PricePoint]]):
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
         return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
+
     return reader
 
 

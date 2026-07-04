@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = {
     "a",

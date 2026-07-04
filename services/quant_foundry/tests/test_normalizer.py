@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.normalizer import (
     ColumnNormalizerStats,
     MissingPolicy,
@@ -37,7 +36,6 @@ from quant_foundry.normalizer import (
     merge_fold_normalizers,
     validate_normalizer_present,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -465,9 +463,7 @@ class TestApplyMissingPolicy:
             apply_missing_policy(np.array([1.0, np.nan]), stats)
 
     def test_mean_fill(self) -> None:
-        stats = _make_stats(
-            missing_policy=MissingPolicy.MEAN_FILL, missing_fill_value=3.0
-        )
+        stats = _make_stats(missing_policy=MissingPolicy.MEAN_FILL, missing_fill_value=3.0)
         out = apply_missing_policy(np.array([1.0, np.nan, 5.0]), stats)
         np.testing.assert_allclose(out, [1.0, 3.0, 5.0])
 
@@ -547,9 +543,11 @@ class TestNormalizerFitTransform:
 
     def test_fit_transform_standard(self, clean_df: pd.DataFrame) -> None:
         norm = Normalizer(method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.FAIL)
-        out, art = norm.fit_transform(clean_df, ["x"])
+        out, _art = norm.fit_transform(clean_df, ["x"])
         # x = [1,2,3,4,5], mean=3, std~1.4142 (population)
-        np.testing.assert_allclose(out["x"].to_numpy(), (clean_df["x"].to_numpy() - 3.0) / np.std(clean_df["x"].to_numpy()))
+        np.testing.assert_allclose(
+            out["x"].to_numpy(), (clean_df["x"].to_numpy() - 3.0) / np.std(clean_df["x"].to_numpy())
+        )
 
     def test_fit_transform_minmax(self, clean_df: pd.DataFrame) -> None:
         norm = Normalizer(method=NormalizationMethod.MINMAX, missing_policy=MissingPolicy.FAIL)
@@ -576,13 +574,17 @@ class TestNormalizerFitTransform:
         np.testing.assert_array_equal(clean_df["x"].to_numpy(), original)
 
     def test_mean_fill_during_transform(self, sample_df: pd.DataFrame) -> None:
-        norm = Normalizer(method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.MEAN_FILL)
+        norm = Normalizer(
+            method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.MEAN_FILL
+        )
         out, _ = norm.fit_transform(sample_df, ["a"])
         # No NaN should remain
         assert not out["a"].isna().any()
 
     def test_zero_fill_during_transform(self, sample_df: pd.DataFrame) -> None:
-        norm = Normalizer(method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.ZERO_FILL)
+        norm = Normalizer(
+            method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.ZERO_FILL
+        )
         out, _ = norm.fit_transform(sample_df, ["a"])
         assert not out["a"].isna().any()
 
@@ -592,7 +594,9 @@ class TestNormalizerFitTransform:
             norm.fit_transform(sample_df, ["a"])
 
     def test_n_missing_recorded(self, sample_df: pd.DataFrame) -> None:
-        norm = Normalizer(method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.MEAN_FILL)
+        norm = Normalizer(
+            method=NormalizationMethod.STANDARD, missing_policy=MissingPolicy.MEAN_FILL
+        )
         art = norm.fit(sample_df, ["a"])
         col = next(c for c in art.columns if c.column_name == "a")
         assert col.n_missing == 1
@@ -685,7 +689,10 @@ class TestMergeFoldNormalizers:
 
     def test_merge_multiple_artifacts(self) -> None:
         arts = [
-            _make_artifact(columns=[_make_stats("a"), _make_stats("b", mean=10.0, missing_fill_value=10.0)], fold_id=i)
+            _make_artifact(
+                columns=[_make_stats("a"), _make_stats("b", mean=10.0, missing_fill_value=10.0)],
+                fold_id=i,
+            )
             for i in range(3)
         ]
         merged = merge_fold_normalizers(arts)
@@ -698,7 +705,9 @@ class TestMergeFoldNormalizers:
 
     def test_merge_mismatched_columns_raises(self) -> None:
         a1 = _make_artifact(columns=[_make_stats("a")], fold_id=0)
-        a2 = _make_artifact(columns=[_make_stats("b", mean=10.0, missing_fill_value=10.0)], fold_id=1)
+        a2 = _make_artifact(
+            columns=[_make_stats("b", mean=10.0, missing_fill_value=10.0)], fold_id=1
+        )
         with pytest.raises(ValueError, match="same set of column names"):
             merge_fold_normalizers([a1, a2])
 
@@ -744,7 +753,7 @@ class TestEdgeCases:
     def test_all_missing_with_mean_fill_falls_back_to_zero(self) -> None:
         df = pd.DataFrame({"a": [np.nan, np.nan]})
         norm = Normalizer(method=NormalizationMethod.NONE, missing_policy=MissingPolicy.MEAN_FILL)
-        out, art = norm.fit_transform(df, ["a"])
+        out, _art = norm.fit_transform(df, ["a"])
         # mean is None -> falls back to 0.0
         assert not out["a"].isna().any()
 

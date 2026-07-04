@@ -19,13 +19,13 @@ of on a remote RunPod serverless worker.
 Usage:
     uv run python scripts/run_full_deep_training.py
 """
+
 from __future__ import annotations
 
 import json
 import os
 import pathlib
 import sys
-import tempfile
 import time
 
 # Bootstrap paths
@@ -53,6 +53,7 @@ def main() -> int:
 
     # Clean previous run
     import shutil
+
     if base_dir.exists():
         shutil.rmtree(base_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -148,6 +149,7 @@ def main() -> int:
     # Write worker status: started
     try:
         from worker_status import write_status
+
         write_status(job_id, "started")
         print(f"[worker_status] wrote 'started' for {job_id}")
     except ImportError:
@@ -160,6 +162,7 @@ def main() -> int:
     # Write worker status: completed
     try:
         from worker_status import write_status
+
         write_status(job_id, "completed", artifact_id=result.artifact_id)
         print(f"[worker_status] wrote 'completed' for {job_id}")
     except ImportError:
@@ -173,7 +176,6 @@ def main() -> int:
 
     # --- 7. Parse the callback envelope ---
     envelope = json.loads(result.callback_payload)
-    payload_dict = envelope
     print("-" * 70)
     print("CALLBACK ENVELOPE")
     print("-" * 70)
@@ -184,13 +186,13 @@ def main() -> int:
     dossier_data = envelope["payload"]["dossier"]
     artifact_data = envelope["payload"]["artifact_manifest"]
 
-    print(f"\n  Artifact:")
+    print("\n  Artifact:")
     print(f"    artifact_id:    {artifact_data['artifact_id']}")
     print(f"    sha256:         {artifact_data['sha256'][:16]}...")
     print(f"    size_bytes:     {artifact_data['size_bytes']:,}")
     print(f"    model_family:   {artifact_data['model_family']}")
 
-    print(f"\n  Dossier:")
+    print("\n  Dossier:")
     print(f"    model_id:       {dossier_data['model_id']}")
     print(f"    authority:      {dossier_data['authority']}")
     metrics = dossier_data["training_metrics"]
@@ -232,10 +234,10 @@ def main() -> int:
 
     final_rec = gateway.outbox.get(job_id)
     print(f"  Outbox status:  {final_rec.status.value}")
-    print(f"  Expected:       completed")
+    print("  Expected:       completed")
 
     if final_rec.status != JobStatus.COMPLETED:
-        print(f"\n  ERROR: job did not reach COMPLETED state!")
+        print("\n  ERROR: job did not reach COMPLETED state!")
         print(f"  error_code:    {final_rec.error_code}")
         print(f"  error_summary: {final_rec.error_summary}")
         return 1
@@ -269,9 +271,7 @@ def main() -> int:
     (results_dir / "artifact_manifest.json").write_text(
         json.dumps(artifact_data, indent=2), encoding="utf-8"
     )
-    (results_dir / "dossier.json").write_text(
-        json.dumps(dossier_data, indent=2), encoding="utf-8"
-    )
+    (results_dir / "dossier.json").write_text(json.dumps(dossier_data, indent=2), encoding="utf-8")
     (results_dir / "gateway_receipt.json").write_text(
         json.dumps(receipt, indent=2, default=str), encoding="utf-8"
     )

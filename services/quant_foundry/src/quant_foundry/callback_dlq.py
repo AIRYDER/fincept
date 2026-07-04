@@ -309,8 +309,7 @@ class CallbackDLQ:
             raise KeyError(f"unknown dlq_id: {dlq_id}")
         if not existing.is_retryable:
             raise ValueError(
-                f"dlq entry {dlq_id} is not retryable "
-                f"(reason={existing.rejection_reason.value})"
+                f"dlq entry {dlq_id} is not retryable (reason={existing.rejection_reason.value})"
             )
 
         now = time.time_ns()

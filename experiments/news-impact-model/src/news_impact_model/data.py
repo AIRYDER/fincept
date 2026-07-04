@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import asdict
 import json
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from news_impact_model.schema import HistoricalOutcome
-
 
 RETURN_PREFIXES = ("abnormal_return_", "return_")
 
@@ -70,10 +70,7 @@ def _load_json(path: Path) -> list[HistoricalOutcome]:
 def _load_csv(path: Path) -> list[HistoricalOutcome]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        return [
-            _outcome_from_mapping(row, location=f"{path}:{reader.line_num}")
-            for row in reader
-        ]
+        return [_outcome_from_mapping(row, location=f"{path}:{reader.line_num}") for row in reader]
 
 
 def _outcome_from_mapping(
@@ -146,9 +143,7 @@ def _parse_metadata(row: Mapping[str, Any]) -> dict[str, str]:
         parsed = _parse_json_if_needed(raw_metadata, location="metadata")
         if isinstance(parsed, dict):
             metadata.update(
-                (str(key), str(value))
-                for key, value in parsed.items()
-                if value not in (None, "")
+                (str(key), str(value)) for key, value in parsed.items() if value not in (None, "")
             )
 
     raw_metadata_json = row.get("metadata_json")
@@ -157,15 +152,18 @@ def _parse_metadata(row: Mapping[str, Any]) -> dict[str, str]:
         if not isinstance(parsed, dict):
             raise ValueError("metadata_json must be a JSON object")
         metadata.update(
-            (str(key), str(value))
-            for key, value in parsed.items()
-            if value not in (None, "")
+            (str(key), str(value)) for key, value in parsed.items() if value not in (None, "")
         )
 
     for key, value in row.items():
-        if key.startswith("metadata_") and key != "metadata_json" and value not in (
-            None,
-            "",
+        if (
+            key.startswith("metadata_")
+            and key != "metadata_json"
+            and value
+            not in (
+                None,
+                "",
+            )
         ):
             metadata[key.removeprefix("metadata_")] = str(value)
     return metadata

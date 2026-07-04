@@ -19,6 +19,7 @@ Requirements:
 Usage:
     uv run python scripts/runpod_gpu_train.py
 """
+
 from __future__ import annotations
 
 import json
@@ -229,7 +230,7 @@ def main() -> int:
     }
 
     print(f"  job_id:       {job_id}")
-    print(f"  model_family: lightgbm")
+    print("  model_family: lightgbm")
     print(f"  search_space: {job_input['search_space']}")
     print(f"  extra:        {job_input['extra_constraints']}")
 
@@ -292,7 +293,7 @@ def main() -> int:
     metrics = dossier_data.get("training_metrics", {})
     meta = dossier_data.get("metadata", {})
 
-    print(f"\n  Artifact:")
+    print("\n  Artifact:")
     print(f"    artifact_id:       {artifact_data.get('artifact_id', 'n/a')}")
     print(f"    sha256:            {artifact_data.get('sha256', 'n/a')[:16]}...")
     print(f"    size_bytes:        {artifact_data.get('size_bytes', 'n/a'):,}")
@@ -300,12 +301,12 @@ def main() -> int:
     print(f"    code_git_sha:      {artifact_data.get('code_git_sha', 'n/a')}")
     print(f"    container_digest:  {artifact_data.get('container_image_digest', 'n/a')}")
 
-    print(f"\n  Dossier:")
+    print("\n  Dossier:")
     print(f"    model_id:          {dossier_data.get('model_id', 'n/a')}")
     print(f"    authority:         {dossier_data.get('authority', 'n/a')}")
     print(f"    dataset_manifest:  {dossier_data.get('dataset_manifest_id', 'n/a')[:60]}...")
 
-    print(f"\n  Walk-Forward Metrics (out-of-sample):")
+    print("\n  Walk-Forward Metrics (out-of-sample):")
     print(f"    accuracy:          {metrics.get('accuracy', 'n/a')}")
     print(f"    logloss:           {metrics.get('logloss', 'n/a')}")
     print(f"    brier_score:       {meta.get('brier_score', 'n/a')}")
@@ -325,9 +326,7 @@ def main() -> int:
     (results_dir / "artifact_manifest.json").write_text(
         json.dumps(artifact_data, indent=2), encoding="utf-8"
     )
-    (results_dir / "dossier.json").write_text(
-        json.dumps(dossier_data, indent=2), encoding="utf-8"
-    )
+    (results_dir / "dossier.json").write_text(json.dumps(dossier_data, indent=2), encoding="utf-8")
     (results_dir / "runpod_output.json").write_text(
         json.dumps(output, indent=2, default=str), encoding="utf-8"
     )
@@ -335,7 +334,7 @@ def main() -> int:
     print(f"\n  Results saved to: {results_dir}")
 
     print(f"\n{'=' * 70}")
-    print(f"RUNPOD GPU TRAINING COMPLETE")
+    print("RUNPOD GPU TRAINING COMPLETE")
     print(f"{'=' * 70}")
     print(f"  RunPod Job:    {runpod_job_id}")
     print(f"  Artifact:      {artifact_id}")

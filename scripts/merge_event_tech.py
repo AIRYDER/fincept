@@ -7,11 +7,11 @@ Strategy: For each (symbol, decision_time) in the technical dataset,
 look for news events in the prior N days and aggregate their features.
 This adds event_count, avg_sentiment, avg_source_quality, category counts, etc.
 """
+
 import pathlib
-import json
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timezone
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -36,12 +36,23 @@ events["symbol"] = events["symbol"].str.upper()
 
 # Event feature columns to aggregate
 EVENT_FEATURE_COLS = [
-    "source_quality", "recency_score", "novelty_score",
-    "sentiment_score", "sentiment_confidence", "has_sentiment",
+    "source_quality",
+    "recency_score",
+    "novelty_score",
+    "sentiment_score",
+    "sentiment_confidence",
+    "has_sentiment",
 ]
 EVENT_CAT_COLS = [
-    "cat_earnings", "cat_analyst", "cat_general", "cat_market_move",
-    "cat_partnership", "cat_product", "cat_macro", "cat_regulatory", "cat_security",
+    "cat_earnings",
+    "cat_analyst",
+    "cat_general",
+    "cat_market_move",
+    "cat_partnership",
+    "cat_product",
+    "cat_macro",
+    "cat_regulatory",
+    "cat_security",
 ]
 
 # Group events by symbol
@@ -72,8 +83,12 @@ if "symbol" not in tech.columns:
 
     # Just use the event dataset with more features
     # Add technical-like features from the close price
-    events["close_log_ret_1d"] = np.log(events["close_at_event"] / events["close_at_event"].shift(1))
-    events["close_log_ret_5d"] = np.log(events["close_at_event"] / events["close_at_event"].shift(5))
+    events["close_log_ret_1d"] = np.log(
+        events["close_at_event"] / events["close_at_event"].shift(1)
+    )
+    events["close_log_ret_5d"] = np.log(
+        events["close_at_event"] / events["close_at_event"].shift(5)
+    )
 
     # Save enhanced event dataset
     out = events.copy()
@@ -82,7 +97,7 @@ if "symbol" not in tech.columns:
     print(f"\n  Saved enhanced event dataset: {out_path}")
     print(f"  Rows: {len(out)}, Cols: {len(out.columns)}")
 else:
-    print(f"  Symbol column found! Proceeding with merge...")
+    print("  Symbol column found! Proceeding with merge...")
 
     # For each technical row, find events in the prior 3 days
     LOOKBACK_NS = 3 * NS_PER_DAY

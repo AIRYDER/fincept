@@ -1,8 +1,10 @@
 """Quick NewsAPI test — just 2 requests."""
-import os
+
 import datetime as dt
-import httpx
+import os
 import time
+
+import httpx
 
 os.environ["NEWSAPI_KEY"] = "e25076a3f6b8426083f86079f8a5bf36"
 key = os.environ["NEWSAPI_KEY"]
@@ -13,8 +15,8 @@ r = httpx.get(
     "https://newsapi.org/v2/everything",
     params={
         "q": "AAPL OR Apple stock",
-        "from": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).strftime("%Y-%m-%d"),
-        "to": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d"),
+        "from": (dt.datetime.now(dt.UTC) - dt.timedelta(days=30)).strftime("%Y-%m-%d"),
+        "to": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"),
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": 5,
@@ -33,8 +35,8 @@ try:
         "https://newsapi.org/v2/everything",
         params={
             "q": "AAPL OR Apple stock",
-            "from": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=365)).strftime("%Y-%m-%d"),
-            "to": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d"),
+            "from": (dt.datetime.now(dt.UTC) - dt.timedelta(days=365)).strftime("%Y-%m-%d"),
+            "to": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"),
             "language": "en",
             "sortBy": "publishedAt",
             "pageSize": 5,
@@ -55,8 +57,8 @@ try:
         "https://newsapi.org/v2/everything",
         params={
             "q": "AAPL OR Apple stock",
-            "from": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1825)).strftime("%Y-%m-%d"),
-            "to": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d"),
+            "from": (dt.datetime.now(dt.UTC) - dt.timedelta(days=1825)).strftime("%Y-%m-%d"),
+            "to": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"),
             "language": "en",
             "sortBy": "publishedAt",
             "pageSize": 5,

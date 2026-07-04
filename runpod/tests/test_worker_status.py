@@ -24,9 +24,7 @@ from typing import Any
 import pytest
 
 # Add runpod/shared to sys.path so we can import worker_status.
-_SHARED_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "shared"
-)
+_SHARED_DIR = os.path.join(os.path.dirname(__file__), "..", "shared")
 if os.path.isdir(_SHARED_DIR):
     sys.path.insert(0, _SHARED_DIR)
 

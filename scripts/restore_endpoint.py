@@ -1,10 +1,13 @@
 """Restore training endpoint config to match working inference endpoint."""
-import httpx
+
 import os
 import sys
+import time
+
+import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import NETWORK_VOLUME_ID  # noqa: E402
+from runpod_config import NETWORK_VOLUME_ID
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = os.environ["RUNPOD_ENDPOINT_ID"]

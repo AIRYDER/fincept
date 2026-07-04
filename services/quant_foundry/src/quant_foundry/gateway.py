@@ -373,7 +373,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # and detect stale/crashed workers. Defaults to None (disabled).
         worker_status_dir = os.environ.get("QUANT_FOUNDRY_WORKER_STATUS_DIR", "")
         stale_threshold_str = os.environ.get(
-            "QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS", "60",
+            "QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS",
+            "60",
         )
         try:
             stale_threshold = float(stale_threshold_str)
@@ -584,9 +585,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 }
             # Completed — extract callback fields from the output.
             output = status.get("output")
-            callback_fields = _extract_callback_fields(
-                output if output is not None else status
-            )
+            callback_fields = _extract_callback_fields(output if output is not None else status)
             if callback_fields is None:
                 return {
                     "ok": False,

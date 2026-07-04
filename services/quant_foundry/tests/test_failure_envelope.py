@@ -24,7 +24,6 @@ import json
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.failure_envelope import (
     FailureCode,
     FailureContext,
@@ -38,7 +37,6 @@ from quant_foundry.failure_envelope import (
     validate_envelope,
     verify_signature,
 )
-
 
 SECRET = "test-callback-secret-1234"
 
@@ -427,7 +425,12 @@ class TestComputeEnvelopeHash:
             "failure_message": "x",
             "retryable": False,
             "stage": "unknown",
-            "context": {"job_id": "j", "stage": "unknown", "timestamp": "t", "context_hash": "a" * 64},
+            "context": {
+                "job_id": "j",
+                "stage": "unknown",
+                "timestamp": "t",
+                "context_hash": "a" * 64,
+            },
             "context_hash": "a" * 64,
             "created_at": "t",
         }
@@ -722,7 +725,10 @@ class TestSerializeDeserialize:
 
 class TestDistinguish:
     def test_none_is_missing_callback(self) -> None:
-        assert distinguish_missing_callback_vs_signed_failure(None, secret=SECRET) == "MISSING_CALLBACK"
+        assert (
+            distinguish_missing_callback_vs_signed_failure(None, secret=SECRET)
+            == "MISSING_CALLBACK"
+        )
 
     def test_valid_signature_is_signed_failure(self) -> None:
         builder = FailureEnvelopeBuilder(SECRET)
@@ -734,8 +740,7 @@ class TestDistinguish:
             job_id="job-1",
         )
         assert (
-            distinguish_missing_callback_vs_signed_failure(env, secret=SECRET)
-            == "SIGNED_FAILURE"
+            distinguish_missing_callback_vs_signed_failure(env, secret=SECRET) == "SIGNED_FAILURE"
         )
 
     def test_invalid_signature_is_tampered(self) -> None:
@@ -763,8 +768,7 @@ class TestDistinguish:
             job_id="job-1",
         )
         assert (
-            distinguish_missing_callback_vs_signed_failure(env, secret=None)
-            == "TAMPERED_FAILURE"
+            distinguish_missing_callback_vs_signed_failure(env, secret=None) == "TAMPERED_FAILURE"
         )
 
     def test_unsigned_envelope_is_tampered(self) -> None:
@@ -777,8 +781,7 @@ class TestDistinguish:
             job_id="job-1",
         )
         assert (
-            distinguish_missing_callback_vs_signed_failure(env, secret=SECRET)
-            == "TAMPERED_FAILURE"
+            distinguish_missing_callback_vs_signed_failure(env, secret=SECRET) == "TAMPERED_FAILURE"
         )
 
 

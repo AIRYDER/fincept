@@ -12,6 +12,7 @@ Usage:
     uv run python scripts/train_real_model.py
     uv run python scripts/train_real_model.py --symbols AAPL,MSFT,GOOGL,AMZN,NVDA --years 3
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,8 +38,9 @@ _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from datetime import UTC
+
 from build_dataset_manifest import (  # noqa: E402
-    NS_PER_DAY,
     build_dataset_manifest,
     write_dataset_parquet,
     write_manifest_json,
@@ -59,11 +61,12 @@ def fetch_yfinance_bars(
     Returns a dict mapping symbol → list of bar dicts with keys:
     ts_event (ns), open, high, low, close, volume.
     """
-    import yfinance as yf
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    end = datetime.now(timezone.utc)
-    start = datetime(end.year - years, end.month, end.day, tzinfo=timezone.utc)
+    import yfinance as yf
+
+    end = datetime.now(UTC)
+    start = datetime(end.year - years, end.month, end.day, tzinfo=UTC)
 
     bars_by_symbol: dict[str, list[dict[str, float]]] = {}
     for sym in symbols:
@@ -172,7 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"seed:{args.seed}",
     ]
 
-    manifest, availability, feature_rows, data_rows = build_dataset_manifest(
+    manifest, availability, _feature_rows, data_rows = build_dataset_manifest(
         bars_by_symbol,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,
@@ -280,8 +283,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Write worker status: started
     try:
         from worker_status import write_status
+
         write_status(job_id, "started")
-        print(f"  [worker_status] wrote 'started'")
+        print("  [worker_status] wrote 'started'")
     except ImportError:
         pass
 
@@ -304,6 +308,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Write worker status: completed
     try:
         from worker_status import write_status
+
         write_status(job_id, "completed", artifact_id=result.artifact_id)
     except ImportError:
         pass
@@ -321,7 +326,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("STEP 6: TRAINING RESULTS")
     print("=" * 70)
 
-    print(f"\n  Artifact:")
+    print("\n  Artifact:")
     print(f"    artifact_id:       {artifact_data['artifact_id']}")
     print(f"    sha256:            {artifact_data['sha256'][:16]}...")
     print(f"    size_bytes:        {artifact_data['size_bytes']:,}")
@@ -333,12 +338,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     metrics = dossier_data["training_metrics"]
     meta = dossier_data["metadata"]
 
-    print(f"\n  Dossier:")
+    print("\n  Dossier:")
     print(f"    model_id:          {dossier_data['model_id']}")
     print(f"    authority:         {dossier_data['authority']}")
     print(f"    dataset_manifest:  {dossier_data['dataset_manifest_id'][:60]}...")
 
-    print(f"\n  Walk-Forward Metrics (out-of-sample):")
+    print("\n  Walk-Forward Metrics (out-of-sample):")
     print(f"    accuracy:          {metrics.get('accuracy', 'n/a'):.6f}")
     print(f"    logloss:           {metrics.get('logloss', 'n/a'):.6f}")
     print(f"    brier_score:       {meta.get('brier_score', 'n/a')}")
@@ -349,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"    deflated_sharpe:   {dossier_data['deflated_sharpe']}")
 
     # Interpret the metrics
-    print(f"\n  Interpretation:")
+    print("\n  Interpretation:")
     acc = metrics.get("accuracy", 0.5)
     pbo = dossier_data["pbo"]
     dsr = dossier_data["deflated_sharpe"]
@@ -364,7 +369,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print(f"    PBO {pbo:.3f} — high overfitting risk (typical for simple features)")
     if dsr > 0.5:
-        print(f"    deflated Sharpe {dsr:.3f} — meaningful risk-adjusted edge after overfit penalty")
+        print(
+            f"    deflated Sharpe {dsr:.3f} — meaningful risk-adjusted edge after overfit penalty"
+        )
     elif dsr > 0:
         print(f"    deflated Sharpe {dsr:.3f} — small residual edge after overfit penalty")
     else:
@@ -396,7 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  Outbox status:  {final_rec.status.value}")
 
     if final_rec.status != JobStatus.COMPLETED:
-        print(f"  ERROR: job did not reach COMPLETED!")
+        print("  ERROR: job did not reach COMPLETED!")
         print(f"  error_code:    {final_rec.error_code}")
         print(f"  error_summary: {final_rec.error_summary}")
         return 1
@@ -421,9 +428,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     (results_dir / "artifact_manifest.json").write_text(
         json.dumps(artifact_data, indent=2), encoding="utf-8"
     )
-    (results_dir / "dossier.json").write_text(
-        json.dumps(dossier_data, indent=2), encoding="utf-8"
-    )
+    (results_dir / "dossier.json").write_text(json.dumps(dossier_data, indent=2), encoding="utf-8")
     (results_dir / "gateway_receipt.json").write_text(
         json.dumps(receipt, indent=2, default=str), encoding="utf-8"
     )

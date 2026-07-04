@@ -43,6 +43,7 @@ if str(_NEWS_SRC) not in sys.path:
 try:
     from news_impact_model.events import classify_event_type, normalize_event_type
 except ImportError:  # pragma: no cover
+
     def classify_event_type(headline: str, body: str = "") -> str:
         return "general"
 
@@ -110,6 +111,7 @@ class NewsAPISource:
         ``totalResults`` have been retrieved.
         """
         import datetime as dt
+
         import httpx
 
         try:
@@ -118,10 +120,12 @@ class NewsAPISource:
             return []
 
         start_date = dt.datetime.fromtimestamp(
-            start_ns / 1_000_000_000, tz=dt.timezone.utc,
+            start_ns / 1_000_000_000,
+            tz=dt.UTC,
         ).strftime("%Y-%m-%d")
         end_date = dt.datetime.fromtimestamp(
-            end_ns / 1_000_000_000, tz=dt.timezone.utc,
+            end_ns / 1_000_000_000,
+            tz=dt.UTC,
         ).strftime("%Y-%m-%d")
 
         # Build a query that includes the symbols for better targeting.
@@ -158,7 +162,10 @@ class NewsAPISource:
 
                 for article in articles:
                     item = self._normalize_article(
-                        article, symbols, start_ns, end_ns,
+                        article,
+                        symbols,
+                        start_ns,
+                        end_ns,
                     )
                     if item is not None:
                         items.append(item)
@@ -263,4 +270,4 @@ class NewsAPISource:
         return tuple(found)
 
 
-__all__ = ["NewsAPISource", "NEWSAPI_BASE_URL", "DEFAULT_MAX_PAGES"]
+__all__ = ["DEFAULT_MAX_PAGES", "NEWSAPI_BASE_URL", "NewsAPISource"]

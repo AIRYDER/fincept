@@ -33,7 +33,6 @@ from fincept_core.datasets import (
     ManifestDatasetLoader,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -92,10 +91,12 @@ def _write_manifest(
 
 
 def _write_csv(
-    tmp_path: pathlib.Path, rows: int = 5, *, name: str = "data.csv",
+    tmp_path: pathlib.Path,
+    rows: int = 5,
+    *,
+    name: str = "data.csv",
 ) -> tuple[pathlib.Path, str, str]:
     """Write a CSV data file and return (path, uri, sha256)."""
-    import io
     lines = ["timestamp,f1,f2,label"]
     for i in range(rows):
         lines.append(f"{i},{i * 1.0},{i * 2.0},{i % 2}")
@@ -136,12 +137,14 @@ class TestColumnRoles:
     def test_duplicate_feature_columns_fails(self) -> None:
         with pytest.raises(Exception, match="duplicate"):
             ColumnRoles(
-                feature_columns=("f1", "f1"), label_columns=("label",),
+                feature_columns=("f1", "f1"),
+                label_columns=("label",),
             )
 
     def test_frozen(self) -> None:
         roles = ColumnRoles(
-            feature_columns=("f1",), label_columns=("label",),
+            feature_columns=("f1",),
+            label_columns=("label",),
         )
         with pytest.raises(Exception):
             roles.feature_columns = ("f2",)  # type: ignore[misc]
@@ -211,9 +214,9 @@ class TestManifestDatasetLoaderHappyPath:
     """Acceptance: fetch manifest, verify sha, load data, verify hashes + row count."""
 
     def test_load_csv_with_full_verification(self, tmp_path: pathlib.Path) -> None:
-        pd = pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=5)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
+        pytest.importorskip("pandas")
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=5)
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
             tmp_path,
             data_uri=csv_uri,
             data_sha256=csv_sha,
@@ -240,10 +243,13 @@ class TestManifestDatasetLoaderHappyPath:
 
     def test_load_returns_dataframe(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=3)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=3,
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=3)
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=3,
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -260,15 +266,18 @@ class TestManifestDatasetLoaderHappyPath:
 
     def test_load_with_explicit_column_roles(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
         roles = ColumnRoles(
             feature_columns=("f1", "f2"),
             label_columns=("label",),
             timestamp_column="timestamp",
         )
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=2,
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -285,15 +294,18 @@ class TestManifestDatasetLoaderHappyPath:
 
     def test_load_with_manifest_column_roles(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
         roles_dict = {
             "feature_columns": ["f1", "f2"],
             "label_columns": ["label"],
             "timestamp_column": "timestamp",
         }
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=2,
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
             column_roles=roles_dict,
         )
         loader = ManifestDatasetLoader(
@@ -309,13 +321,17 @@ class TestManifestDatasetLoaderHappyPath:
         assert loaded.column_roles.label_columns == ("label",)
 
     def test_load_without_manifest_sha_skips_verification(
-        self, tmp_path: pathlib.Path,
+        self,
+        tmp_path: pathlib.Path,
     ) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
-        manifest_path, manifest_uri, _ = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=2,
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _manifest_path, manifest_uri, _ = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
         )
         # No manifest_sha256 declared → loader computes hash but does
         # not fail (canary/research permissive).
@@ -342,10 +358,13 @@ class TestManifestDatasetLoaderFailures:
 
     def test_bad_manifest_sha_fails(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
-        manifest_path, manifest_uri, _ = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=2,
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _manifest_path, manifest_uri, _ = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -359,11 +378,14 @@ class TestManifestDatasetLoaderFailures:
 
     def test_bad_data_sha_fails(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _csv_path, csv_uri, _csv_sha = _write_csv(tmp_path, rows=2)
         # Manifest declares a WRONG data sha — the actual data won't match.
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256="0" * 64,
-            data_format="csv", row_count=2,
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256="0" * 64,
+            data_format="csv",
+            row_count=2,
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -377,10 +399,13 @@ class TestManifestDatasetLoaderFailures:
 
     def test_bad_row_count_fails(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=5)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=999,  # wrong
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=5)
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=999,  # wrong
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -394,9 +419,11 @@ class TestManifestDatasetLoaderFailures:
 
     def test_unknown_data_format_fails(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
             data_format="xml",  # unsupported
             row_count=2,
         )
@@ -411,14 +438,16 @@ class TestManifestDatasetLoaderFailures:
         _assert_load_error("unknown_data_format", loader.load)
 
     def test_unknown_format_inferred_from_extension_fails(
-        self, tmp_path: pathlib.Path,
+        self,
+        tmp_path: pathlib.Path,
     ) -> None:
         pytest.importorskip("pandas")
         # Write a file with an unsupported extension.
         bad_path = tmp_path / "data.xml"
         bad_path.write_text("<x/>", encoding="utf-8")
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=bad_path.as_uri(),
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=bad_path.as_uri(),
             data_format=None,  # force inference from extension
         )
         loader = ManifestDatasetLoader(
@@ -431,8 +460,8 @@ class TestManifestDatasetLoaderFailures:
 
     def test_schema_hash_mismatch_fails(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
             tmp_path,
             data_uri=csv_uri,
             data_sha256=csv_sha,
@@ -461,7 +490,7 @@ class TestManifestDatasetLoaderFailures:
         _assert_load_error("fetch_failed", loader.load)
 
     def test_missing_data_file_fails(self, tmp_path: pathlib.Path) -> None:
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
             tmp_path,
             data_uri=(tmp_path / "nonexistent.csv").as_uri(),
             data_format="csv",
@@ -493,9 +522,12 @@ class TestManifestDatasetLoaderFailures:
         csv_bytes = b"label\n1\n2\n3\n"
         csv_path.write_bytes(csv_bytes)
         csv_sha = _sha256_bytes(csv_bytes)
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_path.as_uri(),
-            data_sha256=csv_sha, data_format="csv", row_count=3,
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_path.as_uri(),
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=3,
         )
         loader = ManifestDatasetLoader(
             manifest_uri=manifest_uri,
@@ -518,7 +550,7 @@ class TestDuckTypedSpec:
 
     def test_load_from_duck_typed_spec(self, tmp_path: pathlib.Path) -> None:
         pytest.importorskip("pandas")
-        csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=3)
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=3)
 
         class FakeSpec:
             manifest_uri = csv_uri  # will be set after manifest write
@@ -530,9 +562,12 @@ class TestDuckTypedSpec:
             feature_schema_hash = None
             label_schema_hash = None
 
-        manifest_path, manifest_uri, manifest_sha = _write_manifest(
-            tmp_path, data_uri=csv_uri, data_sha256=csv_sha,
-            data_format="csv", row_count=3,
+        _manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=3,
         )
         spec = FakeSpec()
         spec.manifest_uri = manifest_uri

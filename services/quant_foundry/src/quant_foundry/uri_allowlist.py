@@ -314,7 +314,7 @@ def redact_uri(uri: str) -> str:
     if not match:
         return uri
     scheme = match.group("scheme")
-    rest = uri[match.end():]
+    rest = uri[match.end() :]
     return f"{scheme}://***:***@{rest}"
 
 
@@ -383,9 +383,7 @@ def _validate_file_uri(
 
     # Reject well-known system paths regardless of the configured roots.
     for system_path in _SYSTEM_PATHS:
-        if resolved_posix == system_path or resolved_posix.startswith(
-            system_path + "/"
-        ):
+        if resolved_posix == system_path or resolved_posix.startswith(system_path + "/"):
             return _reject(
                 uri,
                 URIScheme.FILE,
@@ -460,9 +458,7 @@ def _validate_object_uri(
     allowed = {h.lower() for h in config.allowed_object_hosts}
     # Accept either an exact match or a suffix match where the host ends
     # with ``.<allowed>`` (e.g. ``my-bucket.s3.amazonaws.com``).
-    matched = host in allowed or any(
-        host.endswith("." + a) for a in allowed
-    )
+    matched = host in allowed or any(host.endswith("." + a) for a in allowed)
     if not matched:
         return _reject(uri, scheme, "bucket_not_allowed", host=host)
 
@@ -483,7 +479,7 @@ def _validate_runpod_volume_uri(
     prefix = "runpod_volume://"
     if not uri.lower().startswith(prefix):
         return _reject(uri, URIScheme.RUNPOD_VOLUME, "malformed_uri")
-    raw_path = uri[len(prefix):]
+    raw_path = uri[len(prefix) :]
     # ``runpod_volume:///workspace/data/x`` -> after stripping the
     # scheme prefix the remainder is ``/workspace/data/x`` (the extra
     # leading slash from ``///`` is part of an empty authority).
@@ -544,9 +540,7 @@ def validate_uri(uri: str, config: URIAllowlistConfig) -> URIValidationResult:
     # back to the parsed value only when the manual match misses.
     scheme_match = _SCHEME_RE.match(uri)
     raw_scheme = (
-        scheme_match.group("scheme").lower()
-        if scheme_match
-        else (parsed.scheme or "").lower()
+        scheme_match.group("scheme").lower() if scheme_match else (parsed.scheme or "").lower()
     )
     if not raw_scheme:
         return URIValidationResult(
@@ -596,14 +590,14 @@ def validate_uris(
 
 
 __all__ = [
-    "URIScheme",
     "URIAllowlistConfig",
+    "URIScheme",
     "URIValidationResult",
-    "validate_uri",
-    "validate_uris",
+    "has_path_traversal",
     "is_localhost",
     "is_private_ip",
-    "has_path_traversal",
     "is_under_root",
     "redact_uri",
+    "validate_uri",
+    "validate_uris",
 ]

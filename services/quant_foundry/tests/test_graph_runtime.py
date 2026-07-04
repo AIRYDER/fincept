@@ -29,7 +29,6 @@ from quant_foundry.graph_runtime import (
     TinyGNNModel,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -44,8 +43,7 @@ def _make_snapshot(
 ) -> GraphSnapshot:
     """Build a small valid snapshot for tests."""
     node_features = [
-        [float(i * node_feature_dim + j) for j in range(node_feature_dim)]
-        for i in range(n_nodes)
+        [float(i * node_feature_dim + j) for j in range(node_feature_dim)] for i in range(n_nodes)
     ]
     # Build a simple cycle of edges.
     src = [i % n_nodes for i in range(n_edges)]
@@ -122,9 +120,7 @@ class TestGraphImageSpec:
 
 class TestGraphSnapshotConfig:
     def test_valid_defaults(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8)
         assert cfg.n_nodes == 10
         assert cfg.n_edges == 20
         assert cfg.node_feature_dim == 8
@@ -140,9 +136,7 @@ class TestGraphSnapshotConfig:
 
     def test_extra_forbid(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, unexpected=1
-            )  # type: ignore[call-arg]
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, unexpected=1)  # type: ignore[call-arg]
 
     def test_n_nodes_minimum(self) -> None:
         with pytest.raises(Exception):
@@ -157,45 +151,31 @@ class TestGraphSnapshotConfig:
             GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=0)
 
     def test_edge_feature_dim_can_be_zero(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8, edge_feature_dim=0
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, edge_feature_dim=0)
         assert cfg.edge_feature_dim == 0
 
     def test_edge_feature_dim_negative_rejected(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, edge_feature_dim=-1
-            )
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, edge_feature_dim=-1)
 
     def test_n_layers_minimum(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, n_layers=0
-            )
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, n_layers=0)
 
     def test_hidden_dim_minimum(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, hidden_dim=0
-            )
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, hidden_dim=0)
 
     def test_dropout_lower_bound(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, dropout=-0.1
-            )
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, dropout=-0.1)
 
     def test_dropout_upper_bound(self) -> None:
         with pytest.raises(Exception):
-            GraphSnapshotConfig(
-                n_nodes=10, n_edges=20, node_feature_dim=8, dropout=1.0
-            )
+            GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, dropout=1.0)
 
     def test_dropout_zero_allowed(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8, dropout=0.0
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8, dropout=0.0)
         assert cfg.dropout == 0.0
 
     def test_custom_construction(self) -> None:
@@ -410,9 +390,7 @@ class TestGraphSnapshotLoader:
         snap = _make_snapshot()
         # Save as JSON directly.
         json_path = tmp_path / f"{snap.snapshot_id}.json"
-        json_path.write_text(
-            json.dumps(snap.model_dump(), indent=2), encoding="utf-8"
-        )
+        json_path.write_text(json.dumps(snap.model_dump(), indent=2), encoding="utf-8")
         loaded = loader.load(snap.snapshot_id)
         assert loaded.snapshot_id == snap.snapshot_id
         assert loaded.data_hash == snap.data_hash
@@ -423,9 +401,7 @@ class TestGraphSnapshotLoader:
         loader.save(_make_snapshot("npz-snap"))
         # Save another as json directly.
         snap = _make_snapshot("json-snap")
-        (tmp_path / "json-snap.json").write_text(
-            json.dumps(snap.model_dump()), encoding="utf-8"
-        )
+        (tmp_path / "json-snap.json").write_text(json.dumps(snap.model_dump()), encoding="utf-8")
         ids = loader.list_snapshots()
         assert "npz-snap" in ids
         assert "json-snap" in ids
@@ -438,9 +414,7 @@ class TestGraphSnapshotLoader:
 
 class TestGPUMemoryPlanner:
     def test_estimate_memory_returns_dict(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=100, n_edges=500, node_feature_dim=16
-        )
+        cfg = GraphSnapshotConfig(n_nodes=100, n_edges=500, node_feature_dim=16)
         planner = GPUMemoryPlanner(cfg)
         est = planner.estimate_memory()
         assert "node_memory_mb" in est
@@ -449,9 +423,7 @@ class TestGPUMemoryPlanner:
         assert "total_memory_mb" in est
 
     def test_estimate_memory_scales_with_nodes(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=100, n_edges=500, node_feature_dim=16
-        )
+        cfg = GraphSnapshotConfig(n_nodes=100, n_edges=500, node_feature_dim=16)
         planner = GPUMemoryPlanner(cfg)
         small = planner.estimate_memory(n_nodes=100)
         large = planner.estimate_memory(n_nodes=10000)
@@ -459,31 +431,21 @@ class TestGPUMemoryPlanner:
         assert large["total_memory_mb"] > small["total_memory_mb"]
 
     def test_estimate_memory_scales_with_edges(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=100, n_edges=500, node_feature_dim=16
-        )
+        cfg = GraphSnapshotConfig(n_nodes=100, n_edges=500, node_feature_dim=16)
         planner = GPUMemoryPlanner(cfg)
         small = planner.estimate_memory(n_edges=100)
         large = planner.estimate_memory(n_edges=100000)
         assert large["edge_memory_mb"] > small["edge_memory_mb"]
 
     def test_estimate_memory_total_is_sum(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=100, n_edges=500, node_feature_dim=16
-        )
+        cfg = GraphSnapshotConfig(n_nodes=100, n_edges=500, node_feature_dim=16)
         planner = GPUMemoryPlanner(cfg)
         est = planner.estimate_memory()
-        expected = (
-            est["node_memory_mb"]
-            + est["edge_memory_mb"]
-            + est["layer_memory_mb"]
-        )
+        expected = est["node_memory_mb"] + est["edge_memory_mb"] + est["layer_memory_mb"]
         assert abs(est["total_memory_mb"] - expected) < 1e-9
 
     def test_estimate_memory_positive(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8)
         planner = GPUMemoryPlanner(cfg)
         est = planner.estimate_memory()
         assert est["node_memory_mb"] > 0
@@ -492,47 +454,32 @@ class TestGPUMemoryPlanner:
         assert est["total_memory_mb"] > 0
 
     def test_estimate_memory_uses_config_defaults(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=50, n_edges=200, node_feature_dim=4
-        )
+        cfg = GraphSnapshotConfig(n_nodes=50, n_edges=200, node_feature_dim=4)
         planner = GPUMemoryPlanner(cfg)
         est = planner.estimate_memory()
         # No overrides -> uses config values.
-        est_explicit = planner.estimate_memory(
-            n_nodes=50, n_edges=200
-        )
+        est_explicit = planner.estimate_memory(n_nodes=50, n_edges=200)
         assert est == est_explicit
 
     def test_fits_in_gpu_true_when_plenty(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8)
         planner = GPUMemoryPlanner(cfg)
         assert planner.fits_in_gpu(available_mb=1024.0) is True
 
     def test_fits_in_gpu_false_when_tiny(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=100000, n_edges=500000, node_feature_dim=64
-        )
+        cfg = GraphSnapshotConfig(n_nodes=100000, n_edges=500000, node_feature_dim=64)
         planner = GPUMemoryPlanner(cfg)
         assert planner.fits_in_gpu(available_mb=0.001) is False
 
     def test_fits_in_gpu_with_overrides(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8)
         planner = GPUMemoryPlanner(cfg)
         # Small graph fits, large graph does not.
         assert planner.fits_in_gpu(1024.0, n_nodes=10, n_edges=20) is True
-        assert (
-            planner.fits_in_gpu(0.001, n_nodes=100000, n_edges=500000)
-            is False
-        )
+        assert planner.fits_in_gpu(0.001, n_nodes=100000, n_edges=500000) is False
 
     def test_fits_in_gpu_safety_margin(self) -> None:
-        cfg = GraphSnapshotConfig(
-            n_nodes=10, n_edges=20, node_feature_dim=8
-        )
+        cfg = GraphSnapshotConfig(n_nodes=10, n_edges=20, node_feature_dim=8)
         planner = GPUMemoryPlanner(cfg)
         est = planner.estimate_memory()
         # available exactly equal to estimate -> does not fit (20% margin).
@@ -587,9 +534,7 @@ class TestTinyGNNModel:
 
         model = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=8)
         node_features = torch.randn(4, 3)
-        edge_index = torch.tensor(
-            [[0, 0, 1, 1, 2, 3], [1, 2, 2, 3, 3, 0]], dtype=torch.long
-        )
+        edge_index = torch.tensor([[0, 0, 1, 1, 2, 3], [1, 2, 2, 3, 3, 0]], dtype=torch.long)
         out = model.forward(node_features, edge_index)
         assert out.shape == (4, 8)
 
@@ -598,9 +543,7 @@ class TestTinyGNNModel:
 
         model = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=4)
         node_features = torch.randn(5, 3)
-        edge_index = torch.tensor(
-            [[0, 1, 2, 3, 4], [1, 2, 3, 4, 0]], dtype=torch.long
-        )
+        edge_index = torch.tensor([[0, 1, 2, 3, 4], [1, 2, 3, 4, 0]], dtype=torch.long)
         edge_weight = torch.ones(5, dtype=torch.float32)
         out = model.forward(node_features, edge_index, edge_weight)
         assert out.shape == (5, 4)
@@ -609,13 +552,9 @@ class TestTinyGNNModel:
         import torch
 
         torch.manual_seed(42)
-        model = TinyGNNModel(
-            node_feature_dim=3, hidden_dim=8, output_dim=8
-        ).eval()
+        model = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=8).eval()
         node_features = torch.randn(4, 3)
-        edge_index = torch.tensor(
-            [[0, 1, 2, 3], [1, 2, 3, 0]], dtype=torch.long
-        )
+        edge_index = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 0]], dtype=torch.long)
         out1 = model.forward(node_features, edge_index)
         out2 = model.forward(node_features, edge_index)
         assert torch.allclose(out1, out2)
@@ -624,18 +563,12 @@ class TestTinyGNNModel:
         import torch
 
         # Use eval mode so dropout is disabled -> deterministic outputs.
-        model = TinyGNNModel(
-            node_feature_dim=3, hidden_dim=8, output_dim=8
-        ).eval()
+        model = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=8).eval()
         node_features = torch.randn(4, 3)
-        edge_index = torch.tensor(
-            [[0, 1, 2, 3], [1, 2, 3, 0]], dtype=torch.long
-        )
+        edge_index = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 0]], dtype=torch.long)
         out1 = model.forward(node_features, edge_index)
         sd = model.state_dict()
-        model2 = TinyGNNModel(
-            node_feature_dim=3, hidden_dim=8, output_dim=8
-        ).eval()
+        model2 = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=8).eval()
         model2.load_state_dict(sd)
         out2 = model2.forward(node_features, edge_index)
         assert torch.allclose(out1, out2)
@@ -751,9 +684,7 @@ class TestEdgeCases:
         # validation by default — so we test verify_hash directly.
         assert bad.verify_hash() is False
 
-    def test_snapshot_id_with_path_separators_sanitized(
-        self, tmp_path: Path
-    ) -> None:
+    def test_snapshot_id_with_path_separators_sanitized(self, tmp_path: Path) -> None:
         loader = GraphSnapshotLoader(str(tmp_path))
         snap = _make_snapshot(snapshot_id="group/sub/snap")
         path = loader.save(snap)

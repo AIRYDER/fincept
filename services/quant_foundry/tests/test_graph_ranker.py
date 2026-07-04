@@ -22,7 +22,6 @@ import pytest
 
 pytest.importorskip("torch")
 
-from quant_foundry.graph_runtime import GraphSnapshot
 from quant_foundry.graph_ranker import (
     GraphRanker,
     GraphRankerConfig,
@@ -34,8 +33,8 @@ from quant_foundry.graph_ranker import (
     validate_edge_availability,
     validate_promotion_eligibility,
 )
+from quant_foundry.graph_runtime import GraphSnapshot
 from quant_foundry.tabular_neural_runtime import GPUStatus
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -52,8 +51,7 @@ def _make_snapshot(
 ) -> GraphSnapshot:
     """Build a small valid snapshot for tests."""
     node_features = [
-        [float(i * node_feature_dim + j) for j in range(node_feature_dim)]
-        for i in range(n_nodes)
+        [float(i * node_feature_dim + j) for j in range(node_feature_dim)] for i in range(n_nodes)
     ]
     # Build a simple cycle of edges.
     src = [i % n_nodes for i in range(n_edges)]
@@ -288,30 +286,22 @@ class TestGraphRankerResult:
 
 class TestGraphRankerModel:
     def test_forward_pass(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         node_features = torch.tensor(
             [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
             dtype=torch.float32,
         )
-        edge_index = torch.tensor(
-            [[0, 1, 2], [1, 2, 0]], dtype=torch.long
-        )
+        edge_index = torch.tensor([[0, 1, 2], [1, 2, 0]], dtype=torch.long)
         scores = model.forward(node_features, edge_index)
         assert scores.shape == (3, 1)
 
     def test_forward_with_edge_weights(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
-        node_features = torch.tensor(
-            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=torch.float32
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
+        node_features = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=torch.float32)
         edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
         edge_weight = torch.tensor([1.0, 0.5], dtype=torch.float32)
         scores = model.forward(node_features, edge_index, edge_weight)
@@ -334,38 +324,28 @@ class TestGraphRankerModel:
             GraphRankerModel(node_feature_dim=3, dropout=1.0)
 
     def test_state_dict_round_trip(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model1 = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model1 = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         _ = model1.module  # build
         sd = model1.state_dict()
-        model2 = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model2 = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         _ = model2.module  # build
         model2.load_state_dict(sd)
-        node_features = torch.tensor(
-            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=torch.float32
-        )
+        node_features = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=torch.float32)
         edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
         s1 = model1.forward(node_features, edge_index)
         s2 = model2.forward(node_features, edge_index)
         assert torch.allclose(s1, s2)
 
     def test_eval_mode(self) -> None:
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.5
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.5)
         model.eval()
         # In eval mode, dropout is identity.
         assert model.module.training is False
 
     def test_train_mode(self) -> None:
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.5
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.5)
         model.train()
         assert model.module.training is True
 
@@ -711,18 +691,14 @@ class TestGraphRankerOOF:
 
 class TestComputeEdgeAttribution:
     def test_basic_attribution(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         model.to(torch.device("cpu"))
         model.eval()
         snap = _make_snapshot(n_nodes=4, n_edges=6, node_feature_dim=3)
         edge_types = _make_edge_types(6)
-        attribution = compute_edge_attribution(
-            model=model, snapshot=snap, edge_types=edge_types
-        )
+        attribution = compute_edge_attribution(model=model, snapshot=snap, edge_types=edge_types)
         assert len(attribution) > 0
         assert all(v >= 0.0 for v in attribution.values())
         # All edge types present in edge_types should be in attribution.
@@ -730,49 +706,43 @@ class TestComputeEdgeAttribution:
             assert etype in attribution
 
     def test_attribution_length_mismatch_raises(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         model.to(torch.device("cpu"))
         snap = _make_snapshot(n_nodes=4, n_edges=6, node_feature_dim=3)
         with pytest.raises(ValueError):
             compute_edge_attribution(
-                model=model, snapshot=snap, edge_types=["sector"]  # too few
+                model=model,
+                snapshot=snap,
+                edge_types=["sector"],  # too few
             )
 
     def test_attribution_single_edge_type(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         model.to(torch.device("cpu"))
         snap = _make_snapshot(n_nodes=4, n_edges=6, node_feature_dim=3)
         edge_types = ["sector"] * 6
-        attribution = compute_edge_attribution(
-            model=model, snapshot=snap, edge_types=edge_types
-        )
+        attribution = compute_edge_attribution(model=model, snapshot=snap, edge_types=edge_types)
         assert "sector" in attribution
         # Masking all edges of the only type -> all edges removed.
         assert attribution["sector"] >= 0.0
 
     def test_attribution_with_edge_weights(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
-        model = GraphRankerModel(
-            node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0
-        )
+        model = GraphRankerModel(node_feature_dim=3, hidden_dim=8, n_layers=2, dropout=0.0)
         model.to(torch.device("cpu"))
         snap = _make_snapshot(
-            n_nodes=4, n_edges=6, node_feature_dim=3,
+            n_nodes=4,
+            n_edges=6,
+            node_feature_dim=3,
             edge_weights=[1.0, 0.5, 0.8, 0.3, 0.9, 0.2],
         )
         edge_types = _make_edge_types(6)
-        attribution = compute_edge_attribution(
-            model=model, snapshot=snap, edge_types=edge_types
-        )
+        attribution = compute_edge_attribution(model=model, snapshot=snap, edge_types=edge_types)
         assert len(attribution) > 0
 
 
@@ -784,22 +754,16 @@ class TestComputeEdgeAttribution:
 class TestValidateEdgeAvailability:
     def test_valid_snapshot_time(self) -> None:
         snap = _make_snapshot(snapshot_time="2024-01-01T00:00:00+00:00")
-        assert validate_edge_availability(
-            snap, decision_time="2024-01-02T00:00:00+00:00"
-        ) is True
+        assert validate_edge_availability(snap, decision_time="2024-01-02T00:00:00+00:00") is True
 
     def test_equal_snapshot_time(self) -> None:
         snap = _make_snapshot(snapshot_time="2024-01-01T00:00:00+00:00")
-        assert validate_edge_availability(
-            snap, decision_time="2024-01-01T00:00:00+00:00"
-        ) is True
+        assert validate_edge_availability(snap, decision_time="2024-01-01T00:00:00+00:00") is True
 
     def test_future_snapshot_time_raises(self) -> None:
         snap = _make_snapshot(snapshot_time="2024-01-03T00:00:00+00:00")
         with pytest.raises(ValueError, match="future edge"):
-            validate_edge_availability(
-                snap, decision_time="2024-01-01T00:00:00+00:00"
-            )
+            validate_edge_availability(snap, decision_time="2024-01-01T00:00:00+00:00")
 
     def test_per_edge_valid(self) -> None:
         snap = _make_snapshot(n_edges=3, snapshot_time="2024-01-01T00:00:00+00:00")
@@ -808,11 +772,14 @@ class TestValidateEdgeAvailability:
             "2023-12-31T00:00:00+00:00",
             "2024-01-01T12:00:00+00:00",
         ]
-        assert validate_edge_availability(
-            snap,
-            decision_time="2024-01-02T00:00:00+00:00",
-            edge_available_at=edge_avail,
-        ) is True
+        assert (
+            validate_edge_availability(
+                snap,
+                decision_time="2024-01-02T00:00:00+00:00",
+                edge_available_at=edge_avail,
+            )
+            is True
+        )
 
     def test_per_edge_future_raises(self) -> None:
         snap = _make_snapshot(n_edges=3, snapshot_time="2024-01-01T00:00:00+00:00")
@@ -1083,7 +1050,9 @@ class TestEdgeCases:
         node_ids = ["AAPL", "MSFT", "GOOG", "AMZN"]
         ranker = GraphRanker(cfg, node_ids=node_ids)
         snap = _make_snapshot(
-            n_nodes=4, n_edges=6, node_feature_dim=3,
+            n_nodes=4,
+            n_edges=6,
+            node_feature_dim=3,
             edge_weights=[1.0, 0.5, 0.8, 0.3, 0.9, 0.2],
         )
         labels = _make_labels(4)
@@ -1103,7 +1072,9 @@ class TestPITSafeFlow:
         node_ids = ["AAPL", "MSFT", "GOOG", "AMZN"]
         ranker = GraphRanker(cfg, node_ids=node_ids)
         snap = _make_snapshot(
-            n_nodes=4, n_edges=6, node_feature_dim=3,
+            n_nodes=4,
+            n_edges=6,
+            node_feature_dim=3,
             snapshot_time="2024-01-01T00:00:00+00:00",
         )
         labels = _make_labels(4)

@@ -17,8 +17,6 @@ from __future__ import annotations
 import pathlib
 import sys
 
-import pytest
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -38,7 +36,7 @@ def _make_item(
     source: str = "newsapi",
     url: str | None = None,
     available_at_ns: int = 1_000_000_000,
-) -> "object":
+) -> object:
     """Create a minimal MediaItem for dedup testing."""
     from quant_foundry.modules.registry import MediaItem
 
@@ -74,10 +72,12 @@ def test_dedup_content_hash() -> None:
     from quant_foundry.modules.sources.dedup import deduplicate_items
 
     items = [
-        _make_item("src-a-1", headline="Company beats earnings", body="Strong quarter...",
-                   source="newsapi"),
-        _make_item("src-b-1", headline="Company beats earnings", body="Strong quarter...",
-                   source="reddit"),
+        _make_item(
+            "src-a-1", headline="Company beats earnings", body="Strong quarter...", source="newsapi"
+        ),
+        _make_item(
+            "src-b-1", headline="Company beats earnings", body="Strong quarter...", source="reddit"
+        ),
     ]
 
     result = deduplicate_items(items)
@@ -91,10 +91,12 @@ def test_dedup_url_match() -> None:
     from quant_foundry.modules.sources.dedup import deduplicate_items
 
     items = [
-        _make_item("url-1", headline="Headline A", body="Body A",
-                   url="https://example.com/story/123"),
-        _make_item("url-2", headline="Headline B", body="Body B",
-                   url="https://example.com/story/123"),
+        _make_item(
+            "url-1", headline="Headline A", body="Body A", url="https://example.com/story/123"
+        ),
+        _make_item(
+            "url-2", headline="Headline B", body="Body B", url="https://example.com/story/123"
+        ),
     ]
 
     result = deduplicate_items(items)
@@ -124,12 +126,9 @@ def test_dedup_no_duplicates() -> None:
     from quant_foundry.modules.sources.dedup import deduplicate_items
 
     items = [
-        _make_item("u1", headline="Unique 1", body="Body 1",
-                   url="https://example.com/1"),
-        _make_item("u2", headline="Unique 2", body="Body 2",
-                   url="https://example.com/2"),
-        _make_item("u3", headline="Unique 3", body="Body 3",
-                   url="https://example.com/3"),
+        _make_item("u1", headline="Unique 1", body="Body 1", url="https://example.com/1"),
+        _make_item("u2", headline="Unique 2", body="Body 2", url="https://example.com/2"),
+        _make_item("u3", headline="Unique 3", body="Body 3", url="https://example.com/3"),
     ]
 
     result = deduplicate_items(items)
@@ -146,7 +145,7 @@ def test_dedup_no_duplicates() -> None:
 
 def test_newsapi_pagination_config() -> None:
     """NewsAPI accepts max_pages config; default is 5."""
-    from quant_foundry.modules.sources.newsapi import NewsAPISource, DEFAULT_MAX_PAGES
+    from quant_foundry.modules.sources.newsapi import DEFAULT_MAX_PAGES, NewsAPISource
 
     # Default
     mod_default = NewsAPISource()
@@ -160,8 +159,8 @@ def test_newsapi_pagination_config() -> None:
 def test_stocktwits_pagination_config() -> None:
     """StockTwits accepts max_pages config; default is 3."""
     from quant_foundry.modules.sources.stocktwits import (
-        StockTwitsSource,
         DEFAULT_MAX_PAGES,
+        StockTwitsSource,
     )
 
     # Default
@@ -175,7 +174,7 @@ def test_stocktwits_pagination_config() -> None:
 
 def test_reddit_pagination_config() -> None:
     """Reddit accepts max_pages config; default is 2."""
-    from quant_foundry.modules.sources.reddit import RedditSource, DEFAULT_MAX_PAGES
+    from quant_foundry.modules.sources.reddit import DEFAULT_MAX_PAGES, RedditSource
 
     # Default
     mod_default = RedditSource()
@@ -194,8 +193,8 @@ def test_x_twitter_pagination_config() -> None:
     can be instantiated.
     """
     from quant_foundry.modules.sources.x_twitter import (
-        XTwitterSource,
         DEFAULT_MAX_RESULTS,
+        XTwitterSource,
     )
 
     # Default
@@ -215,8 +214,8 @@ def test_x_twitter_pagination_config() -> None:
 def test_reddit_comments_config() -> None:
     """Reddit has fetch_comments and max_comments_per_post config options."""
     from quant_foundry.modules.sources.reddit import (
-        RedditSource,
         DEFAULT_MAX_COMMENTS_PER_POST,
+        RedditSource,
     )
 
     # Defaults
@@ -225,9 +224,11 @@ def test_reddit_comments_config() -> None:
     assert mod_default.max_comments_per_post == DEFAULT_MAX_COMMENTS_PER_POST == 5
 
     # Custom
-    mod_custom = RedditSource(config={
-        "fetch_comments": True,
-        "max_comments_per_post": 20,
-    })
+    mod_custom = RedditSource(
+        config={
+            "fetch_comments": True,
+            "max_comments_per_post": 20,
+        }
+    )
     assert mod_custom.fetch_comments is True
     assert mod_custom.max_comments_per_post == 20

@@ -1,10 +1,10 @@
 # RunPod Training-Worker Fix — Receipt Index
 
-Last consolidated: 2026-07-04 (pass #11)
+Last consolidated: 2026-07-04 (pass #12)
 Consolidator: autonomous receipt consolidation pass
 Branch: `fix/test-harness-optional-deps-guards`
-Newest commit reviewed: `6e85f44c` (evidence(runpod): A6 live gpu_healthcheck PASSED — RTX 4090 visible) — HEAD is AT this commit; **no new commits since pass #8** (`git log 6e85f44c..HEAD` empty across pass #9, #10, AND #11)
-Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (receipts `reports/runpod-test-runs/6dbec436/` and `reports/runpod-test-runs/6dbec436/live-canary/`) **AND GPU HEALTHCHECK PASSED** (receipt `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`, commit `6e85f44c`) **AND A7 TRAIN_MODEL PASSED** (receipt `reports/runpod-test-runs/6dbec436/train-model/` — full training pipeline proven live: dataset load → trainer.fit → model export)
+Newest commit reviewed: `f656ccaf` (docs(runpod): D7 consolidation — pass #7-#11 index edits, task queues v6-v10, pass receipts, CI triage receipts #4-#8) — HEAD is AT this commit. Two new commits landed since pass #11: `6963cde7` (A7 live train_model PASSED) and `f656ccaf` (D7 consolidation committed). **Tasks A7 and D7 are now DONE.**
+Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (receipts `reports/runpod-test-runs/6dbec436/` and `reports/runpod-test-runs/6dbec436/live-canary/`) **AND GPU HEALTHCHECK PASSED** (receipt `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`, commit `6e85f44c`) **AND A7 TRAIN_MODEL PASSED** (receipt `reports/runpod-test-runs/6dbec436/train-model/`, commit `6963cde7` — full training pipeline proven live: dataset load → trainer.fit → model export). **All critical live unknowns are RESOLVED.**
 
 > **Pass #7 was a doc-only consolidation** (uncommitted in the worktree). It
 > recorded that D4/D5 are DONE and updated this index to "Newest commit
@@ -15,11 +15,11 @@ Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (r
 > (candidate for a D7-class doc commit, pending B1 disposition). Do NOT
 > re-commit the CI triage receipts #1–#3, the pass #5 index, or the v3/v4/v5
 > task queues — those are already committed (D4/D5 DONE).
->
+> 
 > **Pass #8 reviewed commit `6e85f44c` — A6 live gpu_healthcheck
 > PASSED.** The GPU is accessible inside the production `6dbec436` container
 > (NVIDIA GeForce RTX 4090, 24 GB VRAM). Task **A6 is DONE**.
->
+> 
 > **A7 (minimal `train_model` job) is now DONE (2026-07-04).** A live
 > implicit train_model job against the exact-SHA `6dbec436` image reached
 > `COMPLETED` in 1656 ms (job `1363ef31-c7aa-4e57-acd1-c090a825c6e2-u1`,
@@ -47,6 +47,7 @@ to find the repo root, but in the RunPod container the file is at
 `data_ingestion/__init__.py`, which imported `equities.py`, which crashed.
 
 **The fix is committed AND VALIDATED LIVE.** Commit `6dbec436`:
+
 - Guards the `parents[5]` index (`len(_parents) > 5` else `None`) and skips
   `sys.path` insertion when `scripts/` is absent in the worker image.
 - Wraps the `build_dataset_manifest` / `news_impact_model.events` imports in
@@ -103,14 +104,48 @@ image with the worker healthy throughout.
 
 ## What Changed (since last consolidation)
 
+### Pass #12 (A7 live evidence + D7 consolidation commit — commits `6963cde7` + `f656ccaf`)
+
+Two commits landed since pass #11 reviewed `6e85f44c`. **Both are durable
+evidence/doc-only — no code changes to the RunPod fix path, no Dockerfiles,
+no live cloud spend beyond the A7 run itself, no secrets.**
+
+| Commit     | Type                         | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `6963cde7` | evidence (A7 live) + tooling | **A7 live train_model PASSED.** Dispatched a minimal implicit train_model job (inline 300-row synthetic dataset, lightgbm, n_folds=2, canary mode) against the exact-SHA production image `6dbec436c92b57a788b84622338baacc3df8665d`. Job `1363ef31-c7aa-4e57-acd1-c090a825c6e2-u1` COMPLETED in 1656ms on endpoint `sj5lj1vxhydaja`; worker `puo9wdtddc2ag9` stayed `unhealthy=0` throughout. Proves dataset loading (300x3 CSV), RealLightGBMTrainer walk-forward + final fit (accuracy 0.835), and model export (337368-byte pickle, sha256 re-verified, HMAC write receipt). Local in-process smoke of the same payload produced the identical model sha256 (deterministic cross-check). Adds `runpod/quant-foundry-training/run_train_model.py` (reuses `run_live_canary.py` helpers, `--local` smoke mode, 600s ready timeout for cold image pulls) and `ruff.toml` per-file-ignores. Receipt bundle at `reports/runpod-test-runs/6dbec436/train-model/`. 855 insertions. **Task A7 is DONE.** |
+| `f656ccaf` | docs (D7 consolidation)      | **D7 consolidation committed.** Doc-only commit bundling the pass #7–#11 `RECEIPT_INDEX.md` edits, the v5 queue D4/D5-done edits, swarm task queues v6–v10, the pass #7 (`3098f11f`) and pass #8 (`6e85f44c`) consolidation receipts, and CI triage receipts #4–#8 (`receipt-20260704T040200Z/063000Z/091000Z/091200Z/092500Z`). 8160 insertions, 88 deletions. B1 items (`api.Dockerfile`, `SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md`) intentionally NOT included — operator disposition required. **Task D7 is DONE.**                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+**Net result of pass #12:** the investigation's single entry point
+(`RECEIPT_INDEX.md`), the open-task source of truth (v10 queue), the pass
+#7/#8 receipts, and CI triage receipts #4–#8 are all **now committed in
+git**. The full training pipeline (A7) is proven live. **All critical live
+unknowns are resolved** — canary 6/6, GPU healthcheck, and train_model all
+PASSED on the `6dbec436` image. The dirty worktree is now reduced to just
+the four B1 `do not automate` items.
+
+**Currently uncommitted (pass #12 worktree — all B1-classified `do not automate`):**
+
+- `infra/docker/api.Dockerfile` (modified) — pre-existing, unrelated to
+  RunPod fix; likely real fix for F2 `build (api)` failure (adds
+  `COPY experiments experiments`). See task C9.
+- `SESSION_HANDOFF.md` (untracked) — STALE. Predates the `parents[5]` fix.
+- `handoffs/2026-07-03_01-51_fix-runpod-training-crash/` (untracked) — STALE.
+- `kimiSuggestionFix.md` (untracked) — 15-item config/deployment hygiene
+  audit. Source material for Lane C tasks.
+
+These are explicitly `do not automate` (task B1) and were NOT bundled into
+the D7 commit. The pass #12 index edit (this edit) is the only new
+uncommitted doc change — candidate for a future D-lane commit alongside
+any B1 disposition.
+
 ### Pass #7 + pass #8 (consolidation + A6 live evidence — commit `6e85f44c`)
 
 Pass #7 was a doc-only consolidation (uncommitted) that recorded D4/D5 as
 DONE and updated this index to "Newest commit reviewed `3098f11f`". Pass #8
 (this pass) reviewed the one new commit since pass #7:
 
-| Commit | Type | Summary |
-|--------|------|---------|
+| Commit     | Type               | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `6e85f44c` | evidence (A6 live) | **A6 live gpu_healthcheck PASSED.** Dispatched a `gpu_healthcheck` job (mode=canary) against the exact-SHA production image `6dbec436c92b57a788b84622338baacc3df8665d`. Job `4f63ca8b-...-u1` COMPLETED in 3.5s (executionTime=3474ms). GPU is accessible: `gpu_capable=true`, `gpu_model=NVIDIA GeForce RTX 4090`, `gpu_count=1`, `gpu_memory_mb=24564` (~24 GB VRAM), `nvidia_smi_available=true`. Worker `dzy1mxoua2ojqb` stayed `unhealthy=0` throughout. SecurityPreflight `passed=true`. Signed callback payload produced. Endpoint `6hl6v67nybijwy` created fresh, scaled down + deleted after. Library GPU flags: `xgboost_gpu=true`, `catboost_gpu=true`, `lightgbm_gpu=false`. Adds `run_gpu_healthcheck.py` (reuses `run_live_canary.py` helpers) + `ruff.toml` per-file-ignores. Receipt bundle at `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`. 545 insertions. **Task A6 is DONE.** |
 
 **Net result of pass #7 + pass #8:** the GPU is proven accessible inside the
@@ -120,6 +155,7 @@ validated live. The single remaining critical live unknown is **A7** (minimal
 queue's A6 section is now STALE.
 
 **Currently uncommitted (pass #8 worktree):**
+
 - `docs/runpod-fix-plan/RECEIPT_INDEX.md` (modified) — pass #7 + pass #8
   consolidation edits. Durable evidence — candidate for committing (see D7).
 - `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` (modified) — pass #7 edits
@@ -157,11 +193,11 @@ commit, pending B1 disposition).
 Three commits landed since pass #5 reviewed `677c77ed`. **No code, no
 Dockerfiles, no live cloud, no secrets.**
 
-| Commit | Type | Summary |
-|--------|------|---------|
-| `748eef6c` | evidence (D4) | Committed the three hourly CI triage receipts under `reports/ci-triage/` (`receipt-20260703T200535Z.md`, `receipt-20260703T213000Z.md`, `receipt-20260703T224000Z.md`). 390 insertions. Documents pre-existing CI/security debt (F1–F4) and `build-runpod-training` status across three windows. |
+| Commit     | Type          | Summary                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `748eef6c` | evidence (D4) | Committed the three hourly CI triage receipts under `reports/ci-triage/` (`receipt-20260703T200535Z.md`, `receipt-20260703T213000Z.md`, `receipt-20260703T224000Z.md`). 390 insertions. Documents pre-existing CI/security debt (F1–F4) and `build-runpod-training` status across three windows.                    |
 | `3940271b` | evidence (D5) | Committed the pass #5 `RECEIPT_INDEX.md` consolidation (3/3 → 6/6 canary, second independent run finding #8, pass #5 CI status, stale-instruction correction) plus v3/v4/v5 swarm task queues. 3898 insertions, 69 deletions. **v5 is the current open-task source of truth; v3/v4 kept for history (superseded).** |
-| `3098f11f` | evidence | Committed the pass #6 receipt (`reports/runpod-test-runs/3940271b/RECEIPT.md`). 136 insertions. Doc-only, no spend. |
+| `3098f11f` | evidence      | Committed the pass #6 receipt (`reports/runpod-test-runs/3940271b/RECEIPT.md`). 136 insertions. Doc-only, no spend.                                                                                                                                                                                                 |
 
 **Net result of pass #6:** the investigation's single entry point
 (`RECEIPT_INDEX.md`) and open-task source of truth (v5 queue) are now
@@ -171,6 +207,7 @@ D5 are DONE** — do NOT re-commit the CI triage receipts, the index, or the
 task queues.
 
 **Currently uncommitted (pass #7 worktree, all B1-classified `do not automate`):**
+
 - `infra/docker/api.Dockerfile` (modified) — pre-existing, unrelated to RunPod fix; likely real fix for F2 `build (api)` failure (adds `COPY experiments experiments`). See v5 task C9.
 - `SESSION_HANDOFF.md` (untracked) — STALE. Predates the `parents[5]` fix; describes the superseded bisect-`handler()` approach and old commit `d15482ff`. Misleading if read as current.
 - `handoffs/2026-07-03_01-51_fix-runpod-training-crash/` (untracked) — STALE. Same superseded narrative.
@@ -186,9 +223,9 @@ the dirty-worktree list is reduced to the four B1 items above.
 Pass #4's live validation evidence is now **COMMITTED**. Two new commits
 landed since pass #4 reviewed `6dbec436`:
 
-| Commit | Type | Summary |
-|--------|------|---------|
-| `a4cacc64` | evidence | Committed the first live canary receipt bundle (`reports/runpod-test-runs/6dbec436/` — endpoint `4jc1opwj11zmai`, 3/3 COMPLETED), the pass #4 `RECEIPT_INDEX.md` edits, and `07-remaining-work.md` status updates. Raw evidence: `canary-probe.jsonl`, `health-before/after.json`, `cleanup.json`. |
+| Commit     | Type               | Summary                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a4cacc64` | evidence           | Committed the first live canary receipt bundle (`reports/runpod-test-runs/6dbec436/` — endpoint `4jc1opwj11zmai`, 3/3 COMPLETED), the pass #4 `RECEIPT_INDEX.md` edits, and `07-remaining-work.md` status updates. Raw evidence: `canary-probe.jsonl`, `health-before/after.json`, `cleanup.json`.                                                          |
 | `677c77ed` | evidence + tooling | Added a **second** independent live canary run (`reports/runpod-test-runs/6dbec436/live-canary/` — endpoints `yyxwraovovy1un`/`yju9c75p80odby`/`rzw1aifoi2zhc7`, 3/3 COMPLETED), the reusable `runpod/quant-foundry-training/run_live_canary.py` tool, `ruff.toml` per-file-ignores for it, task queue v2 (`08-swarm-task-queue-v2.md`), and index updates. |
 
 **Net result:** the production canary has now PASSED **6/6** across two
@@ -196,6 +233,7 @@ independent live runs (two different endpoint sets, two different worker
 IDs). The `parents[5]` fix is confirmed live twice over.
 
 **Currently uncommitted (pass #5 worktree):**
+
 - `docs/runpod-fix-plan/09-swarm-task-queue-v3.md` (untracked) — task queue v3
 - `docs/runpod-fix-plan/10-swarm-task-queue-v4.md` (untracked) — task queue v4, **supersedes v3**, the current open-task source of truth
 - `reports/ci-triage/` (untracked) — 3 hourly CI triage receipts (20:05, 21:30, 22:40 UTC)
@@ -216,6 +254,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 ## What Was Proven (live, with receipts)
 
 1. **Sentinel handler completes a live RunPod job inside the training image shape.**
+   
    - Receipt: `reports/runpod-test-runs/d7ba5a2d/` (Test E, SHA `d7ba5a2d`).
    - Endpoint `fqa18kqj9exo62`, job `260259a7-...-u2`, `COMPLETED`,
      executionTime 70ms, delayTime 4598ms, worker stayed healthy.
@@ -223,6 +262,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
      entrypoint, and container runtime are all functional.
 
 2. **Production handler fails live when it IS the direct RunPod entrypoint.**
+   
    - Receipt: `reports/runpod-test-runs/c508103f/swarm-scaffold/` (SHA `c508103f`).
    - Endpoint `635ywogaldb3r2`, job `eada80f8-...-u2`, worker went
      `unhealthy=1, running=0` 6s after dispatch, job stuck `IN_QUEUE` until
@@ -230,6 +270,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
    - Raw evidence: `canary-probe.jsonl`, `health-after.json`, `cancel.json`.
 
 3. **Production handler PASSES live when called via the bisect wrapper.**
+   
    - Receipt: `reports/runpod-test-runs/c0f15fa7/import-bisection/` (Test F,
      `full_handler_call` profile, SHA `c0f15fa7`).
    - Endpoint `l4g3f0egagavmc`, job `11f344ec-...-u1`, `COMPLETED` in ~5s
@@ -240,6 +281,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
      `handler` function is passed to `runpod.serverless.start()`.
 
 4. **All 11 other import bisection profiles PASSED live.**
+   
    - Receipt: `reports/runpod-test-runs/c0f15fa7/import-bisection/summary.json`
    - Profiles: sentinel, pandas_numpy, xgboost, catboost, torch,
      signatures_schemas, runpod_training, quality_report, dataset_manifest,
@@ -249,6 +291,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
      the worker at dispatch time.
 
 5. **The `full_handler_import` profile PASSED live.**
+   
    - Endpoint `enpgwuvvhnl1d4`, job `317f0615-...-u1`, `COMPLETED`.
    - This profile imports `handler_full` (the production handler module) at
      module top — running ALL its module-level imports — but does NOT call
@@ -256,6 +299,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
      imports do NOT crash the worker.
 
 6. **The `parents[5]` fix passes LOCAL gates (commit `6dbec436`).**
+   
    - NOT a live receipt — local verification only.
    - ruff clean on touched code; pytest 7+4 passed (includes the new
      `test_receipt_integrity.py` guard); local callback-secret canary
@@ -266,6 +310,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 
 7. **The `parents[5]` fix makes the production handler work LIVE as the direct
    RunPod entrypoint.** *(pass #4 — receipt committed in `a4cacc64`)*
+   
    - Receipt: `reports/runpod-test-runs/6dbec436/`.
    - Image: `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`
      (full 40-char SHA, built by `build-runpod-training` run 28683991294).
@@ -282,6 +327,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
      to `workersMin=0`, broken short-SHA endpoint also cleaned up).
 
 8. **A SECOND independent live canary run also PASSED 3/3.** *(NEW in pass #5 — receipt committed in `677c77ed`)*
+   
    - Receipt: `reports/runpod-test-runs/6dbec436/live-canary/`.
    - Same image SHA `6dbec436c92b57a788b84622338baacc3df8665d`, but three
      DIFFERENT endpoints (`yyxwraovovy1un`, `yju9c75p80odby`, `rzw1aifoi2zhc7`)
@@ -296,6 +342,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 
 9. **The GPU is accessible inside the production container (A6 PASSED live).**
    *(NEW in pass #8 — receipt committed in `6e85f44c`)*
+   
    - Receipt: `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`.
    - Image: `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`
      (same SHA as findings #7/#8 — the `6e85f44c` commit added evidence +
@@ -325,6 +372,7 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 
 10. **The full training pipeline works live inside the production container
     (A7 PASSED).** *(NEW 2026-07-04)*
+    
     - Receipt: `reports/runpod-test-runs/6dbec436/train-model/`.
     - Image: `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`
       (same SHA as findings #7/#8/#9).
@@ -370,17 +418,17 @@ and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 
 ## What Failed (do NOT retry without a new hypothesis)
 
-| Hypothesis | Disproved by | Why |
-|------------|--------------|-----|
-| Docker `HEALTHCHECK` import causes dispatch failure | `c508103f` | No healthcheck in image; still failed. |
-| Base image `python:3.12-slim` + missing `libgomp1` | `c508103f` | Uses `python:3.12-slim` + `libgomp1`; still failed. |
-| RunPod SDK / job loop broken | `d7ba5a2d` (Test E) | Sentinel completes a live job via the same SDK. |
-| Endpoint template / registry auth / GPU scheduling | `d7ba5a2d` vs `c508103f` | Identical shape; only handler differs. |
-| `nvidia/cuda` base image required | older commits `ad24f100`/`bf2ef399` | Switching to nvidia/cuda did not fix dispatch; reverted. |
-| Local handler tests prove live behavior | `c508103f` | Local canary PASS, live canary FAIL. Local success is not live proof. |
-| **`lightgbm` import poisons the worker** | **`c0f15fa7` raw evidence** | **lightgbm "failure" was a false negative from probe bug. Worker was `running=1, unhealthy=0`. `full_handler_import` (which imports lightgbm via handler_full) PASSED.** |
-| **Module-level ML imports cause memory pressure / OOM** | **`c0f15fa7` full_handler_import** | **All ML imports (torch, xgboost, catboost, lightgbm) loaded at module top; worker stayed healthy and job COMPLETED.** |
-| **`SecurityPreflight` crash at dispatch** | **`c0f15fa7` full_handler_call** | **Production handler's canary path (which runs preflight) COMPLETED via bisect wrapper.** |
+| Hypothesis                                              | Disproved by                        | Why                                                                                                                                                                      |
+| ------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Docker `HEALTHCHECK` import causes dispatch failure     | `c508103f`                          | No healthcheck in image; still failed.                                                                                                                                   |
+| Base image `python:3.12-slim` + missing `libgomp1`      | `c508103f`                          | Uses `python:3.12-slim` + `libgomp1`; still failed.                                                                                                                      |
+| RunPod SDK / job loop broken                            | `d7ba5a2d` (Test E)                 | Sentinel completes a live job via the same SDK.                                                                                                                          |
+| Endpoint template / registry auth / GPU scheduling      | `d7ba5a2d` vs `c508103f`            | Identical shape; only handler differs.                                                                                                                                   |
+| `nvidia/cuda` base image required                       | older commits `ad24f100`/`bf2ef399` | Switching to nvidia/cuda did not fix dispatch; reverted.                                                                                                                 |
+| Local handler tests prove live behavior                 | `c508103f`                          | Local canary PASS, live canary FAIL. Local success is not live proof.                                                                                                    |
+| **`lightgbm` import poisons the worker**                | **`c0f15fa7` raw evidence**         | **lightgbm "failure" was a false negative from probe bug. Worker was `running=1, unhealthy=0`. `full_handler_import` (which imports lightgbm via handler_full) PASSED.** |
+| **Module-level ML imports cause memory pressure / OOM** | **`c0f15fa7` full_handler_import**  | **All ML imports (torch, xgboost, catboost, lightgbm) loaded at module top; worker stayed healthy and job COMPLETED.**                                                   |
+| **`SecurityPreflight` crash at dispatch**               | **`c0f15fa7` full_handler_call**    | **Production handler's canary path (which runs preflight) COMPLETED via bisect wrapper.**                                                                                |
 
 A regression guard prevents the import-based healthcheck from coming back:
 `runpod/tests/test_dockerfile_no_healthcheck.py`.
@@ -424,10 +472,11 @@ LIVE (3/3 canaries COMPLETED). The remaining open questions are:
    re-commit them. *(updated in pass #7)*
 
 **All critical live unknowns are resolved.** A6 (gpu_healthcheck) and A7
-(train_model) are DONE. All D-lane documentation tasks D4/D5 are DONE; D7
-(commit the consolidation edits: index, v6–v10 queues, pass receipts, CI
-triage receipts #4–#7) is the remaining doc commit. The B1 items remain
-`do not automate` (operator disposition).
+(train_model) are DONE. All D-lane documentation tasks D4/D5/D7 are DONE
+(D7 committed in `f656ccaf`). The B1 items remain `do not automate`
+(operator disposition). The remaining work is product-flow integration
+(dispatcher → endpoint → callback ingestion), repo hygiene (B1/B2/B3),
+CI lint debt (C8), and security-urgent (D1/D2).
 
 ---
 
@@ -479,16 +528,19 @@ triage receipts #4–#7) is the remaining doc commit. The B1 items remain
   `reports/runpod-test-runs/6dbec436/gpu-healthcheck/` receipt bundle are
   in git. Do NOT re-commit them. *(NEW in pass #8)*
 - **Re-running the A7 `train_model` job against `6dbec436`** — it PASSED
-  live on 2026-07-04 (finding #10). The full training pipeline is proven.
-  The next training-related work is product-flow integration (dispatcher
-  → endpoint → callback ingestion), not another isolated live probe.
-  *(NEW 2026-07-04)*
-- **Re-running pass #9/#10/#11-style no-op consolidation passes** — HEAD has
-  not moved from `6e85f44c` since pass #8. Passes #9, #10, and #11 each only
-  added a CI triage receipt for an empty delta window and re-verified the
-  worktree. The index is now accurate through pass #11. Do NOT run another
-  no-op consolidation; instead advance the actual work (A7 spend approval,
-  or a safe no-spend slice B2/B3/C1). *(NEW in pass #11)*
+  live on 2026-07-04 (finding #10, commit `6963cde7`). The full training
+  pipeline is proven. The next training-related work is product-flow
+  integration (dispatcher → endpoint → callback ingestion), not another
+  isolated live probe. *(updated in pass #12)*
+- **Re-committing the D7 consolidation set** (index, v6–v10 task queues,
+  pass #7/#8 receipts, CI triage receipts #4–#8) — these are already
+  committed in `f656ccaf`. Do NOT re-commit them. *(NEW in pass #12)*
+- **Re-running pass #9/#10/#11-style no-op consolidation passes** — those
+  passes were superseded by the D7 commit (`f656ccaf`), which landed all
+  the consolidation evidence they were accumulating. The index is now
+  accurate through pass #12. Do NOT run another no-op consolidation;
+  instead advance the actual work (B1 disposition, B2/B3/C1 safe slices,
+  C8 lint debt, or D1/D2 security). *(updated in pass #12)*
 
 ---
 
@@ -496,34 +548,36 @@ triage receipts #4–#7) is the remaining doc commit. The B1 items remain
 
 ### Live test receipts (newest first)
 
-| Dir | SHA | Result | Handler | Endpoint |
-|-----|-----|--------|---------|----------|
-| `reports/runpod-test-runs/6dbec436/train-model/` | `6dbec436` | **PASS** (A7 train_model COMPLETED — dataset load + trainer.fit + model export) | production handler (implicit train_model, real trainer, post-fix) | `sj5lj1vxhydaja` |
-| `reports/runpod-test-runs/6dbec436/gpu-healthcheck/` | `6dbec436` | **PASS** (gpu_healthcheck COMPLETED, RTX 4090 visible) | production handler (gpu_healthcheck task, post-fix) | `6hl6v67nybijwy` |
-| `reports/runpod-test-runs/6dbec436/live-canary/` | `6dbec436` | **PASS** (3/3 canaries COMPLETED, 2nd independent run) | production handler (direct entrypoint, post-fix) | `yyxwraovovy1un` / `yju9c75p80odby` / `rzw1aifoi2zhc7` |
-| `reports/runpod-test-runs/6dbec436/` | `6dbec436` | **PASS** (3/3 canaries COMPLETED, 1st run) | production handler (direct entrypoint, post-fix) | `4jc1opwj11zmai` |
-| `reports/runpod-test-runs/c0f15fa7/import-bisection/` | `c0f15fa7` | **PASS** (11/12 pass, 1 false negative) | bisect (all profiles) | 12 endpoints |
-| `reports/runpod-test-runs/d7ba5a2d/` | `d7ba5a2d` | **PASS** | sentinel (runpod + stdlib) | `fqa18kqj9exo62` |
-| `reports/runpod-test-runs/c508103f/swarm-scaffold/` | `c508103f` | **FAIL** (pre-fix baseline) | production handler (direct entrypoint, pre-fix) | `635ywogaldb3r2` |
-| `reports/runpod-test-runs/2026-07-02/` | `412080c6` (failed control) | **FAIL** | layered handler | `rjxyaov775q7nd` / `zbpy7m8s8dps7k` |
+| Dir                                                   | SHA                         | Result                                                                          | Handler                                                           | Endpoint                                               |
+| ----------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `reports/runpod-test-runs/6dbec436/train-model/`      | `6dbec436`                  | **PASS** (A7 train_model COMPLETED — dataset load + trainer.fit + model export) | production handler (implicit train_model, real trainer, post-fix) | `sj5lj1vxhydaja`                                       |
+| `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`  | `6dbec436`                  | **PASS** (gpu_healthcheck COMPLETED, RTX 4090 visible)                          | production handler (gpu_healthcheck task, post-fix)               | `6hl6v67nybijwy`                                       |
+| `reports/runpod-test-runs/6dbec436/live-canary/`      | `6dbec436`                  | **PASS** (3/3 canaries COMPLETED, 2nd independent run)                          | production handler (direct entrypoint, post-fix)                  | `yyxwraovovy1un` / `yju9c75p80odby` / `rzw1aifoi2zhc7` |
+| `reports/runpod-test-runs/6dbec436/`                  | `6dbec436`                  | **PASS** (3/3 canaries COMPLETED, 1st run)                                      | production handler (direct entrypoint, post-fix)                  | `4jc1opwj11zmai`                                       |
+| `reports/runpod-test-runs/c0f15fa7/import-bisection/` | `c0f15fa7`                  | **PASS** (11/12 pass, 1 false negative)                                         | bisect (all profiles)                                             | 12 endpoints                                           |
+| `reports/runpod-test-runs/d7ba5a2d/`                  | `d7ba5a2d`                  | **PASS**                                                                        | sentinel (runpod + stdlib)                                        | `fqa18kqj9exo62`                                       |
+| `reports/runpod-test-runs/c508103f/swarm-scaffold/`   | `c508103f`                  | **FAIL** (pre-fix baseline)                                                     | production handler (direct entrypoint, pre-fix)                   | `635ywogaldb3r2`                                       |
+| `reports/runpod-test-runs/2026-07-02/`                | `412080c6` (failed control) | **FAIL**                                                                        | layered handler                                                   | `rjxyaov775q7nd` / `zbpy7m8s8dps7k`                    |
 
 ### CI triage receipts (hourly watch)
 
-| Receipt | Window | Key finding | Committed? |
-|---------|--------|-------------|------------|
-| `reports/ci-triage/receipt-20260704T091000Z.md` | 06:30→09:10 (7/4) UTC | F1–F4 unchanged; no new CI runs in 2h40m (branch unpushed since `677c77ed`); `build-runpod-training` green on `677c77ed`; F2 `api.Dockerfile` one-liner re-verified correct | **uncommitted** (pass #11 worktree) |
-| `reports/ci-triage/receipt-20260704T063000Z.md` | 04:02→06:30 (7/4) UTC | F1–F4 unchanged; no new CI runs in 2h28m (branch unpushed since `677c77ed`); `build-runpod-training` green on `677c77ed`; F2 `api.Dockerfile` one-liner re-verified as correct | **uncommitted** (pass #10 worktree) |
-| `reports/ci-triage/receipt-20260704T040200Z.md` | 22:40 (7/3)→04:02 (7/4) UTC | F1–F4 unchanged; no new CI runs in 5h22m; `build-runpod-training` green on `677c77ed` | **uncommitted** (pass #8 worktree) |
-| `reports/ci-triage/receipt-20260703T224000Z.md` | 21:30→22:40 UTC | F1–F4 unchanged; `build-runpod-training` green on `677c77ed` | committed in `748eef6c` |
-| `reports/ci-triage/receipt-20260703T213000Z.md` | 20:05→21:30 UTC | F1–F4 unchanged; `build-runpod-training` green on `6dbec436` | committed in `748eef6c` |
-| `reports/ci-triage/receipt-20260703T200535Z.md` | first pass | F1–F4 baseline; `build-runpod-training` green on `6dbec436` | committed in `748eef6c` |
+| Receipt                                         | Window                      | Key finding                                                                                                                                                                                             | Committed?              |
+| ----------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `reports/ci-triage/receipt-20260704T092500Z.md` | 09:12→09:25 (7/4) UTC       | F1–F4 unchanged; **new nightly run 28701763911** at 09:20 UTC on `main` (same SHA `c8219564`, scheduled re-run — not a regression); Long tests now SUCCESS; `build-runpod-training` green on `677c77ed` | committed in `f656ccaf` |
+| `reports/ci-triage/receipt-20260704T091200Z.md` | 09:10→09:12 (7/4) UTC       | F1–F4 unchanged; no new CI runs in ~2 min; `build-runpod-training` green on `677c77ed`                                                                                                                  | committed in `f656ccaf` |
+| `reports/ci-triage/receipt-20260704T091000Z.md` | 06:30→09:10 (7/4) UTC       | F1–F4 unchanged; no new CI runs in 2h40m (branch unpushed since `677c77ed`); `build-runpod-training` green on `677c77ed`; F2 `api.Dockerfile` one-liner re-verified correct                             | committed in `f656ccaf` |
+| `reports/ci-triage/receipt-20260704T063000Z.md` | 04:02→06:30 (7/4) UTC       | F1–F4 unchanged; no new CI runs in 2h28m (branch unpushed since `677c77ed`); `build-runpod-training` green on `677c77ed`; F2 `api.Dockerfile` one-liner re-verified as correct                          | committed in `f656ccaf` |
+| `reports/ci-triage/receipt-20260704T040200Z.md` | 22:40 (7/3)→04:02 (7/4) UTC | F1–F4 unchanged; no new CI runs in 5h22m; `build-runpod-training` green on `677c77ed`                                                                                                                   | committed in `f656ccaf` |
+| `reports/ci-triage/receipt-20260703T224000Z.md` | 21:30→22:40 UTC             | F1–F4 unchanged; `build-runpod-training` green on `677c77ed`                                                                                                                                            | committed in `748eef6c` |
+| `reports/ci-triage/receipt-20260703T213000Z.md` | 20:05→21:30 UTC             | F1–F4 unchanged; `build-runpod-training` green on `6dbec436`                                                                                                                                            | committed in `748eef6c` |
+| `reports/ci-triage/receipt-20260703T200535Z.md` | first pass                  | F1–F4 baseline; `build-runpod-training` green on `6dbec436`                                                                                                                                             | committed in `748eef6c` |
 
 ### CI workflow status at consolidation time
 
-| Workflow | Run id | SHA | Status |
-|----------|--------|-----|--------|
-| `build-runpod-training` | 28686244617 | `677c77ed` | **success** (green on newest commit, per CI triage 22:40 UTC) |
-| `ci` | 28686245962 | `677c77ed` | failure (pre-existing Ruff debt, 1334 errors, identical to `main` — NOT a regression) |
+| Workflow                | Run id      | SHA        | Status                                                                                |
+| ----------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------- |
+| `build-runpod-training` | 28686244617 | `677c77ed` | **success** (green on newest commit, per CI triage 22:40 UTC)                         |
+| `ci`                    | 28686245962 | `677c77ed` | failure (pre-existing Ruff debt, 1334 errors, identical to `main` — NOT a regression) |
 
 ### Regression guards (added in `6dbec436`)
 
@@ -600,15 +654,25 @@ triage receipts #4–#7) is the remaining doc commit. The B1 items remain
   — task queue v3; supersedes v2. Superseded by v4/v5; kept for history.
 - `docs/runpod-fix-plan/10-swarm-task-queue-v4.md` (committed in `3940271b`)
   — task queue v4; supersedes v3. Superseded by v5; kept for history.
-- `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` (committed in `3940271b`)
-  — task queue v5; superseded by v6. D4/D5 marked DONE in the pass #7 edit
-  (uncommitted). Kept for history.
-- `docs/runpod-fix-plan/12-swarm-task-queue-v6.md` (untracked, pass #7
-  worktree) — task queue v6; **supersedes v5 and is the current open-task
-  source of truth** (A6–A8, B1–B3, C1–C10, D1–D3, D6; D4/D5 DONE). **A6
-  section is now STALE** — A6 is DONE per `6e85f44c` (pass #8). A v7 queue
-  or v6 update marking A6 done is the next D-lane task. Read this for the
-  full remaining-work list. *(NEW in pass #8)*
+- `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` (committed in `3940271b`,
+  D4/D5-done edits committed in `f656ccaf`) — task queue v5; superseded by
+  v6. Kept for history.
+- `docs/runpod-fix-plan/12-swarm-task-queue-v6.md` (committed in `f656ccaf`)
+  — task queue v6; superseded by v7–v10. Kept for history.
+- `docs/runpod-fix-plan/13-swarm-task-queue-v7.md` (committed in `f656ccaf`)
+  — task queue v7; superseded by v8–v10. Kept for history.
+- `docs/runpod-fix-plan/14-swarm-task-queue-v8.md` (committed in `f656ccaf`)
+  — task queue v8; superseded by v9/v10. Kept for history.
+- `docs/runpod-fix-plan/15-swarm-task-queue-v9.md` (committed in `f656ccaf`)
+  — task queue v9; superseded by v10. Kept for history.
+- `docs/runpod-fix-plan/16-swarm-task-queue-v10.md` (committed in `f656ccaf`)
+  — task queue v10; **the current committed source of truth**. **NOTE: v10's
+  A7 and D7 sections are STALE** — it was generated before `6963cde7` (A7
+  PASSED) and `f656ccaf` (D7 committed). v10 still lists A7 as OPEN and D7
+  as an 11-file uncommitted set. Both are now DONE. Read v10 for the full
+  task card list (B1–B3, C1–C10, D1–D3, D6), but treat A7/D7 as DONE. A v11
+  queue or v10 update marking A7/D7 done is the next D-lane task. *(updated
+  in pass #12)*
 
 ### Reusable live tools (committed)
 
@@ -618,6 +682,11 @@ triage receipts #4–#7) is the remaining doc commit. The B1 items remain
 - `runpod/quant-foundry-training/run_gpu_healthcheck.py` (committed in
   `6e85f44c`) — reusable live GPU healthcheck tool (reuses
   `run_live_canary.py` helpers). Use it for live GPU healthcheck work.
+- `runpod/quant-foundry-training/run_train_model.py` (committed in
+  `6963cde7`) — reusable live train_model tool (reuses
+  `run_live_canary.py` helpers; has a `--local` in-process smoke mode that
+  runs the exact payload through the handler with no cloud spend). Use it
+  for live train_model work. *(NEW in pass #12)*
 
 ### Older root-cause docs (still valid background, but some conclusions are now superseded)
 
@@ -630,6 +699,58 @@ triage receipts #4–#7) is the remaining doc commit. The B1 items remain
 ---
 
 ## Receipt Corrections Made This Pass
+
+**Pass #12 made no raw-receipt corrections.** Two new commits landed since
+pass #11: `6963cde7` (A7 live train_model PASSED — evidence + tooling) and
+`f656ccaf` (D7 consolidation — doc-only). The A7 receipt bundle
+(`reports/runpod-test-runs/6dbec436/train-model/`) was reviewed against its
+raw evidence (`probe.jsonl`, `status-final.json`, `health-before/after.json`,
+`train-model-result.json`, `cleanup.json`) and is internally consistent —
+job `COMPLETED` with `unhealthy=0` throughout, model sha256 re-verified,
+HMAC write receipt present. No corrections needed.
+
+**Pass #12 corrected several stale assumptions in this index** (no raw
+receipts were modified):
+
+1. **Stale "Newest commit reviewed".** Pass #11 claimed HEAD was at
+   `6e85f44c` with "no new commits since pass #8". Two commits have since
+   landed (`6963cde7`, `f656ccaf`). Updated to `f656ccaf`.
+
+2. **Stale A7 status.** Pass #11 listed A7 (minimal `train_model` job) as
+   "the single remaining critical live unknown" and "pending operator spend
+   approval". **A7 is now DONE** — committed in `6963cde7`, finding #10.
+   The "Next Agent Instruction" item 1 (which told the next agent to
+   dispatch A7) is now rewritten below.
+
+3. **Stale D7 status.** Pass #11 listed D7 (commit the pass #7–#11
+   consolidation) as "pending B1 disposition" with an 11-file uncommitted
+   set. **D7 is now DONE** — committed in `f656ccaf`. The "Next Agent
+   Instruction" item 2 (which told the next agent to commit D7) is now
+   rewritten below. The dirty worktree is reduced to just the four B1
+   items.
+
+4. **Stale CI triage table.** Pass #11 listed CI triage receipts #4–#6 as
+   "uncommitted". All of #4–#8 are now committed in `f656ccaf`. Added rows
+   for receipts #7 (091200Z) and #8 (092500Z).
+
+5. **Stale task-queue pointers.** Pass #11 pointed at v9 as the worktree
+   source of truth and listed v6–v9 as untracked. v6–v10 are now committed
+   in `f656ccaf`; v10 is the current committed source of truth (but its
+   A7/D7 sections are STALE — see the "Plan / context docs" note above).
+
+The worktree state matches the pass #12 claims — `git status --short` shows
+only `infra/docker/api.Dockerfile` (modified) and the three untracked B1
+items (`SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md`), plus
+this index edit. Receipt-integrity guard re-run:
+`uv run pytest runpod/tests/test_receipt_integrity.py -q` → 4 passed. No
+receipt bundle contradicts its raw evidence. No code, Dockerfiles,
+workflows, or raw receipt JSON were touched. The only edits this pass are
+the header + the pass #12 "What Changed" entry + this note + the CI triage
+table + the "What Should NOT Be Retried" list + the "Plan / context docs"
+section + the reusable tools section + the "Next Agent Instruction"
+rewrite. The next agent instruction is changed in substance from pass #11
+— A7 and D7 are DONE; the remaining work is B1 disposition, B2/B3/C1 safe
+slices, C8 lint debt, D1/D2 security, or product-flow integration.
 
 **Pass #11 made no raw-receipt corrections.** One new artifact appeared since
 pass #10: **CI triage receipt #6** (`reports/ci-triage/receipt-20260704T091000Z.md`,
@@ -828,6 +949,7 @@ in `61dca0a4`.
 ### Test F summary.json + interpretation.md (`c0f15fa7`)
 
 The original `summary.json` and `interpretation.md` claimed:
+
 - `first_failing_profile: "lightgbm"`
 - `"the import group lightgbm poisons the worker at dispatch time"`
 
@@ -846,6 +968,7 @@ to IN_PROGRESS. The correct check should also require `running=0` (worker
 truly gone) or just check `unhealthy > 0`.
 
 Corrections applied (committed in `61dca0a4`):
+
 - `summary.json`: `first_failing_profile` changed from `"lightgbm"` to `null`;
   lightgbm `result` changed from `"fail"` to `"inconclusive_false_negative"`;
   added `consolidation_notes` section documenting the probe bug.
@@ -892,22 +1015,19 @@ silently.
 ## Next Agent Instruction
 
 Continue driving the Fincept / Quant Foundry RunPod training-worker fix
-forward. **The code fix is DONE and VALIDATED LIVE 6/6 canary + A6
-gpu_healthcheck (commit `6dbec436`, canary receipts committed in
-`a4cacc64`/`677c77ed`, gpu_healthcheck receipt committed in `6e85f44c`).**
-The production canary PASSED 6/6 live across two independent runs (receipts
-`reports/runpod-test-runs/6dbec436/` and `.../6dbec436/live-canary/`). The
-GPU is proven accessible live (RTX 4090, 24 GB VRAM, receipt
-`reports/runpod-test-runs/6dbec436/gpu-healthcheck/`). The `parents[5]`
-IndexError is confirmed as the root cause.
+forward. **The code fix is DONE and VALIDATED LIVE end-to-end: 6/6 canary
+(commit `6dbec436`, receipts committed in `a4cacc64`/`677c77ed`) + A6
+gpu_healthcheck (commit `6e85f44c`) + A7 train_model (commit `6963cde7`).**
+The production canary PASSED 6/6 live across two independent runs, the GPU
+is proven accessible (RTX 4090, 24 GB VRAM), and the full training pipeline
+(dataset load → trainer.fit → model export) is proven live. The
+`parents[5]` IndexError is confirmed as the root cause. **All critical live
+unknowns are RESOLVED.**
 
-**Pass #6 (commits `748eef6c` + `3940271b` + `3098f11f`) is DONE and
-doc-only.** Tasks D4 (CI triage receipts) and D5 (pass #5 index + v3/v4/v5
-task queues) are committed. **Pass #7 (doc-only consolidation) and pass #8
-(this pass, reviewed `6e85f44c`) are uncommitted** — the pass #7 + pass #8
-index edits, the v6 task queue, the pass #7/#8 receipts, and CI triage
-receipt #4 are all in the worktree (candidate for a D7-class doc commit,
-pending B1 disposition). Task **A6 is DONE** (gpu_healthcheck PASSED).
+**Pass #12 (commits `6963cde7` + `f656ccaf`) is DONE.** Tasks A7
+(train_model) and D7 (consolidation commit) are DONE. The pass #12 index
+edit (this edit) is the only uncommitted doc change — candidate for a
+future D-lane commit alongside any B1 disposition.
 
 **IMPORTANT:** the `build-runpod-training.yml` workflow tags images with the
 FULL 40-char SHA (`github.sha`), NOT a short SHA. Always use
@@ -915,63 +1035,41 @@ FULL 40-char SHA (`github.sha`), NOT a short SHA. Always use
 image tag. Using a short SHA produces a non-existent image tag and the
 container exits immediately with `docker=None, unhealthy=1`.
 
-The full open-task list lives in `docs/runpod-fix-plan/15-swarm-task-queue-v9.md`
-(the current worktree source of truth — read it; **D4/D5 are DONE, A6 is
-DONE**; v6/v7/v8 are superseded — v9 carries forward all open tasks and expands
-D7 to include CI triage receipts #5 and #6 and the v7/v8/v9 task queues). The remaining work, in priority order:
+The full open-task list lives in `docs/runpod-fix-plan/16-swarm-task-queue-v10.md`
+(the current committed source of truth — read it; **D4/D5/D7 are DONE, A6
+and A7 are DONE**; v6–v9 are superseded — v10 carries forward all open
+tasks). **NOTE: v10's A7 and D7 sections are STALE** (it predates
+`6963cde7`/`f656ccaf`) — treat A7/D7 as DONE despite what v10 says. A v11
+queue or v10 update marking A7/D7 done is the next D-lane task. The
+remaining work, in priority order:
 
-1. **Live minimal `train_model` job** (task A7 in v6 queue) — A6 is DONE
-   (GPU accessible). The remaining critical live unknown is whether the
-   full training pipeline (dataset loading, trainer execution, model
-   export) works live. Dispatch a minimal `train_model` job against the
-   `6dbec436` image. Reuse endpoint `6hl6v67nybijwy` (scale back up to
-   `workersMin=1`) or create a fresh one. Use the FULL 40-char SHA image
-   tag. Ensure the endpoint template sets a job timeout ≥ 1860s (the
-   handler enforces `QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS=1800`; RunPod's
-   default 600s will kill a real training job with `TIMED_OUT` before the
-   handler's signed failure envelope runs — see C10). This is `needs senior
-   agent` (live cloud, spend, secrets). **Do NOT run A7 without explicit
-   operator spend approval.**
-
-2. **Commit the pass #7 + pass #8 + pass #10 + pass #11 consolidation** (task D7, NEW in
-   pass #8, updated in pass #10 and pass #11) — the worktree has uncommitted
-   `docs/runpod-fix-plan/RECEIPT_INDEX.md` (pass #7 + pass #8 + pass #10 + pass #11
-   edits), `11-swarm-task-queue-v5.md` (pass #7 edits),
-   `12-swarm-task-queue-v6.md` (untracked), `13-swarm-task-queue-v7.md`
-   (untracked), `14-swarm-task-queue-v8.md` (untracked),
-   `15-swarm-task-queue-v9.md` (untracked, current source of truth),
-   `reports/runpod-test-runs/3098f11f/RECEIPT.md`
-   (pass #7 receipt), `reports/runpod-test-runs/6e85f44c/RECEIPT.md`
-   (pass #8 receipt), `reports/ci-triage/receipt-20260704T040200Z.md`
-   (CI triage #4), `reports/ci-triage/receipt-20260704T063000Z.md`
-   (CI triage #5), and `reports/ci-triage/receipt-20260704T091000Z.md`
-   (CI triage #6, NEW in pass #11). These are durable consolidation evidence.
-   Stage only these docs (do NOT `git add -A` — the B1 items must stay
-   separate) and commit as a doc-only evidence commit. Blocked by B1
-   disposition.
-
-3. **Repo hygiene** (task B1 in v6 queue) — the worktree has uncommitted
+1. **Repo hygiene** (task B1 in v10 queue) — the worktree has uncommitted
    `infra/docker/api.Dockerfile` changes and untracked `SESSION_HANDOFF.md`,
    `handoffs/`, `kimiSuggestionFix.md`. Do NOT bundle these into the RunPod
    fix commit. Classify each before final ship. This is `do not automate`
    (requires operator decision). The `api.Dockerfile` change is a likely
    real fix for F2 `build (api)` — see task C9.
 
-4. **Safe no-spend slices** (if A7 is not approved this run) — B2 (add
-   `.tmp_*.json` to `.gitignore`), B3 (create `AGENTS.md` with the
-   do-not-re-do rules), or C1 (add `RUNPOD_INIT_TIMEOUT` default to
+2. **Safe no-spend slices** — B2 (add `.tmp_*.json` to `.gitignore`), B3
+   (create `AGENTS.md` with the do-not-re-do rules), or C1 (add
+   `RUNPOD_INIT_TIMEOUT` default to
    `scripts/runpod_create_smoke_endpoint.py`). All `safe beginner`/`focused
    bugfix`, no live cloud.
 
-5. **CI lint debt** (task C8 in v6 queue) — the `ci` workflow fails on
+3. **CI lint debt** (task C8 in v10 queue) — the `ci` workflow fails on
    `677c77ed` with 1334 Ruff errors (pre-existing, identical count to `main`
    — NOT a regression). This does NOT block the RunPod fix path but should
    be addressed on a **separate branch off `main`** (auto-fix 613/1334 with
    `uv run ruff check --fix libs services`, then triage the remaining 721).
 
-6. **Security-urgent** (tasks D1/D2 in v6 queue) — a Stripe secret-token is
+4. **Security-urgent** (tasks D1/D2 in v10 queue) — a Stripe secret-token is
    leaked in the repo (Trivy CRITICAL, nightly on `main`). Locate & remove
    it, rotate the key, then bump `next` to >=15.5.16 in `apps/dashboard`.
+
+5. **Product-flow integration** (post-A7) — the next training-related work
+   is wiring the dispatcher → endpoint → callback ingestion pipeline, not
+   another isolated live probe. A7 proved the training pipeline works in
+   isolation; the remaining work is product integration.
 
 Do NOT re-run experiments already disproved in the "What Failed" table above.
 Do NOT pursue the "lightgbm poisons the worker" hypothesis — it was disproven.
@@ -982,10 +1080,14 @@ Do NOT re-apply the `parents[5]` fix — it is already committed in `6dbec436`.
 Do NOT modify the Dockerfile handler mapping — it is already restored to
 production shape in `6dbec436`.
 Do NOT re-run the gpu_healthcheck against `6dbec436` — it already PASSED
-(commit `6e85f44c`, finding #9). Move on to A7 (`train_model`).
-Do NOT re-commit the CI triage receipts #1–#3, the pass #5 index, or the
-v3/v4/v5 task queues — D4/D5 are DONE (commits `748eef6c`/`3940271b`).
+(commit `6e85f44c`, finding #9).
+Do NOT re-run the A7 `train_model` job against `6dbec436` — it already
+PASSED (commit `6963cde7`, finding #10).
+Do NOT re-commit the CI triage receipts #1–#8, the pass #5 index, the
+v3/v4/v5 task queues, or the v6–v10 task queues — D4/D5/D7 are DONE
+(commits `748eef6c`/`3940271b`/`f656ccaf`).
 Do NOT re-commit the `6dbec436` receipt bundle, `run_live_canary.py`,
-`run_gpu_healthcheck.py`, or the gpu-healthcheck receipt — all committed
-(`a4cacc64`/`677c77ed`/`6e85f44c`).
+`run_gpu_healthcheck.py`, `run_train_model.py`, the gpu-healthcheck receipt,
+or the train-model receipt — all committed
+(`a4cacc64`/`677c77ed`/`6e85f44c`/`6963cde7`).
 Do NOT push this branch unless the operator asks.

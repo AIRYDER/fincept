@@ -33,9 +33,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import UTC
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.dataset_manifest import FoldSpec, _parse_temporal
 
@@ -47,14 +48,10 @@ from quant_foundry.dataset_manifest import FoldSpec, _parse_temporal
 _ALLOWED_DTYPES: frozenset[str] = frozenset({"float32", "float64", "int32"})
 
 #: Allowed normalization strategies.
-_ALLOWED_NORMALIZATIONS: frozenset[str] = frozenset(
-    {"standard", "robust", "minmax", "none"}
-)
+_ALLOWED_NORMALIZATIONS: frozenset[str] = frozenset({"standard", "robust", "minmax", "none"})
 
 #: Allowed missing-value policies.
-_ALLOWED_MISSING_POLICIES: frozenset[str] = frozenset(
-    {"fail", "mean_fill", "zero_fill"}
-)
+_ALLOWED_MISSING_POLICIES: frozenset[str] = frozenset({"fail", "mean_fill", "zero_fill"})
 
 # 64-char lowercase hex (SHA-256) — same pattern as dataset_manifest.py.
 _HEX256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
@@ -76,9 +73,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char hex SHA-256; got {value!r}")
     return value.lower()
 
 
@@ -96,10 +91,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         ValueError: if ``value`` is not a parseable ISO temporal.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{field_name} must be a non-empty ISO datetime string; "
-            f"got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a non-empty ISO datetime string; got {value!r}")
     _parse_temporal(value)
     return value
 
@@ -151,8 +143,7 @@ class SequenceChannel(BaseModel):
     def _dtype_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_DTYPES:
             raise ValueError(
-                f"SequenceChannel.dtype must be one of "
-                f"{sorted(_ALLOWED_DTYPES)!r}; got {v!r}"
+                f"SequenceChannel.dtype must be one of {sorted(_ALLOWED_DTYPES)!r}; got {v!r}"
             )
         return v
 
@@ -298,14 +289,15 @@ class SequenceDatasetManifest(BaseModel):
             raise ValueError("horizons must contain at least 1 horizon")
         for h in v:
             if not isinstance(h, int) or h < 1:
-                raise ValueError(
-                    f"each horizon must be an integer >= 1; got {h!r}"
-                )
+                raise ValueError(f"each horizon must be an integer >= 1; got {h!r}")
         return v
 
     @field_validator(
-        "window_start", "window_end", "label_timestamp",
-        "availability_cutoff", "created_at",
+        "window_start",
+        "window_end",
+        "label_timestamp",
+        "availability_cutoff",
+        "created_at",
     )
     @classmethod
     def _temporal_parseable(cls, v: str, info: Any) -> str:
@@ -337,9 +329,7 @@ class SequenceDatasetManifest(BaseModel):
         """Symbols must be unique (no duplicate instruments)."""
         if len(set(self.symbols)) != len(self.symbols):
             dupes = sorted({s for s in self.symbols if self.symbols.count(s) > 1})
-            raise ValueError(
-                f"symbols must not contain duplicates: {dupes!r}"
-            )
+            raise ValueError(f"symbols must not contain duplicates: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -348,9 +338,7 @@ class SequenceDatasetManifest(BaseModel):
         names = [c.name for c in self.channels]
         if len(set(names)) != len(names):
             dupes = sorted({n for n in names if names.count(n) > 1})
-            raise ValueError(
-                f"channels must not contain duplicate names: {dupes!r}"
-            )
+            raise ValueError(f"channels must not contain duplicate names: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -439,9 +427,7 @@ class WindowSpec(BaseModel):
     @classmethod
     def _nonempty_str(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("start", "end", "label_timestamp")
@@ -470,10 +456,7 @@ class WindowSpec(BaseModel):
         e = _parse_temporal(self.end)
         lt = _parse_temporal(self.label_timestamp)
         if not (e > s):
-            raise ValueError(
-                f"end must be > start (start={self.start!r}, "
-                f"end={self.end!r})"
-            )
+            raise ValueError(f"end must be > start (start={self.start!r}, end={self.end!r})")
         if not (lt > e):
             raise ValueError(
                 f"label_timestamp must be > end (no future leakage) "
@@ -565,8 +548,7 @@ def validate_fold_assignment(
     bad = sorted({fid for fid in assigned if fid not in valid_fold_ids})
     if bad:
         raise ValueError(
-            f"windows contain invalid fold_ids: {bad!r} "
-            f"(valid: {sorted(valid_fold_ids)!r})"
+            f"windows contain invalid fold_ids: {bad!r} (valid: {sorted(valid_fold_ids)!r})"
         )
 
     # If folds are assigned, check each fold has at least one window.
@@ -614,7 +596,7 @@ def compute_sequence_data_hash(data: Any) -> str:
         # same values but different shapes/dtypes produce different hashes.
         shape = getattr(data, "shape", ())
         dtype = str(getattr(data, "dtype", ""))
-        prefix = f"{dtype}|{shape}|".encode("utf-8")
+        prefix = f"{dtype}|{shape}|".encode()
         return hashlib.sha256(prefix + raw).hexdigest()
     elif isinstance(data, (bytes, bytearray)):
         raw = bytes(data)
@@ -631,9 +613,7 @@ def compute_sequence_data_hash(data: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _make_window_id(
-    symbol: str, start: str, end: str, horizon: int
-) -> str:
+def _make_window_id(symbol: str, start: str, end: str, horizon: int) -> str:
     """Build a deterministic window id: ``symbol_start_end_horizon``.
 
     Args:
@@ -694,8 +674,7 @@ def create_windows(
     for s in symbols:
         if s not in manifest_symbols:
             raise ValueError(
-                f"symbol {s!r} is not in manifest.symbols "
-                f"({sorted(manifest_symbols)!r})"
+                f"symbol {s!r} is not in manifest.symbols ({sorted(manifest_symbols)!r})"
             )
 
     wl = manifest.window_length
@@ -712,13 +691,15 @@ def create_windows(
     if fold_spec is not None:
         fold_epochs = []
         for fw in fold_spec.folds:
-            fold_epochs.append({
-                "fold_id": fw.fold_id,
-                "train_start": _parse_temporal(fw.train_start),
-                "train_end": _parse_temporal(fw.train_end),
-                "val_start": _parse_temporal(fw.validation_start),
-                "val_end": _parse_temporal(fw.validation_end),
-            })
+            fold_epochs.append(
+                {
+                    "fold_id": fw.fold_id,
+                    "train_start": _parse_temporal(fw.train_start),
+                    "train_end": _parse_temporal(fw.train_end),
+                    "val_start": _parse_temporal(fw.validation_start),
+                    "val_end": _parse_temporal(fw.validation_end),
+                }
+            )
 
     windows: list[WindowSpec] = []
     n = len(timestamps)
@@ -741,12 +722,8 @@ def create_windows(
                 fold_id: int | None = None
                 if fold_epochs is not None:
                     for fe in fold_epochs:
-                        in_train = (
-                            fe["train_start"] <= start_epoch <= fe["train_end"]
-                        )
-                        in_val = (
-                            fe["val_start"] <= start_epoch <= fe["val_end"]
-                        )
+                        in_train = fe["train_start"] <= start_epoch <= fe["train_end"]
+                        in_val = fe["val_start"] <= start_epoch <= fe["val_end"]
                         if in_train or in_val:
                             fold_id = int(fe["fold_id"])
                             break
@@ -839,9 +816,7 @@ class SequenceManifestBuilder:
         self._symbols = list(symbols)
         return self
 
-    def with_channels(
-        self, channels: list[SequenceChannel]
-    ) -> SequenceManifestBuilder:
+    def with_channels(self, channels: list[SequenceChannel]) -> SequenceManifestBuilder:
         """Set the channels (feature streams).
 
         Args:
@@ -853,9 +828,7 @@ class SequenceManifestBuilder:
         self._channels = list(channels)
         return self
 
-    def with_window(
-        self, length: int, stride: int
-    ) -> SequenceManifestBuilder:
+    def with_window(self, length: int, stride: int) -> SequenceManifestBuilder:
         """Set the window geometry.
 
         Args:
@@ -869,9 +842,7 @@ class SequenceManifestBuilder:
         self._stride = stride
         return self
 
-    def with_horizons(
-        self, horizons: list[int]
-    ) -> SequenceManifestBuilder:
+    def with_horizons(self, horizons: list[int]) -> SequenceManifestBuilder:
         """Set the label horizons.
 
         Args:
@@ -908,9 +879,7 @@ class SequenceManifestBuilder:
         self._availability_cutoff = avail_cutoff
         return self
 
-    def with_data(
-        self, uri: str, data_hash: str
-    ) -> SequenceManifestBuilder:
+    def with_data(self, uri: str, data_hash: str) -> SequenceManifestBuilder:
         """Set the data location and hash.
 
         Args:
@@ -924,9 +893,7 @@ class SequenceManifestBuilder:
         self._data_hash = data_hash
         return self
 
-    def with_folds(
-        self, uri: str, hash: str
-    ) -> SequenceManifestBuilder:
+    def with_folds(self, uri: str, hash: str) -> SequenceManifestBuilder:
         """Set the fold assignment reference.
 
         Args:
@@ -952,9 +919,7 @@ class SequenceManifestBuilder:
         self._created_at = created_at
         return self
 
-    def with_normalization_policy(
-        self, policy: str
-    ) -> SequenceManifestBuilder:
+    def with_normalization_policy(self, policy: str) -> SequenceManifestBuilder:
         """Set the default normalization policy.
 
         Args:
@@ -978,8 +943,9 @@ class SequenceManifestBuilder:
         """
         if not self._created_at:
             # Default to now if not set.
-            from datetime import datetime, timezone
-            self._created_at = datetime.now(timezone.utc).isoformat()
+            from datetime import datetime
+
+            self._created_at = datetime.now(UTC).isoformat()
 
         return SequenceDatasetManifest(
             dataset_id=self._dataset_id,

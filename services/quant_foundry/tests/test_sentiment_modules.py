@@ -16,10 +16,9 @@ Tests verify:
 
 from __future__ import annotations
 
-import json
 import pathlib
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -97,8 +96,9 @@ def test_finbert_raises_on_missing_deps_at_score_time() -> None:
     # If transformers/torch are not installed, this should raise ImportError.
     # If they ARE installed (e.g. on RunPod), this should succeed.
     try:
-        import transformers  # noqa: F401
         import torch  # noqa: F401
+        import transformers  # noqa: F401
+
         # Heavy deps available — skip this test (it would try to load the model)
         pytest.skip("transformers+torch installed — model load test requires GPU")
     except ImportError:
@@ -110,10 +110,12 @@ def test_finbert_cache_roundtrip(tmp_path: pathlib.Path) -> None:
     """FinBERT disk cache saves and loads correctly."""
     from quant_foundry.modules.sentiment.finbert import FinBERTSentiment
 
-    mod = FinBERTSentiment(config={
-        "device": "cpu",
-        "cache_dir": str(tmp_path),
-    })
+    mod = FinBERTSentiment(
+        config={
+            "device": "cpu",
+            "cache_dir": str(tmp_path),
+        }
+    )
 
     # Manually populate cache
     mod._load_cache()
@@ -125,10 +127,12 @@ def test_finbert_cache_roundtrip(tmp_path: pathlib.Path) -> None:
     assert cache_file.exists()
 
     # Create a new instance and verify cache loads
-    mod2 = FinBERTSentiment(config={
-        "device": "cpu",
-        "cache_dir": str(tmp_path),
-    })
+    mod2 = FinBERTSentiment(
+        config={
+            "device": "cpu",
+            "cache_dir": str(tmp_path),
+        }
+    )
     mod2._load_cache()
     assert "test-item-1" in mod2._cache
     assert mod2._cache["test-item-1"]["score"] == 0.5
@@ -170,9 +174,12 @@ def test_openai_raises_on_missing_api_key() -> None:
     from quant_foundry.modules.sentiment.llm_openai import OpenAISentiment
 
     mod = OpenAISentiment()
-    items = [
+    [
         MediaItem(
-            item_id="1", source="test", headline="test", body="",
+            item_id="1",
+            source="test",
+            headline="test",
+            body="",
             available_at_ns=0,
         ),
     ]
@@ -224,7 +231,10 @@ def test_openai_score_returns_neutral_on_error() -> None:
     mod = OpenAISentiment()
     items = [
         MediaItem(
-            item_id="1", source="test", headline="test", body="",
+            item_id="1",
+            source="test",
+            headline="test",
+            body="",
             available_at_ns=0,
         ),
     ]
@@ -269,8 +279,11 @@ def test_ensemble_degrades_gracefully_without_api_keys() -> None:
     mod = LLMEnsemble4Sentiment()
     items = [
         MediaItem(
-            item_id="1", source="test", headline="Company beats earnings",
-            body="", available_at_ns=0,
+            item_id="1",
+            source="test",
+            headline="Company beats earnings",
+            body="",
+            available_at_ns=0,
         ),
     ]
 
@@ -293,7 +306,10 @@ def test_ensemble_score_detailed_structure() -> None:
     mod = LLMEnsemble4Sentiment()
     items = [
         MediaItem(
-            item_id="1", source="test", headline="test", body="",
+            item_id="1",
+            source="test",
+            headline="test",
+            body="",
             available_at_ns=0,
         ),
     ]
@@ -321,6 +337,7 @@ def test_ingest_media_sentiment_task_missing_fields(monkeypatch: pytest.MonkeyPa
 
     # Import the handler module — it should be importable without RunPod SDK
     import sys
+
     _HANDLER_DIR = str(pathlib.Path(_REPO_ROOT / "runpod" / "quant-foundry-training"))
     if _HANDLER_DIR not in sys.path:
         sys.path.insert(0, _HANDLER_DIR)
@@ -342,10 +359,12 @@ def test_ingest_media_sentiment_task_missing_fields(monkeypatch: pytest.MonkeyPa
     assert "start_ns" in result["error_summary"]
 
     # Missing output_dir
-    result = _handle_ingest_media_sentiment({
-        "dataset_id": "test",
-        "start_ns": 1,
-        "end_ns": 2,
-    })
+    result = _handle_ingest_media_sentiment(
+        {
+            "dataset_id": "test",
+            "start_ns": 1,
+            "end_ns": 2,
+        }
+    )
     assert result["error_code"] == "bad_request"
     assert "output_dir" in result["error_summary"]

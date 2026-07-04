@@ -27,12 +27,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -206,7 +205,7 @@ def _sha256_hex(data: str) -> str:
 
 def _now_iso() -> str:
     """Return current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _envelope_id(job_id: str, timestamp: str) -> str:
@@ -260,11 +259,7 @@ class FailureEnvelopeBuilder:
         computed over the hash; envelope_hash is the output). All other fields
         are included with sorted keys for order-independence.
         """
-        data = {
-            k: v
-            for k, v in envelope_data.items()
-            if k not in {"signature", "envelope_hash"}
-        }
+        data = {k: v for k, v in envelope_data.items() if k not in {"signature", "envelope_hash"}}
         return _sha256_hex(_canonical_json(data))
 
     # -- signing -----------------------------------------------------------
@@ -383,14 +378,10 @@ def validate_envelope(envelope: FailureEnvelope) -> None:
     expected_context_hash = builder.compute_context_hash(envelope.context)
     # First verify the context's own context_hash is self-consistent.
     if not hmac.compare_digest(expected_context_hash, envelope.context.context_hash):
-        raise ValueError(
-            "context_hash mismatch: context.context_hash has been tampered with"
-        )
+        raise ValueError("context_hash mismatch: context.context_hash has been tampered with")
     # Then verify the envelope-level mirror matches the context's hash.
     if not hmac.compare_digest(expected_context_hash, envelope.context_hash):
-        raise ValueError(
-            "context_hash mismatch: envelope context_hash has been tampered with"
-        )
+        raise ValueError("context_hash mismatch: envelope context_hash has been tampered with")
 
     # Recompute envelope hash over all fields except signature + envelope_hash.
     envelope_data = envelope.model_dump(exclude={"signature", "envelope_hash"})
@@ -398,9 +389,7 @@ def validate_envelope(envelope: FailureEnvelope) -> None:
     envelope_data = _normalize_envelope_data(envelope_data)
     expected_envelope_hash = builder.compute_envelope_hash(envelope_data)
     if not hmac.compare_digest(expected_envelope_hash, envelope.envelope_hash):
-        raise ValueError(
-            "envelope_hash mismatch: envelope has been tampered with"
-        )
+        raise ValueError("envelope_hash mismatch: envelope has been tampered with")
 
 
 def _normalize_envelope_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -536,15 +525,15 @@ def distinguish_missing_callback_vs_signed_failure(
 
 
 __all__ = [
-    "FailureStage",
     "FailureCode",
     "FailureContext",
     "FailureEnvelope",
     "FailureEnvelopeBuilder",
-    "validate_envelope",
-    "verify_signature",
-    "is_retryable",
-    "serialize_envelope",
+    "FailureStage",
     "deserialize_envelope",
     "distinguish_missing_callback_vs_signed_failure",
+    "is_retryable",
+    "serialize_envelope",
+    "validate_envelope",
+    "verify_signature",
 ]

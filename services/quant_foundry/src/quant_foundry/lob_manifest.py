@@ -40,9 +40,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Self
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -53,9 +53,7 @@ from quant_foundry.dataset_manifest import _parse_temporal
 # ---------------------------------------------------------------------------
 
 #: Allowed session types for :class:`LOBSession`.
-_ALLOWED_SESSION_TYPES: frozenset[str] = frozenset(
-    {"train", "validation", "test"}
-)
+_ALLOWED_SESSION_TYPES: frozenset[str] = frozenset({"train", "validation", "test"})
 
 #: Allowed label types for :class:`LabelSpec`.
 _ALLOWED_LABEL_TYPES: frozenset[str] = frozenset(
@@ -63,9 +61,7 @@ _ALLOWED_LABEL_TYPES: frozenset[str] = frozenset(
 )
 
 #: Allowed normalization strategies for :class:`LabelSpec`.
-_ALLOWED_NORMALIZATIONS: frozenset[str] = frozenset(
-    {"none", "z_score", "min_max"}
-)
+_ALLOWED_NORMALIZATIONS: frozenset[str] = frozenset({"none", "z_score", "min_max"})
 
 # 64-char lowercase hex (SHA-256) — same pattern as dataset_manifest.py.
 _HEX256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
@@ -87,9 +83,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char hex SHA-256; got {value!r}")
     return value.lower()
 
 
@@ -107,10 +101,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         ValueError: if ``value`` is not a parseable ISO temporal.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{field_name} must be a non-empty ISO datetime string; "
-            f"got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a non-empty ISO datetime string; got {value!r}")
     _parse_temporal(value)
     return value
 
@@ -228,8 +219,7 @@ class LOBSession(BaseModel):
     def _session_type_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_SESSION_TYPES:
             raise ValueError(
-                f"session_type must be one of "
-                f"{sorted(_ALLOWED_SESSION_TYPES)!r}; got {v!r}"
+                f"session_type must be one of {sorted(_ALLOWED_SESSION_TYPES)!r}; got {v!r}"
             )
         return v
 
@@ -326,9 +316,7 @@ class LOBRecord(BaseModel):
     @classmethod
     def _sequence_id_nonnegative(cls, v: int) -> int:
         if not isinstance(v, int) or v < 0:
-            raise ValueError(
-                f"sequence_id must be an integer >= 0; got {v!r}"
-            )
+            raise ValueError(f"sequence_id must be an integer >= 0; got {v!r}")
         return v
 
     @field_validator("event_time", "receive_time")
@@ -352,46 +340,26 @@ class LOBRecord(BaseModel):
 
     @field_validator("bids", "asks")
     @classmethod
-    def _levels_valid(
-        cls, v: list[tuple[float, float]], info: Any
-    ) -> list[tuple[float, float]]:
+    def _levels_valid(cls, v: list[tuple[float, float]], info: Any) -> list[tuple[float, float]]:
         field_name = info.field_name or "levels"
         for level in v:
-            if (
-                not isinstance(level, (list, tuple))
-                or len(level) != 2
-            ):
-                raise ValueError(
-                    f"{field_name} entries must be (price, size) pairs; "
-                    f"got {level!r}"
-                )
+            if not isinstance(level, (list, tuple)) or len(level) != 2:
+                raise ValueError(f"{field_name} entries must be (price, size) pairs; got {level!r}")
             price, size = level
             if not isinstance(price, (int, float)) or isinstance(price, bool):
-                raise ValueError(
-                    f"{field_name} price must be a number; got {price!r}"
-                )
+                raise ValueError(f"{field_name} price must be a number; got {price!r}")
             if not isinstance(size, (int, float)) or isinstance(size, bool):
-                raise ValueError(
-                    f"{field_name} size must be a number; got {size!r}"
-                )
+                raise ValueError(f"{field_name} size must be a number; got {size!r}")
             if field_name == "bids":
                 if price <= 0:
-                    raise ValueError(
-                        f"bid prices must be > 0; got {price!r}"
-                    )
+                    raise ValueError(f"bid prices must be > 0; got {price!r}")
                 if size < 0:
-                    raise ValueError(
-                        f"bid sizes must be >= 0; got {size!r}"
-                    )
+                    raise ValueError(f"bid sizes must be >= 0; got {size!r}")
             else:
                 if price <= 0:
-                    raise ValueError(
-                        f"ask prices must be > 0; got {price!r}"
-                    )
+                    raise ValueError(f"ask prices must be > 0; got {price!r}")
                 if size < 0:
-                    raise ValueError(
-                        f"ask sizes must be >= 0; got {size!r}"
-                    )
+                    raise ValueError(f"ask sizes must be >= 0; got {size!r}")
         return v
 
     @model_validator(mode="after")
@@ -474,8 +442,7 @@ class LabelSpec(BaseModel):
     def _label_type_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_LABEL_TYPES:
             raise ValueError(
-                f"label_type must be one of "
-                f"{sorted(_ALLOWED_LABEL_TYPES)!r}; got {v!r}"
+                f"label_type must be one of {sorted(_ALLOWED_LABEL_TYPES)!r}; got {v!r}"
             )
         return v
 
@@ -484,8 +451,7 @@ class LabelSpec(BaseModel):
     def _normalization_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_NORMALIZATIONS:
             raise ValueError(
-                f"normalization must be one of "
-                f"{sorted(_ALLOWED_NORMALIZATIONS)!r}; got {v!r}"
+                f"normalization must be one of {sorted(_ALLOWED_NORMALIZATIONS)!r}; got {v!r}"
             )
         return v
 
@@ -614,10 +580,7 @@ class LOBDatasetManifest(BaseModel):
         ids = [s.session_id for s in self.sessions]
         if len(set(ids)) != len(ids):
             dupes = sorted({sid for sid in ids if ids.count(sid) > 1})
-            raise ValueError(
-                f"sessions must not contain duplicate session_ids: "
-                f"{dupes!r}"
-            )
+            raise ValueError(f"sessions must not contain duplicate session_ids: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -626,9 +589,7 @@ class LOBDatasetManifest(BaseModel):
         ids = [r.record_id for r in self.records]
         if len(set(ids)) != len(ids):
             dupes = sorted({rid for rid in ids if ids.count(rid) > 1})
-            raise ValueError(
-                f"records must not contain duplicate record_ids: {dupes!r}"
-            )
+            raise ValueError(f"records must not contain duplicate record_ids: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -636,12 +597,10 @@ class LOBDatasetManifest(BaseModel):
         """Every record's session_id must refer to a session in
         ``sessions``."""
         session_ids = {s.session_id for s in self.sessions}
-        bad = sorted({r.session_id for r in self.records
-                      if r.session_id not in session_ids})
+        bad = sorted({r.session_id for r in self.records if r.session_id not in session_ids})
         if bad:
             raise ValueError(
-                f"records reference unknown session_ids: {bad!r} "
-                f"(known: {sorted(session_ids)!r})"
+                f"records reference unknown session_ids: {bad!r} (known: {sorted(session_ids)!r})"
             )
         return self
 
@@ -649,31 +608,25 @@ class LOBDatasetManifest(BaseModel):
     def _records_match_venue_symbol(self) -> LOBDatasetManifest:
         """All records must have the same venue and symbol as the
         manifest."""
-        bad_venue = sorted({r.record_id for r in self.records
-                            if r.venue != self.venue})
+        bad_venue = sorted({r.record_id for r in self.records if r.venue != self.venue})
         if bad_venue:
             raise ValueError(
-                f"records with mismatched venue (expected "
-                f"{self.venue.value!r}): {bad_venue!r}"
+                f"records with mismatched venue (expected {self.venue.value!r}): {bad_venue!r}"
             )
-        bad_symbol = sorted({r.record_id for r in self.records
-                             if r.symbol != self.symbol})
+        bad_symbol = sorted({r.record_id for r in self.records if r.symbol != self.symbol})
         if bad_symbol:
             raise ValueError(
-                f"records with mismatched symbol (expected "
-                f"{self.symbol!r}): {bad_symbol!r}"
+                f"records with mismatched symbol (expected {self.symbol!r}): {bad_symbol!r}"
             )
         return self
 
     @model_validator(mode="after")
     def _records_match_book_depth(self) -> LOBDatasetManifest:
         """All records must have the same book_depth as the manifest."""
-        bad = sorted({r.record_id for r in self.records
-                      if r.book_depth != self.book_depth})
+        bad = sorted({r.record_id for r in self.records if r.book_depth != self.book_depth})
         if bad:
             raise ValueError(
-                f"records with mismatched book_depth (expected "
-                f"{self.book_depth}): {bad!r}"
+                f"records with mismatched book_depth (expected {self.book_depth}): {bad!r}"
             )
         return self
 
@@ -778,13 +731,9 @@ def validate_session_split(sessions: list[LOBSession]) -> bool:
 
     types = {s.session_type for s in sessions}
     if "train" not in types:
-        raise ValueError(
-            "session split must contain at least one train session"
-        )
+        raise ValueError("session split must contain at least one train session")
     if "validation" not in types:
-        raise ValueError(
-            "session split must contain at least one validation session"
-        )
+        raise ValueError("session split must contain at least one validation session")
 
     # Check no overlapping sessions of the same type.
     by_type: dict[str, list[LOBSession]] = {}
@@ -792,8 +741,10 @@ def validate_session_split(sessions: list[LOBSession]) -> bool:
         by_type.setdefault(s.session_type, []).append(s)
     for stype, group in by_type.items():
         intervals = sorted(
-            ((_parse_temporal(s.session_start), _parse_temporal(s.session_end),
-              s.session_id) for s in group),
+            (
+                (_parse_temporal(s.session_start), _parse_temporal(s.session_end), s.session_id)
+                for s in group
+            ),
             key=lambda t: t[0],
         )
         for i in range(1, len(intervals)):
@@ -951,9 +902,7 @@ class LOBManifestBuilder:
         self._data_hash: str = ""
         self._created_at: str = ""
 
-    def with_sessions(
-        self, sessions: list[LOBSession]
-    ) -> LOBManifestBuilder:
+    def with_sessions(self, sessions: list[LOBSession]) -> LOBManifestBuilder:
         """Set the sessions (train/validation/test split).
 
         Args:
@@ -966,9 +915,7 @@ class LOBManifestBuilder:
         self._sessions = list(sessions)
         return self
 
-    def with_label_specs(
-        self, specs: list[LabelSpec]
-    ) -> LOBManifestBuilder:
+    def with_label_specs(self, specs: list[LabelSpec]) -> LOBManifestBuilder:
         """Set the label specifications.
 
         Args:
@@ -980,9 +927,7 @@ class LOBManifestBuilder:
         self._label_specs = list(specs)
         return self
 
-    def with_records(
-        self, records: list[LOBRecord]
-    ) -> LOBManifestBuilder:
+    def with_records(self, records: list[LOBRecord]) -> LOBManifestBuilder:
         """Set the order book records.
 
         Args:
@@ -994,9 +939,7 @@ class LOBManifestBuilder:
         self._records = list(records)
         return self
 
-    def with_data(
-        self, uri: str, data_hash: str
-    ) -> LOBManifestBuilder:
+    def with_data(self, uri: str, data_hash: str) -> LOBManifestBuilder:
         """Set the data location and hash.
 
         Args:
@@ -1010,9 +953,7 @@ class LOBManifestBuilder:
         self._data_hash = data_hash
         return self
 
-    def with_created_at(
-        self, created_at: str
-    ) -> LOBManifestBuilder:
+    def with_created_at(self, created_at: str) -> LOBManifestBuilder:
         """Set the creation timestamp.
 
         Args:
@@ -1035,7 +976,7 @@ class LOBManifestBuilder:
                 fails (fail-closed).
         """
         if not self._created_at:
-            self._created_at = datetime.now(timezone.utc).isoformat()
+            self._created_at = datetime.now(UTC).isoformat()
 
         return LOBDatasetManifest(
             dataset_id=self._dataset_id,

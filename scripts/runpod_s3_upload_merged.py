@@ -1,5 +1,7 @@
 """Upload merged dataset to RunPod."""
+
 import pathlib
+
 import boto3
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -31,4 +33,4 @@ resp = s3.list_objects_v2(Bucket=VOLUME_ID, Prefix="datasets/merged_lgbm/")
 for obj in resp.get("Contents", []):
     print(f"  {obj['Key']}: {obj['Size']:,} bytes")
 
-print(f"\nServerless path: /runpod-volume/datasets/merged_lgbm/dataset_full.csv")
+print("\nServerless path: /runpod-volume/datasets/merged_lgbm/dataset_full.csv")

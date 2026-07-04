@@ -13,12 +13,11 @@ no torch / gymnasium / stable_baselines3 import is required.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.rl_runtime import (
     CostModel,
     EnvironmentManifest,
@@ -34,7 +33,6 @@ from quant_foundry.rl_shadow_policy import (
     validate_no_future_label_access,
     validate_promotion_eligibility,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -410,22 +408,22 @@ class TestFutureLabelGuard:
 
     def test_safe_access(self) -> None:
         guard = FutureLabelGuard(horizon=1)
-        assert guard.check_reward_access(
-            "2026-01-02T00:00:00+00:00", "2026-01-01T00:00:00+00:00"
-        ) is True
+        assert (
+            guard.check_reward_access("2026-01-02T00:00:00+00:00", "2026-01-01T00:00:00+00:00")
+            is True
+        )
 
     def test_label_equals_reward_time_safe(self) -> None:
         guard = FutureLabelGuard(horizon=1)
-        assert guard.check_reward_access(
-            "2026-01-02T00:00:00+00:00", "2026-01-02T00:00:00+00:00"
-        ) is True
+        assert (
+            guard.check_reward_access("2026-01-02T00:00:00+00:00", "2026-01-02T00:00:00+00:00")
+            is True
+        )
 
     def test_future_label_rejected(self) -> None:
         guard = FutureLabelGuard(horizon=1)
         with pytest.raises(ValueError):
-            guard.check_reward_access(
-                "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"
-            )
+            guard.check_reward_access("2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00")
 
     def test_batch_no_leakage(self) -> None:
         guard = FutureLabelGuard(horizon=1)
@@ -441,12 +439,7 @@ class TestFutureLabelGuard:
             "2026-01-03T00:00:00+00:00",
             "2026-01-04T00:00:00+00:00",
         ]
-        assert (
-            guard.validate_no_future_leakage(
-                rewards, labels, reward_times, label_times
-            )
-            is True
-        )
+        assert guard.validate_no_future_leakage(rewards, labels, reward_times, label_times) is True
 
     def test_batch_future_leakage_rejected(self) -> None:
         guard = FutureLabelGuard(horizon=1)
@@ -461,22 +454,16 @@ class TestFutureLabelGuard:
             "2026-01-03T00:00:00+00:00",
         ]
         with pytest.raises(ValueError):
-            guard.validate_no_future_leakage(
-                rewards, labels, reward_times, label_times
-            )
+            guard.validate_no_future_leakage(rewards, labels, reward_times, label_times)
 
     def test_batch_length_mismatch(self) -> None:
         guard = FutureLabelGuard(horizon=1)
         with pytest.raises(ValueError):
-            guard.validate_no_future_leakage(
-                [0.1, 0.2], [0.0], ["t1"], ["t2"]
-            )
+            guard.validate_no_future_leakage([0.1, 0.2], [0.0], ["t1"], ["t2"])
 
     def test_batch_empty_safe(self) -> None:
         guard = FutureLabelGuard(horizon=1)
-        assert (
-            guard.validate_no_future_leakage([], [], [], []) is True
-        )
+        assert guard.validate_no_future_leakage([], [], [], []) is True
 
 
 # ---------------------------------------------------------------------------
@@ -492,9 +479,7 @@ class TestRLShadowPolicy:
         assert policy._n_assets == 3
 
     def test_train_returns_shadow_result(self) -> None:
-        cfg = _make_config(
-            n_train_episodes=2, n_eval_episodes=2, n_timesteps=4
-        )
+        cfg = _make_config(n_train_episodes=2, n_eval_episodes=2, n_timesteps=4)
         policy = RLShadowPolicy(cfg)
         data = _make_returns_data(n=60)
         result = policy.train(data)
@@ -537,9 +522,7 @@ class TestRLShadowPolicy:
         cfg = _make_config(n_eval_episodes=1, n_timesteps=3)
         policy = RLShadowPolicy(cfg)
         # Only train-period data: eval should still run on simulator.
-        data = [
-            {"timestamp": "2026-01-05T00:00:00+00:00", "returns": [0.0] * 3}
-        ]
+        data = [{"timestamp": "2026-01-05T00:00:00+00:00", "returns": [0.0] * 3}]
         metrics = policy.evaluate(data)
         # Eval data is empty but episodes still run on the simulator.
         assert metrics["n_steps"] >= 0.0
@@ -573,9 +556,7 @@ class TestRLShadowPolicy:
         assert result.policy_checkpoint.policy_type == "random"
 
     def test_single_episode(self) -> None:
-        cfg = _make_config(
-            n_train_episodes=1, n_eval_episodes=1, n_timesteps=2
-        )
+        cfg = _make_config(n_train_episodes=1, n_eval_episodes=1, n_timesteps=2)
         policy = RLShadowPolicy(cfg)
         data = _make_returns_data(n=60)
         result = policy.train(data)
@@ -584,8 +565,10 @@ class TestRLShadowPolicy:
 
     def test_single_asset(self) -> None:
         cfg = _make_config(
-            n_assets=1, n_timesteps=3,
-            n_train_episodes=1, n_eval_episodes=1,
+            n_assets=1,
+            n_timesteps=3,
+            n_train_episodes=1,
+            n_eval_episodes=1,
         )
         # max_weight must allow 1 asset to sum to 1.0.
         cfg = cfg.model_copy(
@@ -623,7 +606,7 @@ class TestRLShadowPolicy:
 def _parse_dt(ts: str) -> datetime:
     text = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
     dt = datetime.fromisoformat(text)
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -638,10 +621,7 @@ class TestValidatePromotionEligibility:
 
     def test_manual_override_eligible(self) -> None:
         result = _make_result()
-        assert (
-            validate_promotion_eligibility(result, manual_override=True)
-            is True
-        )
+        assert validate_promotion_eligibility(result, manual_override=True) is True
 
     def test_result_promotion_eligible_always_false(self) -> None:
         result = _make_result()
@@ -724,9 +704,7 @@ class TestRegisterRLShadowFamily:
 
 class TestIntegration:
     def test_end_to_end(self, tmp_path: Path) -> None:
-        cfg = _make_config(
-            n_train_episodes=2, n_eval_episodes=2, n_timesteps=4
-        )
+        cfg = _make_config(n_train_episodes=2, n_eval_episodes=2, n_timesteps=4)
         policy = RLShadowPolicy(cfg)
         data = _make_returns_data(n=60)
         result = policy.train(data)

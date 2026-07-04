@@ -13,6 +13,7 @@ Usage:
     # Dry-run (print commands only, don't create endpoints):
     uv run python scripts/runpod_deploy_diag_endpoints.py --git-sha be96d76b --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,7 @@ IMAGE_PREFIX = "ghcr.io/airyder/fincept"
 
 # Known endpoint IDs from previous session (for diagnostic reference).
 PREV_TRAINING_ENDPOINT = "mxp0bv8itggwev"  # last known training endpoint
-PREV_DIAG_ENDPOINT = "zbpy7m8s8dps7k"      # previous diagnostic endpoint
+PREV_DIAG_ENDPOINT = "zbpy7m8s8dps7k"  # previous diagnostic endpoint
 
 
 def _emit(event: str, **fields: Any) -> None:
@@ -107,15 +108,24 @@ def main(argv: list[str] | None = None) -> int:
     # --- 1. CUDA test endpoint ---
     if not args.skip_cuda_test:
         cuda_args = [
-            "--image-tag", cuda_image,
-            "--name", "fincept-qf-cuda-test",
-            "--template-name", "fincept-qf-cuda-test-template",
-            "--copy-registry-auth-from-endpoint-id", args.registry_auth_source_endpoint_id,
-            "--gpu-ids", "ADA_24",
-            "--workers-min", "0",
-            "--workers-max", "1",
-            "--container-disk-gb", "10",
-            "--idle-timeout", "300",
+            "--image-tag",
+            cuda_image,
+            "--name",
+            "fincept-qf-cuda-test",
+            "--template-name",
+            "fincept-qf-cuda-test-template",
+            "--copy-registry-auth-from-endpoint-id",
+            args.registry_auth_source_endpoint_id,
+            "--gpu-ids",
+            "ADA_24",
+            "--workers-min",
+            "0",
+            "--workers-max",
+            "1",
+            "--container-disk-gb",
+            "10",
+            "--idle-timeout",
+            "300",
         ]
         if args.wait_health:
             cuda_args.append("--wait-health")
@@ -131,15 +141,24 @@ def main(argv: list[str] | None = None) -> int:
     # --- 2. Training layered endpoint ---
     if not args.skip_training:
         training_args = [
-            "--image-tag", training_image,
-            "--name", "fincept-qf-training-layered-diag",
-            "--template-name", "fincept-qf-training-layered-diag-template",
-            "--copy-registry-auth-from-endpoint-id", args.registry_auth_source_endpoint_id,
-            "--gpu-ids", "ADA_24",
-            "--workers-min", "0",
-            "--workers-max", "1",
-            "--container-disk-gb", "20",
-            "--idle-timeout", "300",
+            "--image-tag",
+            training_image,
+            "--name",
+            "fincept-qf-training-layered-diag",
+            "--template-name",
+            "fincept-qf-training-layered-diag-template",
+            "--copy-registry-auth-from-endpoint-id",
+            args.registry_auth_source_endpoint_id,
+            "--gpu-ids",
+            "ADA_24",
+            "--workers-min",
+            "0",
+            "--workers-max",
+            "1",
+            "--container-disk-gb",
+            "20",
+            "--idle-timeout",
+            "300",
         ]
         # Inject diagnostic env vars
         training_args.extend(["--env", "QF_DIAG_LAYER=0"])
@@ -166,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             "probe_instructions",
             msg="Run these commands once endpoints are created:",
             cuda_test_cmd=f"uv run python scripts/runpod_smoke_probe.py --endpoint-id <CUDA_EP_ID> --image-tag {cuda_image}",
-            training_cmd=f"uv run python scripts/runpod_smoke_probe.py --endpoint-id <TRAINING_EP_ID> --image-tag {training_image} --payload-json '{{\"input\": {{\"diag_layer\": 0}}}}'",
+            training_cmd=f'uv run python scripts/runpod_smoke_probe.py --endpoint-id <TRAINING_EP_ID> --image-tag {training_image} --payload-json \'{{"input": {{"diag_layer": 0}}}}\'',
             diagnostic_cmd="uv run python scripts/runpod_endpoint_diagnostic.py --endpoint-id <EP_ID> --poll 10",
         )
 

@@ -16,6 +16,7 @@ Usage:
 Never prints RUNPOD_API_KEY, QUANT_FOUNDRY_CALLBACK_SECRET, registry auth
 ids, or callback signatures.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -99,10 +100,7 @@ def _gql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
 def _redact(obj: Any) -> Any:
     """Recursively redact secret keys from a dict/list."""
     if isinstance(obj, dict):
-        return {
-            k: ("***REDACTED***" if k in REDACT_KEYS else _redact(v))
-            for k, v in obj.items()
-        }
+        return {k: ("***REDACTED***" if k in REDACT_KEYS else _redact(v)) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_redact(i) for i in obj]
     return obj
@@ -111,7 +109,7 @@ def _redact(obj: Any) -> Any:
 def get_template(template_id: str) -> dict[str, Any]:
     """Get a template by ID."""
     data = _gql(
-        'query GetTemplate($id: String!) { podTemplate(id: $id) { id name imageName env { key value } dockerArgs containerRegistryAuthId } }',
+        "query GetTemplate($id: String!) { podTemplate(id: $id) { id name imageName env { key value } dockerArgs containerRegistryAuthId } }",
         {"id": template_id},
     )
     return data["podTemplate"]
@@ -143,7 +141,7 @@ def save_template(
     if template_id:
         input_obj["id"] = template_id
     data = _gql(
-        'mutation SaveTemplate($input: SaveTemplateInput) { saveTemplate(input: $input) { id } }',
+        "mutation SaveTemplate($input: SaveTemplateInput) { saveTemplate(input: $input) { id } }",
         {"input": input_obj},
     )
     return data["saveTemplate"]["id"]
@@ -171,7 +169,7 @@ def create_endpoint(
         "scalerValue": scaler_value,
     }
     data = _gql(
-        'mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id } }',
+        "mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id } }",
         {"input": input_obj},
     )
     return data["saveEndpoint"]["id"]
@@ -180,7 +178,7 @@ def create_endpoint(
 def _get_endpoint_by_id(endpoint_id: str) -> dict[str, Any]:
     """Fetch a single endpoint by ID from the myself.endpoints list."""
     data = _gql(
-        'query GetEndpoints { myself { endpoints { id name templateId workersMin workersMax } } }',
+        "query GetEndpoints { myself { endpoints { id name templateId workersMin workersMax } } }",
     )
     endpoints = data["myself"]["endpoints"]
     for ep in endpoints:
@@ -290,7 +288,7 @@ def update_endpoint_workers(
     if template_id:
         input_obj["templateId"] = template_id
     data = _gql(
-        'mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id workersMin workersMax } }',
+        "mutation SaveEndpoint($input: EndpointInput!) { saveEndpoint(input: $input) { id workersMin workersMax } }",
         {"input": input_obj},
     )
     return data["saveEndpoint"]
@@ -299,7 +297,7 @@ def update_endpoint_workers(
 def delete_endpoint(endpoint_id: str) -> dict[str, Any]:
     """Delete an endpoint."""
     data = _gql(
-        'mutation DeleteEndpoint($id: String!) { deleteEndpoint(id: $id) }',
+        "mutation DeleteEndpoint($id: String!) { deleteEndpoint(id: $id) }",
         {"id": endpoint_id},
     )
     return data["deleteEndpoint"]
@@ -344,10 +342,10 @@ def probe_profile(
     endpoint_name = f"qf-bisect-{profile}-{short_sha}"
     job_id_label = f"qf:import-bisect:{profile}:{short_sha}"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  PROFILE: {profile}")
     print(f"  Endpoint: {endpoint_name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Create endpoint
     try:
@@ -374,7 +372,9 @@ def probe_profile(
         print(f"  Waiting for ready (timeout={READY_TIMEOUT_S}s)...")
         health_before = wait_for_ready(endpoint_id, READY_TIMEOUT_S)
         workers = health_before.get("workers", {})
-        print(f"  Health before: ready={workers.get('ready',0)} idle={workers.get('idle',0)} unhealthy={workers.get('unhealthy',0)}")
+        print(
+            f"  Health before: ready={workers.get('ready', 0)} idle={workers.get('idle', 0)} unhealthy={workers.get('unhealthy', 0)}"
+        )
 
         # Write health-before receipt
         (receipt_dir / f"health-before-{profile}.json").write_text(
@@ -384,11 +384,13 @@ def probe_profile(
         # Check if worker is unhealthy before dispatch
         if workers.get("unhealthy", 0) > 0 or workers.get("ready", 0) == 0:
             print("  FAIL: worker not healthy before dispatch")
-            probe_log.append({
-                "event": "worker_unhealthy_before_dispatch",
-                "health": _redact(health_before),
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            })
+            probe_log.append(
+                {
+                    "event": "worker_unhealthy_before_dispatch",
+                    "health": _redact(health_before),
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
             (receipt_dir / f"probe-{profile}.jsonl").write_text(
                 "\n".join(json.dumps(l) for l in probe_log) + "\n"
             )
@@ -421,12 +423,14 @@ def probe_profile(
                 "final_status": None,
             }
 
-        probe_log.append({
-            "event": "job_dispatched",
-            "job_id": job_id,
-            "input": _redact(input_data),
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        })
+        probe_log.append(
+            {
+                "event": "job_dispatched",
+                "job_id": job_id,
+                "input": _redact(input_data),
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        )
 
         # Poll health and status
         deadline = time.time() + PROBE_TIMEOUT_S
@@ -446,19 +450,23 @@ def probe_profile(
             job_status = status_resp.get("status", "UNKNOWN")
             final_status = job_status
 
-            probe_log.append({
-                "event": "poll",
-                "job_id": job_id,
-                "status": job_status,
-                "health": _redact(health),
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            })
+            probe_log.append(
+                {
+                    "event": "poll",
+                    "job_id": job_id,
+                    "status": job_status,
+                    "health": _redact(health),
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
 
-            print(f"  [{int(time.time()) % 100}] status={job_status} "
-                  f"ready={workers.get('ready',0)} idle={workers.get('idle',0)} "
-                  f"running={workers.get('running',0)} "
-                  f"unhealthy={workers.get('unhealthy',0)} "
-                  f"inQueue={jobs.get('inQueue',0)} completed={jobs.get('completed',0)}")
+            print(
+                f"  [{int(time.time()) % 100}] status={job_status} "
+                f"ready={workers.get('ready', 0)} idle={workers.get('idle', 0)} "
+                f"running={workers.get('running', 0)} "
+                f"unhealthy={workers.get('unhealthy', 0)} "
+                f"inQueue={jobs.get('inQueue', 0)} completed={jobs.get('completed', 0)}"
+            )
 
             # Check for failure conditions
             if workers.get("unhealthy", 0) > 0:
@@ -505,8 +513,10 @@ def probe_profile(
 
         # Final health check
         health_after = get_endpoint_health(endpoint_id)
-        print(f"  Health after: ready={health_after['workers'].get('ready',0)} "
-              f"unhealthy={health_after['workers'].get('unhealthy',0)}")
+        print(
+            f"  Health after: ready={health_after['workers'].get('ready', 0)} "
+            f"unhealthy={health_after['workers'].get('unhealthy', 0)}"
+        )
 
         # Write receipts
         (receipt_dir / f"probe-{profile}.jsonl").write_text(
@@ -541,12 +551,16 @@ def probe_profile(
         try:
             final_ep = get_endpoint_health(endpoint_id)
             (receipt_dir / f"cleanup-{profile}.json").write_text(
-                json.dumps({
-                    "endpoint_id": endpoint_id,
-                    "workersMin": 0,
-                    "workersMax": 0,
-                    "health_after_scale_down": _redact(final_ep),
-                }, indent=2, sort_keys=True)
+                json.dumps(
+                    {
+                        "endpoint_id": endpoint_id,
+                        "workersMin": 0,
+                        "workersMax": 0,
+                        "health_after_scale_down": _redact(final_ep),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
             )
         except Exception:
             pass
@@ -681,11 +695,13 @@ def main() -> int:
             print(f"\n  Template created for {profile}: {profile_template_id}")
         except Exception as e:
             print(f"ERROR creating template for profile {profile}: {e}")
-            results.append({
-                "profile": profile,
-                "result": "fail",
-                "failure_reason": f"template_create_error: {e}",
-            })
+            results.append(
+                {
+                    "profile": profile,
+                    "result": "fail",
+                    "failure_reason": f"template_create_error: {e}",
+                }
+            )
             if not args.continue_on_fail:
                 break
             continue
@@ -705,11 +721,11 @@ def main() -> int:
             last_pass = profile
         else:
             first_fail = profile or first_fail
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  FAILURE: {profile}")
             print(f"  Reason: {result['failure_reason']}")
             print(f"  Last passing: {last_pass}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             if not args.continue_on_fail:
                 break  # Stop at first failure
 
@@ -746,36 +762,42 @@ def main() -> int:
             f"{r.get('endpoint_id', '-')} | {r.get('job_id', '-')} | "
             f"{r.get('final_status', '-')} |"
         )
-    interp_lines.extend([
-        "",
-        "## Summary",
-        "",
-        f"- **First failing profile:** {first_fail or 'none (all passed)'}",
-        f"- **Last passing profile:** {last_pass or 'none'}",
-        f"- **Profiles tested:** {len(results)}",
-        "",
-        "## Next Steps",
-        "",
-    ])
-    if first_fail:
-        interp_lines.extend([
-            f"The first failing profile is **{first_fail}**.",
-            f"The last passing profile is **{last_pass}**.",
+    interp_lines.extend(
+        [
             "",
-            f"This means the import group `{first_fail}` poisons the worker at dispatch time.",
-            "The fix should isolate or lazy-load the imports in this group.",
-        ])
+            "## Summary",
+            "",
+            f"- **First failing profile:** {first_fail or 'none (all passed)'}",
+            f"- **Last passing profile:** {last_pass or 'none'}",
+            f"- **Profiles tested:** {len(results)}",
+            "",
+            "## Next Steps",
+            "",
+        ]
+    )
+    if first_fail:
+        interp_lines.extend(
+            [
+                f"The first failing profile is **{first_fail}**.",
+                f"The last passing profile is **{last_pass}**.",
+                "",
+                f"This means the import group `{first_fail}` poisons the worker at dispatch time.",
+                "The fix should isolate or lazy-load the imports in this group.",
+            ]
+        )
     else:
-        interp_lines.append("All profiles passed — the issue may be in the handler logic, not imports.")
+        interp_lines.append(
+            "All profiles passed — the issue may be in the handler logic, not imports."
+        )
 
     (receipt_dir / "interpretation.md").write_text("\n".join(interp_lines) + "\n")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  BISECTION COMPLETE")
     print(f"  First failing: {first_fail or 'none'}")
     print(f"  Last passing: {last_pass or 'none'}")
     print(f"  Receipts: {receipt_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     return 0 if first_fail is None else 2  # 0=all pass, 2=found failure
 

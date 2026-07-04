@@ -51,7 +51,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Docker image spec
 # ---------------------------------------------------------------------------
@@ -84,9 +83,9 @@ class FoundationImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.foundation_runtime import "
+        'python -c "from quant_foundry.foundation_runtime import '
         "FoundationHealthcheck; import sys; "
-        "sys.exit(0 if FoundationHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if FoundationHealthcheck().is_healthy() else 1)"'
     )
     offline_mode: bool = True
     supports_batch_forecast: bool = True
@@ -329,7 +328,7 @@ class FoundationForecastAdapter:
         are honored literally (cuda on a CPU-only host falls back to
         CPU).
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.config.device == "cpu":
             return torch.device("cpu")
@@ -393,7 +392,7 @@ class FoundationForecastAdapter:
         # (the common foundation-TS path), falling back to a plain
         # torch.load for raw state_dict files.
         try:
-            import torch  # noqa: WPS433 lazy import
+            import torch
 
             state = torch.load(str(p), map_location=str(device))
             self._model = state
@@ -401,7 +400,7 @@ class FoundationForecastAdapter:
             # If torch.load fails (e.g. a safetensors file), try the
             # safetensors loader.
             try:
-                from safetensors.torch import load_file  # noqa: WPS433
+                from safetensors.torch import load_file
 
                 self._model = load_file(str(p), device=str(device))
             except Exception as exc:  # pragma: no cover - defensive
@@ -433,7 +432,7 @@ class FoundationForecastAdapter:
         gpu_status = check_gpu()
         device = self._resolve_device(gpu_status.available)
 
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         torch.manual_seed(self.config.seed)
 
@@ -481,13 +480,16 @@ class FoundationForecastAdapter:
         # the output deterministic given the seed while honoring
         # num_samples.
         if self.config.num_samples > 1:
-            noise_scale = 1.0 / (self.config.num_samples ** 0.5)
-            noise = torch.randn(
-                preds.shape,
-                generator=gen,
-                device=device,
-                dtype=torch.float32,
-            ) * noise_scale
+            noise_scale = 1.0 / (self.config.num_samples**0.5)
+            noise = (
+                torch.randn(
+                    preds.shape,
+                    generator=gen,
+                    device=device,
+                    dtype=torch.float32,
+                )
+                * noise_scale
+            )
             preds = preds + noise
 
         preds_list = preds.detach().cpu().tolist()
@@ -575,7 +577,7 @@ class FoundationHealthcheck:
 
         # Tiny synthetic forecast.
         try:
-            import torch  # noqa: WPS433 lazy import
+            import torch
 
             torch.manual_seed(42)
             ctx = torch.randn(4, 16)
@@ -600,18 +602,13 @@ class FoundationHealthcheck:
             # file lookup.
             adapter._model = True  # sentinel: skip file load
             forecast_result = adapter.forecast(ctx)
-            result["forecast"] = (
-                len(forecast_result.predictions) == config.batch_size
-            )
+            result["forecast"] = len(forecast_result.predictions) == config.batch_size
         except Exception as exc:
             result["error"] = f"forecast probe failed: {exc}"
 
         gpu_ok = bool(result["gpu"].get("available")) if result["gpu"] else False
         result["healthy"] = bool(
-            gpu_ok
-            and result["weight_cache"]
-            and result["forecast"]
-            and result["error"] is None
+            gpu_ok and result["weight_cache"] and result["forecast"] and result["error"] is None
         )
         result["duration_seconds"] = time.perf_counter() - start
         return result
@@ -628,10 +625,10 @@ class FoundationHealthcheck:
 
 
 __all__ = [
-    "FoundationImageSpec",
     "BatchForecastConfig",
     "BatchForecastResult",
     "FoundationForecastAdapter",
     "FoundationHealthcheck",
+    "FoundationImageSpec",
     "WeightCacheManager",
 ]

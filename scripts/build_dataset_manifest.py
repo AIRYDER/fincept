@@ -52,11 +52,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import pathlib
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # scripts/ are not packaged; prepend the quant_foundry src dir so we can
@@ -118,13 +117,13 @@ def _date_to_ns(date_str: str) -> int:
     """Parse a YYYY-MM-DD date string to nanoseconds since epoch (UTC midnight)."""
     dt = datetime.fromisoformat(date_str)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp()) * 1_000_000_000
 
 
 def _ns_to_date_str(ns: int) -> str:
     """Format nanoseconds since epoch as a YYYY-MM-DD string (UTC)."""
-    return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).strftime(
+    return datetime.fromtimestamp(ns / 1_000_000_000, tz=UTC).strftime(
         "%Y-%m-%d",
     )
 
@@ -171,7 +170,11 @@ def load_bars_from_parquet(
     for path in candidates:
         df = pl.read_parquet(str(path))
         # Normalise: only keep the columns we need.
-        keep = [c for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume") if c in df.columns]
+        keep = [
+            c
+            for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume")
+            if c in df.columns
+        ]
         df = df.select(keep)
         frames.append(df)
 
@@ -328,8 +331,7 @@ def rows_to_feature_rows(
     for r in data_rows:
         dt = int(r["decision_time"])
         features = tuple(
-            FeatureValue(name=name, value=float(r[name]), observed_at=dt)
-            for name in FEATURE_NAMES
+            FeatureValue(name=name, value=float(r[name]), observed_at=dt) for name in FEATURE_NAMES
         )
         out.append(
             FeatureRow(
@@ -346,8 +348,7 @@ def rows_to_feature_rows(
 def build_universe(symbols: Sequence[str]) -> tuple[UniverseEntry, ...]:
     """Build an as-of universe with all symbols still listed (no delistings)."""
     return tuple(
-        UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-        for s in sorted(symbols)
+        UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in sorted(symbols)
     )
 
 
@@ -430,7 +431,8 @@ def build_dataset_manifest(
     all_data_rows: list[dict[str, Any]] = []
     for sym in symbols:
         sym_rows = compute_features_and_labels(
-            bars_by_symbol[sym], label_horizon_days,
+            bars_by_symbol[sym],
+            label_horizon_days,
         )
         for r in sym_rows:
             r["__symbol"] = sym
@@ -454,7 +456,8 @@ def build_dataset_manifest(
     )
     manifest = builder.build_manifest()
     availability = FeatureAvailabilityReport.from_rows(
-        feature_rows, FEATURE_NAMES,
+        feature_rows,
+        FEATURE_NAMES,
     )
     return manifest, availability, feature_rows, all_data_rows
 
@@ -558,7 +561,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     else:
         bars_by_symbol = load_bars_from_parquet(
-            pathlib.Path(args.bars_dir), symbols, start_ns, end_ns,
+            pathlib.Path(args.bars_dir),
+            symbols,
+            start_ns,
+            end_ns,
         )
 
     if not bars_by_symbol:
@@ -581,7 +587,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"end:{args.end_date}",
     ]
 
-    manifest, availability, feature_rows, data_rows = build_dataset_manifest(
+    manifest, availability, _feature_rows, data_rows = build_dataset_manifest(
         bars_by_symbol,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,

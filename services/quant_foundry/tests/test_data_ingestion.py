@@ -150,9 +150,7 @@ def test_quality_report_field_types() -> None:
         "mean_feature_values",
         "std_feature_values",
     }
-    assert required.issubset(set(fields.keys())), (
-        f"missing fields: {required - set(fields.keys())}"
-    )
+    assert required.issubset(set(fields.keys())), f"missing fields: {required - set(fields.keys())}"
 
     # schema_version default is 1.
     assert fields["schema_version"].default == 1
@@ -195,11 +193,19 @@ def test_quality_report_is_frozen() -> None:
 _NUMPY = pytest.importorskip("numpy")
 _POLARS = pytest.importorskip("polars")
 
-_SYNTHETIC_PARQUET = _REPO_ROOT / "data" / "datasets" / "backtest_synthetic" / (
-    "synthetic_s5_d500_h5d_seed42.parquet"
+_SYNTHETIC_PARQUET = (
+    _REPO_ROOT
+    / "data"
+    / "datasets"
+    / "backtest_synthetic"
+    / ("synthetic_s5_d500_h5d_seed42.parquet")
 )
-_SYNTHETIC_MANIFEST = _REPO_ROOT / "data" / "datasets" / "backtest_synthetic" / (
-    "synthetic_s5_d500_h5d_seed42.manifest.json"
+_SYNTHETIC_MANIFEST = (
+    _REPO_ROOT
+    / "data"
+    / "datasets"
+    / "backtest_synthetic"
+    / ("synthetic_s5_d500_h5d_seed42.manifest.json")
 )
 
 
@@ -245,9 +251,7 @@ def test_compute_quality_report_on_synthetic_dataset() -> None:
 
     # Feature coverage should be 100% for the synthetic dataset.
     for name in ("ret_1d", "ret_5d", "vol_20d", "mom_10d", "vol_ratio"):
-        assert report.feature_coverage_pct[name] == 100.0, (
-            f"{name} coverage should be 100%"
-        )
+        assert report.feature_coverage_pct[name] == 100.0, f"{name} coverage should be 100%"
         assert report.feature_missing_count[name] == 0
         assert name in report.mean_feature_values
         assert name in report.std_feature_values

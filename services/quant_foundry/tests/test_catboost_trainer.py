@@ -9,13 +9,11 @@ itself stays importable without it).
 from __future__ import annotations
 
 import os
-import tempfile
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
-
 from quant_foundry.catboost_trainer import (
     CatBoostTrainer,
     CatBoostTrainingResult,
@@ -24,8 +22,7 @@ from quant_foundry.dataset_manifest import ColumnRoles
 from quant_foundry.training_manifest import ModelTaskSpec
 
 pytest.importorskip("catboost")
-import catboost as cb  # noqa: E402  -- after importorskip
-
+import catboost as cb
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -63,7 +60,9 @@ def _regression_params(**overrides: Any) -> dict[str, Any]:
 
 
 def _make_binary_data(
-    n: int = 60, seed: int = 0, with_cat: bool = False,
+    n: int = 60,
+    seed: int = 0,
+    with_cat: bool = False,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     rng = np.random.default_rng(seed)
     a = rng.normal(size=n)
@@ -79,7 +78,8 @@ def _make_binary_data(
 
 
 def _make_regression_data(
-    n: int = 60, seed: int = 1,
+    n: int = 60,
+    seed: int = 1,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     rng = np.random.default_rng(seed)
     a = rng.normal(size=n)
@@ -119,7 +119,6 @@ class TestConstruction:
         module never imports catboost at module load time.
         """
         import builtins
-        import importlib
 
         real_import = builtins.__import__
 

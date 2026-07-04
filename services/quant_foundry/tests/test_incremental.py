@@ -36,7 +36,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 
 NS_PER_DAY = 86_400_000_000_000
-_BASE_NS = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+_BASE_NS = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
 
 # --------------------------------------------------------------------------- #
@@ -74,15 +74,19 @@ def _register_mock_modules(registry, *, source_id="mock-inc", price_id="mock-inc
                     t = _BASE_NS + day * NS_PER_DAY
                     if t < start_ns or t >= end_ns:
                         continue
-                    items.append(MediaItem(
-                        item_id=f"mock-{sym}-{day}",
-                        source="mock",
-                        headline="Company beats earnings" if day % 2 == 0 else "Stock drops on weak outlook",
-                        body="",
-                        available_at_ns=t,
-                        symbols=(sym,),
-                        event_type="earnings" if day % 2 == 0 else "guidance",
-                    ))
+                    items.append(
+                        MediaItem(
+                            item_id=f"mock-{sym}-{day}",
+                            source="mock",
+                            headline="Company beats earnings"
+                            if day % 2 == 0
+                            else "Stock drops on weak outlook",
+                            body="",
+                            available_at_ns=t,
+                            symbols=(sym,),
+                            event_type="earnings" if day % 2 == 0 else "guidance",
+                        )
+                    )
             return items
 
     @register_module("price_join", price_id, "1.0.0")
@@ -105,19 +109,21 @@ def _register_mock_modules(registry, *, source_id="mock-inc", price_id="mock-inc
                     if t < start_ns or t >= end_ns:
                         # still advance the price so the sequence is stable
                         ret = 0.0005 + rng.gauss(0, 0.01)
-                        price *= (1.0 + ret)
+                        price *= 1.0 + ret
                         continue
                     ret = 0.0005 + rng.gauss(0, 0.01)
-                    price *= (1.0 + ret)
-                    bars.append(PriceBar(
-                        symbol=sym,
-                        ts_ns=t,
-                        open=price * 0.999,
-                        high=price * 1.005,
-                        low=price * 0.995,
-                        close=price,
-                        volume=1e6,
-                    ))
+                    price *= 1.0 + ret
+                    bars.append(
+                        PriceBar(
+                            symbol=sym,
+                            ts_ns=t,
+                            open=price * 0.999,
+                            high=price * 1.005,
+                            low=price * 0.995,
+                            close=price,
+                            volume=1e6,
+                        )
+                    )
                 asset_bars[sym] = bars
             # Benchmark bars (different seed for non-zero β variance)
             rng_bench = random.Random(99)
@@ -126,18 +132,20 @@ def _register_mock_modules(registry, *, source_id="mock-inc", price_id="mock-inc
             for day in range(0, 451):
                 t = _BASE_NS + day * NS_PER_DAY
                 ret = 0.0003 + rng_bench.gauss(0, 0.01)
-                price *= (1.0 + ret)
+                price *= 1.0 + ret
                 if t < start_ns or t >= end_ns:
                     continue
-                bench_bars.append(PriceBar(
-                    symbol="SPY",
-                    ts_ns=t,
-                    open=price * 0.999,
-                    high=price * 1.005,
-                    low=price * 0.995,
-                    close=price,
-                    volume=1e7,
-                ))
+                bench_bars.append(
+                    PriceBar(
+                        symbol="SPY",
+                        ts_ns=t,
+                        open=price * 0.999,
+                        high=price * 1.005,
+                        low=price * 0.995,
+                        close=price,
+                        volume=1e7,
+                    )
+                )
             return asset_bars, bench_bars
 
     return MockSource, MockPriceJoin
@@ -451,14 +459,20 @@ def test_build_incremental_deduplication(tmp_path: pathlib.Path) -> None:
         )
         df2 = pl.read_parquet(str(result2.parquet_path))
 
-        pairs1 = set(zip(
-            df1["symbol"].to_list(),
-            df1["decision_time"].to_list(),
-        ))
-        pairs2 = list(zip(
-            df2["symbol"].to_list(),
-            df2["decision_time"].to_list(),
-        ))
+        pairs1 = set(
+            zip(
+                df1["symbol"].to_list(),
+                df1["decision_time"].to_list(),
+                strict=False,
+            )
+        )
+        pairs2 = list(
+            zip(
+                df2["symbol"].to_list(),
+                df2["decision_time"].to_list(),
+                strict=False,
+            )
+        )
 
         # No duplicate (symbol, decision_time) pairs — dedup worked.
         assert len(pairs2) == len(set(pairs2))
@@ -479,9 +493,7 @@ def test_build_incremental_deduplication(tmp_path: pathlib.Path) -> None:
         # And no row from the overlap window (since_ns, max_existing] was
         # added twice — the count of rows in that window equals the original.
         max_existing = max(dt for _s, dt in pairs1)
-        overlap_rows = [
-            p for p in pairs2 if since_ns < p[1] <= max_existing
-        ]
+        overlap_rows = [p for p in pairs2 if since_ns < p[1] <= max_existing]
         assert len(overlap_rows) == len(
             [p for p in pairs1 if since_ns < p[1] <= max_existing],
         )

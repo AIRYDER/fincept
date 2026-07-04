@@ -66,8 +66,7 @@ def test_detector_catches_import_based_healthcheck(tmp_path: Path) -> None:
     HEALTHCHECK (sanity check; does not touch the real Dockerfile)."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        'FROM python:3.12-slim\n'
-        'HEALTHCHECK CMD python -c "import handler"\n',
+        'FROM python:3.12-slim\nHEALTHCHECK CMD python -c "import handler"\n',
         encoding="utf-8",
     )
     offending = find_import_based_healthcheck(dockerfile)
@@ -80,8 +79,7 @@ def test_detector_catches_python3_import_variant(tmp_path: Path) -> None:
     """The detector also flags ``python3 -c 'import ...'`` variants."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM python:3.12-slim\n"
-        "HEALTHCHECK --interval=30s CMD python3 -c 'import quant_foundry'\n",
+        "FROM python:3.12-slim\nHEALTHCHECK --interval=30s CMD python3 -c 'import quant_foundry'\n",
         encoding="utf-8",
     )
     offending = find_import_based_healthcheck(dockerfile)
@@ -92,8 +90,7 @@ def test_detector_allows_healthcheck_none(tmp_path: Path) -> None:
     """``HEALTHCHECK NONE`` is explicitly allowed and must not be flagged."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM python:3.12-slim\n"
-        "HEALTHCHECK NONE\n",
+        "FROM python:3.12-slim\nHEALTHCHECK NONE\n",
         encoding="utf-8",
     )
     assert find_import_based_healthcheck(dockerfile) == []
@@ -103,8 +100,7 @@ def test_detector_allows_commented_healthcheck(tmp_path: Path) -> None:
     """A commented-out HEALTHCHECK line must not be flagged."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM python:3.12-slim\n"
-        '# HEALTHCHECK CMD python -c "import handler"\n',
+        'FROM python:3.12-slim\n# HEALTHCHECK CMD python -c "import handler"\n',
         encoding="utf-8",
     )
     assert find_import_based_healthcheck(dockerfile) == []
@@ -126,8 +122,7 @@ def test_detector_clean_when_no_healthcheck(tmp_path: Path) -> None:
     """A Dockerfile with no HEALTHCHECK directive at all is clean."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM python:3.12-slim\n"
-        'ENTRYPOINT ["python", "-u", "/worker/handler.py"]\n',
+        'FROM python:3.12-slim\nENTRYPOINT ["python", "-u", "/worker/handler.py"]\n',
         encoding="utf-8",
     )
     assert find_import_based_healthcheck(dockerfile) == []

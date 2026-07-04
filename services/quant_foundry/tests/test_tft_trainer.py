@@ -37,7 +37,6 @@ from quant_foundry.tft_trainer import (
     validate_promotion_eligibility,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -268,9 +267,7 @@ class TestCovariateRoles:
     def test_all_feature_cols(self) -> None:
         roles = _small_covariate_roles()
         all_cols = roles.all_feature_cols()
-        assert all_cols == [
-            "sector", "industry", "day_of_week", "is_holiday", "price", "volume"
-        ]
+        assert all_cols == ["sector", "industry", "day_of_week", "is_holiday", "price", "volume"]
 
     def test_n_features(self) -> None:
         roles = _small_covariate_roles()
@@ -584,18 +581,36 @@ class TestTFTModel:
     def test_invalid_construction(self) -> None:
         with pytest.raises(ValueError):
             TFTModel(
-                n_features=0, n_static=2, seq_len=16, horizon=3,
-                d_model=16, n_heads=4, n_layers=2, ff_dim=32,
+                n_features=0,
+                n_static=2,
+                seq_len=16,
+                horizon=3,
+                d_model=16,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
         with pytest.raises(ValueError):
             TFTModel(
-                n_features=6, n_static=2, seq_len=16, horizon=0,
-                d_model=16, n_heads=4, n_layers=2, ff_dim=32,
+                n_features=6,
+                n_static=2,
+                seq_len=16,
+                horizon=0,
+                d_model=16,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
         with pytest.raises(ValueError):
             TFTModel(
-                n_features=6, n_static=2, seq_len=16, horizon=3,
-                d_model=17, n_heads=4, n_layers=2, ff_dim=32,
+                n_features=6,
+                n_static=2,
+                seq_len=16,
+                horizon=3,
+                d_model=17,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
 
     def test_state_dict_round_trip(self) -> None:
@@ -631,9 +646,7 @@ class TestTFTModel:
         model2.eval()
         x = torch.randn(3, 16, 6)
         static = torch.randn(3, 2)
-        torch.testing.assert_close(
-            model.forward(x, static), model2.forward(x, static)
-        )
+        torch.testing.assert_close(model.forward(x, static), model2.forward(x, static))
 
     def test_to_and_eval(self) -> None:
         model = TFTModel(
@@ -1339,7 +1352,7 @@ class TestTFTIntegration:
             fold_predictions=preds,
             fold_ids=[0] * 20,
             symbols=["AAPL"] * 20,
-            timestamps=[f"2024-01-{i+1:02d}" for i in range(20)],
+            timestamps=[f"2024-01-{i + 1:02d}" for i in range(20)],
             labels=list(y[:, 0]),
             horizons=[5] * 20,
             weights=None,

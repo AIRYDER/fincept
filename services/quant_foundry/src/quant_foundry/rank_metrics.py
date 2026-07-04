@@ -52,12 +52,12 @@ from pydantic import BaseModel, ConfigDict, field_validator
 __all__ = [
     "RankReport",
     "compute_rank_metrics",
-    "rank_ic",
-    "ndcg_at_k",
-    "top_k_spread",
-    "turnover",
     "cost_adjusted_long_short_return",
     "max_drawdown",
+    "ndcg_at_k",
+    "rank_ic",
+    "top_k_spread",
+    "turnover",
 ]
 
 
@@ -377,7 +377,7 @@ def turnover(
         else:
             ids = np.arange(idx.shape[0], dtype=np.int64)
         cur_w: dict[Any, float] = {}
-        for iid, ww in zip(ids, w):
+        for iid, ww in zip(ids, w, strict=False):
             iid_key = iid.item() if isinstance(iid, np.generic) else iid
             cur_w[iid_key] = cur_w.get(iid_key, 0.0) + float(ww)
         if pi == 0:
@@ -451,14 +451,16 @@ def cost_adjusted_long_short_return(
         else:
             ids = np.arange(idx.shape[0], dtype=np.int64)
         cur_w: dict[Any, float] = {}
-        for iid, ww in zip(ids, w):
+        for iid, ww in zip(ids, w, strict=False):
             iid_key = iid.item() if isinstance(iid, np.generic) else iid
             cur_w[iid_key] = cur_w.get(iid_key, 0.0) + float(ww)
         if pi == 0:
             turn[pi] = sum(abs(v) for v in cur_w.values()) / 2.0
         else:
             all_keys = set(prev_w) | set(cur_w)
-            turn[pi] = sum(abs(cur_w.get(kk_, 0.0) - prev_w.get(kk_, 0.0)) for kk_ in all_keys) / 2.0
+            turn[pi] = (
+                sum(abs(cur_w.get(kk_, 0.0) - prev_w.get(kk_, 0.0)) for kk_ in all_keys) / 2.0
+            )
         prev_w = cur_w
     cost = cost_per_turnover * turn
     net = gross - cost

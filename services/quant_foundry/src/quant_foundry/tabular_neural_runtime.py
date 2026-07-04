@@ -46,12 +46,11 @@ Design notes:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ---------------------------------------------------------------------------
 # Telemetry models
@@ -148,7 +147,7 @@ def check_gpu() -> GPUStatus:
     other fields ``None``.
     """
     try:
-        import torch  # noqa: WPS433 lazy import
+        import torch
     except Exception:
         # torch not installed — no GPU available from this runtime's
         # perspective.
@@ -184,10 +183,10 @@ def get_gpu_memory_snapshot() -> GPUMemorySnapshot:
     Returns a zero-allocated / zero-reserved snapshot (with ``free_mb=None``)
     on a CPU-only host. The timestamp is an ISO-8601 UTC string.
     """
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     try:
-        import torch  # noqa: WPS433 lazy import
+        import torch
     except Exception:
         return GPUMemorySnapshot(
             allocated_mb=0.0,
@@ -205,12 +204,8 @@ def get_gpu_memory_snapshot() -> GPUMemorySnapshot:
         )
 
     device_idx = 0
-    allocated_mb = float(torch.cuda.memory_allocated(device_idx)) / (
-        1024.0 * 1024.0
-    )
-    reserved_mb = float(torch.cuda.memory_reserved(device_idx)) / (
-        1024.0 * 1024.0
-    )
+    allocated_mb = float(torch.cuda.memory_allocated(device_idx)) / (1024.0 * 1024.0)
+    reserved_mb = float(torch.cuda.memory_reserved(device_idx)) / (1024.0 * 1024.0)
     free_bytes, _total_bytes = torch.cuda.mem_get_info(device_idx)
     free_mb = float(free_bytes) / (1024.0 * 1024.0)
 
@@ -275,7 +270,7 @@ class TinyTabularNet:
         if self._module is not None:
             return self._module
 
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         layers: list[Any] = []
         prev = self.input_dim
@@ -314,17 +309,17 @@ class TinyTabularNet:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "TinyTabularNet":
+    def to(self, device: Any) -> TinyTabularNet:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "TinyTabularNet":
+    def train(self, mode: bool = True) -> TinyTabularNet:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "TinyTabularNet":
+    def eval(self) -> TinyTabularNet:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -340,7 +335,7 @@ def _resolve_device(config: NeuralCanaryConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (cuda on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -373,8 +368,8 @@ def run_neural_canary(
         A :class:`NeuralCanaryResult` with the final loss, GPU status,
         per-epoch memory snapshots, and artifact path (if any).
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch
+    import torch.nn as nn
 
     start = time.perf_counter()
 
@@ -472,7 +467,7 @@ def save_neural_artifact(model: TinyTabularNet, path: str) -> None:
     Creates parent directories as needed. The file is written via
     ``torch.save`` (state_dict only — no pickled module).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     p = Path(path)
     if p.parent and not p.parent.exists():
@@ -487,7 +482,7 @@ def load_neural_artifact(path: str, config: NeuralCanaryConfig) -> TinyTabularNe
     output_dim) and the saved state_dict is loaded into it. The model is
     returned in eval mode on CPU.
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     model = TinyTabularNet(
         input_dim=config.input_dim,
@@ -613,23 +608,23 @@ class ImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.tabular_neural_runtime import "
+        'python -c "from quant_foundry.tabular_neural_runtime import '
         "TabularNeuralHealthcheck; import sys; "
-        "sys.exit(0 if TabularNeuralHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if TabularNeuralHealthcheck().is_healthy() else 1)"'
     )
 
 
 __all__ = [
-    "GPUStatus",
     "GPUMemorySnapshot",
+    "GPUStatus",
+    "ImageSpec",
     "NeuralCanaryConfig",
     "NeuralCanaryResult",
-    "TinyTabularNet",
     "TabularNeuralHealthcheck",
-    "ImageSpec",
+    "TinyTabularNet",
     "check_gpu",
     "get_gpu_memory_snapshot",
+    "load_neural_artifact",
     "run_neural_canary",
     "save_neural_artifact",
-    "load_neural_artifact",
 ]

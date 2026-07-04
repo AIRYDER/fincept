@@ -1,6 +1,7 @@
 """Check RunPod pod creation schema."""
-import json
+
 import os
+
 import requests
 
 KEY = os.environ["RUNPOD_API_KEY"]
@@ -32,7 +33,7 @@ if schema_ref:
     required = schema.get("required", [])
     print(f"\nSchema: {schema_name}")
     print(f"Required: {required}")
-    print(f"\nProperties:")
+    print("\nProperties:")
     for k, v in sorted(props.items()):
         ptype = v.get("type", "?")
         desc = v.get("description", "")[:100]

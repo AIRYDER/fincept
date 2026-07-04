@@ -80,8 +80,7 @@ def _load_macro_csv(csv_path: pathlib.Path) -> list[dict[str, str]]:
         required = {"date", "indicator", "value"}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
             raise ValueError(
-                f"macro CSV must have columns {sorted(required)}; "
-                f"got {reader.fieldnames}",
+                f"macro CSV must have columns {sorted(required)}; got {reader.fieldnames}",
             )
         return list(reader)
 
@@ -114,9 +113,7 @@ def _compute_macro_features_and_labels(
                 prev_value = obs[i - 1][1]
                 value_diff_1 = float(value - prev_value)
                 value_pct_change_1 = (
-                    float((value - prev_value) / prev_value)
-                    if prev_value != 0
-                    else 0.0
+                    float((value - prev_value) / prev_value) if prev_value != 0 else 0.0
                 )
             else:
                 value_diff_1 = 0.0
@@ -218,10 +215,7 @@ def ingest_macro_indicators(
 
     # --- build feature rows + universe ----------------------------------
     symbols = sorted({r["__symbol"] for r in data_rows})
-    universe = tuple(
-        UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-        for s in symbols
-    )
+    universe = tuple(UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in symbols)
 
     # Macro labels are per-observation direction; use a 1-day horizon for
     # the embargo (the label window is to the next observation, which is

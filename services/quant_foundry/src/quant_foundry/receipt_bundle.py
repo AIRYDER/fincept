@@ -41,7 +41,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -148,10 +147,7 @@ class ReceiptBundleConfig(BaseModel):
     @classmethod
     def _compression_allowed(cls, v: str) -> str:
         if v not in ALLOWED_COMPRESSION:
-            raise ValueError(
-                f"compression must be one of {sorted(ALLOWED_COMPRESSION)}, "
-                f"got {v!r}"
-            )
+            raise ValueError(f"compression must be one of {sorted(ALLOWED_COMPRESSION)}, got {v!r}")
         return v
 
 
@@ -190,10 +186,7 @@ class ReceiptItem(BaseModel):
     @classmethod
     def _content_hash_hex64(cls, v: str) -> str:
         if not _is_hex64(v):
-            raise ValueError(
-                "content_hash must be a 64-character lowercase hex string "
-                "(SHA-256)"
-            )
+            raise ValueError("content_hash must be a 64-character lowercase hex string (SHA-256)")
         return v
 
     @field_validator("size_bytes")
@@ -236,10 +229,7 @@ class ReceiptBundle(BaseModel):
     @classmethod
     def _bundle_hash_hex64(cls, v: str) -> str:
         if not _is_hex64(v):
-            raise ValueError(
-                "bundle_hash must be a 64-character lowercase hex string "
-                "(SHA-256)"
-            )
+            raise ValueError("bundle_hash must be a 64-character lowercase hex string (SHA-256)")
         return v
 
     @field_validator("items")
@@ -251,15 +241,11 @@ class ReceiptBundle(BaseModel):
 
     @field_validator("items")
     @classmethod
-    def _no_duplicate_item_types(
-        cls, v: list[ReceiptItem]
-    ) -> list[ReceiptItem]:
+    def _no_duplicate_item_types(cls, v: list[ReceiptItem]) -> list[ReceiptItem]:
         seen: set[str] = set()
         for item in v:
             if item.item_type in seen:
-                raise ValueError(
-                    f"duplicate item_type {item.item_type!r} in bundle items"
-                )
+                raise ValueError(f"duplicate item_type {item.item_type!r} in bundle items")
             seen.add(item.item_type)
         return v
 
@@ -358,10 +344,7 @@ class ReceiptBundleStore:
             raise ValueError("items must contain at least one entry")
         bad = [k for k in items if k not in ALLOWED_ITEM_TYPES]
         if bad:
-            raise ValueError(
-                f"unknown item types: {bad!r} (allowed: "
-                f"{sorted(ALLOWED_ITEM_TYPES)})"
-            )
+            raise ValueError(f"unknown item types: {bad!r} (allowed: {sorted(ALLOWED_ITEM_TYPES)})")
 
         bundle_dir = self.base_dir / job_id
         bundle_dir.mkdir(parents=True, exist_ok=False)
@@ -423,9 +406,7 @@ class ReceiptBundleStore:
         bdir = pathlib.Path(bundle_dir)
         meta_path = bdir / META_FILENAME
         if not meta_path.is_file():
-            raise FileNotFoundError(
-                f"bundle meta not found: {meta_path}"
-            )
+            raise FileNotFoundError(f"bundle meta not found: {meta_path}")
         with meta_path.open("r", encoding="utf-8") as fh:
             meta = json.load(fh)
         # Re-read items from disk to reflect current state.
@@ -491,9 +472,7 @@ class ReceiptBundleStore:
         seen: set[str] = set()
         for item in bundle.items:
             if item.item_type in seen:
-                raise ValueError(
-                    f"duplicate item_type {item.item_type!r} (fail-closed)"
-                )
+                raise ValueError(f"duplicate item_type {item.item_type!r} (fail-closed)")
             seen.add(item.item_type)
 
         bdir = pathlib.Path(bundle.bundle_dir)
@@ -502,8 +481,7 @@ class ReceiptBundleStore:
             item_path = bdir / item.filename
             if not item_path.is_file():
                 raise ValueError(
-                    f"missing item file for {item.item_type!r}: "
-                    f"{item_path} (fail-closed)"
+                    f"missing item file for {item.item_type!r}: {item_path} (fail-closed)"
                 )
             content = self._read_item(item_path)
             actual = compute_content_hash(content)
@@ -540,9 +518,7 @@ class ReceiptBundleStore:
         """
         bundle_dir = self.base_dir / job_id
         if not bundle_dir.is_dir():
-            raise FileNotFoundError(
-                f"bundle directory does not exist: {bundle_dir}"
-            )
+            raise FileNotFoundError(f"bundle directory does not exist: {bundle_dir}")
         # Remove all contents then the directory itself.
         for child in bundle_dir.iterdir():
             if child.is_file() or child.is_symlink():
@@ -584,9 +560,7 @@ class ReceiptBundleStore:
         with path.open("rb") as fh:
             return fh.read()
 
-    def _write_meta(
-        self, bundle_dir: pathlib.Path, bundle: ReceiptBundle
-    ) -> None:
+    def _write_meta(self, bundle_dir: pathlib.Path, bundle: ReceiptBundle) -> None:
         meta: dict[str, Any] = {
             "bundle_id": bundle.bundle_id,
             "job_id": bundle.job_id,
@@ -617,7 +591,7 @@ class ReceiptBundleStore:
         """Current UTC timestamp in ISO 8601 format (deterministic-ish)."""
         import datetime
 
-        return datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +621,4 @@ def verify_runpod_training_receipt(
             item, duplicate item types).
     """
     store.verify_bundle(bundle)
-    return bundle.model_copy(
-        update={"verified": True, "verification_error": None}
-    )
+    return bundle.model_copy(update={"verified": True, "verification_error": None})

@@ -1,5 +1,7 @@
 """Upload combined dataset to RunPod network volume via S3."""
+
 import pathlib
+
 import boto3
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -32,5 +34,5 @@ resp = s3.list_objects_v2(Bucket=VOLUME_ID, Prefix="datasets/combined/")
 for obj in resp.get("Contents", []):
     print(f"  {obj['Key']}: {obj['Size']:,} bytes")
 
-print(f"\nDataset is now on the network volume.")
-print(f"  Serverless path:  /runpod-volume/datasets/combined/combined_dataset.csv")
+print("\nDataset is now on the network volume.")
+print("  Serverless path:  /runpod-volume/datasets/combined/combined_dataset.csv")

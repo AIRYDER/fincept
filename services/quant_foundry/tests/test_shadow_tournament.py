@@ -22,12 +22,10 @@ Covers:
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.forecast_distribution import (
     ForecastDistributionArtifact,
     TargetTransform,
@@ -281,19 +279,13 @@ class TestTournamentResult:
 
     def test_duplicate_models_rejected(self) -> None:
         e1 = TournamentEntry(**_entry_payload())
-        e2 = TournamentEntry(
-            **_entry_payload(model_id="chronos-other")
-        )
+        e2 = TournamentEntry(**_entry_payload(model_id="chronos-other"))
         with pytest.raises(ValidationError):
             TournamentResult(**_result_payload(entries=[e1, e2]))
 
     def test_distinct_models_ok(self) -> None:
         e1 = TournamentEntry(**_entry_payload(model=FoundationModel.CHRONOS))
-        e2 = TournamentEntry(
-            **_entry_payload(
-                model=FoundationModel.MOIRAI, model_id="moirai-base"
-            )
-        )
+        e2 = TournamentEntry(**_entry_payload(model=FoundationModel.MOIRAI, model_id="moirai-base"))
         result = TournamentResult(**_result_payload(entries=[e1, e2]))
         assert len(result.entries) == 2
 
@@ -312,24 +304,16 @@ class TestTournamentResult:
     def test_winner_without_improvement_rejected(self) -> None:
         with pytest.raises(ValidationError):
             TournamentResult(
-                **_result_payload(
-                    winner=FoundationModel.CHRONOS, winner_improvement=None
-                )
+                **_result_payload(winner=FoundationModel.CHRONOS, winner_improvement=None)
             )
 
     def test_improvement_without_winner_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            TournamentResult(
-                **_result_payload(
-                    winner=None, winner_improvement=-0.1
-                )
-            )
+            TournamentResult(**_result_payload(winner=None, winner_improvement=-0.1))
 
     def test_winner_with_improvement_ok(self) -> None:
         result = TournamentResult(
-            **_result_payload(
-                winner=FoundationModel.CHRONOS, winner_improvement=-0.1
-            )
+            **_result_payload(winner=FoundationModel.CHRONOS, winner_improvement=-0.1)
         )
         assert result.winner is FoundationModel.CHRONOS
         assert result.winner_improvement == -0.1
@@ -555,18 +539,14 @@ class TestShadowTournamentAddEntry:
 
     def test_add_entry(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        entry = t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(2)
-        )
+        entry = t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(2))
         assert entry.model is FoundationModel.CHRONOS
         assert entry.promotion_eligible is False
         assert len(t.entries) == 1
 
     def test_add_entry_duplicate_model_rejected(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
         with pytest.raises(ValueError):
             t.add_entry(
                 FoundationModel.CHRONOS,
@@ -577,12 +557,8 @@ class TestShadowTournamentAddEntry:
 
     def test_add_entry_distinct_models_ok(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
-        t.add_entry(
-            FoundationModel.MOIRAI, "moirai-base", ALT_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
+        t.add_entry(FoundationModel.MOIRAI, "moirai-base", ALT_HASH, _make_forecasts(1))
         assert len(t.entries) == 2
 
     def test_add_entry_invalid_model_type(self) -> None:
@@ -600,9 +576,7 @@ class TestShadowTournamentAddEntry:
 
     def test_entries_property_returns_copy(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
         e = t.entries
         e.clear()
         assert len(t.entries) == 1
@@ -623,33 +597,25 @@ class TestShadowTournamentRun:
 
     def test_run_empty_actuals_raises(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
         with pytest.raises(ValueError):
             t.run([], {"mse": 0.5}, {"mse": 0.4})
 
     def test_run_forecast_actual_mismatch_raises(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(3)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(3))
         with pytest.raises(ValueError):
             t.run([0.0, 1.0], {"mse": 0.5}, {"mse": 0.4})
 
     def test_run_missing_primary_in_tree_stack(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
         with pytest.raises(ValueError):
             t.run([0.0], {"mae": 0.5}, {"mse": 0.4})
 
     def test_run_missing_primary_in_sequence(self) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
-        t.add_entry(
-            FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1)
-        )
+        t.add_entry(FoundationModel.CHRONOS, "chronos-base", ZERO_HASH, _make_forecasts(1))
         with pytest.raises(ValueError):
             t.run([0.0], {"mse": 0.5}, {"mae": 0.4})
 
@@ -946,13 +912,9 @@ class TestSaveLoad:
         assert loaded.tournament_id == result.tournament_id
         assert loaded.dataset_id == result.dataset_id
         assert loaded.winner == result.winner
-        assert loaded.winner_improvement == pytest.approx(
-            result.winner_improvement or 0.0
-        )
+        assert loaded.winner_improvement == pytest.approx(result.winner_improvement or 0.0)
         assert len(loaded.entries) == len(result.entries)
-        assert loaded.entries[0].metrics["mse"] == pytest.approx(
-            result.entries[0].metrics["mse"]
-        )
+        assert loaded.entries[0].metrics["mse"] == pytest.approx(result.entries[0].metrics["mse"])
 
     def test_save_creates_parent_dirs(self, tmp_path) -> None:
         t = ShadowTournament("tourn-001", "ds-001")
@@ -1029,10 +991,7 @@ class TestValidatePromotionEligibility:
 
     def test_override_returns_true(self) -> None:
         result = TournamentResult(**_result_payload())
-        assert (
-            validate_promotion_eligibility(result, manual_policy_override=True)
-            is True
-        )
+        assert validate_promotion_eligibility(result, manual_policy_override=True) is True
 
     def test_default_no_override(self) -> None:
         result = TournamentResult(**_result_payload())
@@ -1045,9 +1004,7 @@ class TestValidatePromotionEligibility:
     def test_fail_closed_no_autopromote(self) -> None:
         """Even a winning result does not auto-promote."""
         result = TournamentResult(
-            **_result_payload(
-                winner=FoundationModel.CHRONOS, winner_improvement=-0.1
-            )
+            **_result_payload(winner=FoundationModel.CHRONOS, winner_improvement=-0.1)
         )
         assert validate_promotion_eligibility(result) is False
 
@@ -1070,17 +1027,13 @@ class TestValidateNoLiveSignal:
 
     def test_result_promotion_true_raises(self) -> None:
         # Bypass the model validator by constructing via model_construct.
-        result = TournamentResult.model_construct(
-            **_result_payload(promotion_eligible=True)
-        )
+        result = TournamentResult.model_construct(**_result_payload(promotion_eligible=True))
         with pytest.raises(ValueError):
             validate_no_live_signal(result)
 
     def test_entry_promotion_true_raises(self) -> None:
         entry = TournamentEntry.model_construct(**_entry_payload(promotion_eligible=True))
-        result = TournamentResult.model_construct(
-            **_result_payload(entries=[entry])
-        )
+        result = TournamentResult.model_construct(**_result_payload(entries=[entry]))
         with pytest.raises(ValueError):
             validate_no_live_signal(result)
 
@@ -1094,8 +1047,6 @@ class TestValidateNoLiveSignal:
                 promotion_eligible=True,
             )
         )
-        result = TournamentResult.model_construct(
-            **_result_payload(entries=[e1, e2_bad])
-        )
+        result = TournamentResult.model_construct(**_result_payload(entries=[e1, e2_bad]))
         with pytest.raises(ValueError):
             validate_no_live_signal(result)

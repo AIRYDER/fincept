@@ -21,8 +21,7 @@ from __future__ import annotations
 import getpass
 import os
 import re
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -71,9 +70,7 @@ class PreflightConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    forbidden_env_vars: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_FORBIDDEN_ENV_VARS)
-    )
+    forbidden_env_vars: list[str] = Field(default_factory=lambda: list(DEFAULT_FORBIDDEN_ENV_VARS))
     secret_env_patterns: list[str] = Field(
         default_factory=lambda: list(DEFAULT_SECRET_ENV_PATTERNS)
     )
@@ -83,9 +80,7 @@ class PreflightConfig(BaseModel):
 
     @field_validator("forbidden_env_vars")
     @classmethod
-    def _forbidden_env_vars_non_empty(
-        cls, value: list[str]
-    ) -> list[str]:
+    def _forbidden_env_vars_non_empty(cls, value: list[str]) -> list[str]:
         """Ensure the forbidden env var list is non-empty (no silent open gate)."""
         if not value:
             raise ValueError("forbidden_env_vars must be non-empty")
@@ -264,9 +259,7 @@ class SecurityPreflight:
                     present=present,
                     forbidden=True,
                     redacted_name=_redact_name(name, patterns),
-                    redacted_value=(
-                        REDACTED_PLACEHOLDER if present else NOT_SET_PLACEHOLDER
-                    ),
+                    redacted_value=(REDACTED_PLACEHOLDER if present else NOT_SET_PLACEHOLDER),
                 )
             )
             seen.add(name)
@@ -421,14 +414,12 @@ class SecurityPreflight:
         if forbidden_present:
             if self._config.fail_closed:
                 for check in forbidden_present:
-                    failure_reasons.append(
-                        f"forbidden env var present: {check.redacted_name}"
-                    )
+                    failure_reasons.append(f"forbidden env var present: {check.redacted_name}")
         if not callback_valid and callback_error:
             failure_reasons.append(f"callback URL invalid: {callback_error}")
 
         passed = len(failure_reasons) == 0
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         return PreflightResult(
             passed=passed,
@@ -463,7 +454,9 @@ class SecurityPreflight:
         lines.append(f"=== Security Preflight: {status} ===")
         lines.append(f"timestamp: {result.timestamp}")
         lines.append(f"container_user: {result.container_user}")
-        lines.append(f"writable_dirs: {', '.join(result.writable_dirs) if result.writable_dirs else '(none)'}")
+        lines.append(
+            f"writable_dirs: {', '.join(result.writable_dirs) if result.writable_dirs else '(none)'}"
+        )
         lines.append("")
         lines.append("Environment checks:")
         if result.env_checks:
@@ -474,9 +467,7 @@ class SecurityPreflight:
                 if check.present:
                     flags.append("present")
                 flag_str = f" [{', '.join(flags)}]" if flags else ""
-                lines.append(
-                    f"  - {check.redacted_name}{flag_str}: {check.redacted_value}"
-                )
+                lines.append(f"  - {check.redacted_name}{flag_str}: {check.redacted_value}")
         else:
             lines.append("  (none)")
         lines.append("")
@@ -504,10 +495,10 @@ class SecurityPreflight:
 __all__ = [
     "DEFAULT_FORBIDDEN_ENV_VARS",
     "DEFAULT_SECRET_ENV_PATTERNS",
-    "REDACTED_PLACEHOLDER",
     "NOT_SET_PLACEHOLDER",
-    "PreflightConfig",
+    "REDACTED_PLACEHOLDER",
     "EnvVarCheck",
+    "PreflightConfig",
     "PreflightResult",
     "SecurityPreflight",
     "is_secret_like",

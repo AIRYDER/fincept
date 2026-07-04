@@ -316,9 +316,7 @@ class TrainingJobLedger:
 
         now = time.time_ns()
         is_dup = callback_id in existing.callbacks
-        new_callbacks = (
-            existing.callbacks if is_dup else (*existing.callbacks, callback_id)
-        )
+        new_callbacks = existing.callbacks if is_dup else (*existing.callbacks, callback_id)
         history_entry: dict[str, Any] = {
             "state": JobLedgerState.CALLBACK_RECEIVED.value,
             "ts_ns": now,
@@ -517,10 +515,7 @@ class TrainingJobLedger:
             return None
         data = rec.model_dump()
         # Add a convenience summary of the state trajectory.
-        trajectory = [
-            {"state": h.get("state"), "ts_ns": h.get("ts_ns")}
-            for h in rec.history
-        ]
+        trajectory = [{"state": h.get("state"), "ts_ns": h.get("ts_ns")} for h in rec.history]
         data["trajectory"] = trajectory
         data["terminal"] = rec.state in _TERMINAL_STATES
         return data

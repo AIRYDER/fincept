@@ -174,9 +174,7 @@ class GBMPredictor(Agent):
             return
 
         try:
-            manifest = ArtifactManifest.model_validate_json(
-                manifest_path.read_text()
-            )
+            manifest = ArtifactManifest.model_validate_json(manifest_path.read_text())
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "gbm.schema_compat_skipped",

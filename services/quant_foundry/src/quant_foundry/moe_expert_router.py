@@ -37,7 +37,6 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -143,9 +142,7 @@ class RouterConfig(BaseModel):
     @classmethod
     def _router_type_valid(cls, v: str) -> str:
         if v not in _VALID_ROUTER_TYPES:
-            raise ValueError(
-                f"router_type must be one of {sorted(_VALID_ROUTER_TYPES)}; got {v!r}"
-            )
+            raise ValueError(f"router_type must be one of {sorted(_VALID_ROUTER_TYPES)}; got {v!r}")
         return v
 
     @field_validator("n_experts")
@@ -159,9 +156,7 @@ class RouterConfig(BaseModel):
     @classmethod
     def _abstention_range(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:
-            raise ValueError(
-                f"abstention_threshold must be in [0, 1]; got {v}"
-            )
+            raise ValueError(f"abstention_threshold must be in [0, 1]; got {v}")
         return float(v)
 
     @field_validator("max_weight")
@@ -176,13 +171,12 @@ class RouterConfig(BaseModel):
     def _calibration_method_valid(cls, v: str) -> str:
         if v not in _VALID_CALIBRATION_METHODS:
             raise ValueError(
-                f"calibration_method must be one of "
-                f"{sorted(_VALID_CALIBRATION_METHODS)}; got {v!r}"
+                f"calibration_method must be one of {sorted(_VALID_CALIBRATION_METHODS)}; got {v!r}"
             )
         return v
 
     @model_validator(mode="after")
-    def _feasibility(self) -> "RouterConfig":
+    def _feasibility(self) -> RouterConfig:
         if self.max_weight * self.n_experts < 1.0:
             raise ValueError(
                 f"max_weight * n_experts must be >= 1 (feasibility); "
@@ -270,9 +264,7 @@ def compute_model_disagreement(expert_inputs: list[ExpertInput]) -> float:
     return float(np.std(preds))
 
 
-def enforce_max_weight(
-    weights: dict[str, float], max_weight: float
-) -> dict[str, float]:
+def enforce_max_weight(weights: dict[str, float], max_weight: float) -> dict[str, float]:
     """Clip weights to ``max_weight`` and renormalize to sum to 1.0.
 
     Iteratively clips any weight exceeding ``max_weight``, redistributes the
@@ -307,7 +299,6 @@ def enforce_max_weight(
         return {k: 1.0 / n for k in weights}
     w = {k: v / total for k, v in w.items()}
 
-    capped: dict[str, float] = {}
     for _ in range(n + 5):  # converges in at most n iterations
         over = {k: v for k, v in w.items() if v > max_weight + _EPS}
         if not over:
@@ -397,13 +388,9 @@ def _compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> f
         lo = i / n_bins
         hi = (i + 1) / n_bins
         if i == n_bins - 1:
-            in_bin = [
-                j for j in range(total) if lo <= float(probs[j]) <= hi
-            ]
+            in_bin = [j for j in range(total) if lo <= float(probs[j]) <= hi]
         else:
-            in_bin = [
-                j for j in range(total) if lo <= float(probs[j]) < hi
-            ]
+            in_bin = [j for j in range(total) if lo <= float(probs[j]) < hi]
         if not in_bin:
             continue
         mean_prob = sum(float(probs[j]) for j in in_bin) / len(in_bin)
@@ -419,7 +406,7 @@ def _compute_brier(probs: list[float], labels: list[float]) -> float:
     if len(probs) == 0:
         return 0.0
     acc = 0.0
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         d = float(p) - float(y)
         acc += d * d
     return float(acc / len(probs))
@@ -435,13 +422,9 @@ def _reliability_bins(
         lo = i / n_bins
         hi = (i + 1) / n_bins
         if i == n_bins - 1:
-            in_bin = [
-                j for j in range(total) if lo <= float(probs[j]) <= hi
-            ]
+            in_bin = [j for j in range(total) if lo <= float(probs[j]) <= hi]
         else:
-            in_bin = [
-                j for j in range(total) if lo <= float(probs[j]) < hi
-            ]
+            in_bin = [j for j in range(total) if lo <= float(probs[j]) < hi]
         count = len(in_bin)
         if count == 0:
             mean_prob = (lo + hi) / 2.0
@@ -514,9 +497,7 @@ class MoERouter:
             float(rf.dispersion_regime),
         ]
 
-    def _expert_feature(
-        self, ei: ExpertInput, rf: RegimeFeatures | None
-    ) -> list[float]:
+    def _expert_feature(self, ei: ExpertInput, rf: RegimeFeatures | None) -> list[float]:
         """Per-expert feature vector: [prediction, uncertainty, oof_perf, *regime]."""
         feats = [float(ei.prediction), float(ei.uncertainty), float(ei.oof_performance)]
         if self.config.use_regime_features:
@@ -544,9 +525,7 @@ class MoERouter:
             if self._fitted and self.config.use_regime_features:
                 regime_adj = sum(
                     self._regime_coefs.get(name, 0.0) * rv[i]
-                    for i, name in enumerate(
-                        ["volatility", "trend", "liquidity", "dispersion"]
-                    )
+                    for i, name in enumerate(["volatility", "trend", "liquidity", "dispersion"])
                 )
             scores[ei.expert_id] = base + regime_adj
         return scores
@@ -563,7 +542,7 @@ class MoERouter:
         vals = vals - np.max(vals)
         exp = np.exp(vals)
         probs = exp / np.sum(exp)
-        return {k: float(p) for k, p in zip(scores.keys(), probs)}
+        return {k: float(p) for k, p in zip(scores.keys(), probs, strict=False)}
 
     def _confidence(self, raw_weights: dict[str, float]) -> float:
         """Confidence = max raw weight (concentration of belief)."""
@@ -617,8 +596,7 @@ class MoERouter:
         self._expert_ids = [ei.expert_id for ei in first]
         if len(self._expert_ids) != self.config.n_experts:
             raise ValueError(
-                f"expected {self.config.n_experts} experts, "
-                f"got {len(self._expert_ids)}"
+                f"expected {self.config.n_experts} experts, got {len(self._expert_ids)}"
             )
 
         if self.config.router_type == "linear":
@@ -629,7 +607,7 @@ class MoERouter:
         # Store calibration data (combined predictions vs targets).
         self._calib_predictions = []
         self._calib_actuals = []
-        for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+        for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
             out = self.route(eis, rf)
             if not out.abstain:
                 self._calib_predictions.append(out.combined_prediction)
@@ -655,10 +633,10 @@ class MoERouter:
         y_rows: list[int] = []
         # Label: 1 if this expert's error is below the median error at that
         # timestep (i.e. the expert is "good" for this regime).
-        for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+        for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
             errors = [abs(float(ei.prediction) - float(tgt)) for ei in eis]
             med = float(np.median(errors)) if errors else 0.0
-            for ei, err in zip(eis, errors):
+            for ei, err in zip(eis, errors, strict=False):
                 X_rows.append(self._expert_feature(ei, rf))
                 y_rows.append(1 if err <= med + _EPS else 0)
 
@@ -670,9 +648,7 @@ class MoERouter:
             self._coef[2] = 1.0  # oof_performance index
             self._intercept = 0.0
             return
-        model = LogisticRegression(
-            max_iter=1000, random_state=self.config.seed
-        )
+        model = LogisticRegression(max_iter=1000, random_state=self.config.seed)
         model.fit(X, y)
         self._coef = model.coef_[0].astype(float)
         self._intercept = float(model.intercept_[0])
@@ -692,8 +668,7 @@ class MoERouter:
                 perf_sums[ei.expert_id] += float(ei.oof_performance)
                 counts[ei.expert_id] += 1
         self._base_scores = {
-            k: (perf_sums[k] / counts[k] if counts[k] else 0.0)
-            for k in self._expert_ids
+            k: (perf_sums[k] / counts[k] if counts[k] else 0.0) for k in self._expert_ids
         }
         # Regime coefs: simple least-squares of regime vector against
         # per-expert "goodness" (inverse rank of error).
@@ -701,14 +676,14 @@ class MoERouter:
             reg_names = ["volatility", "trend", "liquidity", "dispersion"]
             R: list[list[float]] = []
             g: list[float] = []
-            for eis, rf, tgt in zip(expert_inputs, regime_features, targets):
+            for eis, rf, tgt in zip(expert_inputs, regime_features, targets, strict=False):
                 rv = self._regime_vector(rf)
                 errors = [abs(float(ei.prediction) - float(tgt)) for ei in eis]
                 order = np.argsort(errors)
                 # goodness: 1.0 for best expert, 0.0 for worst.
                 rank = np.empty(len(eis))
                 rank[order] = np.linspace(1.0, 0.0, len(eis))
-                for ei_val, gi in zip(eis, rank):
+                for _ei_val, gi in zip(eis, rank, strict=False):
                     R.append(rv)
                     g.append(float(gi))
             R_arr = np.array(R, dtype=float)
@@ -716,7 +691,7 @@ class MoERouter:
             if R_arr.shape[0] >= 4:
                 coef, *_ = np.linalg.lstsq(R_arr, g_arr, rcond=None)
                 self._regime_coefs = {
-                    name: float(c) for name, c in zip(reg_names, coef)
+                    name: float(c) for name, c in zip(reg_names, coef, strict=False)
                 }
             else:
                 self._regime_coefs = {name: 0.0 for name in reg_names}
@@ -754,10 +729,7 @@ class MoERouter:
                 regime_features=regime_features,
             )
         if len(expert_inputs) != self.config.n_experts:
-            raise ValueError(
-                f"expected {self.config.n_experts} experts, "
-                f"got {len(expert_inputs)}"
-            )
+            raise ValueError(f"expected {self.config.n_experts} experts, got {len(expert_inputs)}")
 
         scores = self._expert_scores(expert_inputs, regime_features)
         raw_weights = self._softmax(scores)
@@ -779,8 +751,7 @@ class MoERouter:
 
         # Combine predictions.
         combined_pred = sum(
-            weights.get(ei.expert_id, 0.0) * float(ei.prediction)
-            for ei in expert_inputs
+            weights.get(ei.expert_id, 0.0) * float(ei.prediction) for ei in expert_inputs
         )
         # Combined uncertainty: weighted RMS (accounts for diversification).
         combined_var = sum(
@@ -800,9 +771,7 @@ class MoERouter:
 
     # -- calibrate ------------------------------------------------------
 
-    def calibrate(
-        self, predictions: list[float], actuals: list[float]
-    ) -> CalibrationReport:
+    def calibrate(self, predictions: list[float], actuals: list[float]) -> CalibrationReport:
         """Calibrate the router's combined predictions against actuals.
 
         Computes ECE and Brier score before and after applying the configured
@@ -861,9 +830,7 @@ class MoERouter:
                     self._calibrator = None
                 else:
                     cal.fit(X, y)
-                    calibrated = [
-                        float(v[1]) for v in cal.predict_proba(X)
-                    ]
+                    calibrated = [float(v[1]) for v in cal.predict_proba(X)]
                     self._calibrator = cal
             else:  # pragma: no cover
                 calibrated = list(preds)
@@ -921,9 +888,7 @@ class MoERouter:
         self.config = RouterConfig(**state["config"])
         self._fitted = state["fitted"]
         self._expert_ids = state["expert_ids"]
-        self._coef = (
-            None if state["coef"] is None else np.array(state["coef"], dtype=float)
-        )
+        self._coef = None if state["coef"] is None else np.array(state["coef"], dtype=float)
         self._intercept = state["intercept"]
         self._base_scores = state["base_scores"]
         self._regime_coefs = state["regime_coefs"]

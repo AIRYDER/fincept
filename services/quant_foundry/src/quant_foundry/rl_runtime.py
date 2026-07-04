@@ -47,12 +47,11 @@ import hashlib
 import json
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Docker image spec
@@ -85,9 +84,9 @@ class RLImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.rl_runtime import "
+        'python -c "from quant_foundry.rl_runtime import '
         "RLHealthcheck; import sys; "
-        "sys.exit(0 if RLHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if RLHealthcheck().is_healthy() else 1)"'
     )
     supports_checkpoint_resume: bool = True
     rollout_cache_dir: str = "/opt/rollout_cache"
@@ -134,9 +133,7 @@ class EnvironmentManifest(BaseModel):
     @classmethod
     def _validate_hex64(cls, v: str) -> str:
         if not _is_hex64(v):
-            raise ValueError(
-                "hash must be a 64-character lowercase hex SHA-256 digest"
-            )
+            raise ValueError("hash must be a 64-character lowercase hex SHA-256 digest")
         return v
 
     @field_validator("n_assets")
@@ -187,9 +184,7 @@ class CostModel(BaseModel):
     @classmethod
     def _validate_cost_hash(cls, v: str) -> str:
         if not _is_hex64(v):
-            raise ValueError(
-                "cost_hash must be a 64-character lowercase hex SHA-256 digest"
-            )
+            raise ValueError("cost_hash must be a 64-character lowercase hex SHA-256 digest")
         return v
 
     @staticmethod
@@ -272,9 +267,7 @@ class PolicyCheckpoint(BaseModel):
     @classmethod
     def _validate_policy_hash(cls, v: str) -> str:
         if not _is_hex64(v):
-            raise ValueError(
-                "policy_hash must be a 64-character lowercase hex SHA-256 digest"
-            )
+            raise ValueError("policy_hash must be a 64-character lowercase hex SHA-256 digest")
         return v
 
     @field_validator("training_steps")
@@ -321,9 +314,7 @@ class DeterministicMarketSimulator:
         self._max_turnover = self._risk_limits.get("max_turnover", float("inf"))
         self._prices: list[list[float]] = []
         self._current_step = 0
-        self._prev_weights: list[float] = [
-            1.0 / self._n_assets for _ in range(self._n_assets)
-        ]
+        self._prev_weights: list[float] = [1.0 / self._n_assets for _ in range(self._n_assets)]
         self._peak_value = 1.0
         self._portfolio_value = 1.0
         self._rng: random.Random | None = None
@@ -361,9 +352,7 @@ class DeterministicMarketSimulator:
         """
         self._prices = self._generate_prices()
         self._current_step = 0
-        self._prev_weights = [
-            1.0 / self._n_assets for _ in range(self._n_assets)
-        ]
+        self._prev_weights = [1.0 / self._n_assets for _ in range(self._n_assets)]
         self._peak_value = 1.0
         self._portfolio_value = 1.0
         return self._observation()
@@ -389,24 +378,16 @@ class DeterministicMarketSimulator:
             raise ValueError("action must be a list of floats")
         if len(action) != self._n_assets:
             raise ValueError(
-                f"action length {len(action)} does not match n_assets "
-                f"{self._n_assets}"
+                f"action length {len(action)} does not match n_assets {self._n_assets}"
             )
         total = sum(float(w) for w in action)
         if abs(total - 1.0) > 1e-4:
-            raise ValueError(
-                f"action weights must sum to 1.0 (within 1e-4), got {total}"
-            )
+            raise ValueError(f"action weights must sum to 1.0 (within 1e-4), got {total}")
         for i, w in enumerate(action):
             if abs(float(w)) > self._max_weight + 1e-9:
-                raise ValueError(
-                    f"weight {w} at index {i} exceeds max_weight "
-                    f"{self._max_weight}"
-                )
+                raise ValueError(f"weight {w} at index {i} exceeds max_weight {self._max_weight}")
 
-    def step(
-        self, action: list[float]
-    ) -> tuple[dict, float, bool, bool, dict]:
+    def step(self, action: list[float]) -> tuple[dict, float, bool, bool, dict]:
         """Apply a target-weight action and advance one step.
 
         Computes the per-asset return from the price series, the portfolio
@@ -421,45 +402,30 @@ class DeterministicMarketSimulator:
         self.validate_action(action)
 
         # Turnover = sum of absolute weight changes.
-        turnover = sum(
-            abs(float(action[i]) - self._prev_weights[i])
-            for i in range(self._n_assets)
-        )
+        turnover = sum(abs(float(action[i]) - self._prev_weights[i]) for i in range(self._n_assets))
         if turnover > self._max_turnover + 1e-9:
-            raise ValueError(
-                f"turnover {turnover} exceeds max_turnover "
-                f"{self._max_turnover}"
-            )
+            raise ValueError(f"turnover {turnover} exceeds max_turnover {self._max_turnover}")
 
         next_step = self._current_step + 1
         prev_prices = self._prices[self._current_step]
-        next_prices = self._prices[next_step] if next_step < len(
-            self._prices
-        ) else prev_prices
+        next_prices = self._prices[next_step] if next_step < len(self._prices) else prev_prices
 
         # Per-asset simple return.
-        asset_returns = [
-            (next_prices[i] / prev_prices[i]) - 1.0
-            for i in range(self._n_assets)
-        ]
+        asset_returns = [(next_prices[i] / prev_prices[i]) - 1.0 for i in range(self._n_assets)]
         # Portfolio return = weighted sum of asset returns.
-        portfolio_return = sum(
-            float(action[i]) * asset_returns[i] for i in range(self._n_assets)
-        )
+        portfolio_return = sum(float(action[i]) * asset_returns[i] for i in range(self._n_assets))
 
         # Transaction cost in return units.
         commission = self.cost_model.commission_bps / 1e4 * turnover
         slippage = self.cost_model.slippage_bps / 1e4 * turnover
-        impact = self.cost_model.market_impact * (turnover ** 2)
+        impact = self.cost_model.market_impact * (turnover**2)
         cost = commission + slippage + impact
 
         # Update portfolio value.
         self._portfolio_value = self._portfolio_value * (1.0 + portfolio_return - cost)
         if self._portfolio_value > self._peak_value:
             self._peak_value = self._portfolio_value
-        drawdown = (self._peak_value - self._portfolio_value) / max(
-            self._peak_value, 1e-12
-        )
+        drawdown = (self._peak_value - self._portfolio_value) / max(self._peak_value, 1e-12)
         drawdown_penalty = 0.5 * drawdown
 
         reward = portfolio_return - cost - drawdown_penalty
@@ -551,9 +517,7 @@ class RolloutManager:
         out.parent.mkdir(parents=True, exist_ok=True)
         cumulative = 0.0
         steps: list[dict[str, Any]] = []
-        for i, (action, reward) in enumerate(
-            zip(rollout.actions, rollout.rewards)
-        ):
+        for i, (action, reward) in enumerate(zip(rollout.actions, rollout.rewards, strict=False)):
             cumulative += float(reward)
             steps.append(
                 {
@@ -646,7 +610,7 @@ class RLHealthcheck:
                 n_timesteps=3,
                 reward_components=["return", "cost", "drawdown", "turnover"],
                 risk_limits={"max_weight": 1.0, "max_turnover": 1.0},
-                created_at=datetime.now(timezone.utc).isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
             )
             cost_model = CostModel(
                 model_id="canary-cost",
@@ -716,12 +680,12 @@ class RLHealthcheck:
 
 
 __all__ = [
-    "RLImageSpec",
-    "EnvironmentManifest",
     "CostModel",
-    "RolloutRecord",
-    "PolicyCheckpoint",
     "DeterministicMarketSimulator",
-    "RolloutManager",
+    "EnvironmentManifest",
+    "PolicyCheckpoint",
     "RLHealthcheck",
+    "RLImageSpec",
+    "RolloutManager",
+    "RolloutRecord",
 ]

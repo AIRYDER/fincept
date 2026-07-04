@@ -1,11 +1,13 @@
 """Get RunPod serverless worker pod logs."""
-import httpx
+
 import json
 import os
 import sys
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import TRAINING_ENDPOINT_ID  # noqa: E402
+from runpod_config import TRAINING_ENDPOINT_ID
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = sys.argv[1] if len(sys.argv) > 1 else TRAINING_ENDPOINT_ID

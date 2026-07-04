@@ -102,7 +102,7 @@ class StockTwitsSource:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for sym in symbols:
                 params = dict(base_params)
-                for page in range(1, self.max_pages + 1):
+                for _page in range(1, self.max_pages + 1):
                     try:
                         resp = await client.get(
                             f"{STOCKTWITS_BASE_URL}/streams/symbol/{sym}.json",
@@ -151,8 +151,12 @@ class StockTwitsSource:
 
             # Message ID
             msg_id = str(msg.get("id", ""))
-            item_id = f"stocktwits:{msg_id}" if msg_id else (
-                f"stocktwits:{hashlib.sha256((body_text + str(available_at_ns)).encode()).hexdigest()[:20]}"
+            item_id = (
+                f"stocktwits:{msg_id}"
+                if msg_id
+                else (
+                    f"stocktwits:{hashlib.sha256((body_text + str(available_at_ns)).encode()).hexdigest()[:20]}"
+                )
             )
 
             # Extract all symbols mentioned
@@ -177,7 +181,9 @@ class StockTwitsSource:
             return MediaItem(
                 item_id=item_id,
                 source="stocktwits",
-                headline=body_text[:200],  # StockTwits messages are short; headline = first 200 chars
+                headline=body_text[
+                    :200
+                ],  # StockTwits messages are short; headline = first 200 chars
                 body=body_text,
                 available_at_ns=available_at_ns,
                 symbols=symbols_mentioned,
@@ -197,10 +203,10 @@ def _parse_iso_to_ns(iso_str: str) -> int:
     normalized = iso_str.strip().replace("Z", "+00:00")
     parsed = dt.datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        parsed = parsed.replace(tzinfo=dt.UTC)
     else:
-        parsed = parsed.astimezone(dt.timezone.utc)
+        parsed = parsed.astimezone(dt.UTC)
     return int(parsed.timestamp() * 1_000_000_000)
 
 
-__all__ = ["StockTwitsSource", "STOCKTWITS_BASE_URL", "DEFAULT_MAX_PAGES"]
+__all__ = ["DEFAULT_MAX_PAGES", "STOCKTWITS_BASE_URL", "StockTwitsSource"]

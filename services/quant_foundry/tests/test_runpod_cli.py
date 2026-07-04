@@ -20,7 +20,6 @@ Acceptance:
 from __future__ import annotations
 
 import pathlib
-import time
 from typing import Any
 
 import pytest
@@ -37,19 +36,15 @@ from quant_foundry.cli.runpod_cli import (
 from quant_foundry.dataset_manifest import (
     DatasetRegistry,
     ReadinessLevel,
-    TrainingMode,
 )
 from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_dispatch(
-    *, cost_cents: int = 25, duration: float = 1.0
-) -> "Any":
+def _make_mock_dispatch(*, cost_cents: int = 25, duration: float = 1.0) -> Any:
     """Return a deterministic mock dispatch function."""
 
     def _dispatch(
@@ -566,7 +561,9 @@ class TestCmdTrainProduction:
         assert "raw CSV" in result.error
         assert result.job_id is None
 
-    def test_production_with_unregistered_id_fails_at_registry(self, tmp_path: pathlib.Path) -> None:
+    def test_production_with_unregistered_id_fails_at_registry(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         cli = _make_cli(tmp_path)
         # Preflight passes (valid slug), but registry gate rejects.
         result = cli.dispatch("train production", {"dataset_id": "ds-not-in-registry"})
@@ -816,7 +813,12 @@ class TestNoLocalTraining:
 
         def tracking_dispatch(**kwargs: Any) -> dict[str, Any]:
             called.append(kwargs)
-            return {"runpod_job_id": "rp", "status": "dispatched", "cost_cents": 0, "duration_seconds": 0}
+            return {
+                "runpod_job_id": "rp",
+                "status": "dispatched",
+                "cost_cents": 0,
+                "duration_seconds": 0,
+            }
 
         cli = _make_cli(tmp_path, dispatch_fn=tracking_dispatch)
         _register_dataset(cli.registry, "ds-notrain-002")

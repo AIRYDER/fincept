@@ -36,7 +36,7 @@ import json
 import math
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +50,6 @@ from quant_foundry.rl_runtime import (
     RolloutManager,
     RolloutRecord,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -82,7 +81,7 @@ def _parse_iso(ts: str) -> datetime:
         raise ValueError(f"invalid ISO datetime {ts!r}: {exc}") from exc
     # Normalize naive datetimes to UTC for comparison consistency.
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -154,9 +153,7 @@ class RLShadowConfig(BaseModel):
     @classmethod
     def _validate_policy_type(cls, v: str) -> str:
         if v not in _VALID_POLICY_TYPES:
-            raise ValueError(
-                f"policy_type must be one of {_VALID_POLICY_TYPES}; got {v!r}"
-            )
+            raise ValueError(f"policy_type must be one of {_VALID_POLICY_TYPES}; got {v!r}")
         return v
 
     @field_validator("n_train_episodes", "n_eval_episodes", "max_checkpoint_steps")
@@ -167,21 +164,17 @@ class RLShadowConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_periods_and_shadow(self) -> "RLShadowConfig":
+    def _validate_periods_and_shadow(self) -> RLShadowConfig:
         train_start = _parse_iso(self.train_start)
         train_end = _parse_iso(self.train_end)
         eval_start = _parse_iso(self.eval_start)
         eval_end = _parse_iso(self.eval_end)
         if not (train_end > train_start):
             raise ValueError(
-                f"train_end ({self.train_end}) must be > train_start "
-                f"({self.train_start})"
+                f"train_end ({self.train_end}) must be > train_start ({self.train_start})"
             )
         if not (eval_end > eval_start):
-            raise ValueError(
-                f"eval_end ({self.eval_end}) must be > eval_start "
-                f"({self.eval_start})"
-            )
+            raise ValueError(f"eval_end ({self.eval_end}) must be > eval_start ({self.eval_start})")
         if eval_start < train_end:
             raise ValueError(
                 f"eval_start ({self.eval_start}) must be >= train_end "
@@ -287,13 +280,9 @@ class TrainEvalSeparator:
         self.eval_start = _parse_iso(eval_start)
         self.eval_end = _parse_iso(eval_end)
         if not (self.train_end > self.train_start):
-            raise ValueError(
-                f"train_end ({train_end}) must be > train_start ({train_start})"
-            )
+            raise ValueError(f"train_end ({train_end}) must be > train_start ({train_start})")
         if not (self.eval_end > self.eval_start):
-            raise ValueError(
-                f"eval_end ({eval_end}) must be > eval_start ({eval_start})"
-            )
+            raise ValueError(f"eval_end ({eval_end}) must be > eval_start ({eval_start})")
         self.validate_separation()
 
     def validate_separation(self) -> None:
@@ -324,9 +313,7 @@ class TrainEvalSeparator:
         ts = _parse_iso(timestamp)
         return self.eval_start <= ts < self.eval_end
 
-    def get_train_data(
-        self, data: list[dict], timestamp_field: str = "timestamp"
-    ) -> list[dict]:
+    def get_train_data(self, data: list[dict], timestamp_field: str = "timestamp") -> list[dict]:
         """Filter ``data`` to records whose timestamp is in the train period.
 
         Args:
@@ -336,15 +323,9 @@ class TrainEvalSeparator:
         Returns:
             A new list of records in the train period (preserving order).
         """
-        return [
-            row
-            for row in data
-            if self.is_in_train_period(str(row[timestamp_field]))
-        ]
+        return [row for row in data if self.is_in_train_period(str(row[timestamp_field]))]
 
-    def get_eval_data(
-        self, data: list[dict], timestamp_field: str = "timestamp"
-    ) -> list[dict]:
+    def get_eval_data(self, data: list[dict], timestamp_field: str = "timestamp") -> list[dict]:
         """Filter ``data`` to records whose timestamp is in the eval period.
 
         Args:
@@ -354,11 +335,7 @@ class TrainEvalSeparator:
         Returns:
             A new list of records in the eval period (preserving order).
         """
-        return [
-            row
-            for row in data
-            if self.is_in_eval_period(str(row[timestamp_field]))
-        ]
+        return [row for row in data if self.is_in_eval_period(str(row[timestamp_field]))]
 
 
 # ---------------------------------------------------------------------------
@@ -483,17 +460,13 @@ def _compute_metrics(
     mean_reward = sum(float(r) for r in rewards) / n
     metrics["mean_reward"] = float(mean_reward)
     metrics["total_return"] = float(sum(float(r) for r in rewards))
-    metrics["avg_turnover"] = (
-        float(sum(float(t) for t in turnovers) / n) if n else 0.0
-    )
+    metrics["avg_turnover"] = float(sum(float(t) for t in turnovers) / n) if n else 0.0
     # Sharpe (annualized) from per-step rewards.
     if n > 1:
         var = sum((float(r) - mean_reward) ** 2 for r in rewards) / (n - 1)
         std = math.sqrt(var) if var > _EPS else 0.0
         if std > _EPS:
-            metrics["sharpe"] = float(
-                (mean_reward / std) * math.sqrt(_TRADING_DAYS)
-            )
+            metrics["sharpe"] = float((mean_reward / std) * math.sqrt(_TRADING_DAYS))
     # Max drawdown from the portfolio-value curve.
     if portfolio_values:
         peak = portfolio_values[0]
@@ -549,9 +522,7 @@ class RLShadowPolicy:
             seed=config.seed,
         )
         self._n_assets = config.env_manifest.n_assets
-        self._max_weight = config.env_manifest.risk_limits.get(
-            "max_weight", 1.0
-        )
+        self._max_weight = config.env_manifest.risk_limits.get("max_weight", 1.0)
         self._rng = random.Random(config.seed)
         self._checkpoint: PolicyCheckpoint | None = None
         self._rollout_logs: list[str] = []
@@ -626,7 +597,7 @@ class RLShadowPolicy:
         start = time.perf_counter()
         # Fail-closed: re-validate separation at train time.
         self.separator.validate_separation()
-        train_data = self.separator.get_train_data(returns_data, timestamp_field)
+        self.separator.get_train_data(returns_data, timestamp_field)
         n_episodes = self.config.n_train_episodes
         rewards_all: list[float] = []
         turnovers_all: list[float] = []
@@ -672,9 +643,7 @@ class RLShadowPolicy:
                 truncated=truncated,
             )
             rollout_mgr.save_rollout(rollout)
-            log_path = str(
-                Path(self._cache_dir()) / f"replay_{rollout_id}.json"
-            )
+            log_path = str(Path(self._cache_dir()) / f"replay_{rollout_id}.json")
             rollout_mgr.save_replay_log(rollout, log_path)
             self._rollout_logs.append(log_path)
         train_reward = float(sum(rewards_all)) if rewards_all else 0.0
@@ -690,7 +659,7 @@ class RLShadowPolicy:
             env_id=self.config.env_manifest.env_id,
             training_steps=len(rewards_all),
             artifact_path=str(Path(self._cache_dir()) / "policy.json"),
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         # Persist the (mocked) policy artifact.
         self._save_policy_artifact()
@@ -733,7 +702,7 @@ class RLShadowPolicy:
         Returns:
             A dict of metric name -> float value.
         """
-        eval_data = self.separator.get_eval_data(returns_data, timestamp_field)
+        self.separator.get_eval_data(returns_data, timestamp_field)
         n_episodes = self.config.n_eval_episodes
         rewards_all: list[float] = []
         turnovers_all: list[float] = []
@@ -767,9 +736,7 @@ class RLShadowPolicy:
         # Use a stable path under the system temp dir keyed by the
         # policy hash so repeated runs are reproducible.
         base = Path.home() / ".quant_foundry_shadow_cache"
-        h = _policy_hash(
-            self.config.policy_type, self.config.seed, self._n_assets
-        )
+        h = _policy_hash(self.config.policy_type, self.config.seed, self._n_assets)
         return str(base / h)
 
     def _save_policy_artifact(self) -> None:
@@ -812,9 +779,7 @@ class RLShadowPolicy:
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"result not found: {path}")
-        return RLShadowResult.model_validate_json(
-            p.read_text(encoding="utf-8")
-        )
+        return RLShadowResult.model_validate_json(p.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -822,9 +787,7 @@ class RLShadowPolicy:
 # ---------------------------------------------------------------------------
 
 
-def validate_promotion_eligibility(
-    result: RLShadowResult, manual_override: bool = False
-) -> bool:
+def validate_promotion_eligibility(result: RLShadowResult, manual_override: bool = False) -> bool:
     """Return whether a shadow result is eligible for live promotion.
 
     RL is a research-only lane: by default the result is **never**
@@ -867,8 +830,7 @@ def validate_no_future_label_access(result: RLShadowResult) -> bool:
     metrics = result.metrics or {}
     if bool(metrics.get("future_label_access", False)):
         raise ValueError(
-            "future-label access detected in result metrics; RL shadow "
-            "result is unsafe"
+            "future-label access detected in result metrics; RL shadow result is unsafe"
         )
     return True
 
@@ -927,12 +889,12 @@ def register_rl_shadow_family() -> dict[str, Any]:
 
 
 __all__ = [
+    "FutureLabelGuard",
     "RLShadowConfig",
+    "RLShadowPolicy",
     "RLShadowResult",
     "TrainEvalSeparator",
-    "FutureLabelGuard",
-    "RLShadowPolicy",
-    "validate_promotion_eligibility",
-    "validate_no_future_label_access",
     "register_rl_shadow_family",
+    "validate_no_future_label_access",
+    "validate_promotion_eligibility",
 ]

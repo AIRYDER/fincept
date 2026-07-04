@@ -14,17 +14,17 @@ This script:
 
 Output: data/datasets/combined/combined_dataset.parquet
 """
+
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import hashlib
 import json
 import os
 import pathlib
 import sys
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _QF_SRC = _REPO_ROOT / "services" / "quant_foundry" / "src"
@@ -44,40 +44,88 @@ if _ENV_FILE.exists():
 NS_PER_DAY = 86_400_000_000_000
 
 DEFAULT_SYMBOLS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
-    "META", "TSLA", "JPM", "V", "JNJ",
-    "WMT", "PG", "UNH", "HD", "MA",
-    "DIS", "BAC", "XOM", "KO", "PEP",
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "META",
+    "TSLA",
+    "JPM",
+    "V",
+    "JNJ",
+    "WMT",
+    "PG",
+    "UNH",
+    "HD",
+    "MA",
+    "DIS",
+    "BAC",
+    "XOM",
+    "KO",
+    "PEP",
 ]
 
 # Existing 18 technical features
 TECHNICAL_FEATURES = (
-    "ret_1d", "ret_5d", "ret_10d", "ret_20d", "mom_10d",
-    "vol_20d", "vol_60d", "vol_ratio", "vol_regime",
-    "rsi_14", "bb_position", "price_vs_sma50", "price_vs_sma200",
-    "atr_ratio", "spy_corr_20d", "spy_beta_60d",
-    "vix_level", "vix_change_5d",
+    "ret_1d",
+    "ret_5d",
+    "ret_10d",
+    "ret_20d",
+    "mom_10d",
+    "vol_20d",
+    "vol_60d",
+    "vol_ratio",
+    "vol_regime",
+    "rsi_14",
+    "bb_position",
+    "price_vs_sma50",
+    "price_vs_sma200",
+    "atr_ratio",
+    "spy_corr_20d",
+    "spy_beta_60d",
+    "vix_level",
+    "vix_change_5d",
 )
 
 # New calendar features (9)
 CALENDAR_FEATURES = (
-    "day_of_week", "day_of_month", "month", "quarter",
-    "is_month_end", "is_quarter_end", "year",
-    "days_since_start", "trend_normalized",
+    "day_of_week",
+    "day_of_month",
+    "month",
+    "quarter",
+    "is_month_end",
+    "is_quarter_end",
+    "year",
+    "days_since_start",
+    "trend_normalized",
 )
 
 # New interaction features (6)
 INTERACTION_FEATURES = (
-    "rsi_x_vol_ratio", "mom_x_vol_regime",
-    "ret_5d_x_bb_position", "vol_20d_x_vix",
-    "price_vs_sma50_x_spy_corr", "atr_x_vol_60d",
+    "rsi_x_vol_ratio",
+    "mom_x_vol_regime",
+    "ret_5d_x_bb_position",
+    "vol_20d_x_vix",
+    "price_vs_sma50_x_spy_corr",
+    "atr_x_vol_60d",
 )
 
 # Sentiment features (13) — per event type + aggregate
 SENTIMENT_FEATURES = (
-    "sent_regulatory", "sent_earnings", "sent_guidance", "sent_macro",
-    "sent_product", "sent_security", "sent_litigation", "sent_partnership",
-    "sent_financing", "sent_ma", "sent_general", "sent_mean", "sent_count",
+    "sent_regulatory",
+    "sent_earnings",
+    "sent_guidance",
+    "sent_macro",
+    "sent_product",
+    "sent_security",
+    "sent_litigation",
+    "sent_partnership",
+    "sent_financing",
+    "sent_ma",
+    "sent_general",
+    "sent_mean",
+    "sent_count",
 )
 
 ALL_FEATURES = TECHNICAL_FEATURES + CALENDAR_FEATURES + INTERACTION_FEATURES + SENTIMENT_FEATURES
@@ -85,12 +133,14 @@ ALL_FEATURES = TECHNICAL_FEATURES + CALENDAR_FEATURES + INTERACTION_FEATURES + S
 
 # ─── 1. Fetch yfinance bars ─────────────────────────────────────────────
 
-def fetch_yfinance_bars(symbols: list[str], years: int) -> dict[str, list[dict]]:
-    import yfinance as yf
-    from datetime import datetime, timezone
 
-    end = datetime.now(timezone.utc)
-    start = datetime(end.year - years, end.month, end.day, tzinfo=timezone.utc)
+def fetch_yfinance_bars(symbols: list[str], years: int) -> dict[str, list[dict]]:
+    from datetime import datetime
+
+    import yfinance as yf
+
+    end = datetime.now(dt.UTC)
+    start = datetime(end.year - years, end.month, end.day, tzinfo=dt.UTC)
 
     bars_by_symbol: dict[str, list[dict]] = {}
     for sym in symbols:
@@ -104,14 +154,16 @@ def fetch_yfinance_bars(symbols: list[str], years: int) -> dict[str, list[dict]]
             bars = []
             for idx, row in df.iterrows():
                 ts_ns = int(idx.tz_convert("UTC").value)
-                bars.append({
-                    "ts_event": ts_ns,
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
-                    "close": float(row["Close"]),
-                    "volume": float(row["Volume"]),
-                })
+                bars.append(
+                    {
+                        "ts_event": ts_ns,
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": float(row["Close"]),
+                        "volume": float(row["Volume"]),
+                    }
+                )
             bars_by_symbol[sym] = bars
             print(f"{len(bars)} bars")
         except Exception as exc:
@@ -121,8 +173,10 @@ def fetch_yfinance_bars(symbols: list[str], years: int) -> dict[str, list[dict]]
 
 # ─── 2. Technical features (reuse from train_deep_real_model.py) ────────
 
+
 def compute_rsi(close: list[float], period: int = 14) -> list[float]:
     import numpy as np
+
     n = len(close)
     rsi = np.full(n, 50.0)
     if n < period + 1:
@@ -145,15 +199,19 @@ def compute_rsi(close: list[float], period: int = 14) -> list[float]:
 
 def compute_sma(close: list[float], period: int) -> list[float]:
     import numpy as np
+
     n = len(close)
     sma = np.zeros(n)
     for i in range(period - 1, n):
-        sma[i] = float(np.mean(close[i - period + 1: i + 1]))
+        sma[i] = float(np.mean(close[i - period + 1 : i + 1]))
     return sma.tolist()
 
 
-def compute_atr(high: list[float], low: list[float], close: list[float], period: int = 14) -> list[float]:
+def compute_atr(
+    high: list[float], low: list[float], close: list[float], period: int = 14
+) -> list[float]:
     import numpy as np
+
     n = len(close)
     atr = np.zeros(n)
     if n < period + 1:
@@ -165,7 +223,7 @@ def compute_atr(high: list[float], low: list[float], close: list[float], period:
             abs(high[i] - close[i - 1]),
             abs(low[i] - close[i - 1]),
         )
-    atr[period] = float(np.mean(tr[1:period + 1]))
+    atr[period] = float(np.mean(tr[1 : period + 1]))
     for i in range(period + 1, n):
         atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
     return atr.tolist()
@@ -211,14 +269,14 @@ def compute_technical_features(
     vol_60d = np.zeros(n)
     for i in range(n):
         if i >= 19:
-            vol_20d[i] = float(np.std(log_ret[i - 19: i + 1], ddof=0))
+            vol_20d[i] = float(np.std(log_ret[i - 19 : i + 1], ddof=0))
         if i >= 59:
-            vol_60d[i] = float(np.std(log_ret[i - 59: i + 1], ddof=0))
+            vol_60d[i] = float(np.std(log_ret[i - 59 : i + 1], ddof=0))
 
     vol_mean_20 = np.zeros(n)
     for i in range(n):
         if i >= 19:
-            vol_mean_20[i] = float(np.mean(volume[i - 19: i + 1]))
+            vol_mean_20[i] = float(np.mean(volume[i - 19 : i + 1]))
     vol_ratio = np.where(vol_mean_20 > 0, volume / np.where(vol_mean_20 > 0, vol_mean_20, 1.0), 1.0)
     vol_regime = np.where(vol_60d > 0, vol_20d / np.where(vol_60d > 0, vol_60d, 1.0), 1.0)
 
@@ -226,11 +284,13 @@ def compute_technical_features(
     sma20 = np.array(compute_sma(close.tolist(), 20))
     std20 = np.zeros(n)
     for i in range(19, n):
-        std20[i] = float(np.std(close[i - 19: i + 1], ddof=0))
+        std20[i] = float(np.std(close[i - 19 : i + 1], ddof=0))
     upper = sma20 + 2 * std20
     lower = sma20 - 2 * std20
     bb_width = upper - lower
-    bb_position = np.where(bb_width > 0, (close - lower) / np.where(bb_width > 0, bb_width, 1.0), 0.5)
+    bb_position = np.where(
+        bb_width > 0, (close - lower) / np.where(bb_width > 0, bb_width, 1.0), 0.5
+    )
 
     sma50 = np.array(compute_sma(close.tolist(), 50))
     sma200 = np.array(compute_sma(close.tolist(), 200))
@@ -246,7 +306,6 @@ def compute_technical_features(
     if spy_bars is not None and len(spy_bars) > 60:
         spy_ts = {b["ts_event"]: b["close"] for b in spy_bars}
         spy_close = []
-        spy_ret = []
         for i in range(n):
             t = ts[i]
             if t in spy_ts:
@@ -257,13 +316,21 @@ def compute_technical_features(
         spy_log_ret = np.zeros(n)
         valid = spy_close_arr > 0
         if valid.sum() > 1:
-            spy_log_ret[valid] = np.diff(np.log(spy_close_arr[valid]), prepend=np.log(spy_close_arr[valid][0]))
+            spy_log_ret[valid] = np.diff(
+                np.log(spy_close_arr[valid]), prepend=np.log(spy_close_arr[valid][0])
+            )
         for i in range(60, n):
-            if valid[i - 19: i + 1].sum() >= 15:
-                cov = np.cov(log_ret[i - 19: i + 1], spy_log_ret[i - 19: i + 1])[0, 1]
-                var = np.var(spy_log_ret[i - 19: i + 1])
+            if valid[i - 19 : i + 1].sum() >= 15:
+                cov = np.cov(log_ret[i - 19 : i + 1], spy_log_ret[i - 19 : i + 1])[0, 1]
+                var = np.var(spy_log_ret[i - 19 : i + 1])
                 if var > 0:
-                    spy_corr[i] = float(cov / (np.std(log_ret[i - 19: i + 1]) * np.std(spy_log_ret[i - 19: i + 1]) + 1e-10))
+                    spy_corr[i] = float(
+                        cov
+                        / (
+                            np.std(log_ret[i - 19 : i + 1]) * np.std(spy_log_ret[i - 19 : i + 1])
+                            + 1e-10
+                        )
+                    )
                     spy_beta[i] = float(cov / var)
 
     # VIX features
@@ -282,7 +349,7 @@ def compute_technical_features(
         vix_level = vix_arr
         for i in range(5, n):
             if vix_arr[i - 5] > 0:
-                vix_change_5d[i] = (vix_arr[i] / vix_arr[i - 5] - 1.0)
+                vix_change_5d[i] = vix_arr[i] / vix_arr[i - 5] - 1.0
 
     # --- Calendar features ---
     day_of_week = np.zeros(n)
@@ -296,7 +363,7 @@ def compute_technical_features(
     first_ts = ts[0]
 
     for i in range(n):
-        d = dt.datetime.fromtimestamp(ts[i] / 1e9, tz=dt.timezone.utc)
+        d = dt.datetime.fromtimestamp(ts[i] / 1e9, tz=dt.UTC)
         day_of_week[i] = float(d.weekday())  # 0=Monday, 6=Sunday
         day_of_month[i] = float(d.day)
         month[i] = float(d.month)
@@ -304,7 +371,7 @@ def compute_technical_features(
         year_arr[i] = float(d.year)
         # Is this the last trading day of the month/quarter?
         if i + 1 < n:
-            d_next = dt.datetime.fromtimestamp(ts[i + 1] / 1e9, tz=dt.timezone.utc)
+            d_next = dt.datetime.fromtimestamp(ts[i + 1] / 1e9, tz=dt.UTC)
             if d_next.month != d.month:
                 is_month_end[i] = 1.0
             if (d_next.month - 1) // 3 != (d.month - 1) // 3:
@@ -393,6 +460,7 @@ def compute_technical_features(
 
 # ─── 3. Fetch news from NewsAPI ─────────────────────────────────────────
 
+
 def fetch_newsapi_articles(symbols: list[str], days_back: int = 30) -> list[dict]:
     """Fetch news articles from NewsAPI for the given symbols.
 
@@ -403,7 +471,7 @@ def fetch_newsapi_articles(symbols: list[str], days_back: int = 30) -> list[dict
     import httpx
 
     key = os.environ["NEWSAPI_KEY"]
-    end_date = dt.datetime.now(dt.timezone.utc)
+    end_date = dt.datetime.now(dt.UTC)
     start_date = end_date - dt.timedelta(days=days_back)
 
     all_articles = []
@@ -431,14 +499,18 @@ def fetch_newsapi_articles(symbols: list[str], days_back: int = 30) -> list[dict
                 if r.status_code == 200:
                     articles = r.json().get("articles", [])
                     for a in articles:
-                        all_articles.append({
-                            "symbol": sym,
-                            "headline": a.get("title") or "",
-                            "body": (a.get("description") or "") + " " + (a.get("content") or ""),
-                            "source": (a.get("source") or {}).get("name", "newsapi"),
-                            "url": a.get("url"),
-                            "published_at": a.get("publishedAt") or "",
-                        })
+                        all_articles.append(
+                            {
+                                "symbol": sym,
+                                "headline": a.get("title") or "",
+                                "body": (a.get("description") or "")
+                                + " "
+                                + (a.get("content") or ""),
+                                "source": (a.get("source") or {}).get("name", "newsapi"),
+                                "url": a.get("url"),
+                                "published_at": a.get("publishedAt") or "",
+                            }
+                        )
                         sym_count += 1
                 else:
                     pass  # Rate limited or error, skip this chunk
@@ -453,6 +525,7 @@ def fetch_newsapi_articles(symbols: list[str], days_back: int = 30) -> list[dict
 
 
 # ─── 4. Fetch StockTwits messages ───────────────────────────────────────
+
 
 def fetch_stocktwits_messages(symbols: list[str]) -> list[dict]:
     """Fetch messages from StockTwits public API."""
@@ -470,15 +543,19 @@ def fetch_stocktwits_messages(symbols: list[str]) -> list[dict]:
             if r.status_code == 200:
                 msgs = r.json().get("messages", [])
                 for m in msgs:
-                    all_msgs.append({
-                        "symbol": sym,
-                        "headline": m.get("body", ""),
-                        "body": "",
-                        "source": "stocktwits",
-                        "url": None,
-                        "published_at": m.get("created_at", ""),
-                        "sentiment": m.get("entities", {}).get("sentiment", {}).get("basic", None),
-                    })
+                    all_msgs.append(
+                        {
+                            "symbol": sym,
+                            "headline": m.get("body", ""),
+                            "body": "",
+                            "source": "stocktwits",
+                            "url": None,
+                            "published_at": m.get("created_at", ""),
+                            "sentiment": m.get("entities", {})
+                            .get("sentiment", {})
+                            .get("basic", None),
+                        }
+                    )
                 print(f"{len(msgs)} msgs")
             else:
                 print(f"HTTP {r.status_code}")
@@ -491,6 +568,7 @@ def fetch_stocktwits_messages(symbols: list[str]) -> list[dict]:
 
 
 # ─── 5. Score sentiment with LLM ensemble ───────────────────────────────
+
 
 def score_sentiment_llm(headline: str, body: str, provider: str) -> tuple[float, float]:
     """Score sentiment using a single LLM provider. Returns (score, confidence)."""
@@ -559,7 +637,8 @@ def score_sentiment_llm(headline: str, body: str, provider: str) -> tuple[float,
 
         # Parse JSON from response
         import re
-        json_match = re.search(r'\{[^}]+\}', content)
+
+        json_match = re.search(r"\{[^}]+\}", content)
         if json_match:
             data = json.loads(json_match.group())
             score = max(-1.0, min(1.0, float(data.get("score", 0.0))))
@@ -585,6 +664,7 @@ def score_sentiment_ensemble(headline: str, body: str) -> tuple[float, float, fl
 
     if len(scores) >= 2:
         import numpy as np
+
         ensemble_score = float(np.mean(scores))
         ensemble_std = float(np.std(scores))
         ensemble_conf = float(np.mean(confidences)) * (1.0 - ensemble_std)
@@ -595,17 +675,88 @@ def score_sentiment_ensemble(headline: str, body: str) -> tuple[float, float, fl
 # ─── 6. Classify event type ─────────────────────────────────────────────
 
 EVENT_KEYWORDS = {
-    "regulatory": ["regulator", "regulation", "fda", "sec", "doj", "antitrust", "ban", "compliance", "fine", "penalty"],
-    "earnings": ["earnings", "revenue", "eps", "quarter", "q1", "q2", "q3", "q4", "beat", "miss", "guidance"],
+    "regulatory": [
+        "regulator",
+        "regulation",
+        "fda",
+        "sec",
+        "doj",
+        "antitrust",
+        "ban",
+        "compliance",
+        "fine",
+        "penalty",
+    ],
+    "earnings": [
+        "earnings",
+        "revenue",
+        "eps",
+        "quarter",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+        "beat",
+        "miss",
+        "guidance",
+    ],
     "guidance": ["guidance", "outlook", "forecast", "raise", "lower", "revised", "expectations"],
-    "macro": ["fed", "interest rate", "inflation", "cpi", "gdp", "unemployment", "recession", "treasury", "yield"],
-    "product": ["launch", "product", "release", "update", "feature", " unveil", "announce", "debut"],
+    "macro": [
+        "fed",
+        "interest rate",
+        "inflation",
+        "cpi",
+        "gdp",
+        "unemployment",
+        "recession",
+        "treasury",
+        "yield",
+    ],
+    "product": [
+        "launch",
+        "product",
+        "release",
+        "update",
+        "feature",
+        " unveil",
+        "announce",
+        "debut",
+    ],
     "security": ["breach", "hack", "cyber", "vulnerability", "security", "data leak", "ransomware"],
-    "litigation": ["lawsuit", "sue", "sued", "court", "judge", "ruling", "verdict", "settlement", "patent"],
-    "partnership": ["partner", "partnership", "collaboration", "deal", "agreement", "joint venture", "alliance"],
-    "financing": ["offering", "debt", "bond", "loan", "credit", "raise capital", "dilution", "buyback", "repurchase"],
+    "litigation": [
+        "lawsuit",
+        "sue",
+        "sued",
+        "court",
+        "judge",
+        "ruling",
+        "verdict",
+        "settlement",
+        "patent",
+    ],
+    "partnership": [
+        "partner",
+        "partnership",
+        "collaboration",
+        "deal",
+        "agreement",
+        "joint venture",
+        "alliance",
+    ],
+    "financing": [
+        "offering",
+        "debt",
+        "bond",
+        "loan",
+        "credit",
+        "raise capital",
+        "dilution",
+        "buyback",
+        "repurchase",
+    ],
     "m&a": ["acquire", "acquisition", "merger", "merge", "buyout", "takeover", "bid", "buy out"],
 }
+
 
 def classify_event(headline: str, body: str) -> str:
     text = (headline + " " + body).lower()
@@ -620,6 +771,7 @@ def classify_event(headline: str, body: str) -> str:
 
 
 # ─── 7. Compute sentiment features ──────────────────────────────────────
+
 
 def compute_sentiment_features(
     articles: list[dict],
@@ -638,21 +790,104 @@ def compute_sentiment_features(
 
     # Naive wordlist sentiment (instant, no API calls)
     POSITIVE_WORDS = {
-        "beat", "beats", "surpass", "exceed", "strong", "growth", "grow", "growing",
-        "profit", "profitable", "rally", "surge", "jump", "soar", "gain", "gains",
-        "bullish", "optimistic", "positive", "upgrade", "upgraded", "buy", "outperform",
-        "raise", "raised", "boost", "boosted", "record", "high", "breakthrough",
-        "innovate", "innovation", "launch", "win", "wins", "deal", "partnership",
-        "approve", "approval", "clear", "cleared", "success", "successful",
+        "beat",
+        "beats",
+        "surpass",
+        "exceed",
+        "strong",
+        "growth",
+        "grow",
+        "growing",
+        "profit",
+        "profitable",
+        "rally",
+        "surge",
+        "jump",
+        "soar",
+        "gain",
+        "gains",
+        "bullish",
+        "optimistic",
+        "positive",
+        "upgrade",
+        "upgraded",
+        "buy",
+        "outperform",
+        "raise",
+        "raised",
+        "boost",
+        "boosted",
+        "record",
+        "high",
+        "breakthrough",
+        "innovate",
+        "innovation",
+        "launch",
+        "win",
+        "wins",
+        "deal",
+        "partnership",
+        "approve",
+        "approval",
+        "clear",
+        "cleared",
+        "success",
+        "successful",
     }
     NEGATIVE_WORDS = {
-        "miss", "misses", "fall", "falls", "drop", "drops", "decline", "declining",
-        "loss", "losses", "bearish", "pessimistic", "negative", "downgrade", "downgraded",
-        "sell", "underperform", "cut", "cuts", "reduced", "lower", "weak", "weakness",
-        "fear", "fears", "concern", "concerns", "risk", "risky", "threat", "threaten",
-        "lawsuit", "sued", "sue", "investigation", "probe", "fraud", "scandal",
-        "recall", "defect", "breach", "hack", "cyber", "attack", "crash", "plunge",
-        "tumble", "slump", "default", "bankrupt", "bankruptcy", "halt", "halted",
+        "miss",
+        "misses",
+        "fall",
+        "falls",
+        "drop",
+        "drops",
+        "decline",
+        "declining",
+        "loss",
+        "losses",
+        "bearish",
+        "pessimistic",
+        "negative",
+        "downgrade",
+        "downgraded",
+        "sell",
+        "underperform",
+        "cut",
+        "cuts",
+        "reduced",
+        "lower",
+        "weak",
+        "weakness",
+        "fear",
+        "fears",
+        "concern",
+        "concerns",
+        "risk",
+        "risky",
+        "threat",
+        "threaten",
+        "lawsuit",
+        "sued",
+        "sue",
+        "investigation",
+        "probe",
+        "fraud",
+        "scandal",
+        "recall",
+        "defect",
+        "breach",
+        "hack",
+        "cyber",
+        "attack",
+        "crash",
+        "plunge",
+        "tumble",
+        "slump",
+        "default",
+        "bankrupt",
+        "bankruptcy",
+        "halt",
+        "halted",
     }
 
     def naive_score(text: str) -> tuple[float, float]:
@@ -685,7 +920,12 @@ def compute_sentiment_features(
 
         event_type = classify_event(headline, body)
         try:
-            ts_ns = int(dt.datetime.fromisoformat(article["published_at"].replace("Z", "+00:00")).timestamp() * 1e9)
+            ts_ns = int(
+                dt.datetime.fromisoformat(
+                    article["published_at"].replace("Z", "+00:00")
+                ).timestamp()
+                * 1e9
+            )
         except Exception:
             continue
         scored_items.append((article["symbol"], ts_ns, event_type, score, conf))
@@ -701,7 +941,10 @@ def compute_sentiment_features(
             score, conf = naive_score(msg["headline"])
         event_type = "social"
         try:
-            ts_ns = int(dt.datetime.fromisoformat(msg["published_at"].replace("Z", "+00:00")).timestamp() * 1e9)
+            ts_ns = int(
+                dt.datetime.fromisoformat(msg["published_at"].replace("Z", "+00:00")).timestamp()
+                * 1e9
+            )
         except Exception:
             continue
         scored_items.append((msg["symbol"], ts_ns, event_type, score, conf))
@@ -714,11 +957,15 @@ def compute_sentiment_features(
     if scored_items:
         min_ts = min(t for _, t, _, _, _ in scored_items)
         max_ts = max(t for _, t, _, _, _ in scored_items)
-        print(f"  Article timestamp range: {dt.datetime.fromtimestamp(min_ts/1e9, tz=dt.timezone.utc)} to {dt.datetime.fromtimestamp(max_ts/1e9, tz=dt.timezone.utc)}")
+        print(
+            f"  Article timestamp range: {dt.datetime.fromtimestamp(min_ts / 1e9, tz=dt.UTC)} to {dt.datetime.fromtimestamp(max_ts / 1e9, tz=dt.UTC)}"
+        )
     if all_rows:
         min_dt = min(r["decision_time"] for r in all_rows)
         max_dt = max(r["decision_time"] for r in all_rows)
-        print(f"  Decision time range: {dt.datetime.fromtimestamp(min_dt/1e9, tz=dt.timezone.utc)} to {dt.datetime.fromtimestamp(max_dt/1e9, tz=dt.timezone.utc)}")
+        print(
+            f"  Decision time range: {dt.datetime.fromtimestamp(min_dt / 1e9, tz=dt.UTC)} to {dt.datetime.fromtimestamp(max_dt / 1e9, tz=dt.UTC)}"
+        )
 
     # Build lookup: {symbol: [(ts_ns, event_type, score, conf), ...]}
     items_by_symbol: dict[str, list] = {}
@@ -727,6 +974,7 @@ def compute_sentiment_features(
 
     # For each (symbol, decision_time), compute sentiment features from lookback window
     import numpy as np
+
     lookback_ns = lookback_days * NS_PER_DAY
     result: dict[str, dict[int, dict[str, float]]] = {}
 
@@ -742,7 +990,9 @@ def compute_sentiment_features(
         sym_matches = 0
         for dt_ns in all_dt_set:
             window_start = dt_ns - lookback_ns
-            window_items = [(t, et, s, c) for t, et, s, c in sym_items if window_start <= t <= dt_ns]
+            window_items = [
+                (t, et, s, c) for t, et, s, c in sym_items if window_start <= t <= dt_ns
+            ]
             if not window_items:
                 continue
             sym_matches += 1
@@ -773,6 +1023,7 @@ def compute_sentiment_features(
 
 # ─── 8. Main pipeline ───────────────────────────────────────────────────
 
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build combined dataset with sentiment features.")
     parser.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
@@ -796,10 +1047,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"    Sentiment: {len(SENTIMENT_FEATURES)}")
 
     # 1. Fetch bars
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 1: FETCH YFINANCE BARS")
-    print("="*70)
-    import numpy as np  # needed by compute_sentiment_features
+    print("=" * 70)
     fetch_symbols = symbols + ["SPY", "^VIX"]
     bars_by_symbol = fetch_yfinance_bars(fetch_symbols, args.years)
     spy_bars = bars_by_symbol.pop("SPY", None)
@@ -808,9 +1058,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\n  Total: {total_bars} bars, {len(bars_by_symbol)} symbols")
 
     # 2. Compute technical + calendar + interaction features
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 2: COMPUTE TECHNICAL + CALENDAR + INTERACTION FEATURES")
-    print("="*70)
+    print("=" * 70)
     all_rows = []
     for sym, bars in bars_by_symbol.items():
         print(f"  {sym:6s}...", end=" ", flush=True)
@@ -822,22 +1072,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\n  Total rows: {len(all_rows)}")
 
     # 3. Fetch news + social
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 3: FETCH NEWS + SOCIAL MEDIA")
-    print("="*70)
+    print("=" * 70)
     articles = fetch_newsapi_articles(symbols, days_back=args.news_days_back)
     messages = fetch_stocktwits_messages(symbols)
 
     # 4. Score sentiment + compute features
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 4: SCORE SENTIMENT + COMPUTE SENTIMENT FEATURES")
-    print("="*70)
+    print("=" * 70)
     sentiment_features = compute_sentiment_features(articles, messages, symbols, all_rows)
 
     # 5. Merge sentiment features into all_rows
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 5: MERGE SENTIMENT FEATURES")
-    print("="*70)
+    print("=" * 70)
     n_with_sentiment = 0
     for row in all_rows:
         sym = row["__symbol"]
@@ -848,12 +1098,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             for feat_name in SENTIMENT_FEATURES:
                 row[feat_name] = sent.get(feat_name, 0.0)
             n_with_sentiment += 1
-    print(f"  Rows with sentiment: {n_with_sentiment}/{len(all_rows)} ({n_with_sentiment/len(all_rows)*100:.1f}%)")
+    print(
+        f"  Rows with sentiment: {n_with_sentiment}/{len(all_rows)} ({n_with_sentiment / len(all_rows) * 100:.1f}%)"
+    )
 
     # 6. Write parquet
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 6: WRITE COMBINED PARQUET")
-    print("="*70)
+    print("=" * 70)
     import polars as pl
 
     dataset_dir = _REPO_ROOT / "data" / "datasets" / "combined"
@@ -882,21 +1134,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  CSV size: {csv_path.stat().st_size / 1024 / 1024:.2f} MB")
 
     # 7. Summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("DATASET SUMMARY")
-    print("="*70)
+    print("=" * 70)
     labels = [r["label"] for r in all_rows]
     n_up = sum(1 for l in labels if l == 1.0)
     print(f"  Rows: {len(all_rows)}")
     print(f"  Features: {len(ALL_FEATURES)}")
-    print(f"  Label balance: {n_up} up / {len(labels) - n_up} down ({n_up/len(labels)*100:.1f}% up)")
-    print(f"  Rows with sentiment: {n_with_sentiment} ({n_with_sentiment/len(all_rows)*100:.1f}%)")
+    print(
+        f"  Label balance: {n_up} up / {len(labels) - n_up} down ({n_up / len(labels) * 100:.1f}% up)"
+    )
+    print(
+        f"  Rows with sentiment: {n_with_sentiment} ({n_with_sentiment / len(all_rows) * 100:.1f}%)"
+    )
     print(f"  Articles fetched: {len(articles)}")
     print(f"  Messages fetched: {len(messages)}")
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("COMBINED DATASET READY FOR TRAINING")
-    print("="*70)
+    print("=" * 70)
     print(f"  Parquet: {parquet_path}")
     print(f"  CSV:     {csv_path}")
     return 0

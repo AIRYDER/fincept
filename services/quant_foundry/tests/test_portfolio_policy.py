@@ -16,7 +16,6 @@ import json
 import math
 
 import pytest
-
 from quant_foundry.portfolio_policy import (
     PolicyConfig,
     PolicyOutput,
@@ -27,7 +26,6 @@ from quant_foundry.portfolio_policy import (
     compute_cost_model_hash,
     validate_no_risk_violation,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -523,10 +521,7 @@ class TestComputeReward:
             weights=[0.3, 0.2, 0.2, 0.2, 0.1],
             old_weights=[0.2, 0.2, 0.2, 0.2, 0.2],
         )
-        assert abs(
-            reward["net"]
-            - (reward["return"] - reward["cost"] - reward["drawdown"])
-        ) < 1e-12
+        assert abs(reward["net"] - (reward["return"] - reward["cost"] - reward["drawdown"])) < 1e-12
 
     def test_wrong_returns_length(self):
         policy = _make_policy()
@@ -643,9 +638,7 @@ class TestPolicyAct:
         # max_weight=0.25 with min_positions=4 → 4*0.25=1.0 (compatible).
         policy = _make_policy(
             config=_make_config(max_weight=0.25, max_turnover=2.0),
-            risk_limits=_make_risk_limits(
-                max_weight=0.25, min_positions=4, max_turnover=2.0
-            ),
+            risk_limits=_make_risk_limits(max_weight=0.25, min_positions=4, max_turnover=2.0),
         )
         out = policy.act(
             model_outputs=[1.0, 0.0, 0.0, 0.0, 0.0],
@@ -892,10 +885,9 @@ class TestComputeSharpe:
         sharpe = engine.compute_sharpe(rewards)
         # Manual computation.
         import numpy as np
+
         arr = np.asarray(rewards, dtype=float)
-        manual = float(
-            np.mean(arr) / np.std(arr, ddof=1) * math.sqrt(252)
-        )
+        manual = float(np.mean(arr) / np.std(arr, ddof=1) * math.sqrt(252))
         assert sharpe is not None
         assert abs(sharpe - manual) < 1e-9
 
@@ -1010,12 +1002,8 @@ class TestEdgeCases:
         # A policy with a clear signal should outperform equal-weight
         # on a series where the signal asset outperforms.
         policy = _make_policy(
-            config=_make_config(
-                max_weight=0.4, abstention_threshold=0.0, max_turnover=2.0
-            ),
-            risk_limits=_make_risk_limits(
-                max_weight=0.4, min_positions=3, max_turnover=2.0
-            ),
+            config=_make_config(max_weight=0.4, abstention_threshold=0.0, max_turnover=2.0),
+            risk_limits=_make_risk_limits(max_weight=0.4, min_positions=3, max_turnover=2.0),
         )
         engine = ReplayEngine(policy=policy, config=policy.config)
         # Asset 0 consistently outperforms.
@@ -1032,6 +1020,7 @@ class TestEdgeCases:
         # cumulative return of holding equal weights.
         eq = _equal_weights(5)
         import numpy as np
+
         value = 1.0
         for row in series:
             r = np.asarray(row, dtype=float)

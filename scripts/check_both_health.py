@@ -1,7 +1,9 @@
 """Check health of both RunPod endpoints."""
-import httpx
+
 import json
 import os
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 for name, eid in [

@@ -89,6 +89,7 @@ from quant_foundry.data_ingestion.quality_report import (
     QualityPolicy,
     resolve_quality_policy,
 )
+
 # Phase 8 / T-8.1: column roles live in dataset_manifest (file-disjoint).
 # Imported read-only here so ModelTaskSpec can reference ColumnRoles for
 # task-spec validation. dataset_manifest does NOT import from this module
@@ -604,9 +605,7 @@ class TrainingManifest(BaseModel):
         if errors:
             # Join all errors so the operator sees every unmet requirement
             # in a single rejection (fail closed, fail loud).
-            raise ValueError(
-                "production mode validation failed: " + "; ".join(errors)
-            )
+            raise ValueError("production mode validation failed: " + "; ".join(errors))
         return self
 
     @model_validator(mode="after")
@@ -707,11 +706,7 @@ class TrainingManifest(BaseModel):
                     "1" if self.artifact_verification_required else "0"
                 ),
                 "promotion_eligible": "1" if self.promotion_eligible else "0",
-                **(
-                    {"quality_policy_id": self.quality_policy_id}
-                    if self.quality_policy_id
-                    else {}
-                ),
+                **({"quality_policy_id": self.quality_policy_id} if self.quality_policy_id else {}),
                 **(
                     {"dataset_registry_ref": self.dataset_registry_ref}
                     if self.dataset_registry_ref
@@ -915,8 +910,7 @@ class ModelTaskSpec(BaseModel):
             raise ValueError("task_type must be a non-empty string")
         if v not in _ALLOWED_TASK_TYPES:
             raise ValueError(
-                f"task_type {v!r} is not allowed; "
-                f"allowed: {sorted(_ALLOWED_TASK_TYPES)}"
+                f"task_type {v!r} is not allowed; allowed: {sorted(_ALLOWED_TASK_TYPES)}"
             )
         return v
 
@@ -1025,8 +1019,7 @@ def validate_task_spec(
                 "in column_roles declared columns"
             )
         elif (
-            column_roles.group_column is not None
-            and spec.group_column != column_roles.group_column
+            column_roles.group_column is not None and spec.group_column != column_roles.group_column
         ):
             warnings.append(
                 f"task_spec.group_column {spec.group_column!r} differs "

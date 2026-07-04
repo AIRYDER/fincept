@@ -82,7 +82,6 @@ from quant_foundry.lob_manifest import LOBVenue
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 
-
 # ---------------------------------------------------------------------------
 # Allowed venues (string values of LOBVenue)
 # ---------------------------------------------------------------------------
@@ -229,9 +228,7 @@ class DeepLOBConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
 
@@ -289,10 +286,7 @@ class DeepLOBTrainingResult(BaseModel):
     @classmethod
     def _venue_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_VENUES:
-            raise ValueError(
-                f"venue must be one of {sorted(_ALLOWED_VENUES)!r}; "
-                f"got {v!r}"
-            )
+            raise ValueError(f"venue must be one of {sorted(_ALLOWED_VENUES)!r}; got {v!r}")
         return v
 
     @field_validator("symbol")
@@ -370,7 +364,7 @@ class DeepLOBModel:
         if self._module is not None:
             return self._module
 
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         # Build the conv stack: each layer is Conv1d(in, hidden_dim, 3,
         # padding=1) + ReLU [+ Dropout]. The first layer maps
@@ -439,17 +433,17 @@ class DeepLOBModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "DeepLOBModel":
+    def to(self, device: Any) -> DeepLOBModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "DeepLOBModel":
+    def train(self, mode: bool = True) -> DeepLOBModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "DeepLOBModel":
+    def eval(self) -> DeepLOBModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -460,8 +454,7 @@ def _make_deeplob_module_class() -> Any:
     Lazily imports torch. Called from
     :meth:`DeepLOBModel._build_module` each time a new model is built.
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch.nn as nn
 
     class _DeepLOBNet(nn.Module):
         """Inner nn.Module implementing the DeepLOB forward pass."""
@@ -511,7 +504,7 @@ def _resolve_device(config: DeepLOBConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -567,7 +560,7 @@ def compute_lob_metrics(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     accuracy = correct / n
 
     # Macro-averaged precision / recall / f1.
@@ -575,22 +568,12 @@ def compute_lob_metrics(
     recalls: list[float] = []
     f1s: list[float] = []
     for c in range(n_classes):
-        tp = sum(
-            1 for p, a in zip(predictions, actuals) if p == c and a == c
-        )
-        fp = sum(
-            1 for p, a in zip(predictions, actuals) if p == c and a != c
-        )
-        fn = sum(
-            1 for p, a in zip(predictions, actuals) if p != c and a == c
-        )
+        tp = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == c and a == c)
+        fp = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == c and a != c)
+        fn = sum(1 for p, a in zip(predictions, actuals, strict=False) if p != c and a == c)
         prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = (
-            2 * prec * rec / (prec + rec)
-            if (prec + rec) > 0
-            else 0.0
-        )
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
         precisions.append(prec)
         recalls.append(rec)
         f1s.append(f1)
@@ -607,12 +590,10 @@ def compute_lob_metrics(
     # it generalizes to n_classes != 3.
     stationary = 1 if n_classes >= 3 else None
     dir_correct = 0
-    for p, a in zip(predictions, actuals):
+    for p, a in zip(predictions, actuals, strict=False):
         if stationary is not None and p == stationary and a == stationary:
             dir_correct += 1
-        elif stationary is not None and (
-            p == stationary or a == stationary
-        ):
+        elif stationary is not None and (p == stationary or a == stationary):
             # One is stationary, the other is not — directionally
             # wrong.
             continue
@@ -620,9 +601,7 @@ def compute_lob_metrics(
             # Both non-stationary: compare sign relative to the
             # stationary midpoint.
             mid = stationary if stationary is not None else 0
-            if (p - mid) * (a - mid) > 0:
-                dir_correct += 1
-            elif p == a:
+            if (p - mid) * (a - mid) > 0 or p == a:
                 dir_correct += 1
     directional_accuracy = dir_correct / n
 
@@ -679,7 +658,7 @@ def compute_spread_adjusted_return(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    n_correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    n_correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     n_incorrect = n - n_correct
     gross = (n_correct - n_incorrect) / n
     spread_cost = spread_bps / 1e4
@@ -719,7 +698,7 @@ def compute_fee_adjusted_return(
         raise ValueError("predictions and actuals must be non-empty")
 
     n = len(predictions)
-    n_correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
+    n_correct = sum(1 for p, a in zip(predictions, actuals, strict=False) if p == a)
     n_incorrect = n - n_correct
     gross = (n_correct - n_incorrect) / n
     fee_cost = fee_bps / 1e4
@@ -732,7 +711,7 @@ def compute_fee_adjusted_return(
 
 
 def measure_inference_latency(
-    model: "DeepLOBModel",
+    model: DeepLOBModel,
     snapshots: list[list[float]],
     n_warmup: int = 5,
 ) -> float:
@@ -756,18 +735,15 @@ def measure_inference_latency(
     Raises:
         ValueError: if ``snapshots`` is empty.
     """
-    import torch  # noqa: WPS433 lazy import
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
+    import torch
 
     if not snapshots:
         raise ValueError("snapshots must be non-empty")
 
     arr = np.array(snapshots, dtype=float)
     if arr.ndim != 2:
-        raise ValueError(
-            f"snapshots must be 2-D (seq_len, n_features); "
-            f"got shape {arr.shape}"
-        )
+        raise ValueError(f"snapshots must be 2-D (seq_len, n_features); got shape {arr.shape}")
     # (1, seq_len, n_features)
     x = torch.from_numpy(arr).float().unsqueeze(0)
 
@@ -816,10 +792,7 @@ class DeepLOBTrainer:
         if not isinstance(config, DeepLOBConfig):
             raise TypeError("config must be a DeepLOBConfig")
         if venue not in _ALLOWED_VENUES:
-            raise ValueError(
-                f"venue must be one of {sorted(_ALLOWED_VENUES)!r}; "
-                f"got {venue!r}"
-            )
+            raise ValueError(f"venue must be one of {sorted(_ALLOWED_VENUES)!r}; got {venue!r}")
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
         self.config = config
@@ -858,9 +831,9 @@ class DeepLOBTrainer:
             inference latency, and promotion eligibility (always
             ``False`` for shadow runs).
         """
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
+        import torch.nn as nn
 
         start = time.perf_counter()
 
@@ -880,10 +853,7 @@ class DeepLOBTrainer:
 
         arr = np.array(snapshots, dtype=float)
         if arr.ndim != 2:
-            raise ValueError(
-                f"snapshots must be 2-D (seq_len, n_features); "
-                f"got shape {arr.shape}"
-            )
+            raise ValueError(f"snapshots must be 2-D (seq_len, n_features); got shape {arr.shape}")
         if arr.shape[1] != self.config.n_features:
             raise ValueError(
                 f"snapshots.shape[1] must equal n_features="
@@ -891,9 +861,7 @@ class DeepLOBTrainer:
             )
         y_arr = np.array(labels, dtype=np.int64)
         if y_arr.ndim != 1:
-            raise ValueError(
-                f"labels must be 1-D; got shape {y_arr.shape}"
-            )
+            raise ValueError(f"labels must be 1-D; got shape {y_arr.shape}")
         # Validate label range.
         if y_arr.min() < 0 or y_arr.max() >= self.config.n_classes:
             raise ValueError(
@@ -996,17 +964,13 @@ class DeepLOBTrainer:
             spread_adjusted = compute_spread_adjusted_return(
                 preds_list, actuals_list, spread_bps=1.0
             )
-            fee_adjusted = compute_fee_adjusted_return(
-                preds_list, actuals_list, fee_bps=0.5
-            )
+            fee_adjusted = compute_fee_adjusted_return(preds_list, actuals_list, fee_bps=0.5)
 
         # Inference latency.
         latency_ms: float | None = None
         if n_samples > 0:
             try:
-                latency_ms = measure_inference_latency(
-                    model, snapshots, n_warmup=3
-                )
+                latency_ms = measure_inference_latency(model, snapshots, n_warmup=3)
             except Exception:
                 latency_ms = None
 
@@ -1042,23 +1006,17 @@ class DeepLOBTrainer:
         Returns:
             A list of predicted class indices (one per snapshot).
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
         if not snapshots:
             return []
 
         arr = np.array(snapshots, dtype=float)
         if arr.ndim != 2:
-            raise ValueError(
-                f"snapshots must be 2-D (seq_len, n_features); "
-                f"got shape {arr.shape}"
-            )
+            raise ValueError(f"snapshots must be 2-D (seq_len, n_features); got shape {arr.shape}")
         if arr.shape[1] != self.config.n_features:
             raise ValueError(
                 f"snapshots.shape[1] must equal n_features="
@@ -1089,12 +1047,10 @@ class DeepLOBTrainer:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -1110,7 +1066,7 @@ class DeepLOBTrainer:
         Returns:
             The loaded :class:`DeepLOBModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = DeepLOBModel(
             n_features=self.config.n_features,
@@ -1165,28 +1121,19 @@ class DeepLOBTrainer:
         """
         n = len(fold_predictions)
         if not (
-            len(fold_ids) == n
-            and len(timestamps) == n
-            and len(labels) == n
-            and len(horizons) == n
+            len(fold_ids) == n and len(timestamps) == n and len(labels) == n and len(horizons) == n
         ):
             raise ValueError(
                 "fold_predictions, fold_ids, timestamps, labels, "
                 "and horizons must all have the same length"
             )
         if weights is not None and len(weights) != n:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="deeplob", output_dir=output_dir)
         for i in range(n):
-            row_id = (
-                f"{self.symbol}_{timestamps[i]}_"
-                f"{horizons[i]}_{fold_ids[i]}_{i}"
-            )
+            row_id = f"{self.symbol}_{timestamps[i]}_{horizons[i]}_{fold_ids[i]}_{i}"
             w = float(weights[i]) if weights is not None else 1.0
             # Each prediction may be a scalar or a single-element list
             # (e.g. a class probability wrapped in a list). Normalize
@@ -1308,13 +1255,13 @@ def register_lob_family() -> dict[str, Any]:
 
 __all__ = [
     "DeepLOBConfig",
-    "DeepLOBTrainingResult",
     "DeepLOBModel",
     "DeepLOBTrainer",
+    "DeepLOBTrainingResult",
+    "compute_fee_adjusted_return",
     "compute_lob_metrics",
     "compute_spread_adjusted_return",
-    "compute_fee_adjusted_return",
     "measure_inference_latency",
-    "validate_promotion_eligibility",
     "register_lob_family",
+    "validate_promotion_eligibility",
 ]

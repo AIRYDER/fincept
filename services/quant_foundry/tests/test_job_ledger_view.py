@@ -14,7 +14,6 @@ Acceptance:
 from __future__ import annotations
 
 import pytest
-
 from quant_foundry.ui.job_ledger_view import (
     KNOWN_STATUSES,
     JobLedgerRow,
@@ -25,7 +24,6 @@ from quant_foundry.ui.job_ledger_view import (
     format_status,
     validate_no_false_health,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -121,7 +119,7 @@ def test_module_imports_and_exports() -> None:
 
 def test_known_statuses_complete() -> None:
     """All seven operator-facing statuses are present."""
-    assert KNOWN_STATUSES == {
+    assert {
         "queued",
         "running",
         "failed",
@@ -129,7 +127,7 @@ def test_known_statuses_complete() -> None:
         "verified",
         "promotion_ineligible",
         "completed",
-    }
+    } == KNOWN_STATUSES
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +201,11 @@ class TestJobLedgerViewConfig:
 class TestJobLedgerRow:
     def test_construction_defaults(self) -> None:
         row = JobLedgerRow(
-            job_id="j1", dataset_id="d1", model_family="xgboost",
-            status="queued", created_at="2026-01-01T00:00:00Z",
+            job_id="j1",
+            dataset_id="d1",
+            model_family="xgboost",
+            status="queued",
+            created_at="2026-01-01T00:00:00Z",
         )
         assert row.runpod_job_id is None
         assert row.gpu_type is None
@@ -221,8 +222,11 @@ class TestJobLedgerRow:
     def test_extra_forbid(self) -> None:
         with pytest.raises(Exception):
             JobLedgerRow(  # type: ignore[call-arg]
-                job_id="j1", dataset_id="d1", model_family="xgboost",
-                status="queued", created_at="2026-01-01T00:00:00Z",
+                job_id="j1",
+                dataset_id="d1",
+                model_family="xgboost",
+                status="queued",
+                created_at="2026-01-01T00:00:00Z",
                 bogus=True,
             )
 
@@ -330,12 +334,7 @@ class TestValidateNoFalseHealth:
         assert validate_no_false_health(_row(status="queued")) is True
 
     def test_honest_verified(self) -> None:
-        assert (
-            validate_no_false_health(
-                _row(status="verified", artifact_verified=True)
-            )
-            is True
-        )
+        assert validate_no_false_health(_row(status="verified", artifact_verified=True)) is True
 
     def test_verified_without_artifact_raises(self) -> None:
         row = _row(status="verified", artifact_verified=None)
@@ -457,14 +456,15 @@ class TestRender:
         assert "[QUEUED]" in out
 
     def test_max_rows_truncation(self) -> None:
-        rows = [
-            _row(job_id=f"j{i}", created_at=f"2026-01-{i:02d}T00:00:00Z")
-            for i in range(1, 11)
-        ]
+        rows = [_row(job_id=f"j{i}", created_at=f"2026-01-{i:02d}T00:00:00Z") for i in range(1, 11)]
         view = JobLedgerView(JobLedgerViewConfig(max_rows=3, sort_order="asc"))
         out = view.render(rows)
         # Only 3 rows + header + separator.
-        body_lines = [ln for ln in out.splitlines() if ln.startswith("|") and "---" not in ln and "JOB_ID" not in ln]
+        body_lines = [
+            ln
+            for ln in out.splitlines()
+            if ln.startswith("|") and "---" not in ln and "JOB_ID" not in ln
+        ]
         assert len(body_lines) == 3
         assert "j1" in out
         assert "j4" not in out

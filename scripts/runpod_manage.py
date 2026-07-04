@@ -1,7 +1,9 @@
 """Manage RunPod endpoint: get details, update env vars, create network volume."""
+
 import json
 import os
 import sys
+
 import requests
 
 KEY = os.environ["RUNPOD_API_KEY"]
@@ -29,7 +31,9 @@ elif cmd == "patch":
         print(f"GET failed: {r.status_code} {r.text[:300]}")
         sys.exit(1)
     current = r.json()
-    print(f"Current endpoint: {json.dumps({k: current.get(k) for k in ['id', 'name', 'templateId']}, indent=2)}")
+    print(
+        f"Current endpoint: {json.dumps({k: current.get(k) for k in ['id', 'name', 'templateId']}, indent=2)}"
+    )
 
     # Build the patch payload with updated env vars
     callback_secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
@@ -55,12 +59,20 @@ elif cmd == "patch":
         "env": new_env,
     }
     # Preserve other fields
-    for field in ["gpuIds", "workersMin", "workersMax", "autoscalingEnabled", "flashbootEnabled",
-                  "containerDiskSizeGb", "volumeMountPath", "networkVolumeId"]:
+    for field in [
+        "gpuIds",
+        "workersMin",
+        "workersMax",
+        "autoscalingEnabled",
+        "flashbootEnabled",
+        "containerDiskSizeGb",
+        "volumeMountPath",
+        "networkVolumeId",
+    ]:
         if field in current and current[field] is not None:
             patch_body[field] = current[field]
 
-    print(f"\nPatching endpoint with env vars:")
+    print("\nPatching endpoint with env vars:")
     for k, v in new_env.items():
         display = v[:16] + "..." if len(v) > 20 else v
         print(f"  {k}: {display}")
@@ -82,11 +94,16 @@ elif cmd == "volumes":
 
 elif cmd == "create-volume":
     # Create a network volume for dataset storage
-    r = requests.post(f"{BASE}/network-volumes", headers=HEADERS, json={
-        "name": "quant-foundry-datasets",
-        "sizeGb": 10,  # 10 GB is enough for datasets
-        "region": "US",  # adjust as needed
-    }, timeout=30)
+    r = requests.post(
+        f"{BASE}/network-volumes",
+        headers=HEADERS,
+        json={
+            "name": "quant-foundry-datasets",
+            "sizeGb": 10,  # 10 GB is enough for datasets
+            "region": "US",  # adjust as needed
+        },
+        timeout=30,
+    )
     print(f"Create Volume: {r.status_code}")
     print(json.dumps(r.json(), indent=2))
 

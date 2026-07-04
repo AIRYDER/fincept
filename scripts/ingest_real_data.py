@@ -156,13 +156,10 @@ def run_equities(args: argparse.Namespace) -> int:
     start = args.start_date or _date_days_ago(args.lookback_days)
     end = args.end_date or _date_days_ago(0)
 
-    dataset_id = args.dataset_id or (
-        "real_equities_" + "_".join(symbols[:3]) + f"_{start}_{end}"
-    )
+    dataset_id = args.dataset_id or ("real_equities_" + "_".join(symbols[:3]) + f"_{start}_{end}")
 
     output_dir = pathlib.Path(args.output)
-    print(f"[equities] fetching {len(symbols)} symbols from Alpaca "
-          f"({start}..{end})...")
+    print(f"[equities] fetching {len(symbols)} symbols from Alpaca ({start}..{end})...")
 
     result = asyncio.run(
         ingest_alpaca_equity_bars(
@@ -193,13 +190,10 @@ def run_macro(args: argparse.Namespace) -> int:
     start = args.start_date or _date_days_ago(args.lookback_days)
     end = args.end_date or _date_days_ago(0)
 
-    dataset_id = args.dataset_id or (
-        "real_macro_" + "_".join(series_ids[:3]) + f"_{start}_{end}"
-    )
+    dataset_id = args.dataset_id or ("real_macro_" + "_".join(series_ids[:3]) + f"_{start}_{end}")
 
     output_dir = pathlib.Path(args.output)
-    print(f"[macro] fetching {len(series_ids)} series from FRED "
-          f"({start}..{end})...")
+    print(f"[macro] fetching {len(series_ids)} series from FRED ({start}..{end})...")
 
     result = asyncio.run(
         ingest_fred_macro(
@@ -223,13 +217,10 @@ def run_news(args: argparse.Namespace) -> int:
     start = args.start_date or _date_days_ago(args.lookback_days)
     end = args.end_date or _date_days_ago(0)
 
-    dataset_id = args.dataset_id or (
-        f"real_news_{start}_{end}"
-    )
+    dataset_id = args.dataset_id or (f"real_news_{start}_{end}")
 
     output_dir = pathlib.Path(args.output)
-    print(f"[news] fetching articles for {args.query!r} from NewsAPI "
-          f"({start}..{end})...")
+    print(f"[news] fetching articles for {args.query!r} from NewsAPI ({start}..{end})...")
 
     result = asyncio.run(
         ingest_newsapi_events(
@@ -268,8 +259,7 @@ def run_all(args: argparse.Namespace) -> int:
         if rc != 0:
             return rc
     else:
-        print(f"[all] skipping equities: {_ALPACA_KEY_ENV}/"
-              f"{_ALPACA_SECRET_ENV} not set")
+        print(f"[all] skipping equities: {_ALPACA_KEY_ENV}/{_ALPACA_SECRET_ENV} not set")
 
     # Macro (skip silently if FRED key is missing).
     if os.environ.get(_FRED_KEY_ENV):
@@ -354,10 +344,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     eq_parser.add_argument(
         "--symbols",
         default=",".join(DEFAULT_EQUITY_SYMBOLS),
-        help=(
-            "Comma-separated ticker symbols "
-            f"(default: {','.join(DEFAULT_EQUITY_SYMBOLS)})."
-        ),
+        help=(f"Comma-separated ticker symbols (default: {','.join(DEFAULT_EQUITY_SYMBOLS)})."),
     )
     eq_parser.add_argument(
         "--timeframe",
@@ -384,10 +371,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     macro_parser.add_argument(
         "--series",
         default=",".join(DEFAULT_MACRO_SERIES),
-        help=(
-            "Comma-separated FRED series IDs "
-            f"(default: {','.join(DEFAULT_MACRO_SERIES)})."
-        ),
+        help=(f"Comma-separated FRED series IDs (default: {','.join(DEFAULT_MACRO_SERIES)})."),
     )
     macro_parser.set_defaults(
         lookback_days=DEFAULT_EQUITY_LOOKBACK_DAYS,

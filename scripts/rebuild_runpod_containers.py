@@ -36,6 +36,7 @@ Exit codes:
 - 3: push failure
 - 4: endpoint refresh failure
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,7 +47,6 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -72,6 +72,8 @@ CONTAINERS: dict[str, tuple[str, str]] = {
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from runpod_config import (  # noqa: E402
     INFERENCE_ENDPOINT_ID as DEFAULT_INFERENCE_ENDPOINT_ID,
+)
+from runpod_config import (
     TRAINING_ENDPOINT_ID as DEFAULT_TRAINING_ENDPOINT_ID,
 )
 
@@ -183,8 +185,7 @@ def check_docker_running(dry_run: bool = False) -> None:
             )
     except FileNotFoundError as exc:
         raise PreconditionError(
-            f"Docker executable not found: {exc}. "
-            "Ensure Docker is installed and on PATH."
+            f"Docker executable not found: {exc}. Ensure Docker is installed and on PATH."
         ) from exc
     except subprocess.TimeoutExpired as exc:
         raise PreconditionError(
@@ -201,8 +202,7 @@ def check_dockerfile_exists(container: str) -> Path:
     """
     if container not in CONTAINERS:
         raise PreconditionError(
-            f"Unknown container '{container}'. "
-            f"Valid options: {', '.join(CONTAINERS.keys())}"
+            f"Unknown container '{container}'. Valid options: {', '.join(CONTAINERS.keys())}"
         )
     dockerfile_rel, _ = CONTAINERS[container]
     dockerfile = REPO_ROOT / dockerfile_rel
@@ -233,16 +233,19 @@ def build_container(
 
     Returns a BuildResult.
     """
-    dockerfile_rel, context_rel = CONTAINERS[container]
+    dockerfile_rel, _context_rel = CONTAINERS[container]
     image_name = f"fincept/quant-foundry-{container}:{tag}"
 
     # Build from the repo root so COPY paths in the Dockerfile resolve.
     # The Dockerfile uses paths like services/quant_foundry/src/... which
     # are relative to the repo root.
     cmd = [
-        "docker", "build",
-        "-t", image_name,
-        "-f", dockerfile_rel,
+        "docker",
+        "build",
+        "-t",
+        image_name,
+        "-f",
+        dockerfile_rel,
         ".",
     ]
     cmd_str = " ".join(cmd)
@@ -268,7 +271,7 @@ def build_container(
             text=True,
             timeout=1800,  # 30 min max for a build
         )
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         elapsed = time.time() - start
         return BuildResult(
             container=container,
@@ -377,7 +380,7 @@ def push_container(
             text=True,
             timeout=1800,  # 30 min max
         )
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         elapsed = time.time() - start
         return PushResult(
             container=container,
@@ -436,7 +439,7 @@ def refresh_endpoint(
     url = f"{RUNPOD_API_BASE}/{endpoint_id}/health"
     if dry_run:
         print(f"[dry-run] would refresh endpoint: GET {url}")
-        print(f"[dry-run]   Authorization: Bearer <redacted>")
+        print("[dry-run]   Authorization: Bearer <redacted>")
         return RefreshResult(endpoint_id=endpoint_id, success=True)
 
     # Lazy import: httpx is only needed for the API call, not for builds.
@@ -445,7 +448,7 @@ def refresh_endpoint(
     except ImportError:
         try:
             import requests as httpx  # type: ignore[import-untyped]
-        except ImportError as exc:
+        except ImportError:
             return RefreshResult(
                 endpoint_id=endpoint_id,
                 success=False,
@@ -666,9 +669,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.push:
         for target in targets:
             # Find the corresponding build result to get the local image tag.
-            build_result = next(
-                b for b in summary.builds if b.container == target
-            )
+            build_result = next(b for b in summary.builds if b.container == target)
             result = push_container(
                 target,
                 build_result.image_tag,
@@ -689,18 +690,14 @@ def main(argv: list[str] | None = None) -> int:
     refresh_exit_code = 0
     if args.refresh_endpoint:
         endpoint_map = {
-            "training": os.environ.get(
-                "RUNPOD_TRAINING_ENDPOINT_ID", DEFAULT_TRAINING_ENDPOINT_ID
-            ),
+            "training": os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", DEFAULT_TRAINING_ENDPOINT_ID),
             "inference": os.environ.get(
                 "RUNPOD_INFERENCE_ENDPOINT_ID", DEFAULT_INFERENCE_ENDPOINT_ID
             ),
         }
         for target in targets:
             endpoint_id = endpoint_map[target]
-            result = refresh_endpoint(
-                endpoint_id, api_key, dry_run=args.dry_run
-            )
+            result = refresh_endpoint(endpoint_id, api_key, dry_run=args.dry_run)
             summary.refreshes.append(result)
             if not result.success:
                 refresh_exit_code = 4

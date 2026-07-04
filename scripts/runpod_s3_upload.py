@@ -1,7 +1,7 @@
 """Upload dataset to RunPod network volume via S3-compatible API (boto3)."""
-import os
-import sys
+
 import pathlib
+
 import boto3
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -48,6 +48,6 @@ response = s3.list_objects_v2(Bucket=VOLUME_ID, Prefix="datasets/deep_real/")
 for obj in response.get("Contents", []):
     print(f"  {obj['Key']}: {obj['Size']:,} bytes")
 
-print(f"\nDataset is now on the network volume.")
-print(f"  Pod path:         /workspace/datasets/deep_real/dataset_full.csv")
-print(f"  Serverless path:  /runpod-volume/datasets/deep_real/dataset_full.csv")
+print("\nDataset is now on the network volume.")
+print("  Pod path:         /workspace/datasets/deep_real/dataset_full.csv")
+print("  Serverless path:  /runpod-volume/datasets/deep_real/dataset_full.csv")

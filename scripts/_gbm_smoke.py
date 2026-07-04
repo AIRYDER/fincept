@@ -84,9 +84,7 @@ def train(bars_by_symbol: dict[str, list]) -> None:
 
 async def main() -> None:
     if not PARQUET.exists():
-        sys.exit(
-            f"missing {PARQUET}; run scripts/ingest_bars.py first to generate it"
-        )
+        sys.exit(f"missing {PARQUET}; run scripts/ingest_bars.py first to generate it")
     bars_by_symbol = load_bars_from_parquet(
         PARQUET, venue=Venue.NASDAQ, asset_class=AssetClass.EQUITY, freq="1d"
     )

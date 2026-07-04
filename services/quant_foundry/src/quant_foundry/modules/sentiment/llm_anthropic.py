@@ -33,7 +33,7 @@ _SYSTEM_PROMPT = (
     "You are a financial sentiment analyzer. Given a social media post "
     "or news headline about a stock, return a JSON object with two fields: "
     '"score" (a float in [-1, 1] where -1 is very bearish, 0 is neutral, '
-    "1 is very bullish) and \"confidence\" (a float in [0, 1] indicating "
+    '1 is very bullish) and "confidence" (a float in [0, 1] indicating '
     "how confident you are in the assessment). "
     "Return ONLY the JSON object, no other text."
 )
@@ -91,8 +91,7 @@ class AnthropicSentiment:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not key:
             raise ValueError(
-                "ANTHROPIC_API_KEY is not set. Set it in the environment "
-                "or RunPod container env."
+                "ANTHROPIC_API_KEY is not set. Set it in the environment or RunPod container env."
             )
         return key
 
@@ -104,7 +103,9 @@ class AnthropicSentiment:
             api_key = self._get_api_key()
         except ValueError:
             return [
-                SentimentResult(item_id=item.item_id, provider="anthropic", score=0.0, confidence=0.0)
+                SentimentResult(
+                    item_id=item.item_id, provider="anthropic", score=0.0, confidence=0.0
+                )
                 for item in items
             ]
 
@@ -143,19 +144,23 @@ class AnthropicSentiment:
                 score = max(-1.0, min(1.0, score))
                 confidence = max(0.0, min(1.0, confidence))
 
-                results.append(SentimentResult(
-                    item_id=item.item_id,
-                    provider="anthropic",
-                    score=round(score, 6),
-                    confidence=round(confidence, 6),
-                ))
+                results.append(
+                    SentimentResult(
+                        item_id=item.item_id,
+                        provider="anthropic",
+                        score=round(score, 6),
+                        confidence=round(confidence, 6),
+                    )
+                )
             except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-                results.append(SentimentResult(
-                    item_id=item.item_id,
-                    provider="anthropic",
-                    score=0.0,
-                    confidence=0.0,
-                ))
+                results.append(
+                    SentimentResult(
+                        item_id=item.item_id,
+                        provider="anthropic",
+                        score=0.0,
+                        confidence=0.0,
+                    )
+                )
 
         return results
 

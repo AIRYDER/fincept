@@ -145,9 +145,7 @@ def train_model(
 
         pl.read_parquet(str(parquet_path)).write_csv(str(csv_path))
     except ImportError as exc:
-        raise RuntimeError(
-            "polars is required to convert parquet -> CSV for training"
-        ) from exc
+        raise RuntimeError("polars is required to convert parquet -> CSV for training") from exc
 
     trainer = RealLightGBMTrainer()
     req = RunPodTrainingRequest(
@@ -194,7 +192,9 @@ def create_dossier(
     dossier = ModelDossier.model_validate(training_result["dossier"])
 
     if dossier.artifact_manifest_id != artifact.artifact_id:
-        raise ValueError("dossier artifact_manifest_id does not match artifact manifest artifact_id")
+        raise ValueError(
+            "dossier artifact_manifest_id does not match artifact manifest artifact_id"
+        )
 
     training_metrics = dict(dossier.training_metrics)
     if dossier.pbo is not None:
@@ -305,9 +305,7 @@ def submit_to_gate(
     return {
         "decision": receipt.decision.value,
         "target_level": receipt.request.target_level.value,
-        "rejection_reason": (
-            receipt.rejection_reason.value if receipt.rejection_reason else None
-        ),
+        "rejection_reason": (receipt.rejection_reason.value if receipt.rejection_reason else None),
         "review_note": receipt.review_note,
         "decided_at_ns": receipt.decided_at_ns,
     }

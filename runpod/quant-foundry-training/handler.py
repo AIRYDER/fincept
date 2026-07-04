@@ -84,7 +84,7 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
 # storage backend so canary/research/production runs can use different
 # backends (volume path, presigned object upload, or a fake in-memory
 # writer for tests) behind a single contract.
-from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+from pydantic import BaseModel, ConfigDict  # noqa: E402
 
 # Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
 # policy registry + validation function so the worker can recompute cheap
@@ -116,11 +116,9 @@ from quant_foundry.real_trainer import (  # noqa: E402
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
-    SignedFailureEnvelope,
     TrainingFailure,
     build_callback,
     build_failure_envelope,
-    verify_failure_envelope,
 )
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
@@ -181,6 +179,121 @@ def resolve_volume_path(ref: str) -> str:
             return str(actual_root / relative)
 
     return ref
+
+
+def _is_under_tmp(path_str: str) -> bool:
+    """Check whether a path string resolves under ``/tmp``.
+
+    Used by the durable-storage deny gate to detect ``output_prefix``
+    values that would let the artifact die with the worker. Handles
+    both ``/tmp`` and ``/tmp/...`` forms, and ``file://`` URIs that
+    point at ``/tmp``.
+    """
+    if not path_str:
+        return False
+    cleaned = path_str
+    if cleaned.startswith("file://"):
+        cleaned = cleaned[len("file://") :]
+    try:
+        p = Path(cleaned)
+    except Exception:
+        return False
+    # Normalize to forward slashes (Path uses backslashes on Windows, but
+    # the handler runs on Linux where /tmp is a real path — this makes the
+    # check cross-platform for testing).
+    resolved = str(p).replace("\\", "/")
+    return resolved == "/tmp" or resolved.startswith("/tmp/")
+
+
+def _validate_output_prefix_durable(
+    *,
+    output_prefix: str | None,
+    presigned_artifact_url: str | None,
+    training_mode: str,
+) -> str | None:
+    """Validate that the artifact destination is durable for real jobs.
+
+    Returns an error message string if the destination is not durable
+    (fail-closed gate), or ``None`` if the destination is acceptable.
+
+    Hard rules (from the durable-artifact skill):
+
+    1. **Deny /tmp for real jobs.** ``training_mode == "canary"`` may use
+       ``/tmp`` (the FakeArtifactWriter path is canary-only by design).
+       For any other mode, if the resolved ``output_prefix`` is under
+       ``/tmp`` (or ``runpod_data_root()`` fell back to ``/tmp`` because
+       no volume is mounted), the handler must fail closed.
+
+    2. **Validate output_prefix before training starts.** For non-canary
+       jobs, ``output_prefix`` must resolve to either:
+       - a path under ``/runpod-volume/`` or ``/workspace/`` (network
+         volume mounted), or
+       - an ``s3://`` / ``https://`` presigned URL, or
+       - a ``file://`` URI to a mounted volume (not ``/tmp``).
+       Reject anything else.
+    """
+    is_canary = training_mode == "canary"
+    if is_canary:
+        # Canary may use /tmp — no durable destination required.
+        return None
+
+    # A presigned URL is always durable (https:// is enforced by the
+    # PresignedUploadArtifactWriter; s3:// is a durable scheme). Let
+    # the writer handle non-https schemes with its own signed failure.
+    if presigned_artifact_url:
+        return None
+
+    # No presigned URL → output_prefix must be a durable volume path.
+    if not output_prefix:
+        data_root = runpod_data_root()
+        if str(data_root) == "/tmp":
+            return (
+                "durable artifact destination required for real jobs: "
+                "no RunPod network volume mounted (/runpod-volume, "
+                "/workspace) and no presigned artifact URL supplied — "
+                "refusing to write to /tmp (artifact would die with "
+                "the worker). Wire a network volume or pass "
+                "presigned_artifact_url."
+            )
+        return (
+            "durable artifact destination required for real jobs: "
+            "no output_prefix and no presigned_artifact_url supplied. "
+            "Set output_prefix to a /runpod-volume/ or /workspace/ "
+            "path, or pass presigned_artifact_url."
+        )
+
+    # output_prefix is set — reject /tmp.
+    if _is_under_tmp(output_prefix):
+        return (
+            f"output_prefix {output_prefix!r} resolves under /tmp — "
+            "refusing to persist artifact to /tmp for a real job "
+            "(artifact would die with the worker). Set output_prefix "
+            "to a /runpod-volume/ or /workspace/ path, or pass "
+            "presigned_artifact_url."
+        )
+
+    # Accept volume paths and durable URI schemes.
+    if output_prefix.startswith("/runpod-volume/") or output_prefix.startswith("/workspace/"):
+        return None
+    if output_prefix.startswith("s3://") or output_prefix.startswith("https://"):
+        return None
+    if output_prefix.startswith("file://"):
+        inner = output_prefix[len("file://") :]
+        if inner.startswith("/runpod-volume/") or inner.startswith("/workspace/"):
+            return None
+        return (
+            f"output_prefix {output_prefix!r} is a file:// URI to a "
+            "non-volume path — must point to /runpod-volume/ or "
+            "/workspace/. Pass presigned_artifact_url for S3/R2 uploads."
+        )
+
+    # Anything else is rejected.
+    return (
+        f"output_prefix {output_prefix!r} is not a durable destination "
+        "(must be /runpod-volume/, /workspace/, s3://, https://, or "
+        "file:// to a mounted volume). Refusing to persist artifact "
+        "for a real job."
+    )
 
 
 def _get_callback_secret() -> str:
@@ -1526,7 +1639,7 @@ def _probe_nvidia_smi() -> tuple[
                         cuda_version = token
                         break
                 break
-    except Exception:  # noqa: BLE001 - best-effort CUDA version probe
+    except Exception:
         pass
 
     available = gpu_count > 0
@@ -1548,7 +1661,7 @@ def _probe_cuda_via_torch() -> str | None:
         if not torch.cuda.is_available():
             return None
         return torch.version.cuda  # type: ignore[no-any-return]
-    except Exception:  # noqa: BLE001 - best-effort torch probe
+    except Exception:
         return None
 
 
@@ -1581,14 +1694,14 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
             default_params = lgb.LGBMModel().get_params()  # type: ignore[attr-defined]
             if "device_type" in default_params or "device" in default_params:
                 flags["lightgbm_gpu"] = True
-        except Exception:  # noqa: BLE001
+        except Exception:
             # Conservative: if lightgbm imports, assume GPU-capable
             # build may be present (the healthcheck reports the flag,
             # the dispatcher decides whether to trust it).
             flags["lightgbm_gpu"] = hasattr(lgb, "LGBMClassifier")
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # XGBoost: GPU support via ``tree_method="gpu_hist"`` or
@@ -1603,7 +1716,7 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
         flags["xgboost_gpu"] = hasattr(xgb, "XGBClassifier") or hasattr(xgb, "Booster")
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # CatBoost: GPU support via ``task_type="GPU"``. Check if the
@@ -1616,7 +1729,7 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
         )
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return flags
@@ -2196,7 +2309,7 @@ def _df_columns(df: Any) -> list[str]:
     if hasattr(df, "columns"):
         try:
             return [str(c) for c in df.columns]
-        except Exception:  # noqa: BLE001 - best-effort column extraction
+        except Exception:
             pass
     if hasattr(df, "column_names"):
         return list(df.column_names)
@@ -2221,7 +2334,7 @@ def _df_to_pandas(df: Any) -> Any:
     if hasattr(df, "to_pandas"):
         try:
             return df.to_pandas()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return df
 
@@ -2232,13 +2345,13 @@ def _df_duplicate_count(df: Any) -> int:
     if hasattr(pdf, "duplicated"):
         try:
             return int(pdf.duplicated().sum())
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     # pyarrow fallback: unique() height difference.
     if hasattr(df, "unique") and hasattr(df, "num_rows"):
         try:
             return int(df.num_rows - df.unique().num_rows)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return 0
 
@@ -2263,7 +2376,7 @@ def _df_label_balance(df: Any, label_col: str) -> float:
                 return 0.0
             counts = non_null.value_counts()
             return float(counts.min()) / total
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return 0.0
 
@@ -2292,7 +2405,7 @@ def _df_feature_coverage(df: Any, feature_cols: list[str]) -> float:
                 frac = (total_rows - null_count) / total_rows
                 min_frac = min(min_frac, frac)
                 continue
-            except Exception:  # noqa: BLE101
+            except Exception:
                 pass
         # pyarrow path.
         if hasattr(df, "column") and hasattr(df, "num_rows"):
@@ -2302,7 +2415,7 @@ def _df_feature_coverage(df: Any, feature_cols: list[str]) -> float:
                 frac = (total_rows - null_count) / total_rows
                 min_frac = min(min_frac, frac)
                 continue
-            except Exception:  # noqa: BLE101
+            except Exception:
                 pass
         # Cannot determine coverage for this column → fail closed.
         return 0.0
@@ -3236,6 +3349,40 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     if output_prefix:
         output_prefix = resolve_volume_path(output_prefix)
 
+    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
+    # Fail closed BEFORE training starts: for non-canary jobs, deny /tmp as
+    # a final destination and validate output_prefix resolves to a durable
+    # location (network volume or presigned URL). A real job that writes to
+    # /tmp produces a signed receipt pointing at nothing — worse than no
+    # job. Moving this gate before training avoids wasting GPU time on a
+    # job whose artifact will be rejected. Canary jobs may use /tmp
+    # (FakeArtifactWriter is canary-only by design).
+    raw_mode = req.extra_constraints.get("training_mode") or "canary"
+    _deny_error = _validate_output_prefix_durable(
+        output_prefix=output_prefix,
+        presigned_artifact_url=presigned_artifact_url,
+        training_mode=raw_mode,
+    )
+    if _deny_error is not None:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code="artifact_destination_not_durable",
+            error_summary=_deny_error,
+        )
+        return _build_signed_failure(
+            error_code="artifact_destination_not_durable",
+            error_message=_deny_error,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "artifact_destination_deny_gate_pre_training",
+                "output_prefix": output_prefix or "",
+                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
+                "training_mode": raw_mode,
+            },
+        )
+
     # Worker-side status file: mark the job as started so the gateway
     # can detect crashed workers via stale heartbeat_at timestamps.
     write_status(req.job_id, "started")
@@ -3575,6 +3722,12 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         ).hexdigest()
 
     # Metrics summary from the dossier training_metrics.
+    # Tier 0 / metric sanity bounds: build_callback runs
+    # validate_metric_sanity() on this dict before signing — implausible
+    # metrics (e.g. Sharpe 769) are flagged, raw values preserved, and
+    # promotion_eligible forced False. No mutation happens here; the
+    # sanity report is embedded under metrics_summary["metric_sanity"]
+    # inside the signed callback payload.
     metrics_summary = dict(dossier_data.get("training_metrics", {}))
 
     # Quality gate passed flag (fail-closed when unknown).
@@ -3718,9 +3871,7 @@ if __name__ == "__main__":  # pragma: no cover
         try:
             import importlib.util
 
-            _pf_spec = importlib.util.spec_from_file_location(
-                "preflight", "/worker/preflight.py"
-            )
+            _pf_spec = importlib.util.spec_from_file_location("preflight", "/worker/preflight.py")
             if _pf_spec and _pf_spec.loader:
                 _pf_mod = importlib.util.module_from_spec(_pf_spec)
                 _pf_spec.loader.exec_module(_pf_mod)
@@ -3728,7 +3879,8 @@ if __name__ == "__main__":  # pragma: no cover
                 if _pf_rc != 0:
                     print(
                         f"[handler] preflight failed (rc={_pf_rc}), exiting",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
                     raise SystemExit(_pf_rc)
         except FileNotFoundError:
@@ -3738,7 +3890,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
-        print(msg, flush=True)  # noqa: T201 - CLI debug output
+        print(msg, flush=True)
         for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
             try:
                 with open(path, "a") as f:
@@ -3779,7 +3931,7 @@ if __name__ == "__main__":  # pragma: no cover
         raw = sys.stdin.read()
         event = json.loads(raw) if raw else {}
         result = handler(event)
-        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+        print(json.dumps(result, indent=2))
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())

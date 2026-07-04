@@ -599,15 +599,11 @@ def test_detect_stale_workers_skips_corrupt_files(tmp_path: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _write_status_file(
-    status_dir: Any, job_id: str, *, status: str, heartbeat_at: float
-) -> None:
+def _write_status_file(status_dir: Any, job_id: str, *, status: str, heartbeat_at: float) -> None:
     import json as _json
 
     (status_dir / f"{job_id}.json").write_text(
-        _json.dumps(
-            {"job_id": job_id, "status": status, "heartbeat_at": heartbeat_at}
-        ),
+        _json.dumps({"job_id": job_id, "status": status, "heartbeat_at": heartbeat_at}),
         encoding="utf-8",
     )
 
@@ -643,9 +639,7 @@ def test_sweep_stale_workers_fails_running_jobs(tmp_path: Any) -> None:
     # The dispatcher transitions the job to RUNNING; confirm and write a
     # stale heartbeat file.
     assert gateway.outbox.get(job_id).status == JobStatus.RUNNING
-    _write_status_file(
-        status_dir, job_id, status="training", heartbeat_at=1000.0
-    )
+    _write_status_file(status_dir, job_id, status="training", heartbeat_at=1000.0)
 
     receipts = gateway.sweep_stale_workers()
 
@@ -673,9 +667,7 @@ def test_sweep_stale_workers_skips_completed_jobs(tmp_path: Any) -> None:
         request_payload=_training_payload(done_job),
     )
     gateway.outbox.update_status(done_job, JobStatus.COMPLETED)
-    _write_status_file(
-        status_dir, done_job, status="training", heartbeat_at=1000.0
-    )
+    _write_status_file(status_dir, done_job, status="training", heartbeat_at=1000.0)
 
     # A failed job with a stale heartbeat file.
     failed_job = "stale-failed-1"
@@ -686,9 +678,7 @@ def test_sweep_stale_workers_skips_completed_jobs(tmp_path: Any) -> None:
         request_payload=_training_payload(failed_job),
     )
     gateway.outbox.update_status(failed_job, JobStatus.FAILED)
-    _write_status_file(
-        status_dir, failed_job, status="training", heartbeat_at=1000.0
-    )
+    _write_status_file(status_dir, failed_job, status="training", heartbeat_at=1000.0)
 
     receipts = gateway.sweep_stale_workers()
 

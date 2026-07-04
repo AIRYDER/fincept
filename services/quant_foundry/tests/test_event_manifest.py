@@ -19,11 +19,8 @@ Tests verify:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.event_manifest import (
     EventDatasetManifest,
     EventManifestBuilder,
@@ -34,7 +31,6 @@ from quant_foundry.event_manifest import (
     validate_no_revised_metadata_leakage,
     validate_point_in_time,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

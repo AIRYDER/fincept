@@ -52,7 +52,13 @@ PROBES: tuple[Probe, ...] = (
         (200, 503),
         params={"freq": "1m", "lookback_ns": "3600000000000", "stale_after_ns": "3600000000000"},
     ),
-    Probe("symbol_search", "GET", "/data/symbols/search", (200, 503), params={"q": "BTC", "limit": "5"}),
+    Probe(
+        "symbol_search",
+        "GET",
+        "/data/symbols/search",
+        (200, 503),
+        params={"q": "BTC", "limit": "5"},
+    ),
     Probe("openbb_health", "GET", "/research/openbb/health", (200, 503)),
     Probe("news_impact_status", "GET", "/news-impact/status", (200, 503)),
     Probe("strategy_configs", "GET", "/strategies/configs", (200, 503)),
@@ -86,7 +92,16 @@ def summarize_body(body: Any) -> dict[str, Any]:
             value = body.get(key)
             if isinstance(value, str | bool | int | float) or value is None:
                 summary[key] = value
-        for key in ("sources", "rows", "configs", "orders", "services", "alert", "impact", "universe"):
+        for key in (
+            "sources",
+            "rows",
+            "configs",
+            "orders",
+            "services",
+            "alert",
+            "impact",
+            "universe",
+        ):
             value = body.get(key)
             if isinstance(value, list):
                 summary[f"{key}_length"] = len(value)
@@ -94,11 +109,17 @@ def summarize_body(body: Any) -> dict[str, Any]:
             summary["summary_keys"] = sorted(body["summary"].keys())[:20]
         return summary
     if isinstance(body, str):
-        return {"type": "string", "sha256": hashlib.sha256(body.encode()).hexdigest(), "length": len(body)}
+        return {
+            "type": "string",
+            "sha256": hashlib.sha256(body.encode()).hexdigest(),
+            "length": len(body),
+        }
     return {"type": type(body).__name__}
 
 
-async def run_probe(client: httpx.AsyncClient, probe: Probe, headers: dict[str, str]) -> dict[str, Any]:
+async def run_probe(
+    client: httpx.AsyncClient, probe: Probe, headers: dict[str, str]
+) -> dict[str, Any]:
     started = time.perf_counter()
     try:
         response = await client.request(
@@ -168,7 +189,9 @@ def write_receipt(receipt: dict[str, Any]) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="route_smoke")
     parser.add_argument("--base-url", default="http://127.0.0.1:8010")
-    parser.add_argument("--token", default=None, help="Optional bearer token. Omit to mint a local dev JWT.")
+    parser.add_argument(
+        "--token", default=None, help="Optional bearer token. Omit to mint a local dev JWT."
+    )
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -181,7 +204,9 @@ def main() -> int:
     for result in receipt["results"]:
         marker = "OK" if result["passed"] else "FAIL"
         status = result.get("status_code")
-        print(f"  {marker:4} {result['method']} {result['path']} -> {status} ({result['latency_ms']}ms)")
+        print(
+            f"  {marker:4} {result['method']} {result['path']} -> {status} ({result['latency_ms']}ms)"
+        )
     return 0 if receipt["all_passed"] else 1
 
 

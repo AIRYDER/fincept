@@ -82,20 +82,80 @@ NS_PER_DAY = 86_400_000_000_000
 # Naive sentiment word lists for a lightweight, dependency-free sentiment proxy.
 _POSITIVE_WORDS = frozenset(
     {
-        "beat", "beats", "surge", "surges", "jump", "jumps", "rise", "rises",
-        "gain", "gains", "profit", "profits", "raise", "raises", "upgrade",
-        "outperform", "strong", "growth", "grow", "win", "wins", "approve",
-        "approved", "launch", "unveil", "partner", "partnership", "record",
-        "high", "boost", "boosts", "rally", "soar", "soars", "breakthrough",
+        "beat",
+        "beats",
+        "surge",
+        "surges",
+        "jump",
+        "jumps",
+        "rise",
+        "rises",
+        "gain",
+        "gains",
+        "profit",
+        "profits",
+        "raise",
+        "raises",
+        "upgrade",
+        "outperform",
+        "strong",
+        "growth",
+        "grow",
+        "win",
+        "wins",
+        "approve",
+        "approved",
+        "launch",
+        "unveil",
+        "partner",
+        "partnership",
+        "record",
+        "high",
+        "boost",
+        "boosts",
+        "rally",
+        "soar",
+        "soars",
+        "breakthrough",
     },
 )
 _NEGATIVE_WORDS = frozenset(
     {
-        "miss", "misses", "fall", "falls", "drop", "drops", "cut", "cuts",
-        "lower", "lowers", "loss", "losses", "downgrade", "weak", "decline",
-        "declines", "sue", "sued", "sues", "lawsuit", "settlement", "probe",
-        "investigation", "hack", "breach", "ban", "sanction", "recall",
-        "halt", "delay", "fire", "fraud", "default", "bankrupt", "warning",
+        "miss",
+        "misses",
+        "fall",
+        "falls",
+        "drop",
+        "drops",
+        "cut",
+        "cuts",
+        "lower",
+        "lowers",
+        "loss",
+        "losses",
+        "downgrade",
+        "weak",
+        "decline",
+        "declines",
+        "sue",
+        "sued",
+        "sues",
+        "lawsuit",
+        "settlement",
+        "probe",
+        "investigation",
+        "hack",
+        "breach",
+        "ban",
+        "sanction",
+        "recall",
+        "halt",
+        "delay",
+        "fire",
+        "fraud",
+        "default",
+        "bankrupt",
+        "warning",
     },
 )
 
@@ -274,10 +334,7 @@ def ingest_news_events(
 
     # --- build feature rows + universe ----------------------------------
     symbols = sorted({r["__symbol"] for r in data_rows})
-    universe = tuple(
-        UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-        for s in symbols
-    )
+    universe = tuple(UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in symbols)
 
     horizon_ns = label_horizon_days * NS_PER_DAY
     feature_rows: list[FeatureRow] = []

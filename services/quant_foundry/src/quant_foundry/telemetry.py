@@ -76,9 +76,7 @@ _GPU_PRICING_RAW: dict[str, int] = {
     GPUType.NVIDIA_RTX_3090.value: 22,  # ~$0.22/hr
     GPUType.NVIDIA_T4.value: 16,  # ~$0.16/hr
 }
-GPU_PRICING: types.MappingProxyType[str, int] = types.MappingProxyType(
-    _GPU_PRICING_RAW
-)
+GPU_PRICING: types.MappingProxyType[str, int] = types.MappingProxyType(_GPU_PRICING_RAW)
 
 
 # --- timing phases --------------------------------------------------------- #
@@ -436,7 +434,9 @@ class CostTelemetry:
 
             # By GPU type.
             gpu = rec.gpu_type
-            bucket = by_gpu.setdefault(gpu, {"count": 0, "total_cost_cents": 0, "avg_cost_cents": 0})
+            bucket = by_gpu.setdefault(
+                gpu, {"count": 0, "total_cost_cents": 0, "avg_cost_cents": 0}
+            )
             bucket["count"] += 1
             cost_for_bucket = (
                 rec.actual_cost_cents
@@ -453,9 +453,7 @@ class CostTelemetry:
         # Finalize by-gpu averages.
         for bucket in by_gpu.values():
             cnt = bucket["count"]
-            bucket["avg_cost_cents"] = (
-                bucket["total_cost_cents"] // cnt if cnt > 0 else 0
-            )
+            bucket["avg_cost_cents"] = bucket["total_cost_cents"] // cnt if cnt > 0 else 0
 
         # By phase: average duration per phase.
         by_phase: dict[str, float] = {}
@@ -501,7 +499,7 @@ class QueueTelemetry:
     outbox's in-memory records + history (no separate store needed).
     """
 
-    def compute_queue_metrics(self, outbox: "JobOutbox") -> QueueMetrics:
+    def compute_queue_metrics(self, outbox: JobOutbox) -> QueueMetrics:
         """Compute queue depth, wait times, and dispatch rate.
 
         - ``queue_depth``: number of jobs currently in QUEUED status.

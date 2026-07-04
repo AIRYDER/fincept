@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -36,7 +35,6 @@ from quant_foundry.event_trainer import (
 )
 from quant_foundry.oof_artifacts import read_oof_artifact
 from quant_foundry.tabular_neural_runtime import GPUStatus
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -64,17 +62,13 @@ def _small_config(**overrides) -> EventTrainerConfig:
     return EventTrainerConfig(**defaults)
 
 
-def _synthetic_embeddings(
-    n: int = 20, d: int = 8, seed: int = 0
-) -> np.ndarray:
+def _synthetic_embeddings(n: int = 20, d: int = 8, seed: int = 0) -> np.ndarray:
     """Generate synthetic event embeddings."""
     rng = np.random.default_rng(seed)
     return rng.standard_normal((n, d))
 
 
-def _synthetic_labels(
-    n: int = 20, horizons: list[int] | None = None, seed: int = 1
-) -> np.ndarray:
+def _synthetic_labels(n: int = 20, horizons: list[int] | None = None, seed: int = 1) -> np.ndarray:
     """Generate synthetic multi-horizon abnormal-return labels."""
     if horizons is None:
         horizons = [1, 5, 20]
@@ -339,7 +333,7 @@ class TestEventTrainingResult:
 
 class TestEventAbnormalReturnModel:
     def test_forward_shape(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = EventAbnormalReturnModel(
             embedding_dim=8,
@@ -353,7 +347,7 @@ class TestEventAbnormalReturnModel:
         assert out.shape == (4, 3)
 
     def test_forward_single_horizon(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = EventAbnormalReturnModel(
             embedding_dim=4,
@@ -416,7 +410,7 @@ class TestEventAbnormalReturnModel:
             )
 
     def test_state_dict_round_trip(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = EventAbnormalReturnModel(
             embedding_dim=4,
@@ -592,9 +586,7 @@ class TestEventTrainerTrain:
         trainer = EventTrainer(cfg, source_hash=_SOURCE_HASH)
         labels = np.random.default_rng(0).standard_normal((20, 2))  # wrong
         with pytest.raises(ValueError):
-            trainer.train(
-                _synthetic_embeddings(), labels, _synthetic_event_types()
-            )
+            trainer.train(_synthetic_embeddings(), labels, _synthetic_event_types())
 
     def test_train_mismatched_event_types_rejected(self) -> None:
         cfg = _small_config()
@@ -752,7 +744,7 @@ class TestEventTrainerArtifact:
             preds1 = trainer.predict(emb)
             preds2 = trainer2.predict(emb)
             assert len(preds1) == len(preds2)
-            for r1, r2 in zip(preds1, preds2):
+            for r1, r2 in zip(preds1, preds2, strict=False):
                 assert np.allclose(r1, r2, atol=1e-5)
 
     def test_save_without_model_raises(self) -> None:
@@ -851,34 +843,32 @@ class TestEventTrainerOOF:
     def test_write_oof_length_mismatch_rejected(self) -> None:
         cfg = _small_config()
         trainer = EventTrainer(cfg, source_hash=_SOURCE_HASH)
-        with tempfile.TemporaryDirectory() as d:
-            with pytest.raises(ValueError):
-                trainer.write_oof_predictions(
-                    fold_predictions=[[0.1, 0.2]],
-                    fold_ids=[0, 1],  # mismatch
-                    symbols=["AAPL"],
-                    timestamps=["2024-01-01"],
-                    labels=[[0.05, 0.15]],
-                    horizons=[1, 5],
-                    weights=None,
-                    output_path=os.path.join(d, "oof", "oof_event.json"),
-                )
+        with tempfile.TemporaryDirectory() as d, pytest.raises(ValueError):
+            trainer.write_oof_predictions(
+                fold_predictions=[[0.1, 0.2]],
+                fold_ids=[0, 1],  # mismatch
+                symbols=["AAPL"],
+                timestamps=["2024-01-01"],
+                labels=[[0.05, 0.15]],
+                horizons=[1, 5],
+                weights=None,
+                output_path=os.path.join(d, "oof", "oof_event.json"),
+            )
 
     def test_write_oof_wrong_horizon_count_rejected(self) -> None:
         cfg = _small_config()
         trainer = EventTrainer(cfg, source_hash=_SOURCE_HASH)
-        with tempfile.TemporaryDirectory() as d:
-            with pytest.raises(ValueError):
-                trainer.write_oof_predictions(
-                    fold_predictions=[[0.1]],  # only 1, should be 2
-                    fold_ids=[0],
-                    symbols=["AAPL"],
-                    timestamps=["2024-01-01"],
-                    labels=[[0.05, 0.15]],
-                    horizons=[1, 5],
-                    weights=None,
-                    output_path=os.path.join(d, "oof", "oof_event.json"),
-                )
+        with tempfile.TemporaryDirectory() as d, pytest.raises(ValueError):
+            trainer.write_oof_predictions(
+                fold_predictions=[[0.1]],  # only 1, should be 2
+                fold_ids=[0],
+                symbols=["AAPL"],
+                timestamps=["2024-01-01"],
+                labels=[[0.05, 0.15]],
+                horizons=[1, 5],
+                weights=None,
+                output_path=os.path.join(d, "oof", "oof_event.json"),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -914,9 +904,7 @@ class TestComputeEventTypeMetrics:
 
     def test_length_mismatch_rejected(self) -> None:
         with pytest.raises(ValueError):
-            compute_event_type_metrics(
-                [[0.1]], [[0.1]], ["a", "b"], [1]
-            )
+            compute_event_type_metrics([[0.1]], [[0.1]], ["a", "b"], [1])
 
     def test_empty_horizons_rejected(self) -> None:
         with pytest.raises(ValueError):
@@ -940,9 +928,7 @@ class TestComputeConfidenceBucketMetrics:
         preds = [[0.1], [0.2], [0.3], [0.4], [0.5]]
         actuals = [[0.1], [0.2], [0.3], [0.4], [0.5]]
         confs = [0.1, 0.2, 0.3, 0.4, 0.5]
-        result = compute_confidence_bucket_metrics(
-            preds, actuals, confs, n_buckets=5
-        )
+        result = compute_confidence_bucket_metrics(preds, actuals, confs, n_buckets=5)
         assert len(result) == 5
         for b in range(5):
             assert f"bucket_{b}" in result
@@ -955,9 +941,7 @@ class TestComputeConfidenceBucketMetrics:
         preds = [[0.1], [0.2], [0.3], [0.4], [0.5], [0.6]]
         actuals = [[0.1], [0.2], [0.3], [0.4], [0.5], [0.6]]
         confs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-        result = compute_confidence_bucket_metrics(
-            preds, actuals, confs, n_buckets=3
-        )
+        result = compute_confidence_bucket_metrics(preds, actuals, confs, n_buckets=3)
         total = sum(result[f"bucket_{b}"]["count"] for b in range(3))
         assert total == 6
 
@@ -965,31 +949,23 @@ class TestComputeConfidenceBucketMetrics:
         preds = [[0.1], [0.2]]
         actuals = [[0.1], [0.2]]
         confs = [0.5, 0.5]
-        result = compute_confidence_bucket_metrics(
-            preds, actuals, confs, n_buckets=1
-        )
+        result = compute_confidence_bucket_metrics(preds, actuals, confs, n_buckets=1)
         assert len(result) == 1
         assert result["bucket_0"]["count"] == 2
 
     def test_length_mismatch_rejected(self) -> None:
         with pytest.raises(ValueError):
-            compute_confidence_bucket_metrics(
-                [[0.1]], [[0.1]], [0.5, 0.6], n_buckets=2
-            )
+            compute_confidence_bucket_metrics([[0.1]], [[0.1]], [0.5, 0.6], n_buckets=2)
 
     def test_n_buckets_zero_rejected(self) -> None:
         with pytest.raises(ValueError):
-            compute_confidence_bucket_metrics(
-                [[0.1]], [[0.1]], [0.5], n_buckets=0
-            )
+            compute_confidence_bucket_metrics([[0.1]], [[0.1]], [0.5], n_buckets=0)
 
     def test_perfect_predictions_zero_mse(self) -> None:
         preds = [[0.1], [0.2], [0.3]]
         actuals = [[0.1], [0.2], [0.3]]
         confs = [0.1, 0.5, 0.9]
-        result = compute_confidence_bucket_metrics(
-            preds, actuals, confs, n_buckets=3
-        )
+        result = compute_confidence_bucket_metrics(preds, actuals, confs, n_buckets=3)
         for b in range(3):
             if result[f"bucket_{b}"]["count"] > 0:
                 assert result[f"bucket_{b}"]["mse"] == 0.0

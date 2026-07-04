@@ -436,24 +436,25 @@ def run_settlement_proof() -> dict[str, Any]:
 
         settled_count = sum(1 for s in settlements if s.status == "settled")
         gross_positive = sum(
-            1 for s in settlements if s.realized_return_gross is not None and s.realized_return_gross > 0
+            1
+            for s in settlements
+            if s.realized_return_gross is not None and s.realized_return_gross > 0
         )
         net_positive = sum(
-            1 for s in settlements if s.realized_return_net is not None and s.realized_return_net > 0
+            1
+            for s in settlements
+            if s.realized_return_net is not None and s.realized_return_net > 0
         )
         pending_count = sum(1 for s in settlements if s.status != "settled")
-        brier_components = [
-            s.brier_component for s in settlements if s.brier_component is not None
-        ]
+        brier_components = [s.brier_component for s in settlements if s.brier_component is not None]
 
         assertions = {
             "settlement_count_is_N": len(settlements) == SETTLEMENT_N,
             "all_settled": settled_count == SETTLEMENT_N,
             "gross_positive_is_half": gross_positive == SETTLEMENT_N // 2,
             "net_positive_is_half": net_positive == SETTLEMENT_N // 2,
-            "brier_components_approx_zero": all(
-                abs(b) < 1e-12 for b in brier_components
-            ) and len(brier_components) == SETTLEMENT_N,
+            "brier_components_approx_zero": all(abs(b) < 1e-12 for b in brier_components)
+            and len(brier_components) == SETTLEMENT_N,
             "pending_count_is_zero": pending_count == 0,
         }
 
@@ -512,7 +513,9 @@ def write_receipt(receipt: dict[str, Any], output: Path | None) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate a deterministic paper-spine replay receipt.")
+    parser = argparse.ArgumentParser(
+        description="Generate a deterministic paper-spine replay receipt."
+    )
     parser.add_argument("--output", type=Path, default=None, help="Optional receipt output path.")
     parser.add_argument(
         "--with-settlement",

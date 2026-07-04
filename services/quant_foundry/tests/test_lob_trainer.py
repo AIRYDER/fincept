@@ -41,7 +41,6 @@ from quant_foundry.lob_trainer import (
 from quant_foundry.oof_artifacts import read_oof_artifact
 from quant_foundry.tabular_neural_runtime import GPUStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -315,7 +314,7 @@ class TestDeepLOBTrainingResult:
 
 class TestDeepLOBModel:
     def test_forward_pass_shape(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = DeepLOBModel(
             n_features=20,
@@ -331,7 +330,7 @@ class TestDeepLOBModel:
         assert out.shape == (4, 16, 3)
 
     def test_forward_pass_single_batch(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = DeepLOBModel(
             n_features=20,
@@ -359,7 +358,7 @@ class TestDeepLOBModel:
         assert m1 is m2
 
     def test_state_dict_round_trip(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = DeepLOBModel(
             n_features=10,
@@ -802,9 +801,7 @@ class TestComputeSpreadAdjustedReturn:
         preds = [0, 1, 2]
         actuals = [0, 1, 2]
         r_low = compute_spread_adjusted_return(preds, actuals, spread_bps=1.0)
-        r_high = compute_spread_adjusted_return(
-            preds, actuals, spread_bps=100.0
-        )
+        r_high = compute_spread_adjusted_return(preds, actuals, spread_bps=100.0)
         assert r_high < r_low
 
     def test_negative_spread_rejected(self) -> None:
@@ -908,10 +905,7 @@ class TestValidatePromotionEligibility:
 
     def test_shadow_with_override_eligible(self) -> None:
         result = _make_result(is_shadow=True, promotion_eligible=False)
-        assert (
-            validate_promotion_eligibility(result, manual_override=True)
-            is True
-        )
+        assert validate_promotion_eligibility(result, manual_override=True) is True
 
     def test_non_shadow_eligible(self) -> None:
         result = _make_result(is_shadow=False, promotion_eligible=False)
@@ -919,10 +913,7 @@ class TestValidatePromotionEligibility:
 
     def test_non_shadow_with_override_eligible(self) -> None:
         result = _make_result(is_shadow=False, promotion_eligible=False)
-        assert (
-            validate_promotion_eligibility(result, manual_override=True)
-            is True
-        )
+        assert validate_promotion_eligibility(result, manual_override=True) is True
 
     def test_trainer_result_always_not_eligible(self) -> None:
         cfg = _small_config(epochs=1)
@@ -1023,7 +1014,7 @@ class TestEdgeCases:
         trainer = DeepLOBTrainer(cfg, venue="NASDAQ", symbol="AAPL")
         snapshots = _synthetic_snapshots(seq_len=8, n_features=20)
         labels = [0, 1, 0, 1, 0, 1, 0, 1]
-        result = trainer.train(snapshots, labels)
+        trainer.train(snapshots, labels)
         preds = trainer.predict(snapshots)
         assert all(p in (0, 1) for p in preds)
 

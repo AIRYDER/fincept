@@ -50,13 +50,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.fold_consumer import FoldAssignment, get_fold_data
-
 
 # ---------------------------------------------------------------------------
 # Row-id canonicalization
@@ -145,9 +144,7 @@ class OOFRow(BaseModel):
     @classmethod
     def _nonempty_str(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("fold_id")
@@ -211,9 +208,7 @@ class OOFArtifact(BaseModel):
     @classmethod
     def _nonempty_str(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("fold_count")
@@ -351,7 +346,7 @@ def write_oof_artifact(
 
     artifact_hash = compute_oof_hash(rows)
     fold_count = _count_folds(rows)
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(UTC).isoformat()
 
     artifact = OOFArtifact(
         rows=rows,
@@ -400,13 +395,11 @@ def read_oof_artifact(path: str) -> OOFArtifact:
     if os.path.getsize(path) == 0:
         raise ValueError(f"OOF artifact file is empty (0 bytes): {path!r}")
 
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         try:
             payload = json.load(fh)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"OOF artifact at {path!r} is not valid JSON: {exc}"
-            ) from exc
+            raise ValueError(f"OOF artifact at {path!r} is not valid JSON: {exc}") from exc
 
     artifact = OOFArtifact.model_validate(payload)
 
@@ -488,9 +481,7 @@ def validate_oof_artifact(
     Raises:
         ValueError: if any check fails.
     """
-    validation_map, train_map, total_validation_count = _build_fold_membership(
-        fold_assignment
-    )
+    validation_map, train_map, total_validation_count = _build_fold_membership(fold_assignment)
 
     # Check 1: row count matches total validation rows.
     if artifact.row_count != total_validation_count:
@@ -508,9 +499,7 @@ def validate_oof_artifact(
     for i, row in enumerate(artifact.rows):
         # Check 4: no duplicate row_ids.
         if row.row_id in seen:
-            raise ValueError(
-                f"duplicate row_id {row.row_id!r} in artifact (rows[{i}])"
-            )
+            raise ValueError(f"duplicate row_id {row.row_id!r} in artifact (rows[{i}])")
         seen.add(row.row_id)
 
         # Check 3: row_id exists in the fold assignment.
@@ -524,8 +513,7 @@ def validate_oof_artifact(
                     f"{train_folds} — training-fold prediction leak detected"
                 )
             raise ValueError(
-                f"OOF rows[{i}].row_id={row.row_id!r} does not exist in "
-                "the fold assignment"
+                f"OOF rows[{i}].row_id={row.row_id!r} does not exist in the fold assignment"
             )
 
         # Check 2: the row's fold_id matches its validation fold.
@@ -698,8 +686,7 @@ class OOFWriter:
         """
         if row_id in self._seen:
             raise ValueError(
-                f"duplicate row_id {row_id!r} — each validation row must "
-                "be added exactly once"
+                f"duplicate row_id {row_id!r} — each validation row must be added exactly once"
             )
         self._seen.add(row_id)
         self._rows.append(
@@ -730,9 +717,7 @@ class OOFWriter:
                 "— no predictions have been added"
             )
         os.makedirs(self.output_dir, exist_ok=True)
-        output_path = os.path.join(
-            self.output_dir, f"oof_{self.model_family}.json"
-        )
+        output_path = os.path.join(self.output_dir, f"oof_{self.model_family}.json")
         return write_oof_artifact(
             rows=list(self._rows),
             model_family=self.model_family,
@@ -746,14 +731,14 @@ class OOFWriter:
 
 
 __all__ = [
-    "OOFRow",
     "OOFArtifact",
-    "compute_oof_hash",
-    "write_oof_artifact",
-    "read_oof_artifact",
-    "validate_oof_artifact",
-    "merge_oof_artifacts",
+    "OOFRow",
     "OOFWriter",
     "canonical_row_id",
+    "compute_oof_hash",
     "make_row_id",
+    "merge_oof_artifacts",
+    "read_oof_artifact",
+    "validate_oof_artifact",
+    "write_oof_artifact",
 ]

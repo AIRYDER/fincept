@@ -21,7 +21,6 @@ import pickle
 from pathlib import Path
 
 import pytest
-
 from quant_foundry.calibration import (
     CalibrationMethod,
     CalibrationPolicy,
@@ -38,6 +37,7 @@ from quant_foundry.calibration import (
 
 try:
     import sklearn  # noqa: F401
+
     _HAS_SKLEARN = True
 except ImportError:
     _HAS_SKLEARN = False

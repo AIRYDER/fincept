@@ -19,11 +19,8 @@ Tests verify:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.graph_manifest import (
     GraphDatasetManifest,
     GraphEdge,
@@ -35,7 +32,6 @@ from quant_foundry.graph_manifest import (
     validate_no_future_edge,
     validate_node_id_mapping,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -158,7 +154,9 @@ class TestNodeFeatureSchema:
     def test_extra_field_forbidden(self) -> None:
         with pytest.raises(ValidationError):
             NodeFeatureSchema(
-                feature_name="f", dtype="float32", extra="bad"  # type: ignore[call-arg]
+                feature_name="f",
+                dtype="float32",
+                extra="bad",  # type: ignore[call-arg]
             )
 
 
@@ -485,7 +483,12 @@ class TestComputeGraphDataHash:
     """Tests for compute_graph_data_hash."""
 
     def test_determinism_same_order(self) -> None:
-        edges = [_make_edge(), _make_edge(src_node="MSFT", dst_node="AAPL", edge_id="MSFT_AAPL_sector_2024-01-01T00:00:00Z")]
+        edges = [
+            _make_edge(),
+            _make_edge(
+                src_node="MSFT", dst_node="AAPL", edge_id="MSFT_AAPL_sector_2024-01-01T00:00:00Z"
+            ),
+        ]
         nodes = [_make_node(), _make_node(node_id="MSFT")]
         h1 = compute_graph_data_hash(edges, nodes)
         h2 = compute_graph_data_hash(edges, nodes)
@@ -581,9 +584,7 @@ class TestGraphManifestBuilder:
             (
                 GraphManifestBuilder("graph_004")
                 .with_nodes([_make_node(), _make_node(node_id="MSFT")])
-                .with_edges([
-                    _make_edge(edge_available_at="2024-12-01T00:00:00Z")
-                ])
+                .with_edges([_make_edge(edge_available_at="2024-12-01T00:00:00Z")])
                 .with_feature_schema([_make_feature_schema()])
                 .with_snapshot_time("2024-06-01T00:00:00Z")
                 .with_label_horizon(1)
@@ -613,9 +614,7 @@ class TestFilterEdgesPointInTime:
             edge_id="MSFT_AAPL_sector_2024-01-01T00:00:00Z",
             edge_available_at="2024-12-01T00:00:00Z",
         )
-        result = filter_edges_point_in_time(
-            [e1, e2], "2024-06-01T00:00:00Z"
-        )
+        result = filter_edges_point_in_time([e1, e2], "2024-06-01T00:00:00Z")
         assert result == [e1]
 
     def test_keeps_all_when_snapshot_late(self) -> None:
@@ -626,9 +625,7 @@ class TestFilterEdgesPointInTime:
             edge_id="MSFT_AAPL_sector_2024-01-01T00:00:00Z",
             edge_available_at="2024-05-01T00:00:00Z",
         )
-        result = filter_edges_point_in_time(
-            [e1, e2], "2024-06-01T00:00:00Z"
-        )
+        result = filter_edges_point_in_time([e1, e2], "2024-06-01T00:00:00Z")
         assert result == [e1, e2]
 
     def test_empty_when_all_future(self) -> None:
@@ -644,9 +641,7 @@ class TestFilterEdgesPointInTime:
             edge_id="MSFT_AAPL_sector_2024-01-01T00:00:00Z",
             edge_available_at="2024-02-01T00:00:00Z",
         )
-        result = filter_edges_point_in_time(
-            [e1, e2], "2024-06-01T00:00:00Z"
-        )
+        result = filter_edges_point_in_time([e1, e2], "2024-06-01T00:00:00Z")
         assert result == [e1, e2]
 
     def test_equal_available_kept(self) -> None:

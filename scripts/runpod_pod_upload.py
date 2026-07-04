@@ -10,14 +10,14 @@ Strategy:
 
 This bypasses the 10MB RunPod serverless payload limit.
 """
+
 from __future__ import annotations
 
-import json
-import math
 import os
 import pathlib
 import sys
 import time
+
 import requests
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -84,7 +84,9 @@ def wait_for_pod(pod_id: str, timeout: int = 300) -> dict:
                                     ssh_port = p_info.get("publicPort")
 
                     elapsed = time.time() - start
-                    print(f"  [{elapsed:.0f}s] status={status} ip={public_ip} jupyter={jupyter_port}")
+                    print(
+                        f"  [{elapsed:.0f}s] status={status} ip={public_ip} jupyter={jupyter_port}"
+                    )
 
                     if status == "RUNNING" and public_ip:
                         return {
@@ -134,7 +136,7 @@ def upload_via_jupyter(pod_info: dict, csv_path: pathlib.Path) -> bool:
             "content": b64_content,
         }
 
-        print(f"  Uploading via Jupyter contents API...")
+        print("  Uploading via Jupyter contents API...")
         r = requests.put(
             f"{base_url}/api/contents/workspace/dataset_full.csv",
             headers={"Content-Type": "application/json"},
@@ -143,7 +145,7 @@ def upload_via_jupyter(pod_info: dict, csv_path: pathlib.Path) -> bool:
         )
         print(f"  Upload: {r.status_code}")
         if r.status_code == 200 or r.status_code == 201:
-            print(f"  Upload successful!")
+            print("  Upload successful!")
             return True
         else:
             print(f"  Error: {r.text[:300]}")
@@ -165,9 +167,13 @@ def upload_via_ssh(pod_info: dict, csv_path: pathlib.Path) -> bool:
 
     print(f"  Uploading via scp to {ip}:{port}")
     scp_cmd = [
-        "scp", "-P", str(port),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
+        "scp",
+        "-P",
+        str(port),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
         str(csv_path),
         f"root@{ip}:/workspace/dataset_full.csv",
     ]
@@ -232,7 +238,9 @@ def main() -> int:
     if not success:
         print("\n  Both upload methods failed!")
         print("  The pod is still running. You can upload manually:")
-        print(f"    scp -P {pod_info.get('ssh_port', 22)} {csv_path} root@{pod_info['ip']}:/workspace/dataset_full.csv")
+        print(
+            f"    scp -P {pod_info.get('ssh_port', 22)} {csv_path} root@{pod_info['ip']}:/workspace/dataset_full.csv"
+        )
         print(f"  Or via Jupyter: http://{pod_info['ip']}:{pod_info.get('jupyter_port', 8888)}")
         print(f"\n  Pod ID: {pod_id}")
         print(f"  Stop with: python scripts/runpod_volume_upload.py stop-pod {pod_id}")
@@ -243,7 +251,9 @@ def main() -> int:
     # We can verify by running a quick stat_volume job on the serverless endpoint
     # But the current handler doesn't support that. Let's just check via SSH.
     print("  Upload reported successful. Dataset should be at /workspace/dataset_full.csv")
-    print("  The network volume (rrsd005i3g) is shared between the pod and the serverless endpoint.")
+    print(
+        "  The network volume (rrsd005i3g) is shared between the pod and the serverless endpoint."
+    )
 
     # 6. Stop pod
     print("\nSTEP 6: Stop temporary pod")
@@ -252,11 +262,13 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("DATASET UPLOAD COMPLETE")
     print("=" * 70)
-    print(f"  Dataset: /workspace/dataset_full.csv ({csv_path.stat().st_size / 1024 / 1024:.1f} MB)")
+    print(
+        f"  Dataset: /workspace/dataset_full.csv ({csv_path.stat().st_size / 1024 / 1024:.1f} MB)"
+    )
     print(f"  Volume:  {VOLUME_ID} (fincept-qf-vol)")
     print(f"  Rows:    {len(df)}")
-    print(f"\n  Training jobs can now use:")
-    print(f"    dataset_manifest_ref=/workspace/dataset_full.csv")
+    print("\n  Training jobs can now use:")
+    print("    dataset_manifest_ref=/workspace/dataset_full.csv")
 
     # Clean up local CSV
     csv_path.unlink(missing_ok=True)

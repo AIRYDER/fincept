@@ -50,9 +50,7 @@ def patched_stores(
     monkeypatch.setattr(
         "api.routes.models._get_settlement_store", lambda: settlement_store
     )
-    monkeypatch.setattr(
-        "api.routes.models._get_snapshot_store", lambda: snapshot_store
-    )
+    monkeypatch.setattr("api.routes.models._get_snapshot_store", lambda: snapshot_store)
     return {
         "log": log,
         "settlements": settlement_store,
