@@ -112,10 +112,7 @@ def _print_summary(report: object) -> None:
         )
     print()
     print("  per fold:")
-    header = (
-        "    k  | train_bars | val_bars | train_rows | n_fills | return  | "
-        "sharpe | maxdd"
-    )
+    header = "    k  | train_bars | val_bars | train_rows | n_fills | return  | sharpe | maxdd"
     print(header)
     print("    " + "-" * (len(header) - 4))
     for f in r.folds:  # type: ignore[attr-defined]
@@ -135,9 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="walk_forward",
         description="Expanding-window walk-forward backtest with GBM per fold.",
     )
-    parser.add_argument(
-        "--bars", required=True, help="Parquet path (backtester schema)."
-    )
+    parser.add_argument("--bars", required=True, help="Parquet path (backtester schema).")
     parser.add_argument(
         "--features",
         required=True,
@@ -220,8 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out-dir",
         default=None,
-        help="Where to persist per-fold model artifacts + report.json. "
-        "Omit to skip persistence.",
+        help="Where to persist per-fold model artifacts + report.json. Omit to skip persistence.",
     )
     args = parser.parse_args(argv)
 
@@ -238,18 +232,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         asset_class = AssetClass(args.asset_class)
     except ValueError:
-        print(
-            f"ERROR: unknown asset_class {args.asset_class!r}", file=sys.stderr
-        )
+        print(f"ERROR: unknown asset_class {args.asset_class!r}", file=sys.stderr)
         return 1
 
     out_dir = pathlib.Path(args.out_dir) if args.out_dir else None
 
     risk_settings: Settings | None = None
-    if (
-        args.max_notional_per_symbol is not None
-        or args.max_gross_notional is not None
-    ):
+    if args.max_notional_per_symbol is not None or args.max_gross_notional is not None:
         # Build a Settings overriding only the cap fields the user set;
         # leave other fields at their defaults (TRADING_MODE='paper', etc.).
         kwargs: dict[str, int] = {}

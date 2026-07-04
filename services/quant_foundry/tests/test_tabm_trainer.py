@@ -14,7 +14,6 @@ throughout — no real feature-lake data is touched.
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -25,11 +24,10 @@ pytest.importorskip("torch")
 
 from quant_foundry.dataset_manifest import ColumnRoles
 from quant_foundry.normalizer import (
-    Normalizer,
-    NormalizerArtifact,
     NormalizationMethod,
+    Normalizer,
 )
-from quant_foundry.oof_artifacts import OOFWriter, read_oof_artifact
+from quant_foundry.oof_artifacts import read_oof_artifact
 from quant_foundry.tabm_trainer import (
     TabMConfig,
     TabMModel,
@@ -39,8 +37,6 @@ from quant_foundry.tabm_trainer import (
     validate_promotion_eligibility,
 )
 from quant_foundry.tabular_neural_runtime import GPUStatus
-from quant_foundry.training_manifest import ModelTaskSpec
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -331,7 +327,7 @@ class TestTabMModel:
             TabMModel(input_dim=4, hidden_dims=[], k=1)
 
     def test_forward_returns_k_ensemble(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=4,
@@ -348,7 +344,7 @@ class TestTabMModel:
         assert out.shape == (8, 3, 1)
 
     def test_forward_k1(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=4,
@@ -364,7 +360,7 @@ class TestTabMModel:
         assert out.shape == (8, 1, 1)
 
     def test_forward_output_dim_2(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=4,
@@ -380,7 +376,7 @@ class TestTabMModel:
         assert out.shape == (8, 2, 2)
 
     def test_state_dict_roundtrip(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=4,
@@ -415,7 +411,7 @@ class TestTabMModel:
         assert torch.allclose(out1, out2)
 
     def test_to_and_train_eval(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=4,
@@ -571,7 +567,7 @@ class TestTabMTrainerPredict:
         assert all(np.isfinite(p) for p in preds)
 
     def test_predict_matches_manual_average(self) -> None:
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         cfg = _small_config(k=3)
         trainer = TabMTrainer(cfg)

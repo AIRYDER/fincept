@@ -14,14 +14,15 @@ Grid dimensions:
 
 Total: 12 jobs dispatched in parallel.
 """
+
 from __future__ import annotations
 
-import itertools
 import json
 import os
 import pathlib
 import sys
 import time
+
 import requests
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -34,6 +35,7 @@ EP = os.environ["RUNPOD_TRAINING_ENDPOINT_ID"]
 BASE_URL = os.environ.get("RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
 CALLBACK_SECRET = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
 import argparse as _argparse
+
 _arg = _argparse.ArgumentParser()
 _arg.add_argument("--dataset", default="/runpod-volume/datasets/deep_real/dataset_full.csv")
 _arg.add_argument("--tag", default="grid")
@@ -161,7 +163,7 @@ def main() -> int:
     if stat_out.get("exists"):
         print(f"  OK: {stat_out.get('file_size_mb')} MB")
     else:
-        print(f"  WARNING: dataset not found via stat_volume, proceeding anyway...")
+        print("  WARNING: dataset not found via stat_volume, proceeding anyway...")
         print(f"  Path: {VOLUME_PATH}")
 
     # 2. Dispatch all jobs
@@ -191,13 +193,15 @@ def main() -> int:
 
             runpod_id = dispatch_job(job_input)
             if runpod_id:
-                jobs.append({
-                    "config": config_name,
-                    "seed": seed,
-                    "job_id": job_id,
-                    "runpod_id": runpod_id,
-                    "params": config_params,
-                })
+                jobs.append(
+                    {
+                        "config": config_name,
+                        "seed": seed,
+                        "job_id": job_id,
+                        "runpod_id": runpod_id,
+                        "params": config_params,
+                    }
+                )
                 print(f"  [{config_name}/s{seed}] -> {runpod_id}")
             else:
                 print(f"  [{config_name}/s{seed}] FAILED TO DISPATCH")
@@ -232,7 +236,9 @@ def main() -> int:
             if status == "COMPLETED":
                 output = result.get("output", {})
                 if "error_code" in output:
-                    print(f"  [{elapsed:.0f}s] {job['config']}/s{job['seed']}: FAILED - {output.get('error_code')}")
+                    print(
+                        f"  [{elapsed:.0f}s] {job['config']}/s{job['seed']}: FAILED - {output.get('error_code')}"
+                    )
                     results.append({**job, "output": output, "status": "FAILED"})
                 else:
                     callback_str = output.get("callback_payload", "")
@@ -242,20 +248,24 @@ def main() -> int:
                         dossier = payload.get("dossier", {})
                         metrics = dossier.get("training_metrics", {})
                         meta = dossier.get("metadata", {})
-                        print(f"  [{elapsed:.0f}s] {job['config']}/s{job['seed']}: DONE "
-                              f"acc={metrics.get('accuracy', 0):.4f} "
-                              f"sharpe={meta.get('sharpe_ratio', 'n/a')} "
-                              f"pbo={dossier.get('pbo', 'n/a')}")
-                        results.append({
-                            **job,
-                            "output": output,
-                            "envelope": envelope,
-                            "dossier": dossier,
-                            "artifact": payload.get("artifact_manifest", {}),
-                            "metrics": metrics,
-                            "meta": meta,
-                            "status": "COMPLETED",
-                        })
+                        print(
+                            f"  [{elapsed:.0f}s] {job['config']}/s{job['seed']}: DONE "
+                            f"acc={metrics.get('accuracy', 0):.4f} "
+                            f"sharpe={meta.get('sharpe_ratio', 'n/a')} "
+                            f"pbo={dossier.get('pbo', 'n/a')}"
+                        )
+                        results.append(
+                            {
+                                **job,
+                                "output": output,
+                                "envelope": envelope,
+                                "dossier": dossier,
+                                "artifact": payload.get("artifact_manifest", {}),
+                                "metrics": metrics,
+                                "meta": meta,
+                                "status": "COMPLETED",
+                            }
+                        )
                     else:
                         print(f"  [{elapsed:.0f}s] {job['config']}/s{job['seed']}: NO PAYLOAD")
                         results.append({**job, "output": output, "status": "NO_PAYLOAD"})
@@ -290,8 +300,12 @@ def main() -> int:
         reverse=True,
     )
 
-    print(f"\n  {'Rank':<5} {'Config':<15} {'Seed':<6} {'Acc':>8} {'Sharpe':>8} {'PBO':>6} {'DSR':>8} {'Brier':>8} {'BestIter':>8}")
-    print(f"  {'-'*5} {'-'*15} {'-'*6} {'-'*8} {'-'*8} {'-'*6} {'-'*8} {'-'*8} {'-'*8}")
+    print(
+        f"\n  {'Rank':<5} {'Config':<15} {'Seed':<6} {'Acc':>8} {'Sharpe':>8} {'PBO':>6} {'DSR':>8} {'Brier':>8} {'BestIter':>8}"
+    )
+    print(
+        f"  {'-' * 5} {'-' * 15} {'-' * 6} {'-' * 8} {'-' * 8} {'-' * 6} {'-' * 8} {'-' * 8} {'-' * 8}"
+    )
 
     for i, r in enumerate(completed):
         meta = r.get("meta", {})
@@ -303,7 +317,9 @@ def main() -> int:
         dsr = float(dossier.get("deflated_sharpe", 0))
         brier = float(meta.get("brier_score", 0))
         best_iter = meta.get("avg_best_iteration", "n/a")
-        print(f"  {i+1:<5} {r['config']:<15} {r['seed']:<6} {acc:>8.4f} {sharpe:>8.4f} {pbo:>6.2f} {dsr:>8.4f} {brier:>8.4f} {best_iter:>8}")
+        print(
+            f"  {i + 1:<5} {r['config']:<15} {r['seed']:<6} {acc:>8.4f} {sharpe:>8.4f} {pbo:>6.2f} {dsr:>8.4f} {brier:>8.4f} {best_iter:>8}"
+        )
 
     if not completed:
         print("\n  No completed jobs!")
@@ -366,37 +382,41 @@ def main() -> int:
     # Save summary
     summary = []
     for r in completed:
-        summary.append({
-            "config": r["config"],
-            "seed": r["seed"],
-            "job_id": r["job_id"],
-            "runpod_id": r["runpod_id"],
-            "accuracy": float(r.get("metrics", {}).get("accuracy", 0)),
-            "logloss": float(r.get("metrics", {}).get("logloss", 0)),
-            "sharpe_ratio": float(r.get("meta", {}).get("sharpe_ratio", 0)),
-            "brier_score": float(r.get("meta", {}).get("brier_score", 0)),
-            "win_rate": float(r.get("meta", {}).get("win_rate", 0)),
-            "max_drawdown": float(r.get("meta", {}).get("max_drawdown", 0)),
-            "pbo": float(r.get("dossier", {}).get("pbo", 1)),
-            "deflated_sharpe": float(r.get("dossier", {}).get("deflated_sharpe", 0)),
-            "avg_best_iteration": r.get("meta", {}).get("avg_best_iteration", "n/a"),
-            "artifact_id": r.get("artifact", {}).get("artifact_id", "n/a"),
-        })
+        summary.append(
+            {
+                "config": r["config"],
+                "seed": r["seed"],
+                "job_id": r["job_id"],
+                "runpod_id": r["runpod_id"],
+                "accuracy": float(r.get("metrics", {}).get("accuracy", 0)),
+                "logloss": float(r.get("metrics", {}).get("logloss", 0)),
+                "sharpe_ratio": float(r.get("meta", {}).get("sharpe_ratio", 0)),
+                "brier_score": float(r.get("meta", {}).get("brier_score", 0)),
+                "win_rate": float(r.get("meta", {}).get("win_rate", 0)),
+                "max_drawdown": float(r.get("meta", {}).get("max_drawdown", 0)),
+                "pbo": float(r.get("dossier", {}).get("pbo", 1)),
+                "deflated_sharpe": float(r.get("dossier", {}).get("deflated_sharpe", 0)),
+                "avg_best_iteration": r.get("meta", {}).get("avg_best_iteration", "n/a"),
+                "artifact_id": r.get("artifact", {}).get("artifact_id", "n/a"),
+            }
+        )
 
-    (results_dir / "grid_summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8"
-    )
+    (results_dir / "grid_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     (results_dir / "best_model.json").write_text(
-        json.dumps({
-            "config": best["config"],
-            "seed": best["seed"],
-            "job_id": best["job_id"],
-            "dossier": best.get("dossier", {}),
-            "artifact": best.get("artifact", {}),
-            "metrics": best.get("metrics", {}),
-            "meta": best.get("meta", {}),
-            "hmac_valid": sig_valid,
-        }, indent=2), encoding="utf-8"
+        json.dumps(
+            {
+                "config": best["config"],
+                "seed": best["seed"],
+                "job_id": best["job_id"],
+                "dossier": best.get("dossier", {}),
+                "artifact": best.get("artifact", {}),
+                "metrics": best.get("metrics", {}),
+                "meta": best.get("meta", {}),
+                "hmac_valid": sig_valid,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
     )
     (results_dir / "all_results.json").write_text(
         json.dumps(results, indent=2, default=str), encoding="utf-8"

@@ -79,9 +79,13 @@ def _get_full() -> Any:
     t0 = time.monotonic()
     try:
         import handler_full as mod  # type: ignore[import-not-found]
+
         _full = mod
     except Exception as exc:
-        print(f"[layered] import handler_full failed ({type(exc).__name__}: {exc}), trying file path...", flush=True)
+        print(
+            f"[layered] import handler_full failed ({type(exc).__name__}: {exc}), trying file path...",
+            flush=True,
+        )
         _spec = importlib.util.spec_from_file_location(
             "handler_full", os.path.join(_HERE, "handler_full.py")
         )
@@ -207,6 +211,7 @@ def _layer_5(event: Any) -> dict[str, Any]:
         return result
     except Exception as exc:
         import traceback
+
         tb = traceback.format_exc()
         print(f"[layered] _layer_5 ERROR: {exc}\n{tb}", flush=True)
         return {

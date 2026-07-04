@@ -62,13 +62,11 @@ def _resolve_credentials(
     url = base_url or os.environ.get(_ALPACA_BASE_ENV, _DEFAULT_TRADING_BASE_URL)
     if not key:
         raise ValueError(
-            f"Alpaca API key not provided; pass api_key= or set "
-            f"{_ALPACA_KEY_ENV}",
+            f"Alpaca API key not provided; pass api_key= or set {_ALPACA_KEY_ENV}",
         )
     if not secret:
         raise ValueError(
-            f"Alpaca API secret not provided; pass api_secret= or set "
-            f"{_ALPACA_SECRET_ENV}",
+            f"Alpaca API secret not provided; pass api_secret= or set {_ALPACA_SECRET_ENV}",
         )
     return key, secret, url
 
@@ -190,8 +188,7 @@ async def fetch_alpaca_bars(
 
     if not all_frames:
         raise ValueError(
-            f"no bars returned from Alpaca for symbols {symbols} "
-            f"in [{start}, {end}]",
+            f"no bars returned from Alpaca for symbols {symbols} in [{start}, {end}]",
         )
 
     combined = pl.concat(all_frames, how="vertical_relaxed")

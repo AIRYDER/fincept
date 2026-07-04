@@ -1,8 +1,9 @@
 """Probe RunPod training endpoint with a minimal job."""
-import httpx
+
 import json
 import os
-import sys
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = os.environ["RUNPOD_ENDPOINT_ID"]

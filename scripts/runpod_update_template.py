@@ -1,6 +1,8 @@
 """Update RunPod template env vars and check network volume."""
+
 import json
 import os
+
 import requests
 
 KEY = os.environ["RUNPOD_API_KEY"]

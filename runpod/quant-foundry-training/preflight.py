@@ -6,6 +6,7 @@ env var is present, so a misconfigured image can never reach the training loop.
 
 Can be skipped with QF_DIAG_SKIP_PREFLIGHT=1 for diagnostic builds.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -101,11 +102,11 @@ def main() -> int:
     secret = os.environ.get("QUANT_FOUNDRY_CALLBACK_SECRET", "")
     print("[preflight] redacted config summary:", flush=True)
     print(f"  QUANT_FOUNDRY_CALLBACK_SECRET={_redact(secret)}", flush=True)
-    _urt = os.environ.get('QUANT_FOUNDRY_USE_REAL_TRAINER', 'false')
+    _urt = os.environ.get("QUANT_FOUNDRY_USE_REAL_TRAINER", "false")
     print(f"  QUANT_FOUNDRY_USE_REAL_TRAINER={_urt}", flush=True)
-    _tds = os.environ.get('QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS', '600')
+    _tds = os.environ.get("QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS", "600")
     print(f"  QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS={_tds}", flush=True)
-    _sha = os.environ.get('QUANT_FOUNDRY_GIT_SHA', 'unknown')
+    _sha = os.environ.get("QUANT_FOUNDRY_GIT_SHA", "unknown")
     print(f"  QUANT_FOUNDRY_GIT_SHA={_sha}", flush=True)
     print("[preflight] OK", flush=True)
     return 0

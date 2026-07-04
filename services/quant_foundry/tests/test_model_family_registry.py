@@ -24,15 +24,12 @@ Covers:
 
 from __future__ import annotations
 
-import os
 import pickle
-import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.alpha_genome import (
     MODEL_FAMILY_REGISTRY,
     RUNPOD_GPU_TREE_IMAGE,
@@ -55,7 +52,6 @@ from quant_foundry.training_manifest import (
     is_family_registered,
     validate_family_for_mode,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -121,42 +117,27 @@ class TestInitialFamilies:
         spec = MODEL_FAMILY_REGISTRY.get("lightgbm_baseline")
         assert spec.family_id == "lightgbm_baseline"
         assert spec.artifact_format == "lightgbm_model"
-        assert (
-            spec.artifact_loader
-            == "quant_foundry.artifact_io.load_lightgbm_model"
-        )
+        assert spec.artifact_loader == "quant_foundry.artifact_io.load_lightgbm_model"
         assert spec.runpod_image is None
         assert spec.requires_gpu is False
         assert spec.is_baseline_exception is True
-        assert (
-            spec.promotion_eligibility_class
-            == PromotionEligibilityClass.BASELINE
-        )
+        assert spec.promotion_eligibility_class == PromotionEligibilityClass.BASELINE
 
     def test_catboost_gpu_fields(self) -> None:
         spec = MODEL_FAMILY_REGISTRY.get("catboost_gpu")
         assert spec.family_id == "catboost_gpu"
         assert spec.artifact_format == "catboost_model"
-        assert (
-            spec.artifact_loader
-            == "quant_foundry.artifact_io.load_catboost_model"
-        )
+        assert spec.artifact_loader == "quant_foundry.artifact_io.load_catboost_model"
         assert spec.runpod_image == RUNPOD_GPU_TREE_IMAGE
         assert spec.requires_gpu is True
         assert spec.is_baseline_exception is False
-        assert (
-            spec.promotion_eligibility_class
-            == PromotionEligibilityClass.CHALLENGER
-        )
+        assert spec.promotion_eligibility_class == PromotionEligibilityClass.CHALLENGER
 
     def test_xgboost_gpu_fields(self) -> None:
         spec = MODEL_FAMILY_REGISTRY.get("xgboost_gpu")
         assert spec.family_id == "xgboost_gpu"
         assert spec.artifact_format == "xgboost_json"
-        assert (
-            spec.artifact_loader
-            == "quant_foundry.artifact_io.load_xgboost_model"
-        )
+        assert spec.artifact_loader == "quant_foundry.artifact_io.load_xgboost_model"
         assert spec.runpod_image == RUNPOD_GPU_TREE_IMAGE
         assert spec.requires_gpu is True
         assert spec.is_baseline_exception is False
@@ -165,33 +146,21 @@ class TestInitialFamilies:
         spec = MODEL_FAMILY_REGISTRY.get("logreg_sanity")
         assert spec.family_id == "logreg_sanity"
         assert spec.artifact_format == "sklearn_pickle"
-        assert (
-            spec.artifact_loader
-            == "quant_foundry.artifact_io.load_sklearn_pickle"
-        )
+        assert spec.artifact_loader == "quant_foundry.artifact_io.load_sklearn_pickle"
         assert spec.runpod_image is None
         assert spec.requires_gpu is False
         assert spec.is_baseline_exception is False
-        assert (
-            spec.promotion_eligibility_class
-            == PromotionEligibilityClass.SANITY
-        )
+        assert spec.promotion_eligibility_class == PromotionEligibilityClass.SANITY
 
     def test_linear_sanity_fields(self) -> None:
         spec = MODEL_FAMILY_REGISTRY.get("linear_sanity")
         assert spec.family_id == "linear_sanity"
         assert spec.artifact_format == "sklearn_pickle"
-        assert (
-            spec.artifact_loader
-            == "quant_foundry.artifact_io.load_sklearn_pickle"
-        )
+        assert spec.artifact_loader == "quant_foundry.artifact_io.load_sklearn_pickle"
         assert spec.runpod_image is None
         assert spec.requires_gpu is False
         assert spec.is_baseline_exception is False
-        assert (
-            spec.promotion_eligibility_class
-            == PromotionEligibilityClass.SANITY
-        )
+        assert spec.promotion_eligibility_class == PromotionEligibilityClass.SANITY
 
 
 # ---------------------------------------------------------------------------
@@ -222,9 +191,7 @@ class TestSchemaConstraints:
             )
 
     def test_family_validation_result_frozen(self) -> None:
-        result = FamilyValidationResult(
-            passed=True, family_id="test", errors=(), warnings=()
-        )
+        result = FamilyValidationResult(passed=True, family_id="test", errors=(), warnings=())
         with pytest.raises(ValidationError):
             result.passed = False  # type: ignore[misc]
 
@@ -276,9 +243,7 @@ class TestValidateFamily:
             created_at_ns=0,
         )
         registry._specs["bad_loader"] = spec
-        result = registry.validate_family(
-            family_id="bad_loader", mode="canary", has_gpu=False
-        )
+        result = registry.validate_family(family_id="bad_loader", mode="canary", has_gpu=False)
         assert result.passed is False
         assert any("no artifact_loader" in e for e in result.errors)
 
@@ -289,9 +254,7 @@ class TestValidateFamily:
             artifact_loader="quant_foundry.artifact_io.does_not_exist",
         )
         registry._specs["bad_resolver"] = spec
-        result = registry.validate_family(
-            family_id="bad_resolver", mode="canary", has_gpu=False
-        )
+        result = registry.validate_family(family_id="bad_resolver", mode="canary", has_gpu=False)
         assert result.passed is False
         assert any("does not resolve" in e for e in result.errors)
 
@@ -304,9 +267,7 @@ class TestValidateFamily:
             is_baseline_exception=False,
         )
         registry._specs["no_gpu_prod"] = spec
-        result = registry.validate_family(
-            family_id="no_gpu_prod", mode="production", has_gpu=True
-        )
+        result = registry.validate_family(family_id="no_gpu_prod", mode="production", has_gpu=True)
         assert result.passed is False
         assert any("production mode requires" in e for e in result.errors)
 
@@ -404,17 +365,13 @@ class TestTrainingManifestIntegration:
         assert result.passed is True
 
     def test_validate_family_for_mode_canary_string(self) -> None:
-        result = validate_family_for_mode(
-            family_id="catboost_gpu", mode="canary", has_gpu=False
-        )
+        result = validate_family_for_mode(family_id="catboost_gpu", mode="canary", has_gpu=False)
         assert result is not None
         assert result.passed is True
         assert len(result.warnings) >= 1
 
     def test_validate_family_for_mode_unknown(self) -> None:
-        result = validate_family_for_mode(
-            family_id="nope", mode="canary", has_gpu=False
-        )
+        result = validate_family_for_mode(family_id="nope", mode="canary", has_gpu=False)
         assert result is not None
         assert result.passed is False
 
@@ -516,21 +473,16 @@ class TestLoaderRegistry:
 
     def test_resolve_loader_lightgbm(self) -> None:
         assert (
-            resolve_loader("quant_foundry.artifact_io.load_lightgbm_model")
-            is load_lightgbm_model
+            resolve_loader("quant_foundry.artifact_io.load_lightgbm_model") is load_lightgbm_model
         )
 
     def test_resolve_loader_catboost(self) -> None:
         assert (
-            resolve_loader("quant_foundry.artifact_io.load_catboost_model")
-            is load_catboost_model
+            resolve_loader("quant_foundry.artifact_io.load_catboost_model") is load_catboost_model
         )
 
     def test_resolve_loader_xgboost(self) -> None:
-        assert (
-            resolve_loader("quant_foundry.artifact_io.load_xgboost_model")
-            is load_xgboost_model
-        )
+        assert resolve_loader("quant_foundry.artifact_io.load_xgboost_model") is load_xgboost_model
 
     def test_resolve_loader_raises_for_unknown(self) -> None:
         with pytest.raises(ValueError, match="unknown artifact loader"):
@@ -657,6 +609,4 @@ class TestFamilySpecLoadersResolve:
             result = MODEL_FAMILY_REGISTRY.validate_family(
                 family_id=fid, mode="canary", has_gpu=False
             )
-            assert result.passed is True, (
-                f"{fid} failed canary validation: {result.errors}"
-            )
+            assert result.passed is True, f"{fid} failed canary validation: {result.errors}"

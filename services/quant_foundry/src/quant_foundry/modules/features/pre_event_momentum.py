@@ -25,7 +25,6 @@ import math
 from typing import Any
 
 from quant_foundry.modules.registry import (
-    FeatureComputer,
     MediaItem,
     ModuleInfo,
     PriceBar,
@@ -132,7 +131,7 @@ class PreEventMomentumFeatures:
         """
         if len(pit_bars) < window + 1:
             return 0.0
-        recent = pit_bars[-(window + 1):]
+        recent = pit_bars[-(window + 1) :]
         closes = [b.close for b in recent]
         returns = self._daily_returns(closes)
         # returns has len == window
@@ -210,14 +209,14 @@ class PreEventMomentumFeatures:
 
                 # Return horizons
                 for horizon in self.return_horizons:
-                    features[f"pre_return_{horizon}d"] = (
-                        self._return_over_horizon(pit_bars, horizon)
+                    features[f"pre_return_{horizon}d"] = self._return_over_horizon(
+                        pit_bars, horizon
                     )
 
                 # Volatility windows
                 for window in self.volatility_windows:
-                    features[f"pre_volatility_{window}d"] = (
-                        self._volatility_over_window(pit_bars, window)
+                    features[f"pre_volatility_{window}d"] = self._volatility_over_window(
+                        pit_bars, window
                     )
 
                 # Volume ratio (fixed 5d)

@@ -24,27 +24,25 @@ Tests verify:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.lob_manifest import (
     AdjustmentPolicy,
+    LabelHorizonUnit,
+    LabelSpec,
     LOBDatasetManifest,
     LOBManifestBuilder,
     LOBRecord,
     LOBSession,
     LOBVenue,
-    LabelHorizonUnit,
-    LabelSpec,
     compute_lob_data_hash,
     validate_no_future_leakage,
     validate_sequence_ordering,
     validate_session_split,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -624,11 +622,13 @@ class TestLOBDatasetManifest:
 
     def test_duplicate_record_ids(self) -> None:
         records = _make_manifest_kwargs()["records"]
-        records.append(_make_record(
-            record_id="NASDAQ_AAPL_0",
-            sequence_id=99,
-            session_id=_make_validation_session().session_id,
-        ))
+        records.append(
+            _make_record(
+                record_id="NASDAQ_AAPL_0",
+                sequence_id=99,
+                session_id=_make_validation_session().session_id,
+            )
+        )
         with pytest.raises(ValidationError, match="duplicate record_ids"):
             _make_manifest(records=records)
 
@@ -664,12 +664,14 @@ class TestLOBDatasetManifest:
     def test_duplicate_sequence_id_in_session(self) -> None:
         train = _make_train_session()
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         session_id=train.session_id),
-            _make_record(record_id="NASDAQ_AAPL_1", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.200Z",
-                         receive_time="2024-01-15T09:30:00.205Z",
-                         session_id=train.session_id),
+            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0, session_id=train.session_id),
+            _make_record(
+                record_id="NASDAQ_AAPL_1",
+                sequence_id=0,
+                event_time="2024-01-15T09:30:00.200Z",
+                receive_time="2024-01-15T09:30:00.205Z",
+                session_id=train.session_id,
+            ),
         ]
         with pytest.raises(ValidationError, match="strictly monotonic"):
             _make_manifest(records=records)
@@ -677,14 +679,20 @@ class TestLOBDatasetManifest:
     def test_out_of_order_event_time(self) -> None:
         train = _make_train_session()
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.300Z",
-                         receive_time="2024-01-15T09:30:00.305Z",
-                         session_id=train.session_id),
-            _make_record(record_id="NASDAQ_AAPL_1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.100Z",
-                         receive_time="2024-01-15T09:30:00.105Z",
-                         session_id=train.session_id),
+            _make_record(
+                record_id="NASDAQ_AAPL_0",
+                sequence_id=0,
+                event_time="2024-01-15T09:30:00.300Z",
+                receive_time="2024-01-15T09:30:00.305Z",
+                session_id=train.session_id,
+            ),
+            _make_record(
+                record_id="NASDAQ_AAPL_1",
+                sequence_id=1,
+                event_time="2024-01-15T09:30:00.100Z",
+                receive_time="2024-01-15T09:30:00.105Z",
+                session_id=train.session_id,
+            ),
         ]
         with pytest.raises(ValidationError, match="non-decreasing"):
             _make_manifest(records=records)
@@ -698,8 +706,7 @@ class TestLOBDatasetManifest:
             session_end="2024-01-17T16:00:00Z",
         )
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         session_id=val.session_id),
+            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0, session_id=val.session_id),
         ]
         with pytest.raises(ValidationError, match="train"):
             _make_manifest(sessions=[val, test], records=records)
@@ -713,8 +720,7 @@ class TestLOBDatasetManifest:
             session_end="2024-01-17T16:00:00Z",
         )
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         session_id=train.session_id),
+            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0, session_id=train.session_id),
         ]
         with pytest.raises(ValidationError, match="validation"):
             _make_manifest(sessions=[train, test], records=records)
@@ -853,10 +859,8 @@ class TestValidateSequenceOrdering:
 
     def test_valid_ordering(self) -> None:
         records = [
-            _make_record(record_id="r0", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.100Z"),
-            _make_record(record_id="r1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.200Z"),
+            _make_record(record_id="r0", sequence_id=0, event_time="2024-01-15T09:30:00.100Z"),
+            _make_record(record_id="r1", sequence_id=1, event_time="2024-01-15T09:30:00.200Z"),
         ]
         assert validate_sequence_ordering(records) is True
 
@@ -867,8 +871,7 @@ class TestValidateSequenceOrdering:
     def test_duplicate_sequence_id(self) -> None:
         records = [
             _make_record(record_id="r0", sequence_id=0),
-            _make_record(record_id="r1", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.200Z"),
+            _make_record(record_id="r1", sequence_id=0, event_time="2024-01-15T09:30:00.200Z"),
         ]
         with pytest.raises(ValueError, match="strictly monotonic"):
             validate_sequence_ordering(records)
@@ -877,42 +880,41 @@ class TestValidateSequenceOrdering:
         # Gaps are allowed (strictly monotonic, not contiguous).
         records = [
             _make_record(record_id="r0", sequence_id=0),
-            _make_record(record_id="r1", sequence_id=5,
-                         event_time="2024-01-15T09:30:00.200Z"),
+            _make_record(record_id="r1", sequence_id=5, event_time="2024-01-15T09:30:00.200Z"),
         ]
         assert validate_sequence_ordering(records) is True
 
     def test_out_of_order_event_time(self) -> None:
         records = [
-            _make_record(record_id="r0", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.300Z"),
-            _make_record(record_id="r1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.100Z"),
+            _make_record(record_id="r0", sequence_id=0, event_time="2024-01-15T09:30:00.300Z"),
+            _make_record(record_id="r1", sequence_id=1, event_time="2024-01-15T09:30:00.100Z"),
         ]
         with pytest.raises(ValueError, match="non-decreasing"):
             validate_sequence_ordering(records)
 
     def test_equal_event_time_ok(self) -> None:
         records = [
-            _make_record(record_id="r0", sequence_id=0,
-                         event_time="2024-01-15T09:30:00.100Z"),
-            _make_record(record_id="r1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.100Z"),
+            _make_record(record_id="r0", sequence_id=0, event_time="2024-01-15T09:30:00.100Z"),
+            _make_record(record_id="r1", sequence_id=1, event_time="2024-01-15T09:30:00.100Z"),
         ]
         assert validate_sequence_ordering(records) is True
 
     def test_multiple_sessions(self) -> None:
         records = [
-            _make_record(record_id="r0", sequence_id=0,
-                         session_id="s1"),
-            _make_record(record_id="r1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.200Z",
-                         session_id="s1"),
-            _make_record(record_id="r2", sequence_id=0,
-                         session_id="s2"),
-            _make_record(record_id="r3", sequence_id=1,
-                         event_time="2024-01-16T09:30:00.200Z",
-                         session_id="s2"),
+            _make_record(record_id="r0", sequence_id=0, session_id="s1"),
+            _make_record(
+                record_id="r1",
+                sequence_id=1,
+                event_time="2024-01-15T09:30:00.200Z",
+                session_id="s1",
+            ),
+            _make_record(record_id="r2", sequence_id=0, session_id="s2"),
+            _make_record(
+                record_id="r3",
+                sequence_id=1,
+                event_time="2024-01-16T09:30:00.200Z",
+                session_id="s2",
+            ),
         ]
         assert validate_sequence_ordering(records) is True
 
@@ -974,20 +976,28 @@ class TestLOBManifestBuilder:
         train = _make_train_session()
         val = _make_validation_session()
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         session_id=train.session_id),
-            _make_record(record_id="NASDAQ_AAPL_1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.200Z",
-                         receive_time="2024-01-15T09:30:00.205Z",
-                         session_id=train.session_id),
-            _make_record(record_id="NASDAQ_AAPL_2", sequence_id=0,
-                         event_time="2024-01-16T09:30:00.100Z",
-                         receive_time="2024-01-16T09:30:00.105Z",
-                         session_id=val.session_id),
+            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0, session_id=train.session_id),
+            _make_record(
+                record_id="NASDAQ_AAPL_1",
+                sequence_id=1,
+                event_time="2024-01-15T09:30:00.200Z",
+                receive_time="2024-01-15T09:30:00.205Z",
+                session_id=train.session_id,
+            ),
+            _make_record(
+                record_id="NASDAQ_AAPL_2",
+                sequence_id=0,
+                event_time="2024-01-16T09:30:00.100Z",
+                receive_time="2024-01-16T09:30:00.105Z",
+                session_id=val.session_id,
+            ),
         ]
         manifest = (
             LOBManifestBuilder(
-                "lob_001", LOBVenue.NASDAQ, "AAPL", 10,
+                "lob_001",
+                LOBVenue.NASDAQ,
+                "AAPL",
+                10,
                 AdjustmentPolicy.RAW,
             )
             .with_sessions([train, val])
@@ -1006,7 +1016,10 @@ class TestLOBManifestBuilder:
         r = _make_record(session_id=train.session_id)
         manifest = (
             LOBManifestBuilder(
-                "lob_002", LOBVenue.NASDAQ, "AAPL", 10,
+                "lob_002",
+                LOBVenue.NASDAQ,
+                "AAPL",
+                10,
                 AdjustmentPolicy.RAW,
             )
             .with_sessions([train, val])
@@ -1022,7 +1035,10 @@ class TestLOBManifestBuilder:
         with pytest.raises(ValidationError, match="sessions"):
             (
                 LOBManifestBuilder(
-                    "lob_003", LOBVenue.NASDAQ, "AAPL", 10,
+                    "lob_003",
+                    LOBVenue.NASDAQ,
+                    "AAPL",
+                    10,
                     AdjustmentPolicy.RAW,
                 )
                 .with_label_specs([_make_label_spec()])
@@ -1037,7 +1053,10 @@ class TestLOBManifestBuilder:
         with pytest.raises(ValidationError, match="train"):
             (
                 LOBManifestBuilder(
-                    "lob_004", LOBVenue.NASDAQ, "AAPL", 10,
+                    "lob_004",
+                    LOBVenue.NASDAQ,
+                    "AAPL",
+                    10,
                     AdjustmentPolicy.RAW,
                 )
                 .with_sessions([val])
@@ -1063,17 +1082,22 @@ class TestLOBManifestBuilder:
         train = _make_train_session()
         val = _make_validation_session()
         records = [
-            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0,
-                         session_id=train.session_id),
-            _make_record(record_id="NASDAQ_AAPL_1", sequence_id=1,
-                         event_time="2024-01-15T09:30:00.200Z",
-                         receive_time="2024-01-15T09:30:00.205Z",
-                         session_id=train.session_id),
+            _make_record(record_id="NASDAQ_AAPL_0", sequence_id=0, session_id=train.session_id),
+            _make_record(
+                record_id="NASDAQ_AAPL_1",
+                sequence_id=1,
+                event_time="2024-01-15T09:30:00.200Z",
+                receive_time="2024-01-15T09:30:00.205Z",
+                session_id=train.session_id,
+            ),
         ]
         h = compute_lob_data_hash(records)
         manifest = (
             LOBManifestBuilder(
-                "lob_006", LOBVenue.NASDAQ, "AAPL", 10,
+                "lob_006",
+                LOBVenue.NASDAQ,
+                "AAPL",
+                10,
                 AdjustmentPolicy.RAW,
             )
             .with_sessions([train, val])

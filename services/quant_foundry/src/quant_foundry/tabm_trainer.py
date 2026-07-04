@@ -65,14 +65,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from quant_foundry.dataset_manifest import ColumnRoles
 from quant_foundry.normalizer import (
+    NormalizationMethod,
     Normalizer,
     NormalizerArtifact,
-    NormalizationMethod,
 )
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 from quant_foundry.training_manifest import ModelTaskSpec
-
 
 # ---------------------------------------------------------------------------
 # Config + result models
@@ -181,9 +180,7 @@ class TabMConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
     @field_validator("normalization_method")
@@ -191,10 +188,7 @@ class TabMConfig(BaseModel):
     def _normalization_method_allowed(cls, v: str) -> str:
         allowed = {m.value for m in NormalizationMethod}
         if v not in allowed:
-            raise ValueError(
-                f"normalization_method must be one of {sorted(allowed)}; "
-                f"got {v!r}"
-            )
+            raise ValueError(f"normalization_method must be one of {sorted(allowed)}; got {v!r}")
         return v
 
     @field_validator("k")
@@ -212,15 +206,13 @@ class TabMConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _hidden_dims_nonempty(self) -> "TabMConfig":
+    def _hidden_dims_nonempty(self) -> TabMConfig:
         """hidden_dims must be a non-empty list of positive ints."""
         if not self.hidden_dims:
             raise ValueError("hidden_dims must be non-empty")
         for i, h in enumerate(self.hidden_dims):
             if h < 1:
-                raise ValueError(
-                    f"hidden_dims[{i}] must be >= 1; got {h}"
-                )
+                raise ValueError(f"hidden_dims[{i}] must be >= 1; got {h}")
         return self
 
 
@@ -330,8 +322,7 @@ class TabMModel:
         if self._module is not None:
             return self._module
 
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         # Shared backbone: input_dim -> hidden_dims[-1].
         backbone_layers: list[Any] = []
@@ -389,17 +380,17 @@ class TabMModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "TabMModel":
+    def to(self, device: Any) -> TabMModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "TabMModel":
+    def train(self, mode: bool = True) -> TabMModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "TabMModel":
+    def eval(self) -> TabMModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -412,8 +403,8 @@ def _make_tabm_module_class() -> Any:
     class is cheap to construct and keeps the torch import boundary
     local to the build call).
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch
+    import torch.nn as nn
 
     class _TabMNet(nn.Module):
         """Inner nn.Module implementing the TabM forward pass."""
@@ -443,7 +434,7 @@ def _resolve_device(config: TabMConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -505,7 +496,7 @@ class TabMTrainer:
         to ``X`` (expected to be a pandas DataFrame when an artifact is
         provided). Returns a numpy array of the transformed features.
         """
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
 
         if normalizer_artifact is None:
             return np.asarray(X, dtype=float)
@@ -523,9 +514,7 @@ class TabMTrainer:
         transformed_cols: list[Any] = []
         for col in col_names:
             if col not in X:
-                raise ValueError(
-                    f"column {col!r} not found in X for normalization"
-                )
+                raise ValueError(f"column {col!r} not found in X for normalization")
             stats = stats_by_name[col]
             arr = np.asarray(X[col], dtype=float)
             arr = apply_missing_policy(arr, stats)
@@ -570,9 +559,9 @@ class TabMTrainer:
             A :class:`TabMTrainingResult` with epoch losses, GPU status,
             and promotion eligibility.
         """
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
+        import torch.nn as nn
 
         start = time.perf_counter()
 
@@ -715,14 +704,10 @@ class TabMTrainer:
         Returns:
             A list of floats (one prediction per row).
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
 
         used_artifact = normalizer_artifact
         if used_artifact is None:
@@ -755,12 +740,10 @@ class TabMTrainer:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -776,7 +759,7 @@ class TabMTrainer:
         Returns:
             The loaded :class:`TabMModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = TabMModel(
             input_dim=self.config.input_dim,
@@ -843,10 +826,7 @@ class TabMTrainer:
                 "labels, and horizons must all have the same length"
             )
         if weights is not None and len(weights) != n:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="tabm", output_dir=output_dir)
@@ -954,9 +934,9 @@ def register_tabm_family() -> dict[str, Any]:
 
 __all__ = [
     "TabMConfig",
-    "TabMTrainingResult",
     "TabMModel",
     "TabMTrainer",
-    "validate_promotion_eligibility",
+    "TabMTrainingResult",
     "register_tabm_family",
+    "validate_promotion_eligibility",
 ]

@@ -12,15 +12,15 @@ Joins them with yfinance daily bars to produce a combined dataset that
 leverages the EXISTING information gathering system instead of fetching
 news from scratch via NewsAPI.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -37,7 +37,7 @@ NS_PER_HOUR = 3_600_000_000_000
 
 
 def ns_to_dt(ns: int) -> datetime:
-    return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc)
+    return datetime.fromtimestamp(ns / 1e9, tz=UTC)
 
 
 def dt_to_ns(d: datetime) -> int:
@@ -45,6 +45,7 @@ def dt_to_ns(d: datetime) -> int:
 
 
 # ─── 1. Extract from Redis ────────────────────────────────────────────────
+
 
 def extract_redis_data() -> dict:
     """Extract all training-relevant data from Redis."""
@@ -61,20 +62,22 @@ def extract_redis_data() -> dict:
         try:
             event = json.loads(payload_raw)
             p = event.get("payload", event)
-            info_events.append({
-                "event_id": p.get("event_id", entry_id),
-                "ts_event": p.get("ts_event", 0),
-                "headline": p.get("headline", ""),
-                "symbols": p.get("symbols", []),
-                "event_category": p.get("event_category", "general"),
-                "source": p.get("source", ""),
-                "source_type": p.get("source_type", ""),
-                "source_quality": p.get("source_quality", 0.5),
-                "recency_score": p.get("recency_score", 1.0),
-                "novelty_score": p.get("novelty_score", 1.0),
-                "entities": p.get("entities", []),
-                "url": p.get("url", ""),
-            })
+            info_events.append(
+                {
+                    "event_id": p.get("event_id", entry_id),
+                    "ts_event": p.get("ts_event", 0),
+                    "headline": p.get("headline", ""),
+                    "symbols": p.get("symbols", []),
+                    "event_category": p.get("event_category", "general"),
+                    "source": p.get("source", ""),
+                    "source_type": p.get("source_type", ""),
+                    "source_quality": p.get("source_quality", 0.5),
+                    "recency_score": p.get("recency_score", 1.0),
+                    "novelty_score": p.get("novelty_score", 1.0),
+                    "entities": p.get("entities", []),
+                    "url": p.get("url", ""),
+                }
+            )
         except Exception:
             continue
     print(f"  {len(info_events)} info events")
@@ -90,15 +93,17 @@ def extract_redis_data() -> dict:
         try:
             event = json.loads(payload_raw)
             p = event.get("payload", event)
-            sentiment_signals.append({
-                "ts_event": p.get("ts_event", 0),
-                "symbol": p.get("symbol", ""),
-                "score": p.get("score", 0.0),
-                "confidence": p.get("confidence", 0.0),
-                "event_type": p.get("event_type", "general"),
-                "source_url": p.get("source_url", ""),
-                "source_excerpt": p.get("source_excerpt", ""),
-            })
+            sentiment_signals.append(
+                {
+                    "ts_event": p.get("ts_event", 0),
+                    "symbol": p.get("symbol", ""),
+                    "score": p.get("score", 0.0),
+                    "confidence": p.get("confidence", 0.0),
+                    "event_type": p.get("event_type", "general"),
+                    "source_url": p.get("source_url", ""),
+                    "source_excerpt": p.get("source_excerpt", ""),
+                }
+            )
         except Exception:
             continue
     print(f"  {len(sentiment_signals)} sentiment signals")
@@ -135,7 +140,7 @@ def extract_redis_data() -> dict:
                 else:
                     example[f"feat_{fname}"] = 0.0
             alpha_examples.append(example)
-        except Exception as e:
+        except Exception:
             continue
     print(f"  {len(alpha_examples)} labeled examples")
 
@@ -149,18 +154,20 @@ def extract_redis_data() -> dict:
             payload_raw = payload_raw.decode()
         try:
             bar = json.loads(payload_raw)
-            bars.append({
-                "ts_event": bar.get("ts_event", 0),
-                "symbol": bar.get("symbol", ""),
-                "venue": bar.get("venue", ""),
-                "open": float(bar.get("open", 0)),
-                "high": float(bar.get("high", 0)),
-                "low": float(bar.get("low", 0)),
-                "close": float(bar.get("close", 0)),
-                "volume": float(bar.get("volume", 0)),
-                "trades": int(bar.get("trades", 0)),
-                "vwap": float(bar.get("vwap", 0)),
-            })
+            bars.append(
+                {
+                    "ts_event": bar.get("ts_event", 0),
+                    "symbol": bar.get("symbol", ""),
+                    "venue": bar.get("venue", ""),
+                    "open": float(bar.get("open", 0)),
+                    "high": float(bar.get("high", 0)),
+                    "low": float(bar.get("low", 0)),
+                    "close": float(bar.get("close", 0)),
+                    "volume": float(bar.get("volume", 0)),
+                    "trades": int(bar.get("trades", 0)),
+                    "vwap": float(bar.get("vwap", 0)),
+                }
+            )
         except Exception:
             continue
     print(f"  {len(bars)} 1-min bars")
@@ -176,8 +183,15 @@ def extract_redis_data() -> dict:
 # ─── 2. Build event-level dataset from info.enriched + price data ──────────
 
 EVENT_CATEGORY_ONEHOT = [
-    "earnings", "analyst", "general", "market_move",
-    "partnership", "product", "macro", "regulatory", "security",
+    "earnings",
+    "analyst",
+    "general",
+    "market_move",
+    "partnership",
+    "product",
+    "macro",
+    "regulatory",
+    "security",
 ]
 
 
@@ -252,6 +266,7 @@ def build_event_dataset(info_events: list[dict], sentiment_signals: list[dict]) 
 
 
 # ─── 3. Join with yfinance for price labels ───────────────────────────────
+
 
 def add_price_labels(df: pd.DataFrame, horizon_days: int = 5) -> pd.DataFrame:
     """Add forward return labels using yfinance daily bars."""
@@ -331,14 +346,17 @@ def add_price_labels(df: pd.DataFrame, horizon_days: int = 5) -> pd.DataFrame:
     after = len(df)
     print(f"  Dropped {before - after} rows without price data")
     print(f"  Final rows: {after}")
-    print(f"  Label balance: {(df[f'forward_label_{horizon_days}d'] == 1).sum()} up / "
-          f"{(df[f'forward_label_{horizon_days}d'] == 0).sum()} down "
-          f"({(df[f'forward_label_{horizon_days}d'] == 1).mean() * 100:.1f}% up)")
+    print(
+        f"  Label balance: {(df[f'forward_label_{horizon_days}d'] == 1).sum()} up / "
+        f"{(df[f'forward_label_{horizon_days}d'] == 0).sum()} down "
+        f"({(df[f'forward_label_{horizon_days}d'] == 1).mean() * 100:.1f}% up)"
+    )
 
     return df
 
 
 # ─── 4. Build alpha_examples dataset (already labeled) ────────────────────
+
 
 def build_alpha_dataset(alpha_examples: list[dict]) -> pd.DataFrame:
     """Build a dataset from the already-labeled news_alpha examples."""
@@ -355,12 +373,15 @@ def build_alpha_dataset(alpha_examples: list[dict]) -> pd.DataFrame:
 
     print(f"  {len(df)} examples")
     print(f"  Symbols: {df['symbol'].unique()}")
-    print(f"  4h label balance: {df['label_4h_binary'].sum()} up / "
-          f"{(len(df) - df['label_4h_binary'].sum())} down")
+    print(
+        f"  4h label balance: {df['label_4h_binary'].sum()} up / "
+        f"{(len(df) - df['label_4h_binary'].sum())} down"
+    )
     return df
 
 
 # ─── 5. Main ──────────────────────────────────────────────────────────────
+
 
 def main() -> int:
     print("=" * 80)

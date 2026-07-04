@@ -23,7 +23,6 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.llm_feature_agent import (
     LLMFeature,
     LLMFeatureAgent,
@@ -154,7 +153,7 @@ class TestComputePromptHash:
 
     def test_unicode(self):
         h = compute_prompt_hash("héllo wörld 日本語")
-        assert h == hashlib.sha256("héllo wörld 日本語".encode("utf-8")).hexdigest()
+        assert h == hashlib.sha256("héllo wörld 日本語".encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +383,7 @@ class TestLLMFeature:
         assert f.feature_value == ["a", "b"]
 
     def test_feature_value_dict(self):
-        f = _feature(
-            feature_value={"k": "v"}, feature_name="explanation"
-        )
+        f = _feature(feature_value={"k": "v"}, feature_name="explanation")
         assert f.feature_value == {"k": "v"}
 
     def test_feature_value_float(self):
@@ -559,9 +556,7 @@ class TestLLMFeatureAgentExtract:
         assert f.feature_value == "positive"
         assert f.validated is True
         assert f.prompt_id == "event_sentiment"
-        assert f.prompt_hash == compute_prompt_hash(
-            "Classify the sentiment of: {source_text}"
-        )
+        assert f.prompt_hash == compute_prompt_hash("Classify the sentiment of: {source_text}")
         assert f.model_id == "gpt-4"
         assert f.model_hash == ZERO_HASH
         assert f.source_hash == ZERO_HASH

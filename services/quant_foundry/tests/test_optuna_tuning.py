@@ -33,7 +33,6 @@ import time
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.optuna_tuning import (
     BestTrialArtifact,
     BudgetEnforcer,
@@ -50,6 +49,7 @@ from quant_foundry.optuna_tuning import (
 
 try:
     import optuna  # noqa: F401
+
     _HAS_OPTUNA = True
 except ImportError:
     _HAS_OPTUNA = False
@@ -355,7 +355,11 @@ class TestStudyArtifact:
     def test_construction_with_best_trial(self) -> None:
         spec = TuningSpec(max_trials=3)
         best = TrialResult(
-            trial_number=0, params={"x": 1.0}, metric_value=0.5, state="COMPLETE", duration_seconds=1.0
+            trial_number=0,
+            params={"x": 1.0},
+            metric_value=0.5,
+            state="COMPLETE",
+            duration_seconds=1.0,
         )
         artifact = StudyArtifact(
             study_name="test",
@@ -652,7 +656,9 @@ class TestOptunaTunerBasicRun:
     """Tests for OptunaTuner.run with a simple objective."""
 
     def test_3_trial_canary(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir), study_name="canary")
         artifact = tuner.run(_quadratic_objective)
         assert isinstance(artifact, StudyArtifact)
@@ -662,58 +668,90 @@ class TestOptunaTunerBasicRun:
         assert artifact.best_trial is not None
         assert artifact.best_trial.state == "COMPLETE"
 
-    def test_minimize_direction(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_minimize_direction(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(
-            max_trials=5, max_wall_clock_seconds=60, direction="minimize",
+            max_trials=5,
+            max_wall_clock_seconds=60,
+            direction="minimize",
             pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert artifact.best_trial is not None
         # The best trial should have the smallest metric value.
-        completed = [t for t in artifact.trials if t.state == "COMPLETE" and t.metric_value is not None]
+        completed = [
+            t for t in artifact.trials if t.state == "COMPLETE" and t.metric_value is not None
+        ]
         assert artifact.best_trial.metric_value == min(t.metric_value for t in completed)
 
-    def test_maximize_direction(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_maximize_direction(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(
-            max_trials=5, max_wall_clock_seconds=60, direction="maximize",
+            max_trials=5,
+            max_wall_clock_seconds=60,
+            direction="maximize",
             pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_maximize_objective)
         assert artifact.best_trial is not None
-        completed = [t for t in artifact.trials if t.state == "COMPLETE" and t.metric_value is not None]
+        completed = [
+            t for t in artifact.trials if t.state == "COMPLETE" and t.metric_value is not None
+        ]
         assert artifact.best_trial.metric_value == max(t.metric_value for t in completed)
 
-    def test_trials_sorted_by_number(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=4, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_trials_sorted_by_number(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=4, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         numbers = [t.trial_number for t in artifact.trials]
         assert numbers == sorted(numbers)
 
-    def test_study_hash_present(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_study_hash_present(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert len(artifact.study_hash) == 64
 
-    def test_total_wall_clock_positive(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_total_wall_clock_positive(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert artifact.total_wall_clock_seconds >= 0.0
 
-    def test_created_at_present(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_created_at_present(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert artifact.created_at
         assert "T" in artifact.created_at  # ISO-8601
 
-    def test_default_search_space_runs(self, study_dir: pathlib.Path, default_space: dict[str, object]) -> None:
+    def test_default_search_space_runs(
+        self, study_dir: pathlib.Path, default_space: dict[str, object]
+    ) -> None:
         """The default LightGBM search space should be usable with a mock objective."""
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
 
         def obj(trial: object, space: dict[str, object], s: TuningSpec) -> float:
             # Return a dummy metric based on num_leaves.
@@ -734,8 +772,12 @@ class TestOptunaTunerBasicRun:
 class TestOptunaTunerPersistence:
     """Tests for study.json and best_trial.json save/load."""
 
-    def test_save_study_to_file(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_save_study_to_file(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         out = study_dir / "study.json"
@@ -745,15 +787,23 @@ class TestOptunaTunerPersistence:
         assert data["study_name"] == "quant_foundry_study"
         assert len(data["trials"]) == 3
 
-    def test_save_study_to_directory(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_save_study_to_directory(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         tuner.save_study(str(study_dir))
         assert (study_dir / "study.json").exists()
 
-    def test_save_best_trial_to_file(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_save_best_trial_to_file(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         out = study_dir / "best_trial.json"
@@ -764,15 +814,23 @@ class TestOptunaTunerPersistence:
         assert "params" in data
         assert "study_hash" in data
 
-    def test_save_best_trial_to_directory(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_save_best_trial_to_directory(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         tuner.save_best_trial(str(study_dir))
         assert (study_dir / "best_trial.json").exists()
 
-    def test_load_study_round_trip(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_load_study_round_trip(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir), study_name="rt")
         artifact = tuner.run(_quadratic_objective)
         tuner.save_study(str(study_dir))
@@ -783,8 +841,12 @@ class TestOptunaTunerPersistence:
         assert loaded.best_trial is not None
         assert loaded.best_trial.trial_number == artifact.best_trial.trial_number
 
-    def test_load_best_trial_round_trip(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_load_best_trial_round_trip(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         tuner.save_best_trial(str(study_dir))
@@ -793,13 +855,17 @@ class TestOptunaTunerPersistence:
         assert loaded.direction == "minimize"
         assert loaded.metric_value is not None
 
-    def test_save_study_before_run_raises(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_save_study_before_run_raises(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60)
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         with pytest.raises(RuntimeError, match="no study artifact"):
             tuner.save_study(str(study_dir / "study.json"))
 
-    def test_save_best_trial_before_run_raises(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_save_best_trial_before_run_raises(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60)
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         with pytest.raises(RuntimeError, match="no study artifact"):
@@ -815,10 +881,14 @@ class TestOptunaTunerPersistence:
 class TestOptunaTunerPruning:
     """Tests for pruning behavior."""
 
-    def test_pruned_trial_recorded(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_pruned_trial_recorded(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """A deliberately bad trial should be pruned and recorded as PRUNED."""
         spec = TuningSpec(
-            max_trials=10, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.MEDIAN,
+            max_trials=10,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.MEDIAN,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_pruning_objective)
@@ -830,9 +900,13 @@ class TestOptunaTunerPruning:
         states = {t.state for t in artifact.trials}
         assert states.issubset({"COMPLETE", "PRUNED", "FAIL"})
 
-    def test_pruned_trial_has_reason(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_pruned_trial_has_reason(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(
-            max_trials=10, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.MEDIAN,
+            max_trials=10,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.MEDIAN,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_pruning_objective)
@@ -841,10 +915,14 @@ class TestOptunaTunerPruning:
                 assert t.reason is not None
                 assert t.metric_value is None
 
-    def test_none_policy_no_pruning(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_none_policy_no_pruning(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """With NONE policy, the pruning objective should complete (no prune)."""
         spec = TuningSpec(
-            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE,
+            max_trials=3,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_pruning_objective)
@@ -861,10 +939,14 @@ class TestOptunaTunerPruning:
 class TestOptunaTunerBudget:
     """Tests for wall-clock budget enforcement."""
 
-    def test_short_budget_stops_early(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_short_budget_stops_early(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """A 60-second budget with a sleeping objective should stop before max_trials."""
         spec = TuningSpec(
-            max_trials=100, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE,
+            max_trials=100,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_sleep_objective)
@@ -883,8 +965,12 @@ class TestOptunaTunerBudget:
 class TestOptunaTunerHeartbeat:
     """Tests for the heartbeat callback."""
 
-    def test_heartbeat_called_per_trial(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_heartbeat_called_per_trial(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         heartbeats: list[TuningHeartbeat] = []
 
@@ -897,25 +983,37 @@ class TestOptunaTunerHeartbeat:
         assert heartbeats[0].completed_trials == 1
         assert heartbeats[-1].completed_trials == 3
 
-    def test_heartbeat_best_metric_updates(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_heartbeat_best_metric_updates(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         heartbeats: list[TuningHeartbeat] = []
         tuner.run(_quadratic_objective, heartbeat_fn=lambda h: heartbeats.append(h))
         # best_metric_so_far should be set after the first trial.
         assert heartbeats[0].best_metric_so_far is not None
 
-    def test_heartbeat_elapsed_increasing(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_heartbeat_elapsed_increasing(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         heartbeats: list[TuningHeartbeat] = []
         tuner.run(_quadratic_objective, heartbeat_fn=lambda h: heartbeats.append(h))
         elapsed = [h.elapsed_seconds for h in heartbeats]
         assert elapsed == sorted(elapsed)
 
-    def test_no_heartbeat_fn_ok(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_no_heartbeat_fn_ok(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """Running without a heartbeat_fn should not raise."""
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert len(artifact.trials) == 2
@@ -930,9 +1028,13 @@ class TestOptunaTunerHeartbeat:
 class TestOptunaTunerFailedTrials:
     """Tests for failed trial recording."""
 
-    def test_failed_trial_recorded_with_reason(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_failed_trial_recorded_with_reason(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """A failing objective should produce a FAIL trial with a reason."""
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_failing_objective)
         failed = [t for t in artifact.trials if t.state == "FAIL"]
@@ -941,9 +1043,13 @@ class TestOptunaTunerFailedTrials:
         assert all("RuntimeError" in (t.reason or "") for t in failed)
         assert all(t.metric_value is None for t in failed)
 
-    def test_failed_trial_no_best(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_failed_trial_no_best(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """If all trials fail, best_trial should be None."""
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_failing_objective)
         assert artifact.best_trial is None
@@ -952,7 +1058,9 @@ class TestOptunaTunerFailedTrials:
         self, study_dir: pathlib.Path, small_space: dict[str, object]
     ) -> None:
         """save_best_trial should raise when no trial completed."""
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_failing_objective)
         with pytest.raises(RuntimeError, match="no trial completed"):
@@ -973,7 +1081,9 @@ class TestSearchAlgorithms:
         self, algo: SearchAlgorithm, study_dir: pathlib.Path, small_space: dict[str, object]
     ) -> None:
         spec = TuningSpec(
-            search_algorithm=algo, max_trials=3, max_wall_clock_seconds=60,
+            search_algorithm=algo,
+            max_trials=3,
+            max_wall_clock_seconds=60,
             pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir), study_name=f"algo_{algo.value}")
@@ -982,21 +1092,31 @@ class TestSearchAlgorithms:
         assert artifact.best_trial is not None
 
     def test_tpe_default(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         assert spec.search_algorithm is SearchAlgorithm.TPE
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert len(artifact.trials) == 2
 
-    def test_seed_reproducibility(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_seed_reproducibility(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         """Same seed should produce the same first-trial params with RANDOM."""
         spec1 = TuningSpec(
-            search_algorithm=SearchAlgorithm.RANDOM, max_trials=1,
-            max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE, seed=99,
+            search_algorithm=SearchAlgorithm.RANDOM,
+            max_trials=1,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.NONE,
+            seed=99,
         )
         spec2 = TuningSpec(
-            search_algorithm=SearchAlgorithm.RANDOM, max_trials=1,
-            max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE, seed=99,
+            search_algorithm=SearchAlgorithm.RANDOM,
+            max_trials=1,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.NONE,
+            seed=99,
         )
         tuner1 = OptunaTuner(spec1, small_space, str(study_dir / "s1"))
         tuner2 = OptunaTuner(spec2, small_space, str(study_dir / "s2"))
@@ -1019,16 +1139,22 @@ class TestPruningPolicies:
         self, policy: PruningPolicy, study_dir: pathlib.Path, small_space: dict[str, object]
     ) -> None:
         spec = TuningSpec(
-            max_trials=3, max_wall_clock_seconds=60, pruning_policy=policy,
+            max_trials=3,
+            max_wall_clock_seconds=60,
+            pruning_policy=policy,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir), study_name=f"prune_{policy.value}")
         artifact = tuner.run(_quadratic_objective)
         assert len(artifact.trials) > 0
         assert artifact.best_trial is not None
 
-    def test_none_policy_completes_all(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_none_policy_completes_all(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         spec = TuningSpec(
-            max_trials=4, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE,
+            max_trials=4,
+            max_wall_clock_seconds=60,
+            pruning_policy=PruningPolicy.NONE,
         )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
@@ -1057,8 +1183,12 @@ class TestStudyHashDeterminism:
         d2 = {"study_name": "b", "trials": []}
         assert compute_study_hash(d1) != compute_study_hash(d2)
 
-    def test_artifact_hash_is_64_hex(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_artifact_hash_is_64_hex(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         h = artifact.study_hash
@@ -1076,28 +1206,42 @@ class TestOptunaTunerEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_single_trial(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         artifact = tuner.run(_quadratic_objective)
         assert len(artifact.trials) == 1
         assert artifact.best_trial is not None
         assert artifact.best_trial.trial_number == 0
 
-    def test_study_dir_created_if_missing(self, tmp_path: pathlib.Path, small_space: dict[str, object]) -> None:
+    def test_study_dir_created_if_missing(
+        self, tmp_path: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
         new_dir = tmp_path / "new_study_dir"
         assert not new_dir.exists()
-        spec = TuningSpec(max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         OptunaTuner(spec, small_space, str(new_dir))
         assert new_dir.exists()
 
-    def test_custom_study_name(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_custom_study_name(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=1, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir), study_name="my_custom_study")
         artifact = tuner.run(_quadratic_objective)
         assert artifact.study_name == "my_custom_study"
 
-    def test_load_study_from_file_path(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_load_study_from_file_path(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         file_path = study_dir / "study.json"
@@ -1105,8 +1249,12 @@ class TestOptunaTunerEdgeCases:
         loaded = OptunaTuner.load_study(str(file_path))
         assert isinstance(loaded, StudyArtifact)
 
-    def test_load_best_trial_from_file_path(self, study_dir: pathlib.Path, small_space: dict[str, object]) -> None:
-        spec = TuningSpec(max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+    def test_load_best_trial_from_file_path(
+        self, study_dir: pathlib.Path, small_space: dict[str, object]
+    ) -> None:
+        spec = TuningSpec(
+            max_trials=2, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, small_space, str(study_dir))
         tuner.run(_quadratic_objective)
         file_path = study_dir / "best_trial.json"
@@ -1127,7 +1275,9 @@ class TestOptunaTunerEdgeCases:
             # Dummy metric.
             return float(c if kernel == "rbf" else c * 2)
 
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, space, str(study_dir))
         artifact = tuner.run(obj)
         assert len(artifact.trials) == 3
@@ -1141,7 +1291,9 @@ class TestOptunaTunerEdgeCases:
         def obj(trial: object, space: dict[str, object], s: TuningSpec) -> float:
             return float(trial.params["n"])
 
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, space, str(study_dir))
         artifact = tuner.run(obj)
         for t in artifact.trials:
@@ -1154,7 +1306,9 @@ class TestOptunaTunerEdgeCases:
         def obj(trial: object, space: dict[str, object], s: TuningSpec) -> float:
             return float(trial.params["lr"])
 
-        spec = TuningSpec(max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE)
+        spec = TuningSpec(
+            max_trials=3, max_wall_clock_seconds=60, pruning_policy=PruningPolicy.NONE
+        )
         tuner = OptunaTuner(spec, space, str(study_dir))
         artifact = tuner.run(obj)
         for t in artifact.trials:

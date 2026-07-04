@@ -8,13 +8,15 @@ This script links an existing container registry credential to both
 templates. The credential IDs come from:
   query { myself { containerRegistryCreds { id name } } }
 """
-import httpx
+
 import json
 import os
 import sys
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID  # noqa: E402
+from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID
 
 api_key = os.environ["RUNPOD_API_KEY"]
 
@@ -78,8 +80,16 @@ for name, eid in [
         "containerRegistryAuthId": auth_id,
     }
 
-    for field in ["volumeMountPath", "config", "category", "isPublic",
-                  "ports", "readme", "startScript", "advancedStart"]:
+    for field in [
+        "volumeMountPath",
+        "config",
+        "category",
+        "isPublic",
+        "ports",
+        "readme",
+        "startScript",
+        "advancedStart",
+    ]:
         if field in template and template[field] is not None:
             template_input[field] = template[field]
 

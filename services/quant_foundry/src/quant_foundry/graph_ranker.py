@@ -73,7 +73,6 @@ from quant_foundry.graph_runtime import GraphSnapshot, TinyGNNModel
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 
-
 # ---------------------------------------------------------------------------
 # Config + result models
 # ---------------------------------------------------------------------------
@@ -169,9 +168,7 @@ class GraphRankerConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
 
@@ -271,8 +268,7 @@ class GraphRankerModel:
         if self._module is not None:
             return self._module
 
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         # The GNN backbone produces hidden_dim node embeddings.
         gnn = TinyGNNModel(
@@ -347,17 +343,17 @@ class GraphRankerModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "GraphRankerModel":
+    def to(self, device: Any) -> GraphRankerModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "GraphRankerModel":
+    def train(self, mode: bool = True) -> GraphRankerModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "GraphRankerModel":
+    def eval(self) -> GraphRankerModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -373,7 +369,7 @@ def _resolve_device(config: GraphRankerConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -405,7 +401,7 @@ def _listMLE_loss(scores: Any, labels: Any) -> Any:
     Returns:
         A scalar tensor (the mean listMLE loss).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     n = scores.shape[0]
     if n < 2:
@@ -421,9 +417,7 @@ def _listMLE_loss(scores: Any, labels: Any) -> Any:
     # Cumulative sum of exp from the end.
     exp_scores = torch.exp(scores_sorted)
     # Reverse cumsum: cumsum from the end to the start.
-    cumsum_from_end = torch.flip(
-        torch.cumsum(torch.flip(exp_scores, dims=[0]), dim=0), dims=[0]
-    )
+    cumsum_from_end = torch.flip(torch.cumsum(torch.flip(exp_scores, dims=[0]), dim=0), dims=[0])
     logsumexp_from_end = torch.log(cumsum_from_end) + max_val
     # listMLE loss = -sum_i (scores_sorted[i] - logsumexp_from_end[i])
     # (we already subtracted max_val from scores_sorted, and
@@ -501,8 +495,8 @@ class GraphRanker:
             rank metrics, edge attribution, the predicted ranking, and
             promotion eligibility.
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
 
         start = time.perf_counter()
 
@@ -520,8 +514,7 @@ class GraphRanker:
         for i, snap in enumerate(snapshots):
             if snap.n_nodes != n_nodes:
                 raise ValueError(
-                    f"snapshots[{i}].n_nodes ({snap.n_nodes}) must equal "
-                    f"len(node_ids) ({n_nodes})"
+                    f"snapshots[{i}].n_nodes ({snap.n_nodes}) must equal len(node_ids) ({n_nodes})"
                 )
             if len(snap.node_features[0]) != self.config.node_feature_dim:
                 raise ValueError(
@@ -532,8 +525,7 @@ class GraphRanker:
                 )
             if len(labels[i]) != n_nodes:
                 raise ValueError(
-                    f"labels[{i}] length ({len(labels[i])}) must equal "
-                    f"n_nodes ({n_nodes})"
+                    f"labels[{i}] length ({len(labels[i])}) must equal n_nodes ({n_nodes})"
                 )
 
         gpu_status = check_gpu()
@@ -562,25 +554,17 @@ class GraphRanker:
                 # Graph-level batching: one snapshot at a time
                 # (batch_size is graph-level, fixed at 1 snapshot).
                 for i, snap in enumerate(snapshots):
-                    node_features = torch.tensor(
-                        snap.node_features, dtype=torch.float32
-                    ).to(device)
-                    edge_index = torch.tensor(
-                        snap.edge_index, dtype=torch.long
-                    ).to(device)
+                    node_features = torch.tensor(snap.node_features, dtype=torch.float32).to(device)
+                    edge_index = torch.tensor(snap.edge_index, dtype=torch.long).to(device)
                     edge_weight = None
                     if snap.edge_weights is not None:
-                        edge_weight = torch.tensor(
-                            snap.edge_weights, dtype=torch.float32
-                        ).to(device)
-                    label_tensor = torch.tensor(
-                        labels[i], dtype=torch.float32
-                    ).to(device)
+                        edge_weight = torch.tensor(snap.edge_weights, dtype=torch.float32).to(
+                            device
+                        )
+                    label_tensor = torch.tensor(labels[i], dtype=torch.float32).to(device)
 
                     optimizer.zero_grad()
-                    scores = model.forward(
-                        node_features, edge_index, edge_weight
-                    )  # [N, 1]
+                    scores = model.forward(node_features, edge_index, edge_weight)  # [N, 1]
                     scores = scores.squeeze(-1)  # [N]
                     loss = _listMLE_loss(scores, label_tensor)
                     loss.backward()
@@ -588,9 +572,7 @@ class GraphRanker:
                     batch_losses.append(float(loss.item()))
 
                 if batch_losses:
-                    epoch_loss = float(
-                        sum(batch_losses) / len(batch_losses)
-                    )
+                    epoch_loss = float(sum(batch_losses) / len(batch_losses))
                 else:
                     epoch_loss = float("nan")
                 epoch_losses.append(epoch_loss)
@@ -660,7 +642,7 @@ class GraphRanker:
         Returns:
             list of 1-based ranks aligned with ``labels``.
         """
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
 
         arr = np.asarray(labels, dtype=np.float64)
         # Rank descending: best (highest) gets rank 1.
@@ -685,13 +667,10 @@ class GraphRanker:
             A list of floats (one score per node, aligned with
             ``self.node_ids``).
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
         if snapshot.n_nodes != len(self.node_ids):
             raise ValueError(
                 f"snapshot.n_nodes ({snapshot.n_nodes}) must equal "
@@ -700,17 +679,11 @@ class GraphRanker:
 
         model = self.model_
         model.eval()
-        node_features = torch.tensor(
-            snapshot.node_features, dtype=torch.float32
-        ).to(device)
-        edge_index = torch.tensor(
-            snapshot.edge_index, dtype=torch.long
-        ).to(device)
+        node_features = torch.tensor(snapshot.node_features, dtype=torch.float32).to(device)
+        edge_index = torch.tensor(snapshot.edge_index, dtype=torch.long).to(device)
         edge_weight = None
         if snapshot.edge_weights is not None:
-            edge_weight = torch.tensor(
-                snapshot.edge_weights, dtype=torch.float32
-            ).to(device)
+            edge_weight = torch.tensor(snapshot.edge_weights, dtype=torch.float32).to(device)
 
         with torch.no_grad():
             scores = model.forward(node_features, edge_index, edge_weight)
@@ -731,7 +704,7 @@ class GraphRanker:
         Returns:
             A list of node ids sorted by predicted score (best first).
         """
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
 
         scores = self._predict_scores(snapshot, device)
         arr = np.asarray(scores, dtype=np.float64)
@@ -771,12 +744,10 @@ class GraphRanker:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -792,7 +763,7 @@ class GraphRanker:
         Returns:
             The loaded :class:`GraphRankerModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = GraphRankerModel(
             node_feature_dim=self.config.node_feature_dim,
@@ -861,10 +832,7 @@ class GraphRanker:
                 "labels, and horizons must all have the same length"
             )
         if weights is not None and len(weights) != n_folds:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="graph_ranker", output_dir=output_dir)
@@ -927,8 +895,8 @@ def compute_edge_attribution(
         A dict mapping edge type -> importance score (mean absolute
         change in node scores when that edge type is masked).
     """
-    import torch  # noqa: WPS433 lazy import
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
+    import torch
 
     if len(edge_types) != snapshot.n_edges:
         raise ValueError(
@@ -944,23 +912,17 @@ def compute_edge_attribution(
             device = torch.device("cpu")
 
     model.eval()
-    node_features = torch.tensor(
-        snapshot.node_features, dtype=torch.float32
-    ).to(device)
-    edge_index = torch.tensor(
-        snapshot.edge_index, dtype=torch.long
-    ).to(device)
+    node_features = torch.tensor(snapshot.node_features, dtype=torch.float32).to(device)
+    edge_index = torch.tensor(snapshot.edge_index, dtype=torch.long).to(device)
     edge_weight = None
     if snapshot.edge_weights is not None:
-        edge_weight = torch.tensor(
-            snapshot.edge_weights, dtype=torch.float32
-        ).to(device)
+        edge_weight = torch.tensor(snapshot.edge_weights, dtype=torch.float32).to(device)
 
     # Baseline scores (all edges).
     with torch.no_grad():
-        base_scores = model.forward(
-            node_features, edge_index, edge_weight
-        ).squeeze(-1).cpu().numpy()
+        base_scores = (
+            model.forward(node_features, edge_index, edge_weight).squeeze(-1).cpu().numpy()
+        )
 
     unique_types = sorted(set(edge_types))
     attribution: dict[str, float] = {}
@@ -969,25 +931,26 @@ def compute_edge_attribution(
         keep_mask = [t != etype for t in edge_types]
         keep_indices = [i for i, keep in enumerate(keep_mask) if keep]
         if keep_indices:
-            masked_edge_index = edge_index[:, torch.tensor(
-                keep_indices, dtype=torch.long, device=device
-            )]
+            masked_edge_index = edge_index[
+                :, torch.tensor(keep_indices, dtype=torch.long, device=device)
+            ]
             masked_edge_weight = None
             if edge_weight is not None:
-                masked_edge_weight = edge_weight[torch.tensor(
-                    keep_indices, dtype=torch.long, device=device
-                )]
+                masked_edge_weight = edge_weight[
+                    torch.tensor(keep_indices, dtype=torch.long, device=device)
+                ]
         else:
             # All edges masked — use an empty edge index [2, 0].
-            masked_edge_index = torch.zeros(
-                (2, 0), dtype=torch.long, device=device
-            )
+            masked_edge_index = torch.zeros((2, 0), dtype=torch.long, device=device)
             masked_edge_weight = None
 
         with torch.no_grad():
-            masked_scores = model.forward(
-                node_features, masked_edge_index, masked_edge_weight
-            ).squeeze(-1).cpu().numpy()
+            masked_scores = (
+                model.forward(node_features, masked_edge_index, masked_edge_weight)
+                .squeeze(-1)
+                .cpu()
+                .numpy()
+            )
 
         change = float(np.mean(np.abs(masked_scores - base_scores)))
         attribution[etype] = change
@@ -1096,7 +1059,7 @@ def compute_graph_rank_metrics(
             ``predictions`` does not contain exactly the same node ids
             as ``node_ids``.
     """
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
 
     if len(actual_ranks) != len(node_ids):
         raise ValueError(
@@ -1105,8 +1068,7 @@ def compute_graph_rank_metrics(
         )
     if len(predictions) != len(node_ids):
         raise ValueError(
-            f"predictions length ({len(predictions)}) must equal "
-            f"node_ids length ({len(node_ids)})"
+            f"predictions length ({len(predictions)}) must equal node_ids length ({len(node_ids)})"
         )
     pred_set = set(predictions)
     node_set = set(node_ids)
@@ -1157,9 +1119,7 @@ def compute_graph_rank_metrics(
     # --- Kendall's tau ---
     # Kendall's tau between the predicted ordering and the ideal
     # (actual-rank) ordering.
-    predicted_ranks = np.array(
-        [rank_map[nid] for nid in predictions], dtype=np.float64
-    )
+    predicted_ranks = np.array([rank_map[nid] for nid in predictions], dtype=np.float64)
     # The ideal ordering is the actual ranks in ascending order.
     ideal_ordering = np.sort(predicted_ranks)
     kendall_tau = _kendall_tau(predicted_ranks, ideal_ordering)
@@ -1184,7 +1144,7 @@ def _kendall_tau(a: Any, b: Any) -> float:
     Returns:
         Kendall's tau-b correlation in [-1, 1].
     """
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
 
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
@@ -1193,7 +1153,7 @@ def _kendall_tau(a: Any, b: Any) -> float:
         return 0.0
 
     try:
-        from scipy.stats import kendalltau  # noqa: WPS433 lazy import
+        from scipy.stats import kendalltau
 
         tau, _p = kendalltau(a, b)
         if tau is None or np.isnan(tau):
@@ -1303,13 +1263,13 @@ def register_graph_ranker_family() -> dict[str, Any]:
 
 
 __all__ = [
-    "GraphRankerConfig",
-    "GraphRankerResult",
-    "GraphRankerModel",
     "GraphRanker",
+    "GraphRankerConfig",
+    "GraphRankerModel",
+    "GraphRankerResult",
     "compute_edge_attribution",
-    "validate_edge_availability",
     "compute_graph_rank_metrics",
-    "validate_promotion_eligibility",
     "register_graph_ranker_family",
+    "validate_edge_availability",
+    "validate_promotion_eligibility",
 ]

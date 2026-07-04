@@ -36,7 +36,6 @@ from typing import Any
 
 from quant_foundry.modules.features.per_event_type import EVENT_TYPES
 from quant_foundry.modules.registry import (
-    FeatureComputer,
     MediaItem,
     ModuleInfo,
     SentimentResult,
@@ -207,10 +206,7 @@ class EngagementWeightedFeatures:
                     continue
 
                 window_start = dt - self.lookback_ns
-                window_items = [
-                    i for i in sym_items
-                    if window_start <= i.available_at_ns <= dt
-                ]
+                window_items = [i for i in sym_items if window_start <= i.available_at_ns <= dt]
 
                 features: dict[str, float] = {}
                 # Per-event-type engagement-weighted mean sentiment
@@ -242,4 +238,4 @@ class EngagementWeightedFeatures:
         return result
 
 
-__all__ = ["EngagementWeightedFeatures", "DEFAULT_EVENT_TYPES"]
+__all__ = ["DEFAULT_EVENT_TYPES", "EngagementWeightedFeatures"]

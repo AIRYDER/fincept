@@ -45,8 +45,7 @@ def _resolve_api_key(api_key: str | None) -> str:
     key = api_key or os.environ.get(_FRED_KEY_ENV, "")
     if not key:
         raise ValueError(
-            f"FRED API key not provided; pass api_key= or set "
-            f"{_FRED_KEY_ENV}",
+            f"FRED API key not provided; pass api_key= or set {_FRED_KEY_ENV}",
         )
     return key
 
@@ -118,8 +117,7 @@ async def fetch_fred_series(
 
     if not rows:
         raise ValueError(
-            f"no observations returned from FRED for series {series_ids} "
-            f"in [{start}, {end}]",
+            f"no observations returned from FRED for series {series_ids} in [{start}, {end}]",
         )
 
     tmp_dir = pathlib.Path(tempfile.mkdtemp(prefix="fred_macro_"))

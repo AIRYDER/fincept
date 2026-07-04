@@ -10,9 +10,9 @@ This script demonstrates the full training pipeline:
 Usage:
     uv run python scripts/run_local_training.py
 """
+
 from __future__ import annotations
 
-import json
 import pathlib
 import sys
 import time
@@ -72,9 +72,9 @@ def main() -> int:
     print("Starting real LightGBM training run")
     print(f"  Dataset:  {dataset_parquet.name}")
     print(f"  Job ID:   {job_id}")
-    print(f"  Model:    lightgbm (3-fold walk-forward)")
-    print(f"  Seed:     42")
-    print(f"  Deadline: 10 minutes")
+    print("  Model:    lightgbm (3-fold walk-forward)")
+    print("  Seed:     42")
+    print("  Deadline: 10 minutes")
     print("=" * 60)
 
     start_ns = time.time_ns()
@@ -105,7 +105,7 @@ def main() -> int:
     print(f"\n{'=' * 60}")
     print(f"TRAINING COMPLETE ({elapsed_s:.1f}s)")
     print(f"{'=' * 60}")
-    print(f"\nArtifact:")
+    print("\nArtifact:")
     print(f"  artifact_id:    {artifact.artifact_id}")
     print(f"  sha256:         {artifact.sha256[:16]}...")
     print(f"  size_bytes:     {artifact.size_bytes:,}")
@@ -114,13 +114,13 @@ def main() -> int:
     print(f"  label_schema:   {artifact.label_schema_hash[:16]}...")
     print(f"  code_git_sha:   {artifact.code_git_sha or 'n/a'}")
 
-    print(f"\nDossier:")
+    print("\nDossier:")
     print(f"  model_id:       {dossier.model_id}")
     print(f"  authority:      {dossier.authority}")
     print(f"  dataset_ref:    {dossier.dataset_manifest_id[:60]}...")
 
     metrics = dossier.training_metrics
-    print(f"\nMetrics:")
+    print("\nMetrics:")
     print(f"  accuracy:       {metrics.get('accuracy', 'n/a')}")
     print(f"  logloss:        {metrics.get('logloss', 'n/a')}")
     print(f"  brier_score:    {dossier.metadata.get('brier_score', 'n/a')}")
@@ -130,7 +130,7 @@ def main() -> int:
     print(f"  pbo:            {dossier.pbo}")
     print(f"  deflated_sharpe:{dossier.deflated_sharpe}")
 
-    print(f"\nOutput files:")
+    print("\nOutput files:")
     print(f"  {artifact_path}")
     print(f"  {dossier_path}")
     print(f"  {ref_path}")

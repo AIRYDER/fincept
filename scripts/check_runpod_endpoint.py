@@ -1,8 +1,10 @@
 """Check RunPod endpoint configuration."""
-import httpx
+
 import json
 import os
 import sys
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = sys.argv[1] if len(sys.argv) > 1 else os.environ["RUNPOD_ENDPOINT_ID"]
@@ -41,7 +43,7 @@ r = httpx.post(
 )
 data = r.json()
 ep = data["data"]["myself"]["endpoint"]
-for e in (ep.get("env") or []):
+for e in ep.get("env") or []:
     if "SECRET" in e.get("key", ""):
         e["value"] = "***REDACTED***"
 print(json.dumps(ep, indent=2))

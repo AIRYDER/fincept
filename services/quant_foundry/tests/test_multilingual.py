@@ -26,57 +26,60 @@ def test_detect_language_english() -> None:
     """English text → 'en'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "The company beat earnings expectations and the stock surged."
-    ) == "en"
+    assert detect_language("The company beat earnings expectations and the stock surged.") == "en"
 
 
 def test_detect_language_chinese() -> None:
     """Chinese text → 'zh'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "公司公布财报，利润大幅增长，股价飙升。"
-    ) == "zh"
+    assert detect_language("公司公布财报，利润大幅增长，股价飙升。") == "zh"
 
 
 def test_detect_language_japanese() -> None:
     """Japanese text → 'ja'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "企業が決算を発表し、利益が大幅に増加、株価が急騰した。"
-    ) == "ja"
+    assert detect_language("企業が決算を発表し、利益が大幅に増加、株価が急騰した。") == "ja"
 
 
 def test_detect_language_french() -> None:
     """French text → 'fr'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "L'entreprise a publié des bénéfices record et l'action a fortement "
-        "progressé sur les marchés ce matin."
-    ) == "fr"
+    assert (
+        detect_language(
+            "L'entreprise a publié des bénéfices record et l'action a fortement "
+            "progressé sur les marchés ce matin."
+        )
+        == "fr"
+    )
 
 
 def test_detect_language_german() -> None:
     """German text → 'de'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "Das Unternehmen hat einen Rekordgewinn veröffentlicht und die Aktie "
-        "ist stark gestiegen auf dem Markt heute Morgen."
-    ) == "de"
+    assert (
+        detect_language(
+            "Das Unternehmen hat einen Rekordgewinn veröffentlicht und die Aktie "
+            "ist stark gestiegen auf dem Markt heute Morgen."
+        )
+        == "de"
+    )
 
 
 def test_detect_language_spanish() -> None:
     """Spanish text → 'es'."""
     from quant_foundry.modules.sentiment.language import detect_language
 
-    assert detect_language(
-        "La empresa publicó beneficios récord y las acciones subieron "
-        "fuertemente en el mercado esta mañana."
-    ) == "es"
+    assert (
+        detect_language(
+            "La empresa publicó beneficios récord y las acciones subieron "
+            "fuertemente en el mercado esta mañana."
+        )
+        == "es"
+    )
 
 
 def test_detect_language_default() -> None:
@@ -429,8 +432,9 @@ def test_finbert_english_uses_finbert_path() -> None:
     from quant_foundry.modules.sentiment.finbert import FinBERTSentiment
 
     try:
-        import transformers  # noqa: F401
         import torch  # noqa: F401
+        import transformers  # noqa: F401
+
         pytest.skip("transformers+torch installed — model load test requires GPU")
     except ImportError:
         pass

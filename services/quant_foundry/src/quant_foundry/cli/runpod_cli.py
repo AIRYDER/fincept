@@ -41,15 +41,14 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from quant_foundry.dataset_manifest import (
     DatasetRegistry,
-    DatasetRegistryEntry,
     ReadinessLevel,
-    RegistryStatus,
     SourceReceipt,
     TrainingMode,
     UploadReceipt,
@@ -57,11 +56,9 @@ from quant_foundry.dataset_manifest import (
     _is_registry_eligible_id,
 )
 from quant_foundry.job_ledger import (
-    JobLedgerRecord,
     JobLedgerState,
     TrainingJobLedger,
 )
-
 
 # ---------------------------------------------------------------------------
 # Dispatch protocol (mockable remote surface)
@@ -85,8 +82,7 @@ class DispatchFn(Protocol):
         job_id: str,
         request_payload: dict[str, Any],
         budget_cents: int,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 def _default_dispatch_fn(
@@ -275,8 +271,7 @@ _COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         command="train verify",
         description=(
-            "Verify an artifact for a completed job. Local operation — "
-            "artifact verification."
+            "Verify an artifact for a completed job. Local operation — artifact verification."
         ),
         requires_registered_dataset=False,
         trains_remotely=False,
@@ -285,8 +280,7 @@ _COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         command="train cost",
         description=(
-            "Show a cost estimate for a job. Local operation — cost "
-            "report from the job ledger."
+            "Show a cost estimate for a job. Local operation — cost report from the job ledger."
         ),
         requires_registered_dataset=False,
         trains_remotely=False,
@@ -317,13 +311,9 @@ def list_commands(config: CLIConfig | None = None) -> list[CommandSpec]:
     specs: list[CommandSpec] = []
     for spec in _COMMAND_SPECS:
         if spec.command == "train canary":
-            specs.append(
-                spec.model_copy(update={"budget_cap": config.canary_budget_usd})
-            )
+            specs.append(spec.model_copy(update={"budget_cap": config.canary_budget_usd}))
         elif spec.command == "train production":
-            specs.append(
-                spec.model_copy(update={"budget_cap": config.default_budget_usd})
-            )
+            specs.append(spec.model_copy(update={"budget_cap": config.default_budget_usd}))
         else:
             specs.append(spec)
     return specs
@@ -349,23 +339,15 @@ def render_help(config: CLIConfig | None = None) -> str:
     for spec in list_commands(config):
         remote_tag = "remote" if spec.trains_remotely else "local"
         budget_tag = (
-            f"  [budget cap: ${spec.budget_cap:.2f}]"
-            if spec.budget_cap is not None
-            else ""
+            f"  [budget cap: ${spec.budget_cap:.2f}]" if spec.budget_cap is not None else ""
         )
-        reg_tag = (
-            "  [requires registered dataset]"
-            if spec.requires_registered_dataset
-            else ""
-        )
+        reg_tag = "  [requires registered dataset]" if spec.requires_registered_dataset else ""
         lines.append(f"  {spec.command:<20} ({remote_tag}){budget_tag}{reg_tag}")
         lines.append(f"      {spec.description}")
     lines.append("")
     lines.append("Safety invariants:")
     lines.append("  - No command trains locally (all training is remote).")
-    lines.append(
-        "  - Production/canary train commands require a registered dataset_id"
-    )
+    lines.append("  - Production/canary train commands require a registered dataset_id")
     lines.append("    (fail-closed if a raw CSV path is provided).")
     lines.append("  - Preflight checks run before dispatch; failures never")
     lines.append("    contact the remote worker.")
@@ -396,9 +378,7 @@ _REQUIRED_ARGS: dict[str, tuple[str, ...]] = {
 }
 
 # Commands that require a registered dataset (fail-closed on raw CSV).
-_REQUIRES_REGISTERED: frozenset[str] = frozenset(
-    {"train canary", "train production"}
-)
+_REQUIRES_REGISTERED: frozenset[str] = frozenset({"train canary", "train production"})
 
 
 def _looks_like_raw_csv(value: str) -> bool:
@@ -453,9 +433,7 @@ def validate_preflight(command: str, args: dict, config: CLIConfig) -> None:
         if val is None or (isinstance(val, str) and not val.strip()):
             missing.append(key)
     if missing:
-        raise ValueError(
-            f"command {command!r} missing required args: {missing}"
-        )
+        raise ValueError(f"command {command!r} missing required args: {missing}")
 
     # Fail-closed: train commands require a registered dataset id, not a
     # raw CSV path.
@@ -463,8 +441,7 @@ def validate_preflight(command: str, args: dict, config: CLIConfig) -> None:
         dataset_id = args.get("dataset_id", "")
         if not isinstance(dataset_id, str) or not dataset_id.strip():
             raise ValueError(
-                f"command {command!r} requires a dataset_id "
-                "(got empty/missing dataset_id)"
+                f"command {command!r} requires a dataset_id (got empty/missing dataset_id)"
             )
         if _looks_like_raw_csv(dataset_id):
             raise ValueError(
@@ -612,8 +589,8 @@ class RunPodCLI:
     ) -> None:
         self.config: CLIConfig = config
         self.registry: DatasetRegistry = registry if registry is not None else DatasetRegistry()
-        self.ledger: TrainingJobLedger = ledger if ledger is not None else TrainingJobLedger(
-            base_dir=config.receipt_dir
+        self.ledger: TrainingJobLedger = (
+            ledger if ledger is not None else TrainingJobLedger(base_dir=config.receipt_dir)
         )
         self._dispatch_fn: Callable[..., dict[str, Any]] = (
             dispatch_fn if dispatch_fn is not None else _default_dispatch_fn
@@ -662,11 +639,9 @@ class RunPodCLI:
             result: CommandResult = handler(self, args)
             # Fill in duration if the handler left it at 0.
             if result.duration_seconds == 0.0:
-                result = result.model_copy(
-                    update={"duration_seconds": time.monotonic() - start}
-                )
+                result = result.model_copy(update={"duration_seconds": time.monotonic() - start})
             return result
-        except Exception as exc:  # noqa: BLE001 — CLI must not crash caller
+        except Exception as exc:
             return CommandResult(
                 command=command,
                 success=False,
@@ -696,8 +671,7 @@ class RunPodCLI:
         source_receipts: tuple[SourceReceipt, ...] = ()
         if source_receipts_raw:
             source_receipts = tuple(
-                SourceReceipt(**sr) if isinstance(sr, dict) else sr
-                for sr in source_receipts_raw
+                SourceReceipt(**sr) if isinstance(sr, dict) else sr for sr in source_receipts_raw
             )
         entry = self.registry.register(
             dataset_id=dataset_id,
@@ -734,8 +708,7 @@ class RunPodCLI:
         # Verify the dataset is registered (fail-closed).
         if not self.registry.is_registered(dataset_id):
             raise ValueError(
-                f"dataset {dataset_id!r} is not registered "
-                "(upload requires a registered dataset)"
+                f"dataset {dataset_id!r} is not registered (upload requires a registered dataset)"
             )
         entry = self.registry.inspect(dataset_id)
         # Validate manifest_uri / data_uri consistency with the registry.
@@ -926,19 +899,13 @@ class RunPodCLI:
             return CommandResult(
                 command="train verify",
                 success=True,
-                message=(
-                    f"artifact verified for job {job_id!r}: "
-                    f"artifact_id={rec.artifact_id}"
-                ),
+                message=(f"artifact verified for job {job_id!r}: artifact_id={rec.artifact_id}"),
                 job_id=job_id,
             )
         return CommandResult(
             command="train verify",
             success=False,
-            message=(
-                f"job {job_id!r} is not artifact-verified "
-                f"(current state: {rec.state.value})"
-            ),
+            message=(f"job {job_id!r} is not artifact-verified (current state: {rec.state.value})"),
             job_id=job_id,
             error=f"not verified (state={rec.state.value})",
         )

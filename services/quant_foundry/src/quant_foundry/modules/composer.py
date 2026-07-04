@@ -45,19 +45,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from quant_foundry.dataset_manifest import ReadinessLevel
-from quant_foundry.modules.registry import (
-    FeatureRowData,
-    MediaItem,
-    ModuleRegistry,
-    PriceBar,
-    SentimentResult,
-)
-
-
 # Reuse the existing feature-lake + quality report infrastructure.
 from quant_foundry.data_ingestion.equities import IngestionResult
 from quant_foundry.data_ingestion.quality_report import compute_quality_report
+from quant_foundry.dataset_manifest import ReadinessLevel
 from quant_foundry.feature_availability import FeatureAvailabilityReport
 from quant_foundry.feature_lake import (
     FeatureLakeBuilder,
@@ -65,6 +56,10 @@ from quant_foundry.feature_lake import (
     FeatureValue,
     UniverseEntry,
     export_receipt,
+)
+from quant_foundry.modules.registry import (
+    FeatureRowData,
+    ModuleRegistry,
 )
 
 #: Nanoseconds per day — used for the β-estimation history buffer in
@@ -512,11 +507,13 @@ class DatasetComposer:
             for dt, feats in dt_map.items():
                 if per_year_mod is not None:
                     feats = {**feats, **per_year_mod.annotate_row(dt)}
-                rows.append(FeatureRowData(
-                    symbol=sym,
-                    decision_time=dt,
-                    features=feats,
-                ))
+                rows.append(
+                    FeatureRowData(
+                        symbol=sym,
+                        decision_time=dt,
+                        features=feats,
+                    )
+                )
 
         if per_year_mod is not None and rows:
             sample_annot = per_year_mod.annotate_row(rows[0].decision_time)
@@ -648,15 +645,15 @@ class DatasetComposer:
 
         # Feature names are every column except the non-feature ones.
         non_feature_cols = {"decision_time", "symbol", "label"}
-        existing_feature_names = [
-            c for c in existing_df.columns if c not in non_feature_cols
-        ]
+        existing_feature_names = [c for c in existing_df.columns if c not in non_feature_cols]
 
         # Existing (symbol, decision_time) pairs for deduplication.
-        existing_pairs: set[tuple[str, int]] = set(zip(
-            existing_df["symbol"].to_list(),
-            [int(v) for v in existing_df["decision_time"].to_list()],
-        ))
+        existing_pairs: set[tuple[str, int]] = set(
+            zip(
+                existing_df["symbol"].to_list(),
+                [int(v) for v in existing_df["decision_time"].to_list()],
+            )
+        )
         # Max decision_time in the existing dataset (informational + state).
         max_existing_dt = int(existing_df["decision_time"].max())
 
@@ -672,10 +669,7 @@ class DatasetComposer:
 
         # Deduplicate: drop new rows whose (symbol, decision_time) already
         # exists in the existing parquet.
-        new_rows = [
-            r for r in new_rows
-            if (r.symbol, r.decision_time) not in existing_pairs
-        ]
+        new_rows = [r for r in new_rows if (r.symbol, r.decision_time) not in existing_pairs]
 
         # Merge feature-name lists (preserve existing order, append new).
         all_feature_names = list(existing_feature_names)
@@ -851,8 +845,7 @@ class DatasetComposer:
         """
         # Build universe entries
         universe = tuple(
-            UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-            for s in sorted(symbols)
+            UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in sorted(symbols)
         )
 
         # Build FeatureRow objects
@@ -863,13 +856,15 @@ class DatasetComposer:
                 FeatureValue(name=name, value=float(row.features.get(name, 0.0)), observed_at=dt)
                 for name in feature_names
             )
-            feature_rows.append(FeatureRow(
-                symbol=row.symbol,
-                event_ts=dt,
-                decision_time=dt,
-                features=features,
-                label_horizon_ns=label_horizon_ns,
-            ))
+            feature_rows.append(
+                FeatureRow(
+                    symbol=row.symbol,
+                    event_ts=dt,
+                    decision_time=dt,
+                    features=features,
+                    label_horizon_ns=label_horizon_ns,
+                )
+            )
 
         # --- T-3.4: PIT metadata + validation ---------------------------
         # The build-level decision_time (as-of cutoff) is the max
@@ -906,7 +901,7 @@ class DatasetComposer:
             ":".join(sorted(feature_names)).encode("utf-8"),
         ).hexdigest()
         l_hash = hashlib.sha256(
-            f"abnormal_return_multi_horizon".encode("utf-8"),
+            b"abnormal_return_multi_horizon",
         ).hexdigest()
 
         builder = FeatureLakeBuilder(
@@ -921,12 +916,15 @@ class DatasetComposer:
         )
         manifest = builder.build_manifest()
         availability = FeatureAvailabilityReport.from_rows(
-            tuple(feature_rows), tuple(feature_names),
+            tuple(feature_rows),
+            tuple(feature_names),
         )
 
         # Quality report (parquet already written)
         quality_report = compute_quality_report(
-            parquet_path, manifest, feature_names=tuple(feature_names),
+            parquet_path,
+            manifest,
+            feature_names=tuple(feature_names),
         )
         quality_path = output_dir / f"{dataset_id}.quality.json"
         quality_report.write(quality_path)
@@ -947,10 +945,12 @@ class DatasetComposer:
         # The maximum readiness level this dataset may be promoted to.
         # Fixture-mode datasets are capped at L2 (acceptance criterion 5).
         body["max_readiness_level"] = _max_readiness_for_fixture(
-            self.fixture_mode, ReadinessLevel.L4_PRODUCTION_READY,
+            self.fixture_mode,
+            ReadinessLevel.L4_PRODUCTION_READY,
         ).value
         manifest_path.write_text(
-            json.dumps(body, sort_keys=True, indent=2), encoding="utf-8",
+            json.dumps(body, sort_keys=True, indent=2),
+            encoding="utf-8",
         )
         receipt = export_receipt(manifest, availability, output_dir)
 
@@ -1035,9 +1035,7 @@ class DatasetComposer:
         }
         for name in feature_names:
             columns[name] = [float(r.features.get(name, 0.0)) for r in rows]
-        columns["label"] = [
-            float(r.label) if r.label is not None else 0.0 for r in rows
-        ]
+        columns["label"] = [float(r.label) if r.label is not None else 0.0 for r in rows]
         return pl.DataFrame(columns).sort("decision_time")
 
     def _rows_from_df(
@@ -1053,18 +1051,16 @@ class DatasetComposer:
         feat_cols = {name: df[name].to_list() for name in feature_names}
         rows: list[FeatureRowData] = []
         for i in range(n):
-            feats = {
-                name: float(feat_cols[name][i])
-                for name in feature_names
-                if name in feat_cols
-            }
+            feats = {name: float(feat_cols[name][i]) for name in feature_names if name in feat_cols}
             label_val = label_col[i]
-            rows.append(FeatureRowData(
-                symbol=sym_col[i],
-                decision_time=dt_col[i],
-                features=feats,
-                label=float(label_val) if label_val is not None else None,
-            ))
+            rows.append(
+                FeatureRowData(
+                    symbol=sym_col[i],
+                    decision_time=dt_col[i],
+                    features=feats,
+                    label=float(label_val) if label_val is not None else None,
+                )
+            )
         return rows
 
 
@@ -1073,7 +1069,7 @@ __all__ = [
     "IncrementalState",
     "PITMetadata",
     "PITMetadataError",
-    "save_incremental_state",
     "load_incremental_state",
+    "save_incremental_state",
     "validate_pit_metadata",
 ]

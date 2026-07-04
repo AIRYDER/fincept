@@ -29,10 +29,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
 
 import pytest
-
 from quant_foundry.dataset_manifest import FoldSpec, FoldWindow, compute_fold_hash
 from quant_foundry.fold_consumer import FoldAssignment, consume_manifest_folds
 from quant_foundry.oof_artifacts import (
@@ -47,7 +45,6 @@ from quant_foundry.oof_artifacts import (
     validate_oof_artifact,
     write_oof_artifact,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -199,8 +196,14 @@ def test_oof_row_basic_construction():
 def test_oof_row_default_weight():
     """OOFRow.weight defaults to 1.0."""
     row = OOFRow(
-        row_id="r1", fold_id=0, symbol="AAPL", timestamp="2024-01-01T00:00:00Z",
-        label=1.0, prediction=0.5, horizon=5, model_family="lightgbm",
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-01-01T00:00:00Z",
+        label=1.0,
+        prediction=0.5,
+        horizon=5,
+        model_family="lightgbm",
     )
     assert row.weight == 1.0
 
@@ -216,8 +219,14 @@ def test_oof_row_extra_forbid():
     """OOFRow must reject unknown fields."""
     with pytest.raises(Exception):
         OOFRow(
-            row_id="r1", fold_id=0, symbol="AAPL", timestamp="2024-01-01T00:00:00Z",
-            label=1.0, prediction=0.5, horizon=5, model_family="lightgbm",
+            row_id="r1",
+            fold_id=0,
+            symbol="AAPL",
+            timestamp="2024-01-01T00:00:00Z",
+            label=1.0,
+            prediction=0.5,
+            horizon=5,
+            model_family="lightgbm",
             bogus="no",  # type: ignore[call-arg]
         )
 
@@ -285,9 +294,13 @@ def test_oof_artifact_basic_construction():
     """OOFArtifact constructs with matching row_count."""
     rows = [_row(row_id="r1"), _row(row_id="r2", fold_id=1)]
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-        created_at="2024-01-01T00:00:00Z", row_count=2,
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash="x" * 64,
+        created_at="2024-01-01T00:00:00Z",
+        row_count=2,
     )
     assert art.row_count == 2
     assert art.fold_count == 2
@@ -298,9 +311,13 @@ def test_oof_artifact_frozen():
     """OOFArtifact must be frozen."""
     rows = [_row()]
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=1,
-        artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-        created_at="2024-01-01T00:00:00Z", row_count=1,
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=1,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash="x" * 64,
+        created_at="2024-01-01T00:00:00Z",
+        row_count=1,
     )
     with pytest.raises(Exception):
         art.model_family = "catboost"  # type: ignore[misc]
@@ -310,9 +327,13 @@ def test_oof_artifact_extra_forbid():
     """OOFArtifact must reject unknown fields."""
     with pytest.raises(Exception):
         OOFArtifact(
-            rows=[_row()], model_family="lightgbm", fold_count=1,
-            artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-            created_at="2024-01-01T00:00:00Z", row_count=1,
+            rows=[_row()],
+            model_family="lightgbm",
+            fold_count=1,
+            artifact_uri="/tmp/oof.json",
+            artifact_hash="x" * 64,
+            created_at="2024-01-01T00:00:00Z",
+            row_count=1,
             bogus="no",  # type: ignore[call-arg]
         )
 
@@ -321,9 +342,13 @@ def test_oof_artifact_row_count_mismatch_rejected():
     """OOFArtifact must reject row_count != len(rows)."""
     with pytest.raises(Exception):
         OOFArtifact(
-            rows=[_row()], model_family="lightgbm", fold_count=1,
-            artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-            created_at="2024-01-01T00:00:00Z", row_count=2,
+            rows=[_row()],
+            model_family="lightgbm",
+            fold_count=1,
+            artifact_uri="/tmp/oof.json",
+            artifact_hash="x" * 64,
+            created_at="2024-01-01T00:00:00Z",
+            row_count=2,
         )
 
 
@@ -331,9 +356,13 @@ def test_oof_artifact_fold_count_zero_rejected():
     """OOFArtifact must reject fold_count < 1."""
     with pytest.raises(Exception):
         OOFArtifact(
-            rows=[_row()], model_family="lightgbm", fold_count=0,
-            artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-            created_at="2024-01-01T00:00:00Z", row_count=1,
+            rows=[_row()],
+            model_family="lightgbm",
+            fold_count=0,
+            artifact_uri="/tmp/oof.json",
+            artifact_hash="x" * 64,
+            created_at="2024-01-01T00:00:00Z",
+            row_count=1,
         )
 
 
@@ -342,9 +371,13 @@ def test_oof_artifact_model_family_mismatch_rejected():
     rows = [_row(model_family="catboost")]
     with pytest.raises(Exception):
         OOFArtifact(
-            rows=rows, model_family="lightgbm", fold_count=1,
-            artifact_uri="/tmp/oof.json", artifact_hash="x" * 64,
-            created_at="2024-01-01T00:00:00Z", row_count=1,
+            rows=rows,
+            model_family="lightgbm",
+            fold_count=1,
+            artifact_uri="/tmp/oof.json",
+            artifact_hash="x" * 64,
+            created_at="2024-01-01T00:00:00Z",
+            row_count=1,
         )
 
 
@@ -476,7 +509,7 @@ def test_read_oof_artifact_hash_mismatch(tmp_path):
     path = str(tmp_path / "oof.json")
     written = write_oof_artifact(rows, "lightgbm", path)
     # Tamper with the stored hash.
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         payload = json.load(fh)
     payload["artifact_hash"] = "0" * 64
     with open(path, "w", encoding="utf-8") as fh:
@@ -490,7 +523,7 @@ def test_read_oof_artifact_tampered_prediction(tmp_path):
     rows = [_row(row_id="r1", prediction=0.5)]
     path = str(tmp_path / "oof.json")
     write_oof_artifact(rows, "lightgbm", path)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         payload = json.load(fh)
     payload["rows"][0]["prediction"] = 0.99
     with open(path, "w", encoding="utf-8") as fh:
@@ -509,9 +542,13 @@ def test_validate_oof_artifact_valid():
     assignment = _basic_assignment()
     rows = _valid_oof_rows_for_assignment(assignment)
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     assert validate_oof_artifact(art, assignment) is True
 
@@ -522,9 +559,13 @@ def test_validate_oof_artifact_row_count_mismatch():
     # Only include one of the two validation rows.
     rows = _valid_oof_rows_for_assignment(assignment)[:1]
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=1,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=1,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     with pytest.raises(ValueError, match="row_count"):
         validate_oof_artifact(art, assignment)
@@ -555,9 +596,13 @@ def test_validate_oof_artifact_training_fold_leak():
     # Replace the first validation row with the train-row leak (same count).
     rows[0] = leak_row
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     with pytest.raises(ValueError, match="TRAIN row|leak|does not exist"):
         validate_oof_artifact(art, assignment)
@@ -569,9 +614,13 @@ def test_validate_oof_artifact_unknown_row_id():
     rows = _valid_oof_rows_for_assignment(assignment)
     rows[0] = _row(row_id="UNKNOWN_2024-04-15_5", fold_id=0)
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     with pytest.raises(ValueError, match="does not exist"):
         validate_oof_artifact(art, assignment)
@@ -584,9 +633,13 @@ def test_validate_oof_artifact_duplicate_row_ids():
     # Duplicate the first row (keep count the same by dropping the last).
     rows = [rows[0], rows[0]]
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=1,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=1,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     with pytest.raises(ValueError, match="duplicate row_id"):
         validate_oof_artifact(art, assignment)
@@ -599,9 +652,13 @@ def test_validate_oof_artifact_fold_id_mismatch():
     # Flip the fold_id of the first row to the wrong fold.
     rows[0] = rows[0].model_copy(update={"fold_id": 1 if rows[0].fold_id == 0 else 0})
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     with pytest.raises(ValueError, match="does not match|leak"):
         validate_oof_artifact(art, assignment)
@@ -618,9 +675,13 @@ def test_validate_oof_artifact_single_fold():
     assignment = consume_manifest_folds(spec, df)
     rows = _valid_oof_rows_for_assignment(assignment)
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=1,
-        artifact_uri="/tmp/oof.json", artifact_hash=compute_oof_hash(rows),
-        created_at="2024-01-01T00:00:00Z", row_count=len(rows),
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=1,
+        artifact_uri="/tmp/oof.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="2024-01-01T00:00:00Z",
+        row_count=len(rows),
     )
     assert validate_oof_artifact(art, assignment) is True
 
@@ -636,14 +697,22 @@ def test_merge_oof_artifacts_two_families():
     rows_a = _valid_oof_rows_for_assignment(assignment, model_family="lightgbm", prediction=0.1)
     rows_b = _valid_oof_rows_for_assignment(assignment, model_family="catboost", prediction=0.2)
     art_a = OOFArtifact(
-        rows=rows_a, model_family="lightgbm", fold_count=2,
-        artifact_uri="/a.json", artifact_hash=compute_oof_hash(rows_a),
-        created_at="t", row_count=len(rows_a),
+        rows=rows_a,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/a.json",
+        artifact_hash=compute_oof_hash(rows_a),
+        created_at="t",
+        row_count=len(rows_a),
     )
     art_b = OOFArtifact(
-        rows=rows_b, model_family="catboost", fold_count=2,
-        artifact_uri="/b.json", artifact_hash=compute_oof_hash(rows_b),
-        created_at="t", row_count=len(rows_b),
+        rows=rows_b,
+        model_family="catboost",
+        fold_count=2,
+        artifact_uri="/b.json",
+        artifact_hash=compute_oof_hash(rows_b),
+        created_at="t",
+        row_count=len(rows_b),
     )
     merged = merge_oof_artifacts([art_a, art_b])
     assert set(merged.keys()) == {r.row_id for r in rows_a}
@@ -659,11 +728,17 @@ def test_merge_oof_artifacts_three_families():
     arts = []
     for fam, pv in zip(families, preds_vals):
         rows = _valid_oof_rows_for_assignment(assignment, model_family=fam, prediction=pv)
-        arts.append(OOFArtifact(
-            rows=rows, model_family=fam, fold_count=2,
-            artifact_uri=f"/{fam}.json", artifact_hash=compute_oof_hash(rows),
-            created_at="t", row_count=len(rows),
-        ))
+        arts.append(
+            OOFArtifact(
+                rows=rows,
+                model_family=fam,
+                fold_count=2,
+                artifact_uri=f"/{fam}.json",
+                artifact_hash=compute_oof_hash(rows),
+                created_at="t",
+                row_count=len(rows),
+            )
+        )
     merged = merge_oof_artifacts(arts)
     for preds in merged.values():
         assert preds == [0.1, 0.2, 0.3]
@@ -678,17 +753,27 @@ def test_merge_oof_artifacts_empty_list():
 def test_merge_oof_artifacts_mismatched_row_ids():
     """merge fails-closed when artifacts cover different row_ids."""
     rows_a = [_row(row_id="r1"), _row(row_id="r2", fold_id=1)]
-    rows_b = [_row(row_id="r1", model_family="catboost"),
-              _row(row_id="r3", fold_id=1, model_family="catboost")]
+    rows_b = [
+        _row(row_id="r1", model_family="catboost"),
+        _row(row_id="r3", fold_id=1, model_family="catboost"),
+    ]
     art_a = OOFArtifact(
-        rows=rows_a, model_family="lightgbm", fold_count=2,
-        artifact_uri="/a.json", artifact_hash=compute_oof_hash(rows_a),
-        created_at="t", row_count=2,
+        rows=rows_a,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/a.json",
+        artifact_hash=compute_oof_hash(rows_a),
+        created_at="t",
+        row_count=2,
     )
     art_b = OOFArtifact(
-        rows=rows_b, model_family="catboost", fold_count=2,
-        artifact_uri="/b.json", artifact_hash=compute_oof_hash(rows_b),
-        created_at="t", row_count=2,
+        rows=rows_b,
+        model_family="catboost",
+        fold_count=2,
+        artifact_uri="/b.json",
+        artifact_hash=compute_oof_hash(rows_b),
+        created_at="t",
+        row_count=2,
     )
     with pytest.raises(ValueError, match="does not cover the same row_ids"):
         merge_oof_artifacts([art_a, art_b])
@@ -697,17 +782,27 @@ def test_merge_oof_artifacts_mismatched_row_ids():
 def test_merge_oof_artifacts_duplicate_row_ids_in_artifact():
     """merge fails-closed when an artifact has duplicate row_ids."""
     rows_a = [_row(row_id="r1"), _row(row_id="r2", fold_id=1)]
-    rows_b = [_row(row_id="r1", model_family="catboost"),
-              _row(row_id="r1", fold_id=1, model_family="catboost")]
+    rows_b = [
+        _row(row_id="r1", model_family="catboost"),
+        _row(row_id="r1", fold_id=1, model_family="catboost"),
+    ]
     art_a = OOFArtifact(
-        rows=rows_a, model_family="lightgbm", fold_count=2,
-        artifact_uri="/a.json", artifact_hash=compute_oof_hash(rows_a),
-        created_at="t", row_count=2,
+        rows=rows_a,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/a.json",
+        artifact_hash=compute_oof_hash(rows_a),
+        created_at="t",
+        row_count=2,
     )
     art_b = OOFArtifact(
-        rows=rows_b, model_family="catboost", fold_count=2,
-        artifact_uri="/b.json", artifact_hash=compute_oof_hash(rows_b),
-        created_at="t", row_count=2,
+        rows=rows_b,
+        model_family="catboost",
+        fold_count=2,
+        artifact_uri="/b.json",
+        artifact_hash=compute_oof_hash(rows_b),
+        created_at="t",
+        row_count=2,
     )
     with pytest.raises(ValueError, match="duplicate row_ids"):
         merge_oof_artifacts([art_a, art_b])
@@ -717,9 +812,13 @@ def test_merge_oof_artifacts_single_model():
     """merge works with a single model family."""
     rows = [_row(row_id="r1"), _row(row_id="r2", fold_id=1)]
     art = OOFArtifact(
-        rows=rows, model_family="lightgbm", fold_count=2,
-        artifact_uri="/a.json", artifact_hash=compute_oof_hash(rows),
-        created_at="t", row_count=2,
+        rows=rows,
+        model_family="lightgbm",
+        fold_count=2,
+        artifact_uri="/a.json",
+        artifact_hash=compute_oof_hash(rows),
+        created_at="t",
+        row_count=2,
     )
     merged = merge_oof_artifacts([art])
     assert merged["r1"] == [0.55]
@@ -734,12 +833,24 @@ def test_merge_oof_artifacts_single_model():
 def test_oof_writer_flush_writes_artifact(tmp_path):
     """OOFWriter.flush writes a valid artifact to disk."""
     writer = OOFWriter(model_family="lightgbm", output_dir=str(tmp_path))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
-    writer.add_prediction(row_id="r2", fold_id=1, symbol="AAPL",
-                          timestamp="2024-09-15T00:00:00Z",
-                          label=0.0, prediction=0.4, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
+    writer.add_prediction(
+        row_id="r2",
+        fold_id=1,
+        symbol="AAPL",
+        timestamp="2024-09-15T00:00:00Z",
+        label=0.0,
+        prediction=0.4,
+        horizon=5,
+    )
     art = writer.flush()
     assert art.model_family == "lightgbm"
     assert art.row_count == 2
@@ -749,9 +860,15 @@ def test_oof_writer_flush_writes_artifact(tmp_path):
 def test_oof_writer_flush_round_trip(tmp_path):
     """OOFWriter.flush then read_oof_artifact round-trips."""
     writer = OOFWriter(model_family="catboost", output_dir=str(tmp_path))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     art = writer.flush()
     path = os.path.join(str(tmp_path), "oof_catboost.json")
     read = read_oof_artifact(path)
@@ -762,13 +879,25 @@ def test_oof_writer_flush_round_trip(tmp_path):
 def test_oof_writer_duplicate_row_id_rejected(tmp_path):
     """OOFWriter.add_prediction rejects a duplicate row_id."""
     writer = OOFWriter(model_family="lightgbm", output_dir=str(tmp_path))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     with pytest.raises(ValueError, match="duplicate row_id"):
-        writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                              timestamp="2024-04-15T00:00:00Z",
-                              label=1.0, prediction=0.6, horizon=5)
+        writer.add_prediction(
+            row_id="r1",
+            fold_id=0,
+            symbol="AAPL",
+            timestamp="2024-04-15T00:00:00Z",
+            label=1.0,
+            prediction=0.6,
+            horizon=5,
+        )
 
 
 def test_oof_writer_flush_empty_rejected(tmp_path):
@@ -781,9 +910,15 @@ def test_oof_writer_flush_empty_rejected(tmp_path):
 def test_oof_writer_clear(tmp_path):
     """OOFWriter.clear resets internal state."""
     writer = OOFWriter(model_family="lightgbm", output_dir=str(tmp_path))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     writer.clear()
     with pytest.raises(ValueError):
         writer.flush()
@@ -792,14 +927,26 @@ def test_oof_writer_clear(tmp_path):
 def test_oof_writer_clear_allows_reuse(tmp_path):
     """After clear, the same row_id can be added again."""
     writer = OOFWriter(model_family="lightgbm", output_dir=str(tmp_path))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     writer.clear()
     # Should not raise after clear.
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     art = writer.flush()
     assert art.row_count == 1
 
@@ -820,9 +967,15 @@ def test_oof_writer_creates_output_dir(tmp_path):
     """OOFWriter.flush creates the output_dir if it does not exist."""
     out = tmp_path / "newdir"
     writer = OOFWriter(model_family="lightgbm", output_dir=str(out))
-    writer.add_prediction(row_id="r1", fold_id=0, symbol="AAPL",
-                          timestamp="2024-04-15T00:00:00Z",
-                          label=1.0, prediction=0.6, horizon=5)
+    writer.add_prediction(
+        row_id="r1",
+        fold_id=0,
+        symbol="AAPL",
+        timestamp="2024-04-15T00:00:00Z",
+        label=1.0,
+        prediction=0.6,
+        horizon=5,
+    )
     writer.flush()
     assert out.is_dir()
 
@@ -883,11 +1036,17 @@ def test_many_models_merge():
     arts = []
     for fam in families:
         rows = [r.model_copy(update={"model_family": fam}) for r in rows_base]
-        arts.append(OOFArtifact(
-            rows=rows, model_family=fam, fold_count=2,
-            artifact_uri=f"/{fam}.json", artifact_hash=compute_oof_hash(rows),
-            created_at="t", row_count=2,
-        ))
+        arts.append(
+            OOFArtifact(
+                rows=rows,
+                model_family=fam,
+                fold_count=2,
+                artifact_uri=f"/{fam}.json",
+                artifact_hash=compute_oof_hash(rows),
+                created_at="t",
+                row_count=2,
+            )
+        )
     merged = merge_oof_artifacts(arts)
     assert len(merged) == 2
     for preds in merged.values():
@@ -931,10 +1090,8 @@ def test_write_oof_artifact_canonical_json(tmp_path):
     rows = [_row(row_id="r1")]
     path = str(tmp_path / "oof.json")
     write_oof_artifact(rows, "lightgbm", path)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         text = fh.read()
     # Re-parse and re-serialize with sort_keys to confirm determinism.
     payload = json.loads(text)
-    assert json.dumps(payload, sort_keys=True) == json.dumps(
-        json.loads(text), sort_keys=True
-    )
+    assert json.dumps(payload, sort_keys=True) == json.dumps(json.loads(text), sort_keys=True)

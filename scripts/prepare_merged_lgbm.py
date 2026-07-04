@@ -1,7 +1,9 @@
 """Prepare merged dataset for LightGBM training (strip non-numeric cols)."""
+
 import pathlib
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 _INDIR = _REPO / "data" / "datasets" / "merged"
@@ -17,7 +19,9 @@ out["decision_time"] = out["decision_time"].astype(np.int64)
 out["label"] = out["label"].astype(int)
 
 # Reorder: decision_time first, label last
-cols = ["decision_time"] + [c for c in out.columns if c not in ("decision_time", "label")] + ["label"]
+cols = (
+    ["decision_time"] + [c for c in out.columns if c not in ("decision_time", "label")] + ["label"]
+)
 out = out[cols]
 
 print(f"Output: {len(out)} rows, {len(out.columns)} cols")

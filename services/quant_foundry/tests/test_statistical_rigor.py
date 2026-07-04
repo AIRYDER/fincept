@@ -57,10 +57,25 @@ def test_diebold_mariano_a_better() -> None:
     from quant_foundry.modules.benchmark.significance import diebold_mariano_test
 
     # A has tiny errors, B has large errors
-    errors_a = [0.01, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03,
-                0.01, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03]
-    errors_b = [0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7,
-                0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7]
+    errors_a = [
+        0.01,
+        0.02,
+        0.01,
+        0.03,
+        0.02,
+        0.01,
+        0.02,
+        0.03,
+        0.01,
+        0.02,
+        0.01,
+        0.03,
+        0.02,
+        0.01,
+        0.02,
+        0.03,
+    ]
+    errors_b = [0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7, 0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7]
 
     result = diebold_mariano_test(errors_a, errors_b)
     assert result["better_model"] == "a"
@@ -71,10 +86,25 @@ def test_diebold_mariano_b_better() -> None:
     """When errors_b are consistently smaller, better_model should be 'b'."""
     from quant_foundry.modules.benchmark.significance import diebold_mariano_test
 
-    errors_a = [0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7,
-                0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7]
-    errors_b = [0.01, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03,
-                0.01, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03]
+    errors_a = [0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7, 0.5, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7]
+    errors_b = [
+        0.01,
+        0.02,
+        0.01,
+        0.03,
+        0.02,
+        0.01,
+        0.02,
+        0.03,
+        0.01,
+        0.02,
+        0.01,
+        0.03,
+        0.02,
+        0.01,
+        0.02,
+        0.03,
+    ]
 
     result = diebold_mariano_test(errors_a, errors_b)
     assert result["better_model"] == "b"
@@ -110,8 +140,24 @@ def test_bootstrap_sharpe_ci_basic() -> None:
     """Bootstrap CI computes mean, std, lower, upper; lower < upper; CI contains mean."""
     from quant_foundry.modules.benchmark.significance import bootstrap_sharpe_ci
 
-    sharpe_ratios = [1.2, 1.1, 1.3, 1.0, 1.2, 1.15, 1.25, 1.05,
-                     1.2, 1.1, 1.3, 1.0, 1.2, 1.15, 1.25, 1.05]
+    sharpe_ratios = [
+        1.2,
+        1.1,
+        1.3,
+        1.0,
+        1.2,
+        1.15,
+        1.25,
+        1.05,
+        1.2,
+        1.1,
+        1.3,
+        1.0,
+        1.2,
+        1.15,
+        1.25,
+        1.05,
+    ]
 
     result = bootstrap_sharpe_ci(sharpe_ratios, n_bootstrap=1000, seed=42)
 
@@ -132,8 +178,24 @@ def test_bootstrap_sharpe_ci_confidence() -> None:
     """With confidence=0.99, CI should be wider than with confidence=0.90."""
     from quant_foundry.modules.benchmark.significance import bootstrap_sharpe_ci
 
-    sharpe_ratios = [1.2, 1.1, 1.3, 1.0, 1.2, 1.15, 1.25, 1.05,
-                     1.2, 1.1, 1.3, 1.0, 1.2, 1.15, 1.25, 1.05]
+    sharpe_ratios = [
+        1.2,
+        1.1,
+        1.3,
+        1.0,
+        1.2,
+        1.15,
+        1.25,
+        1.05,
+        1.2,
+        1.1,
+        1.3,
+        1.0,
+        1.2,
+        1.15,
+        1.25,
+        1.05,
+    ]
 
     ci_90 = bootstrap_sharpe_ci(sharpe_ratios, n_bootstrap=2000, confidence=0.90, seed=42)
     ci_99 = bootstrap_sharpe_ci(sharpe_ratios, n_bootstrap=2000, confidence=0.99, seed=42)
@@ -141,9 +203,7 @@ def test_bootstrap_sharpe_ci_confidence() -> None:
     width_90 = ci_90["upper"] - ci_90["lower"]
     width_99 = ci_99["upper"] - ci_99["lower"]
 
-    assert width_99 >= width_90, (
-        f"99% CI width {width_99} should be >= 90% CI width {width_90}"
-    )
+    assert width_99 >= width_90, f"99% CI width {width_99} should be >= 90% CI width {width_90}"
 
 
 def test_bootstrap_sharpe_ci_reproducible() -> None:
@@ -172,10 +232,42 @@ def test_bootstrap_difference_ci_significant() -> None:
     )
 
     # Config A clearly better (higher Sharpe) than Config B
-    sharpe_a = [2.0, 2.1, 1.9, 2.05, 2.15, 1.95, 2.0, 2.1,
-                2.0, 2.1, 1.9, 2.05, 2.15, 1.95, 2.0, 2.1]
-    sharpe_b = [0.5, 0.6, 0.4, 0.55, 0.65, 0.45, 0.5, 0.6,
-                0.5, 0.6, 0.4, 0.55, 0.65, 0.45, 0.5, 0.6]
+    sharpe_a = [
+        2.0,
+        2.1,
+        1.9,
+        2.05,
+        2.15,
+        1.95,
+        2.0,
+        2.1,
+        2.0,
+        2.1,
+        1.9,
+        2.05,
+        2.15,
+        1.95,
+        2.0,
+        2.1,
+    ]
+    sharpe_b = [
+        0.5,
+        0.6,
+        0.4,
+        0.55,
+        0.65,
+        0.45,
+        0.5,
+        0.6,
+        0.5,
+        0.6,
+        0.4,
+        0.55,
+        0.65,
+        0.45,
+        0.5,
+        0.6,
+    ]
 
     result = bootstrap_sharpe_difference_ci(sharpe_a, sharpe_b, n_bootstrap=2000, seed=42)
 
@@ -192,10 +284,25 @@ def test_bootstrap_difference_ci_not_significant() -> None:
     )
 
     # Two configs with nearly identical Sharpe distributions
-    sharpe_a = [1.0, 1.1, 0.9, 1.05, 0.95, 1.0, 1.1, 0.9,
-                1.0, 1.1, 0.9, 1.05, 0.95, 1.0, 1.1, 0.9]
-    sharpe_b = [1.0, 1.05, 0.95, 1.0, 1.1, 0.9, 1.05, 0.95,
-                1.0, 1.05, 0.95, 1.0, 1.1, 0.9, 1.05, 0.95]
+    sharpe_a = [1.0, 1.1, 0.9, 1.05, 0.95, 1.0, 1.1, 0.9, 1.0, 1.1, 0.9, 1.05, 0.95, 1.0, 1.1, 0.9]
+    sharpe_b = [
+        1.0,
+        1.05,
+        0.95,
+        1.0,
+        1.1,
+        0.9,
+        1.05,
+        0.95,
+        1.0,
+        1.05,
+        0.95,
+        1.0,
+        1.1,
+        0.9,
+        1.05,
+        0.95,
+    ]
 
     result = bootstrap_sharpe_difference_ci(sharpe_a, sharpe_b, n_bootstrap=2000, seed=42)
 
@@ -219,9 +326,14 @@ def test_multi_seed_runner() -> None:
 
     config = BenchmarkConfig(
         name="test-config",
-        universe="u", source="s", sentiment="se",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        universe="u",
+        source="s",
+        sentiment="se",
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
 
     runner = MultiSeedRunner(config, n_seeds=3, output_dir=pathlib.Path("/tmp/bench"))
@@ -229,21 +341,26 @@ def test_multi_seed_runner() -> None:
     # Mock BenchmarkHarness so no real training happens
     def make_mock_result(seed: int) -> BenchmarkResult:
         c = BenchmarkConfig(
-            name=f"test-config_seed{seed}", universe="u", source="s",
-            sentiment="se", features=["f"], label="l", price_join="p",
-            start_ns=0, end_ns=1, random_seed=seed,
+            name=f"test-config_seed{seed}",
+            universe="u",
+            source="s",
+            sentiment="se",
+            features=["f"],
+            label="l",
+            price_join="p",
+            start_ns=0,
+            end_ns=1,
+            random_seed=seed,
         )
         mock_dossier = MagicMock()
         mock_dossier.deflated_sharpe = 1.0 + seed * 0.1  # 1.0, 1.1, 1.2
         mock_dossier.pbo = 0.1 + seed * 0.01
-        mock_dossier.to_json.return_value = '{}'
+        mock_dossier.to_json.return_value = "{}"
         return BenchmarkResult(config=c, dataset_id=f"test_seed{seed}", dossier=mock_dossier)
 
     mock_results = [make_mock_result(i) for i in range(3)]
 
-    with patch(
-        "quant_foundry.modules.benchmark.multi_seed.BenchmarkHarness"
-    ) as mock_harness_cls:
+    with patch("quant_foundry.modules.benchmark.multi_seed.BenchmarkHarness") as mock_harness_cls:
         mock_harness = MagicMock()
         mock_harness.run.return_value = mock_results
         mock_harness_cls.return_value = mock_harness
@@ -277,7 +394,7 @@ class _DummyModel:
     def __init__(self) -> None:
         self._mean: float = 0.0
 
-    def fit(self, X: list[list[float]], y: list[float]) -> "_DummyModel":
+    def fit(self, X: list[list[float]], y: list[float]) -> _DummyModel:
         if y:
             self._mean = sum(y) / len(y)
         return self
@@ -297,7 +414,7 @@ class _LinearDummyModel:
     def __init__(self) -> None:
         self._coefs: list[float] = []
 
-    def fit(self, X: list[list[float]], y: list[float]) -> "_LinearDummyModel":
+    def fit(self, X: list[list[float]], y: list[float]) -> _LinearDummyModel:
         n_features = len(X[0]) if X else 0
         # Simple OLS-ish: coef_j = cov(x_j, y) / var(x_j)
         self._coefs = []
@@ -332,18 +449,18 @@ def test_placebo_test_basic() -> None:
     placebo = PlaceboTest()
 
     # Synthetic data: y depends on X
-    X_train = [[1.0], [2.0], [3.0], [4.0], [5.0],
-               [1.5], [2.5], [3.5], [4.5], [5.5]]
-    y_train = [1.0, 2.0, 3.0, 4.0, 5.0,
-               1.5, 2.5, 3.5, 4.5, 5.5]
+    X_train = [[1.0], [2.0], [3.0], [4.0], [5.0], [1.5], [2.5], [3.5], [4.5], [5.5]]
+    y_train = [1.0, 2.0, 3.0, 4.0, 5.0, 1.5, 2.5, 3.5, 4.5, 5.5]
     X_test = [[1.2], [2.8], [4.1]]
     y_test = [1.2, 2.8, 4.1]
 
     result = placebo.run(
         model=model,
         feature_names=["feat1"],
-        X_train=X_train, y_train=y_train,
-        X_test=X_test, y_test=y_test,
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
         n_permutations=20,
         seed=42,
     )
@@ -367,20 +484,34 @@ def test_placebo_feature_permutation() -> None:
 
     # Two features: feat1 strongly correlated with y, feat2 noise
     X_train = [
-        [1.0, 10.0], [2.0, 20.0], [3.0, 15.0], [4.0, 25.0], [5.0, 30.0],
-        [6.0, 10.0], [7.0, 20.0], [8.0, 15.0], [9.0, 25.0], [10.0, 30.0],
+        [1.0, 10.0],
+        [2.0, 20.0],
+        [3.0, 15.0],
+        [4.0, 25.0],
+        [5.0, 30.0],
+        [6.0, 10.0],
+        [7.0, 20.0],
+        [8.0, 15.0],
+        [9.0, 25.0],
+        [10.0, 30.0],
     ]
     y_train = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
     X_test = [
-        [1.5, 12.0], [3.5, 18.0], [5.5, 22.0], [7.5, 28.0], [9.5, 14.0],
+        [1.5, 12.0],
+        [3.5, 18.0],
+        [5.5, 22.0],
+        [7.5, 28.0],
+        [9.5, 14.0],
     ]
     y_test = [1.5, 3.5, 5.5, 7.5, 9.5]
 
     result = placebo.run_feature_permutation(
         model=model,
         feature_names=["feat1", "feat2"],
-        X_train=X_train, y_train=y_train,
-        X_test=X_test, y_test=y_test,
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
         n_permutations=10,
         seed=42,
     )
@@ -408,16 +539,21 @@ def test_comparison_report_significance_test() -> None:
 
     def make_result(name: str, dsr: float) -> BenchmarkResult:
         c = BenchmarkConfig(
-            name=name, universe="u", source="source:newsapi:1.0.0",
+            name=name,
+            universe="u",
+            source="source:newsapi:1.0.0",
             sentiment="sentiment:finbert:1.0.0",
-            features=["f"], label="l", price_join="p",
-            start_ns=0, end_ns=1,
+            features=["f"],
+            label="l",
+            price_join="p",
+            start_ns=0,
+            end_ns=1,
         )
         mock_dossier = MagicMock()
         mock_dossier.deflated_sharpe = dsr
         mock_dossier.pbo = 0.1
         mock_dossier.metadata = {}
-        mock_dossier.to_json.return_value = '{}'
+        mock_dossier.to_json.return_value = "{}"
         return BenchmarkResult(config=c, dataset_id=name, dossier=mock_dossier)
 
     # Config A: high Sharpe across seeds

@@ -94,9 +94,7 @@ def synth_ohlcv_for_symbol(
     prev_close[1:] = close[:-1]
     # Intrabar range: log-normal centered on intra_bar_bps fraction of
     # close; ensures high >= max(open, close) and low <= min(open, close).
-    half_range = (intra_bar_bps / 10_000.0) * close * np.exp(
-        rng.normal(0, 0.2, size=n_bars)
-    )
+    half_range = (intra_bar_bps / 10_000.0) * close * np.exp(rng.normal(0, 0.2, size=n_bars))
     open_ = prev_close + (close - prev_close) * rng.uniform(0, 1, size=n_bars)
     high = np.maximum(open_, close) + np.abs(rng.normal(0, half_range))
     low = np.minimum(open_, close) - np.abs(rng.normal(0, half_range))

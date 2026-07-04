@@ -13,6 +13,7 @@ Requires env vars:
 Usage:
     uv run python scripts/e2e_runpod_real_ml.py
 """
+
 from __future__ import annotations
 
 import json
@@ -50,10 +51,14 @@ def make_synthetic_csv(n: int = 200, seed: int = 42, n_features: int = 4) -> str
     logit = sum(w * f for w, f in zip(weights, features, strict=False)) + 0.05 * rng.randn(n)
     label = (logit > 0).astype(float)
     rows = []
-    header = ",".join(["timestamp"] + [f"f{i+1}" for i in range(n_features)] + ["label"])
+    header = ",".join(["timestamp"] + [f"f{i + 1}" for i in range(n_features)] + ["label"])
     rows.append(header)
     for i in range(n):
-        vals = [str(timestamps[i])] + [f"{features[j][i]:.6f}" for j in range(n_features)] + [str(label[i])]
+        vals = (
+            [str(timestamps[i])]
+            + [f"{features[j][i]:.6f}" for j in range(n_features)]
+            + [str(label[i])]
+        )
         rows.append(",".join(vals))
     return "\n".join(rows) + "\n"
 
@@ -115,13 +120,15 @@ def poll_job(api_key: str, endpoint_id: str, job_id: str, label: str) -> dict:
             continue
         data = r.json()
         state = data.get("status", "UNKNOWN")
-        print(f"  [{label}] attempt {attempt+1}/{POLL_MAX_ATTEMPTS}: {state}")
+        print(f"  [{label}] attempt {attempt + 1}/{POLL_MAX_ATTEMPTS}: {state}")
         if state == "COMPLETED":
             return data.get("output", {})
         if state == "FAILED":
             error = data.get("error", "unknown")
             raise RuntimeError(f"Job {label} FAILED: {error}")
-    raise TimeoutError(f"Job {label} did not complete within {POLL_MAX_ATTEMPTS * POLL_INTERVAL_S}s")
+    raise TimeoutError(
+        f"Job {label} did not complete within {POLL_MAX_ATTEMPTS * POLL_INTERVAL_S}s"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +141,9 @@ def verify_training_result(output: dict) -> None:
     print("\n--- Training Result Verification ---")
 
     if "error_code" in output:
-        raise RuntimeError(f"Training returned error: {output['error_code']}: {output.get('error_summary')}")
+        raise RuntimeError(
+            f"Training returned error: {output['error_code']}: {output.get('error_summary')}"
+        )
 
     job_id = output.get("job_id", "unknown")
     artifact_id = output.get("artifact_id", "unknown")
@@ -143,7 +152,11 @@ def verify_training_result(output: dict) -> None:
 
     # Parse the callback payload to get the ModelDossier.
     callback_payload_str = output.get("callback_payload", "{}")
-    callback = json.loads(callback_payload_str) if isinstance(callback_payload_str, str) else callback_payload_str
+    callback = (
+        json.loads(callback_payload_str)
+        if isinstance(callback_payload_str, str)
+        else callback_payload_str
+    )
 
     # The callback envelope nests the dossier under payload.dossier.
     payload = callback.get("payload", callback)
@@ -190,19 +203,27 @@ def verify_inference_result(output: dict, symbols: list[str]) -> None:
     print("\n--- Inference Result Verification ---")
 
     if "error" in output and output.get("predictions") == []:
-        raise RuntimeError(f"Inference returned error: {output.get('error')}: {output.get('message')}")
+        raise RuntimeError(
+            f"Inference returned error: {output.get('error')}: {output.get('message')}"
+        )
 
     predictions = output.get("predictions", [])
     print(f"  predictions count: {len(predictions)}")
     assert len(predictions) > 0, "no predictions returned"
 
     for pred in predictions[:3]:
-        print(f"  sample: symbol={pred.get('symbol')}, direction={pred.get('direction')}, "
-              f"confidence={pred.get('confidence')}, p_up={pred.get('p_up')}")
+        print(
+            f"  sample: symbol={pred.get('symbol')}, direction={pred.get('direction')}, "
+            f"confidence={pred.get('confidence')}, p_up={pred.get('p_up')}"
+        )
 
     for pred in predictions:
-        assert -1.0 <= pred.get("direction", 0) <= 1.0, f"direction out of range: {pred.get('direction')}"
-        assert 0.0 <= pred.get("confidence", 0) <= 1.0, f"confidence out of range: {pred.get('confidence')}"
+        assert -1.0 <= pred.get("direction", 0) <= 1.0, (
+            f"direction out of range: {pred.get('direction')}"
+        )
+        assert 0.0 <= pred.get("confidence", 0) <= 1.0, (
+            f"confidence out of range: {pred.get('confidence')}"
+        )
         assert pred.get("authority") in ("shadow_only", "shadow-only"), (
             f"authority must be shadow-only, got {pred.get('authority')}"
         )
@@ -240,8 +261,10 @@ def main() -> int:
     for name, eid in [("training", train_endpoint), ("inference", infer_endpoint)]:
         health = check_health(api_key, eid)
         workers = health.get("workers", {})
-        print(f"  {name} ({eid}): ready={workers.get('ready', 0)}, "
-              f"running={workers.get('running', 0)}, idle={workers.get('idle', 0)}")
+        print(
+            f"  {name} ({eid}): ready={workers.get('ready', 0)}, "
+            f"running={workers.get('running', 0)}, idle={workers.get('idle', 0)}"
+        )
 
     # 2. Generate synthetic dataset.
     print("\n--- Generating Synthetic Dataset ---")

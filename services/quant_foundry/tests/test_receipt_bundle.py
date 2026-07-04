@@ -13,7 +13,6 @@ Acceptance:
 from __future__ import annotations
 
 import hashlib
-import json
 import pathlib
 
 import pytest
@@ -29,7 +28,6 @@ from quant_foundry.receipt_bundle import (
     compute_content_hash,
     verify_runpod_training_receipt,
 )
-
 
 # ---------------------------------------------------------------------------
 # module imports / types
@@ -447,9 +445,7 @@ def test_create_bundle_deterministic_bundle_id(tmp_path: pathlib.Path) -> None:
     items = {"manifest": b"x"}
     b1 = store.create_bundle("job-1", "ds-1", "xgboost", items)
     # same job_id + same created_at -> same bundle_id
-    expected = hashlib.sha256(
-        b"job-1|" + b1.created_at.encode("utf-8")
-    ).hexdigest()
+    expected = hashlib.sha256(b"job-1|" + b1.created_at.encode("utf-8")).hexdigest()
     assert b1.bundle_id == expected
 
 

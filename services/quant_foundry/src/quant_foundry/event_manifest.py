@@ -38,9 +38,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import UTC
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from quant_foundry.dataset_manifest import _parse_temporal
 
@@ -49,9 +50,7 @@ from quant_foundry.dataset_manifest import _parse_temporal
 # ---------------------------------------------------------------------------
 
 #: Allowed retrieval methods for an :class:`EventSource`.
-_ALLOWED_RETRIEVAL_METHODS: frozenset[str] = frozenset(
-    {"api", "scrape", "file"}
-)
+_ALLOWED_RETRIEVAL_METHODS: frozenset[str] = frozenset({"api", "scrape", "file"})
 
 # 64-char lowercase hex (SHA-256) — same pattern as dataset_manifest.py.
 _HEX256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
@@ -73,9 +72,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char hex SHA-256; got {value!r}")
     return value.lower()
 
 
@@ -93,10 +90,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         ValueError: if ``value`` is not a parseable ISO temporal.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{field_name} must be a non-empty ISO datetime string; "
-            f"got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a non-empty ISO datetime string; got {value!r}")
     _parse_temporal(value)
     return value
 
@@ -147,8 +141,7 @@ class EventSource(BaseModel):
     def _retrieval_method_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_RETRIEVAL_METHODS:
             raise ValueError(
-                f"retrieval_method must be one of "
-                f"{sorted(_ALLOWED_RETRIEVAL_METHODS)!r}; got {v!r}"
+                f"retrieval_method must be one of {sorted(_ALLOWED_RETRIEVAL_METHODS)!r}; got {v!r}"
             )
         return v
 
@@ -239,9 +232,7 @@ class EventRecord(BaseModel):
             raise ValueError("affected_symbols must contain at least 1 symbol")
         for s in v:
             if not isinstance(s, str) or not s.strip():
-                raise ValueError(
-                    "affected_symbols entries must be non-empty strings"
-                )
+                raise ValueError("affected_symbols entries must be non-empty strings")
         return v
 
     @field_validator("event_type")
@@ -274,10 +265,7 @@ class EventRecord(BaseModel):
             raise ValueError("embedding must be a non-empty list of floats")
         for x in v:
             if not isinstance(x, (int, float)):
-                raise ValueError(
-                    "embedding entries must be floats; "
-                    f"got {type(x).__name__}"
-                )
+                raise ValueError(f"embedding entries must be floats; got {type(x).__name__}")
         return [float(x) for x in v]
 
     @field_validator("label_horizons")
@@ -287,9 +275,7 @@ class EventRecord(BaseModel):
             raise ValueError("label_horizons must contain at least 1 horizon")
         for h in v:
             if not isinstance(h, int) or h < 1:
-                raise ValueError(
-                    f"each label horizon must be an integer >= 1; got {h!r}"
-                )
+                raise ValueError(f"each label horizon must be an integer >= 1; got {h!r}")
         return v
 
     @field_validator("revised_from")
@@ -321,10 +307,7 @@ class EventRecord(BaseModel):
     def _no_duplicate_symbols(self) -> EventRecord:
         """affected_symbols must not contain duplicates."""
         if len(set(self.affected_symbols)) != len(self.affected_symbols):
-            dupes = sorted(
-                {s for s in self.affected_symbols
-                 if self.affected_symbols.count(s) > 1}
-            )
+            dupes = sorted({s for s in self.affected_symbols if self.affected_symbols.count(s) > 1})
             raise ValueError(
                 f"affected_symbols must not contain duplicates for event "
                 f"{self.event_id!r}: {dupes!r}"
@@ -336,13 +319,9 @@ class EventRecord(BaseModel):
         """revised=True requires revised_from; revised_from set requires
         revised=True."""
         if self.revised and not self.revised_from:
-            raise ValueError(
-                f"revised event {self.event_id!r} must set revised_from"
-            )
+            raise ValueError(f"revised event {self.event_id!r} must set revised_from")
         if self.revised_from and not self.revised:
-            raise ValueError(
-                f"event {self.event_id!r} has revised_from but revised=False"
-            )
+            raise ValueError(f"event {self.event_id!r} has revised_from but revised=False")
         return self
 
 
@@ -429,9 +408,7 @@ class EventDatasetManifest(BaseModel):
         ids = [e.event_id for e in self.events]
         if len(set(ids)) != len(ids):
             dupes = sorted({i for i in ids if ids.count(i) > 1})
-            raise ValueError(
-                f"events must not contain duplicate event_ids: {dupes!r}"
-            )
+            raise ValueError(f"events must not contain duplicate event_ids: {dupes!r}")
         return self
 
     @model_validator(mode="after")
@@ -525,9 +502,7 @@ def validate_no_revised_metadata_leakage(events: list[EventRecord]) -> bool:
         if not e.revised_from:
             # EventRecord itself enforces this, but double-check here for
             # callers that build lists outside the model.
-            raise ValueError(
-                f"revised event {e.event_id!r} has no revised_from"
-            )
+            raise ValueError(f"revised event {e.event_id!r} has no revised_from")
         original = id_index.get(e.revised_from)
         if original is None:
             raise ValueError(
@@ -536,8 +511,7 @@ def validate_no_revised_metadata_leakage(events: list[EventRecord]) -> bool:
             )
         if original.event_id == e.event_id:
             raise ValueError(
-                f"revised event {e.event_id!r} revises itself "
-                "(revised_from == event_id)"
+                f"revised event {e.event_id!r} revises itself (revised_from == event_id)"
             )
         rev_pa = _parse_temporal(e.published_at)
         orig_pa = _parse_temporal(original.published_at)
@@ -685,8 +659,9 @@ class EventManifestBuilder:
                 fails (fail-closed).
         """
         if not self._created_at:
-            from datetime import datetime, timezone
-            self._created_at = datetime.now(timezone.utc).isoformat()
+            from datetime import datetime
+
+            self._created_at = datetime.now(UTC).isoformat()
 
         return EventDatasetManifest(
             dataset_id=self._dataset_id,
@@ -704,9 +679,7 @@ class EventManifestBuilder:
 # ---------------------------------------------------------------------------
 
 
-def join_events_point_in_time(
-    events: list[EventRecord], decision_time: str
-) -> list[EventRecord]:
+def join_events_point_in_time(events: list[EventRecord], decision_time: str) -> list[EventRecord]:
     """Return the events available at a decision time, point-in-time safe.
 
     Returns only the events whose ``available_at <= decision_time``. In

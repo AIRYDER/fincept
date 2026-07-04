@@ -60,7 +60,7 @@ import json
 import math
 import os
 import pickle
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -77,7 +77,6 @@ from quant_foundry.oof_artifacts import (
     merge_oof_artifacts,
 )
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -92,9 +91,7 @@ SUPPORTED_META_LEARNER_FAMILIES: frozenset[str] = frozenset(
 
 #: Supported calibration policy strings (mapped to
 #: :class:`~quant_foundry.calibration.CalibrationPolicy`).
-SUPPORTED_CALIBRATION_POLICIES: frozenset[str] = frozenset(
-    {"required", "optional", "none"}
-)
+SUPPORTED_CALIBRATION_POLICIES: frozenset[str] = frozenset({"required", "optional", "none"})
 
 #: Default LightGBM params for the meta-learner (small, fast, regularized
 #: to avoid over-fitting the typically narrow OOF feature matrix).
@@ -155,9 +152,7 @@ class BaseModelSpec(BaseModel):
     def _nonempty_str(cls, v: str, info: Any) -> str:
         """Reject empty / whitespace-only strings."""
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
 
@@ -207,9 +202,7 @@ class EnsembleManifest(BaseModel):
     def _nonempty_str(cls, v: str, info: Any) -> str:
         """Reject empty / whitespace-only strings."""
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("ensemble_hash")
@@ -224,19 +217,14 @@ class EnsembleManifest(BaseModel):
         try:
             int(v, 16)
         except ValueError as exc:
-            raise ValueError(
-                "ensemble_hash must be a valid hexadecimal string"
-            ) from exc
+            raise ValueError("ensemble_hash must be a valid hexadecimal string") from exc
         return v.lower()
 
     @model_validator(mode="after")
     def _check_min_base_models(self) -> EnsembleManifest:
         """Require at least 2 base models."""
         if len(self.base_models) < 2:
-            raise ValueError(
-                f"at least 2 base models are required; "
-                f"got {len(self.base_models)}"
-            )
+            raise ValueError(f"at least 2 base models are required; got {len(self.base_models)}")
         return self
 
     @model_validator(mode="after")
@@ -285,9 +273,7 @@ class ContributionReport(BaseModel):
     def _nonempty_str(cls, v: str, info: Any) -> str:
         """Reject empty / whitespace-only strings."""
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
     @field_validator("contribution_score")
@@ -295,9 +281,7 @@ class ContributionReport(BaseModel):
     def _score_nonnegative(cls, v: float) -> float:
         """Contribution scores must be non-negative."""
         if v < 0:
-            raise ValueError(
-                f"contribution_score must be >= 0; got {v}"
-            )
+            raise ValueError(f"contribution_score must be >= 0; got {v}")
         return float(v)
 
     @field_validator("rank")
@@ -379,14 +363,10 @@ class EnsembleResult(BaseModel):
         for i, p in enumerate(v):
             if not isinstance(p, (int, float)):
                 raise ValueError(
-                    f"meta_learner_predictions[{i}] must be a number; "
-                    f"got {type(p).__name__}"
+                    f"meta_learner_predictions[{i}] must be a number; got {type(p).__name__}"
                 )
             if not math.isfinite(float(p)):
-                raise ValueError(
-                    f"meta_learner_predictions[{i}] must be finite; "
-                    f"got {p}"
-                )
+                raise ValueError(f"meta_learner_predictions[{i}] must be finite; got {p}")
         return [float(p) for p in v]
 
     @model_validator(mode="after")
@@ -412,10 +392,7 @@ class EnsembleResult(BaseModel):
         ranks = sorted(c.rank for c in self.contributions)
         expected = list(range(1, len(self.contributions) + 1))
         if ranks != expected:
-            raise ValueError(
-                f"contribution ranks must be a contiguous 1..N sequence; "
-                f"got {ranks}"
-            )
+            raise ValueError(f"contribution ranks must be a contiguous 1..N sequence; got {ranks}")
         return self
 
 
@@ -487,25 +464,20 @@ def compute_contributions(
         ValueError: if ``feature_names`` is empty or does not match the
             number of columns in ``X``.
     """
-    import numpy as np  # noqa: WPS433 — lazy import
+    import numpy as np
 
     if not feature_names:
         raise ValueError("feature_names must be non-empty")
     X_arr = np.asarray(X, dtype=np.float64)
     y_arr = np.asarray(y, dtype=np.float64)
     if X_arr.ndim != 2:
-        raise ValueError(
-            f"X must be 2-D; got {X_arr.ndim}D"
-        )
+        raise ValueError(f"X must be 2-D; got {X_arr.ndim}D")
     if X_arr.shape[1] != len(feature_names):
         raise ValueError(
-            f"feature_names length {len(feature_names)} does not match "
-            f"X columns {X_arr.shape[1]}"
+            f"feature_names length {len(feature_names)} does not match X columns {X_arr.shape[1]}"
         )
     if X_arr.shape[0] != y_arr.shape[0]:
-        raise ValueError(
-            f"X rows {X_arr.shape[0]} does not match y rows {y_arr.shape[0]}"
-        )
+        raise ValueError(f"X rows {X_arr.shape[0]} does not match y rows {y_arr.shape[0]}")
 
     # --- Coefficient-based contributions (logistic regression etc.) -----
     if hasattr(meta_learner, "coef_"):
@@ -573,7 +545,7 @@ def _permutation_importance(
     Returns:
         1-D numpy array of non-negative importance scores.
     """
-    import numpy as np  # noqa: WPS433 — lazy import
+    import numpy as np
 
     rng = np.random.default_rng(seed)
     baseline_pred = _safe_predict(meta_learner, X)
@@ -612,8 +584,9 @@ def _safe_predict(meta_learner: Any, X: Any) -> Any:
     numpy arrays (OOF predictions), and the warning is a false positive
     in the stacking context.
     """
-    import numpy as np  # noqa: WPS433 — lazy import
-    import warnings  # noqa: WPS433 — lazy import
+    import warnings
+
+    import numpy as np
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -665,18 +638,13 @@ class StackedEnsemble:
     ) -> None:
         # --- Validate base specs ----------------------------------------
         if not isinstance(base_specs, list):
-            raise TypeError(
-                f"base_specs must be a list; got {type(base_specs).__name__}"
-            )
+            raise TypeError(f"base_specs must be a list; got {type(base_specs).__name__}")
         if len(base_specs) < 2:
-            raise ValueError(
-                f"at least 2 base models are required; got {len(base_specs)}"
-            )
+            raise ValueError(f"at least 2 base models are required; got {len(base_specs)}")
         for i, spec in enumerate(base_specs):
             if not isinstance(spec, BaseModelSpec):
                 raise TypeError(
-                    f"base_specs[{i}] must be a BaseModelSpec; "
-                    f"got {type(spec).__name__}"
+                    f"base_specs[{i}] must be a BaseModelSpec; got {type(spec).__name__}"
                 )
         families = [s.model_family for s in base_specs]
         seen: set[str] = set()
@@ -686,10 +654,7 @@ class StackedEnsemble:
                 dupes.append(fam)
             seen.add(fam)
         if dupes:
-            raise ValueError(
-                f"duplicate model families in base_specs: "
-                f"{sorted(set(dupes))!r}"
-            )
+            raise ValueError(f"duplicate model families in base_specs: {sorted(set(dupes))!r}")
 
         # --- Validate meta-learner family -------------------------------
         if meta_learner_family not in SUPPORTED_META_LEARNER_FAMILIES:
@@ -706,9 +671,7 @@ class StackedEnsemble:
             )
 
         # Store in deterministic (sorted-by-family) order.
-        self._base_specs: list[BaseModelSpec] = sorted(
-            base_specs, key=lambda s: s.model_family
-        )
+        self._base_specs: list[BaseModelSpec] = sorted(base_specs, key=lambda s: s.model_family)
         self.meta_learner_family: str = meta_learner_family
         self.calibration_policy: str = calibration_policy
 
@@ -745,13 +708,11 @@ class StackedEnsemble:
             ):
                 if not os.path.isfile(path):
                     raise FileNotFoundError(
-                        f"base model {spec.model_family!r} {label} "
-                        f"does not exist: {path!r}"
+                        f"base model {spec.model_family!r} {label} does not exist: {path!r}"
                     )
                 if os.path.getsize(path) == 0:
                     raise ValueError(
-                        f"base model {spec.model_family!r} {label} "
-                        f"is empty (0 bytes): {path!r}"
+                        f"base model {spec.model_family!r} {label} is empty (0 bytes): {path!r}"
                     )
 
     # -- meta-learner training -------------------------------------------
@@ -804,7 +765,7 @@ class StackedEnsemble:
             ValueError: on OOF/base-spec mismatch, label-length
             mismatch, or empty inputs.
         """
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         # 1. Fail-closed: base artifacts must exist.
         self._validate_base_artifacts_exist()
@@ -824,10 +785,7 @@ class StackedEnsemble:
                     "does not match any base model spec"
                 )
             if art.model_family in oof_by_family:
-                raise ValueError(
-                    f"duplicate OOF artifact for model_family="
-                    f"{art.model_family!r}"
-                )
+                raise ValueError(f"duplicate OOF artifact for model_family={art.model_family!r}")
             oof_by_family[art.model_family] = art
 
         # Sort OOF artifacts in the same deterministic order as base specs.
@@ -856,8 +814,7 @@ class StackedEnsemble:
         # Labels: use the provided labels, validated against OOF row labels.
         if len(labels) != n_rows:
             raise ValueError(
-                f"labels length {len(labels)} does not match merged "
-                f"OOF row count {n_rows}"
+                f"labels length {len(labels)} does not match merged OOF row count {n_rows}"
             )
         y = np.array([float(v) for v in labels], dtype=np.float64)
 
@@ -931,16 +888,14 @@ class StackedEnsemble:
         Returns:
             The fitted meta-learner model object.
         """
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         if self.meta_learner_family == "lightgbm":
             return self._fit_lightgbm_meta(X, y)
         if self.meta_learner_family == "logistic_regression":
             return self._fit_logreg_meta(X, y, np)
         # Unreachable — validated in __init__.
-        raise ValueError(
-            f"unsupported meta_learner_family {self.meta_learner_family!r}"
-        )
+        raise ValueError(f"unsupported meta_learner_family {self.meta_learner_family!r}")
 
     def _fit_lightgbm_meta(self, X: Any, y: Any) -> Any:
         """Train a LightGBM meta-learner."""
@@ -990,7 +945,7 @@ class StackedEnsemble:
         ``"correlation"`` (Pearson). For a single-row input or constant
         predictions, ``"correlation"`` is ``0.0`` (undefined).
         """
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         preds_arr = np.asarray(preds, dtype=np.float64).ravel()
         y_arr = np.asarray(y, dtype=np.float64).ravel()
@@ -998,7 +953,7 @@ class StackedEnsemble:
         if n == 0:
             return {"mse": 0.0, "rmse": 0.0, "mae": 0.0, "correlation": 0.0}
         residuals = preds_arr - y_arr
-        mse = float(np.mean(residuals ** 2))
+        mse = float(np.mean(residuals**2))
         rmse = float(math.sqrt(mse))
         mae = float(np.mean(np.abs(residuals)))
         if n < 2 or float(np.std(preds_arr)) == 0 or float(np.std(y_arr)) == 0:
@@ -1040,7 +995,7 @@ class StackedEnsemble:
         Returns:
             The :class:`EnsembleCalibrationReport`.
         """
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         y_arr = np.asarray(y, dtype=np.float64).ravel()
         is_binary = _is_binary_labels(y_arr)
@@ -1111,7 +1066,7 @@ class StackedEnsemble:
             # Deterministic placeholder hash (64 hex chars).
             artifact_hash = "0" * 64
 
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         # Build the manifest data *without* ensemble_hash first, then
         # compute the hash, then construct the full manifest.
@@ -1168,37 +1123,27 @@ class StackedEnsemble:
             FileNotFoundError: if the meta-learner artifact path does
                 not exist and no in-memory model is available.
         """
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         # --- Validate base_predictions ----------------------------------
         if not isinstance(base_predictions, dict):
             raise TypeError(
-                f"base_predictions must be a dict; "
-                f"got {type(base_predictions).__name__}"
+                f"base_predictions must be a dict; got {type(base_predictions).__name__}"
             )
         expected_families = set(self._feature_names)
         provided_families = set(base_predictions.keys())
         missing = expected_families - provided_families
         if missing:
-            raise ValueError(
-                f"base_predictions is missing model families: "
-                f"{sorted(missing)!r}"
-            )
+            raise ValueError(f"base_predictions is missing model families: {sorted(missing)!r}")
         extra = provided_families - expected_families
         if extra:
-            raise ValueError(
-                f"base_predictions has unexpected model families: "
-                f"{sorted(extra)!r}"
-            )
+            raise ValueError(f"base_predictions has unexpected model families: {sorted(extra)!r}")
 
         # Align lengths.
         lengths = {fam: len(base_predictions[fam]) for fam in self._feature_names}
         unique_lengths = set(lengths.values())
         if len(unique_lengths) != 1:
-            raise ValueError(
-                f"base_predictions lists must all have the same length; "
-                f"got {lengths}"
-            )
+            raise ValueError(f"base_predictions lists must all have the same length; got {lengths}")
         n_rows = unique_lengths.pop()
         if n_rows == 0:
             raise ValueError("base_predictions lists are empty")
@@ -1220,8 +1165,7 @@ class StackedEnsemble:
             return self._meta_learner
         if self._manifest is None:
             raise ValueError(
-                "no meta-learner available — call train_meta_learner first "
-                "or load a manifest"
+                "no meta-learner available — call train_meta_learner first or load a manifest"
             )
         path = self._manifest.meta_learner_artifact_path
         if path == "<in-memory>":
@@ -1231,9 +1175,7 @@ class StackedEnsemble:
                 "is available"
             )
         if not os.path.isfile(path):
-            raise FileNotFoundError(
-                f"meta-learner artifact not found: {path!r}"
-            )
+            raise FileNotFoundError(f"meta-learner artifact not found: {path!r}")
         with open(path, "rb") as fh:
             return pickle.load(fh)  # noqa: S301
 
@@ -1252,9 +1194,7 @@ class StackedEnsemble:
             ValueError: if no manifest has been built yet.
         """
         if self._manifest is None:
-            raise ValueError(
-                "no manifest to save — call train_meta_learner first"
-            )
+            raise ValueError("no manifest to save — call train_meta_learner first")
         parent = os.path.dirname(os.path.abspath(path))
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, exist_ok=True)
@@ -1284,13 +1224,11 @@ class StackedEnsemble:
             raise FileNotFoundError(f"manifest file not found: {path!r}")
         if os.path.getsize(path) == 0:
             raise ValueError(f"manifest file is empty (0 bytes): {path!r}")
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             try:
                 payload = json.load(fh)
             except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"manifest at {path!r} is not valid JSON: {exc}"
-                ) from exc
+                raise ValueError(f"manifest at {path!r} is not valid JSON: {exc}") from exc
         return EnsembleManifest.model_validate(payload)
 
 
@@ -1310,7 +1248,7 @@ class _ConstantPredictor:
         self._constant = float(constant)
 
     def predict(self, X: Any) -> Any:
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         X_arr = np.asarray(X, dtype=np.float64)
         if X_arr.ndim == 1:
@@ -1321,7 +1259,7 @@ class _ConstantPredictor:
 
     @property
     def coef_(self) -> Any:
-        import numpy as np  # noqa: WPS433 — lazy import
+        import numpy as np
 
         # coef_ shape depends on X columns; return a 1-element zero
         # array as a placeholder. compute_contributions falls back to
@@ -1331,7 +1269,7 @@ class _ConstantPredictor:
 
 def _is_binary_labels(y: Any) -> bool:
     """Check whether ``y`` contains only binary (0/1) values."""
-    import numpy as np  # noqa: WPS433 — lazy import
+    import numpy as np
 
     y_arr = np.asarray(y, dtype=np.float64).ravel()
     if y_arr.shape[0] == 0:
@@ -1357,14 +1295,14 @@ def _hash_file(path: str) -> str:
 
 
 __all__ = [
+    "SUPPORTED_CALIBRATION_POLICIES",
+    "SUPPORTED_META_LEARNER_FAMILIES",
     "BaseModelSpec",
-    "EnsembleManifest",
     "ContributionReport",
     "EnsembleCalibrationReport",
+    "EnsembleManifest",
     "EnsembleResult",
     "StackedEnsemble",
-    "compute_ensemble_hash",
     "compute_contributions",
-    "SUPPORTED_META_LEARNER_FAMILIES",
-    "SUPPORTED_CALIBRATION_POLICIES",
+    "compute_ensemble_hash",
 ]

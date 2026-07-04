@@ -52,12 +52,12 @@ from pydantic import BaseModel, ConfigDict, field_validator
 __all__ = [
     "RankReport",
     "compute_rank_metrics",
-    "rank_ic",
-    "ndcg_at_k",
-    "top_k_spread",
-    "turnover",
     "cost_adjusted_long_short_return",
     "max_drawdown",
+    "ndcg_at_k",
+    "rank_ic",
+    "top_k_spread",
+    "turnover",
 ]
 
 
@@ -458,7 +458,9 @@ def cost_adjusted_long_short_return(
             turn[pi] = sum(abs(v) for v in cur_w.values()) / 2.0
         else:
             all_keys = set(prev_w) | set(cur_w)
-            turn[pi] = sum(abs(cur_w.get(kk_, 0.0) - prev_w.get(kk_, 0.0)) for kk_ in all_keys) / 2.0
+            turn[pi] = (
+                sum(abs(cur_w.get(kk_, 0.0) - prev_w.get(kk_, 0.0)) for kk_ in all_keys) / 2.0
+            )
         prev_w = cur_w
     cost = cost_per_turnover * turn
     net = gross - cost

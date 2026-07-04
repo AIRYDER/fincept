@@ -27,7 +27,6 @@ from __future__ import annotations
 from typing import Any
 
 from quant_foundry.modules.registry import (
-    FeatureComputer,
     MediaItem,
     ModuleInfo,
     SentimentResult,
@@ -121,10 +120,7 @@ class PerEventTypeFeatures:
 
                 # Look back from dt
                 window_start = dt - self.lookback_ns
-                window_items = [
-                    i for i in sym_items
-                    if window_start <= i.available_at_ns <= dt
-                ]
+                window_items = [i for i in sym_items if window_start <= i.available_at_ns <= dt]
 
                 features: dict[str, float] = {}
                 # Per-event-type mean sentiment
@@ -135,19 +131,15 @@ class PerEventTypeFeatures:
                         if i.event_type == et and i.item_id in sentiment_by_id
                     ]
                     features[f"sent_{et}"] = (
-                        round(sum(et_scores) / len(et_scores), 6)
-                        if et_scores else 0.0
+                        round(sum(et_scores) / len(et_scores), 6) if et_scores else 0.0
                     )
 
                 # Aggregate
                 all_scores = [
-                    sentiment_by_id[i.item_id]
-                    for i in window_items
-                    if i.item_id in sentiment_by_id
+                    sentiment_by_id[i.item_id] for i in window_items if i.item_id in sentiment_by_id
                 ]
                 features["sent_mean"] = (
-                    round(sum(all_scores) / len(all_scores), 6)
-                    if all_scores else 0.0
+                    round(sum(all_scores) / len(all_scores), 6) if all_scores else 0.0
                 )
                 features["sent_count"] = float(len(window_items))
 
@@ -159,4 +151,4 @@ class PerEventTypeFeatures:
         return result
 
 
-__all__ = ["PerEventTypeFeatures", "EVENT_TYPES"]
+__all__ = ["EVENT_TYPES", "PerEventTypeFeatures"]

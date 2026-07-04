@@ -32,12 +32,12 @@ from __future__ import annotations
 import importlib
 import time
 import traceback
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -150,7 +150,7 @@ class VerificationMatrixConfig(BaseModel):
     report_dir: str = "reports/verification"
 
     @model_validator(mode="after")
-    def _validate_non_empty(self) -> "VerificationMatrixConfig":
+    def _validate_non_empty(self) -> VerificationMatrixConfig:
         """Ensure at least one tier and one category are configured."""
         if not self.tiers:
             raise ValueError("tiers must be a non-empty list")
@@ -465,84 +465,148 @@ def _default_specs() -> list[VerificationTestSpec]:
         )
 
     # SCHEMA_VALIDATION
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.SCHEMA_VALIDATION,
-        "dataset_manifest", "_test_schema_validation_dataset_manifest",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.SCHEMA_VALIDATION,
-        "runpod_training_request", "_test_schema_validation_runpod_training_request",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.SCHEMA_VALIDATION,
-        "shadow_prediction", "_test_schema_validation_shadow_prediction",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.SCHEMA_VALIDATION,
-        "artifact_manifest", "_test_schema_validation_artifact_manifest",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.SCHEMA_VALIDATION,
+            "dataset_manifest",
+            "_test_schema_validation_dataset_manifest",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.SCHEMA_VALIDATION,
+            "runpod_training_request",
+            "_test_schema_validation_runpod_training_request",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.SCHEMA_VALIDATION,
+            "shadow_prediction",
+            "_test_schema_validation_shadow_prediction",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.SCHEMA_VALIDATION,
+            "artifact_manifest",
+            "_test_schema_validation_artifact_manifest",
+        )
+    )
 
     # MANIFEST_HASHING
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.MANIFEST_HASHING,
-        "event_data_hash", "_test_manifest_hashing_event",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.MANIFEST_HASHING,
-        "graph_data_hash", "_test_manifest_hashing_graph",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.MANIFEST_HASHING,
-        "sequence_data_hash", "_test_manifest_hashing_sequence",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.MANIFEST_HASHING,
+            "event_data_hash",
+            "_test_manifest_hashing_event",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.MANIFEST_HASHING,
+            "graph_data_hash",
+            "_test_manifest_hashing_graph",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.MANIFEST_HASHING,
+            "sequence_data_hash",
+            "_test_manifest_hashing_sequence",
+        )
+    )
 
     # REQUEST_CREATION
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.REQUEST_CREATION,
-        "runpod_training_request", "_test_request_creation_runpod_training",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.REQUEST_CREATION,
-        "runpod_inference_request", "_test_request_creation_inference",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.REQUEST_CREATION,
+            "runpod_training_request",
+            "_test_request_creation_runpod_training",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.REQUEST_CREATION,
+            "runpod_inference_request",
+            "_test_request_creation_inference",
+        )
+    )
 
     # CALLBACK_VERIFICATION
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.CALLBACK_VERIFICATION,
-        "hmac_roundtrip", "_test_callback_verification_hmac",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.CALLBACK_VERIFICATION,
-        "training_callback", "_test_callback_verification_training",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.CALLBACK_VERIFICATION,
+            "hmac_roundtrip",
+            "_test_callback_verification_hmac",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.CALLBACK_VERIFICATION,
+            "training_callback",
+            "_test_callback_verification_training",
+        )
+    )
 
     # ARTIFACT_VERIFICATION
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.ARTIFACT_VERIFICATION,
-        "hash_match", "_test_artifact_verification_hash",
-    ))
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.ARTIFACT_VERIFICATION,
-        "hash_mismatch", "_test_artifact_verification_mismatch",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.ARTIFACT_VERIFICATION,
+            "hash_match",
+            "_test_artifact_verification_hash",
+        )
+    )
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.ARTIFACT_VERIFICATION,
+            "hash_mismatch",
+            "_test_artifact_verification_mismatch",
+        )
+    )
 
     # PROMOTION_GATE
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.PROMOTION_GATE,
-        "reject_no_dossier", "_test_promotion_gate_reject",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.PROMOTION_GATE,
+            "reject_no_dossier",
+            "_test_promotion_gate_reject",
+        )
+    )
 
     # PIT_SAFETY
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.PIT_SAFETY,
-        "future_event_rejected", "_test_pit_safety_event",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.PIT_SAFETY,
+            "future_event_rejected",
+            "_test_pit_safety_event",
+        )
+    )
 
     # COST_TRACKING
-    specs.append(_spec(
-        VerificationTier.UNIT, VerificationCategory.COST_TRACKING,
-        "budget_reject_over_ceiling", "_test_cost_tracking_budget",
-    ))
+    specs.append(
+        _spec(
+            VerificationTier.UNIT,
+            VerificationCategory.COST_TRACKING,
+            "budget_reject_over_ceiling",
+            "_test_cost_tracking_budget",
+        )
+    )
 
     return specs
 
@@ -583,9 +647,7 @@ class VerificationMatrix:
                 registered.
         """
         if spec.test_id in self._specs:
-            raise ValueError(
-                f"duplicate test_id: {spec.test_id!r} already registered"
-            )
+            raise ValueError(f"duplicate test_id: {spec.test_id!r} already registered")
         self._specs[spec.test_id] = spec
 
     def register_default_tests(self) -> None:
@@ -629,8 +691,7 @@ class VerificationMatrix:
             fn = getattr(mod, spec.test_function)
         except AttributeError as exc:  # pragma: no cover - defensive
             raise AttributeError(
-                f"module {spec.module!r} has no attribute "
-                f"{spec.test_function!r}"
+                f"module {spec.module!r} has no attribute {spec.test_function!r}"
             ) from exc
         return fn
 
@@ -642,7 +703,7 @@ class VerificationMatrix:
         start = time.perf_counter()
         try:
             fn = self._resolve(spec)
-        except Exception as exc:  # noqa: BLE001 - report any import error
+        except Exception as exc:
             n_failures = spec.min_passes
             error = f"import error: {exc}\n{traceback.format_exc()}"
         else:
@@ -650,7 +711,7 @@ class VerificationMatrix:
                 try:
                     fn()
                     n_passes += 1
-                except Exception as exc:  # noqa: BLE001 - any failure counts
+                except Exception as exc:
                     n_failures += 1
                     error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
         duration = time.perf_counter() - start
@@ -691,7 +752,8 @@ class VerificationMatrix:
         return results
 
     def run_category(
-        self, category: VerificationCategory,
+        self,
+        category: VerificationCategory,
     ) -> list[VerificationResult]:
         """Run only the tests in ``category`` (respecting fail_fast)."""
         results: list[VerificationResult] = []
@@ -722,8 +784,7 @@ class VerificationMatrix:
         lines.append("|------|--------|--------|-------|")
         for tier, counts in summary["by_tier"].items():
             lines.append(
-                f"| {tier} | {counts['passed']} | {counts['failed']} "
-                f"| {counts['total']} |"
+                f"| {tier} | {counts['passed']} | {counts['failed']} | {counts['total']} |"
             )
         lines.append("")
         lines.append("## By Category")
@@ -731,10 +792,7 @@ class VerificationMatrix:
         lines.append("| Category | Passed | Failed | Total |")
         lines.append("|----------|--------|--------|-------|")
         for cat, counts in summary["by_category"].items():
-            lines.append(
-                f"| {cat} | {counts['passed']} | {counts['failed']} "
-                f"| {counts['total']} |"
-            )
+            lines.append(f"| {cat} | {counts['passed']} | {counts['failed']} | {counts['total']} |")
         lines.append("")
         lines.append("## Results")
         lines.append("")
@@ -802,8 +860,12 @@ def summarize_results(results: list[VerificationResult]) -> dict[str, Any]:
 def format_result_table(results: list[VerificationResult]) -> str:
     """Return a markdown table of all results."""
     lines: list[str] = []
-    lines.append("| Test ID | Tier | Category | Passed | Passes | Failures | Duration (s) | Error |")
-    lines.append("|---------|------|----------|--------|--------|----------|--------------|-------|")
+    lines.append(
+        "| Test ID | Tier | Category | Passed | Passes | Failures | Duration (s) | Error |"
+    )
+    lines.append(
+        "|---------|------|----------|--------|--------|----------|--------------|-------|"
+    )
     for r in results:
         err = (r.error or "").replace("\n", " ").replace("|", "\\|")
         if len(err) > 80:
@@ -817,12 +879,12 @@ def format_result_table(results: list[VerificationResult]) -> str:
 
 
 __all__ = [
-    "VerificationTier",
     "VerificationCategory",
-    "VerificationTestSpec",
-    "VerificationResult",
-    "VerificationMatrixConfig",
     "VerificationMatrix",
-    "summarize_results",
+    "VerificationMatrixConfig",
+    "VerificationResult",
+    "VerificationTestSpec",
+    "VerificationTier",
     "format_result_table",
+    "summarize_results",
 ]

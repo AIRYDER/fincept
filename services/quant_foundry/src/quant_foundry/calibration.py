@@ -32,7 +32,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -164,8 +163,7 @@ def compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> fl
         raise ValueError(f"n_bins must be >= 1; got {n_bins}")
     if len(probs) != len(labels):
         raise ValueError(
-            f"probs and labels must have equal length; "
-            f"got {len(probs)} and {len(labels)}"
+            f"probs and labels must have equal length; got {len(probs)} and {len(labels)}"
         )
     total = len(probs)
     if total == 0:
@@ -185,8 +183,7 @@ def compute_brier_score(probs: list[float], labels: list[float]) -> float:
     """
     if len(probs) != len(labels):
         raise ValueError(
-            f"probs and labels must have equal length; "
-            f"got {len(probs)} and {len(labels)}"
+            f"probs and labels must have equal length; got {len(probs)} and {len(labels)}"
         )
     if len(probs) == 0:
         return 0.0
@@ -207,8 +204,7 @@ def compute_logloss(probs: list[float], labels: list[float]) -> float:
     """
     if len(probs) != len(labels):
         raise ValueError(
-            f"probs and labels must have equal length; "
-            f"got {len(probs)} and {len(labels)}"
+            f"probs and labels must have equal length; got {len(probs)} and {len(labels)}"
         )
     if len(probs) == 0:
         return 0.0
@@ -243,8 +239,7 @@ def compute_reliability_buckets(
         raise ValueError(f"n_bins must be >= 1; got {n_bins}")
     if len(probs) != len(labels):
         raise ValueError(
-            f"probs and labels must have equal length; "
-            f"got {len(probs)} and {len(labels)}"
+            f"probs and labels must have equal length; got {len(probs)} and {len(labels)}"
         )
     width = 1.0 / n_bins
     bins: list[ReliabilityBucket] = []
@@ -253,15 +248,11 @@ def compute_reliability_buckets(
         upper = (i + 1) * width
         if i == n_bins - 1:
             in_bin = [
-                (float(p), float(y))
-                for p, y in zip(probs, labels)
-                if lower <= float(p) <= upper
+                (float(p), float(y)) for p, y in zip(probs, labels) if lower <= float(p) <= upper
             ]
         else:
             in_bin = [
-                (float(p), float(y))
-                for p, y in zip(probs, labels)
-                if lower <= float(p) < upper
+                (float(p), float(y)) for p, y in zip(probs, labels) if lower <= float(p) < upper
             ]
         count = len(in_bin)
         if count == 0:
@@ -306,9 +297,7 @@ class Calibrator:
 
     def __init__(self, method: CalibrationMethod, n_bins: int = 10) -> None:
         if not isinstance(method, CalibrationMethod):
-            raise TypeError(
-                f"method must be a CalibrationMethod; got {type(method).__name__}"
-            )
+            raise TypeError(f"method must be a CalibrationMethod; got {type(method).__name__}")
         if n_bins < 1:
             raise ValueError(f"n_bins must be >= 1; got {n_bins}")
         self.method = method
@@ -320,7 +309,7 @@ class Calibrator:
 
     # -- fit / transform ---------------------------------------------------
 
-    def fit(self, raw_probs: list[float], labels: list[float]) -> "Calibrator":
+    def fit(self, raw_probs: list[float], labels: list[float]) -> Calibrator:
         """Fit the calibrator on ``(raw_probs, labels)``.
 
         For :attr:`CalibrationMethod.PLATT` a logistic regression is fit
@@ -426,7 +415,7 @@ class Calibrator:
         return str(p)
 
     @classmethod
-    def load_artifact(cls, path: str) -> "Calibrator":
+    def load_artifact(cls, path: str) -> Calibrator:
         """Load a calibrator previously saved with :meth:`save_artifact`.
 
         Returns a :class:`Calibrator` with ``_fitted`` restored so
@@ -481,9 +470,7 @@ def calibrate(
         ece=compute_ece(calibrated, labels, n_bins=n_bins),
         brier_score=compute_brier_score(calibrated, labels),
         logloss=compute_logloss(calibrated, labels),
-        reliability_buckets=compute_reliability_buckets(
-            calibrated, labels, n_bins=n_bins
-        ),
+        reliability_buckets=compute_reliability_buckets(calibrated, labels, n_bins=n_bins),
     )
 
 
@@ -514,9 +501,7 @@ def check_calibration_eligibility(
         policy.
     """
     if not isinstance(policy, CalibrationPolicy):
-        raise TypeError(
-            f"policy must be a CalibrationPolicy; got {type(policy).__name__}"
-        )
+        raise TypeError(f"policy must be a CalibrationPolicy; got {type(policy).__name__}")
     if policy is CalibrationPolicy.REQUIRED:
         return result is not None
     if policy is CalibrationPolicy.OPTIONAL:

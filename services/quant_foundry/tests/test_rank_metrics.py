@@ -23,7 +23,6 @@ import warnings
 
 import numpy as np
 import pytest
-
 from quant_foundry.rank_metrics import (
     RankReport,
     compute_rank_metrics,
@@ -34,7 +33,6 @@ from quant_foundry.rank_metrics import (
     top_k_spread,
     turnover,
 )
-
 
 # ---------------------------------------------------------------------------
 # rank_ic
@@ -318,7 +316,12 @@ def test_cost_adjusted_return_known_cost():
     labels = np.array([0.04, 0.03, 0.02, 0.01])
     groups = np.array([0, 0, 0, 0])
     cum, net, turn = cost_adjusted_long_short_return(
-        preds, labels, groups, timestamps=None, k=2, cost_per_turnover=0.001,
+        preds,
+        labels,
+        groups,
+        timestamps=None,
+        k=2,
+        cost_per_turnover=0.001,
     )
     # gross = mean(0.04,0.03) - mean(0.02,0.01) = 0.035 - 0.015 = 0.02
     # turn = 1.0 (deploy), cost = 0.001, net = 0.019
@@ -334,8 +337,13 @@ def test_cost_adjusted_return_multi_period_cumulative():
     groups = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     item_ids = np.array([0, 1, 2, 3, 0, 1, 2, 3])
     cum, net, turn = cost_adjusted_long_short_return(
-        preds, labels, groups, timestamps=None, item_ids=item_ids,
-        k=2, cost_per_turnover=0.0,
+        preds,
+        labels,
+        groups,
+        timestamps=None,
+        item_ids=item_ids,
+        k=2,
+        cost_per_turnover=0.0,
     )
     # cost=0 -> net = gross = 0.02 each period -> cum = 0.04.
     assert net[0] == pytest.approx(0.02)
@@ -350,8 +358,13 @@ def test_cost_adjusted_return_with_rotation_cost():
     groups = np.array([0, 0, 1, 1])
     item_ids = np.array([0, 1, 0, 1])
     cum, net, turn = cost_adjusted_long_short_return(
-        preds, labels, groups, timestamps=None, item_ids=item_ids,
-        k=1, cost_per_turnover=0.01,
+        preds,
+        labels,
+        groups,
+        timestamps=None,
+        item_ids=item_ids,
+        k=1,
+        cost_per_turnover=0.01,
     )
     # Period 0: gross = 0.02-0.01 = 0.01, turn=1.0, cost=0.01, net=0.0
     # Period 1: gross = 0.02-0.01 = 0.01, turn=2.0, cost=0.02, net=-0.01
@@ -366,7 +379,12 @@ def test_cost_adjusted_return_zero_cost_equals_gross():
     labels = np.array([0.03, 0.01, 0.02])
     groups = np.array([0, 0, 0])
     cum, net, _ = cost_adjusted_long_short_return(
-        preds, labels, groups, timestamps=None, k=1, cost_per_turnover=0.0,
+        preds,
+        labels,
+        groups,
+        timestamps=None,
+        k=1,
+        cost_per_turnover=0.0,
     )
     # k=1, n=3 -> kk=1. top-1=0.03, bottom-1=0.01 -> gross=0.02.
     assert net[0] == pytest.approx(0.02)
@@ -415,10 +433,16 @@ def test_max_drawdown_recover_then_new_low():
 def test_rank_report_frozen():
     """RankReport must be immutable."""
     report = RankReport(
-        rank_ic_mean=0.1, rank_ic_std=0.05, ndcg_at_k=0.8,
-        top_k_spread_mean=0.02, top_k_spread_std=0.01,
-        turnover_mean=0.5, cost_adjusted_ls_return=0.1,
-        max_drawdown=0.05, n_groups=3, n_periods=3,
+        rank_ic_mean=0.1,
+        rank_ic_std=0.05,
+        ndcg_at_k=0.8,
+        top_k_spread_mean=0.02,
+        top_k_spread_std=0.01,
+        turnover_mean=0.5,
+        cost_adjusted_ls_return=0.1,
+        max_drawdown=0.05,
+        n_groups=3,
+        n_periods=3,
     )
     with pytest.raises(Exception):
         report.rank_ic_mean = 0.9  # type: ignore[misc]
@@ -428,10 +452,16 @@ def test_rank_report_extra_forbid():
     """RankReport rejects unknown fields."""
     with pytest.raises(Exception):
         RankReport(
-            rank_ic_mean=0.1, rank_ic_std=0.05, ndcg_at_k=0.8,
-            top_k_spread_mean=0.02, top_k_spread_std=0.01,
-            turnover_mean=0.5, cost_adjusted_ls_return=0.1,
-            max_drawdown=0.05, n_groups=3, n_periods=3,
+            rank_ic_mean=0.1,
+            rank_ic_std=0.05,
+            ndcg_at_k=0.8,
+            top_k_spread_mean=0.02,
+            top_k_spread_std=0.01,
+            turnover_mean=0.5,
+            cost_adjusted_ls_return=0.1,
+            max_drawdown=0.05,
+            n_groups=3,
+            n_periods=3,
             unknown="bad",  # type: ignore[call-arg]
         )
 
@@ -440,20 +470,32 @@ def test_rank_report_negative_count_rejected():
     """n_groups / n_periods must be >= 0."""
     with pytest.raises(Exception):
         RankReport(
-            rank_ic_mean=0.0, rank_ic_std=0.0, ndcg_at_k=0.0,
-            top_k_spread_mean=0.0, top_k_spread_std=0.0,
-            turnover_mean=0.0, cost_adjusted_ls_return=0.0,
-            max_drawdown=0.0, n_groups=-1, n_periods=0,
+            rank_ic_mean=0.0,
+            rank_ic_std=0.0,
+            ndcg_at_k=0.0,
+            top_k_spread_mean=0.0,
+            top_k_spread_std=0.0,
+            turnover_mean=0.0,
+            cost_adjusted_ls_return=0.0,
+            max_drawdown=0.0,
+            n_groups=-1,
+            n_periods=0,
         )
 
 
 def test_rank_report_field_values_preserved():
     """All fields round-trip through construction."""
     report = RankReport(
-        rank_ic_mean=0.123, rank_ic_std=0.045, ndcg_at_k=0.91,
-        top_k_spread_mean=0.02, top_k_spread_std=0.008,
-        turnover_mean=0.33, cost_adjusted_ls_return=0.15,
-        max_drawdown=0.07, n_groups=5, n_periods=5,
+        rank_ic_mean=0.123,
+        rank_ic_std=0.045,
+        ndcg_at_k=0.91,
+        top_k_spread_mean=0.02,
+        top_k_spread_std=0.008,
+        turnover_mean=0.33,
+        cost_adjusted_ls_return=0.15,
+        max_drawdown=0.07,
+        n_groups=5,
+        n_periods=5,
     )
     assert report.rank_ic_mean == pytest.approx(0.123)
     assert report.ndcg_at_k == pytest.approx(0.91)
@@ -470,7 +512,9 @@ def test_compute_rank_metrics_fail_closed_none_groups():
     """None groups -> ValueError with the required message."""
     with pytest.raises(ValueError, match="ranking metrics require groups"):
         compute_rank_metrics(
-            np.array([1.0, 2.0]), np.array([1.0, 2.0]), groups=None,
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            groups=None,
         )
 
 
@@ -478,7 +522,9 @@ def test_compute_rank_metrics_fail_closed_empty_groups():
     """Empty groups -> ValueError with the required message."""
     with pytest.raises(ValueError, match="ranking metrics require groups"):
         compute_rank_metrics(
-            np.array([]), np.array([]), groups=np.array([]),
+            np.array([]),
+            np.array([]),
+            groups=np.array([]),
         )
 
 
@@ -486,8 +532,10 @@ def test_compute_rank_metrics_invalid_top_k():
     """top_k <= 0 -> ValueError."""
     with pytest.raises(ValueError):
         compute_rank_metrics(
-            np.array([1.0, 2.0]), np.array([1.0, 2.0]),
-            groups=np.array([0, 0]), top_k=0,
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            groups=np.array([0, 0]),
+            top_k=0,
         )
 
 
@@ -495,7 +543,8 @@ def test_compute_rank_metrics_length_mismatch():
     """Mismatched prediction/label/group lengths -> ValueError."""
     with pytest.raises(ValueError):
         compute_rank_metrics(
-            np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0]),
+            np.array([1.0, 2.0, 3.0]),
+            np.array([1.0, 2.0]),
             groups=np.array([0, 0]),
         )
 
@@ -522,8 +571,13 @@ def test_compute_rank_metrics_end_to_end():
     timestamps = np.repeat(np.arange(3), 20) * 100
     item_ids = np.tile(np.arange(20), 3)
     report = compute_rank_metrics(
-        preds, labels, groups, timestamps=timestamps,
-        top_k=5, cost_per_turnover=0.001, item_ids=item_ids,
+        preds,
+        labels,
+        groups,
+        timestamps=timestamps,
+        top_k=5,
+        cost_per_turnover=0.001,
+        item_ids=item_ids,
     )
     assert isinstance(report, RankReport)
     assert report.n_groups == 3
@@ -579,8 +633,13 @@ def test_compute_rank_metrics_timestamps_ordering():
     timestamps = np.array([200, 200, 200, 200, 100, 100, 100, 100])
     item_ids = np.array([0, 1, 2, 3, 0, 1, 2, 3])
     report = compute_rank_metrics(
-        preds, labels, groups, timestamps=timestamps,
-        top_k=2, cost_per_turnover=0.0, item_ids=item_ids,
+        preds,
+        labels,
+        groups,
+        timestamps=timestamps,
+        top_k=2,
+        cost_per_turnover=0.0,
+        item_ids=item_ids,
     )
     # Ordered: group 0 (ts=100) gross +0.02, group 1 (ts=200) gross -0.02.
     # cum = 0.0 (with zero cost).

@@ -13,9 +13,7 @@ mock the heavy model so no actual model is downloaded.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,8 +30,6 @@ from quant_foundry.event_text_runtime import (
     EventTextImageSpec,
     _hash_embedding,
 )
-from quant_foundry.tabular_neural_runtime import GPUStatus
-
 
 # ---------------------------------------------------------------------------
 # EventTextImageSpec
@@ -44,10 +40,7 @@ class TestEventTextImageSpec:
     def test_defaults(self) -> None:
         spec = EventTextImageSpec()
         assert spec.image_name == "trainer-gpu-event-text"
-        assert (
-            spec.base_image
-            == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
-        )
+        assert spec.base_image == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
         assert spec.python_version == "3.12"
         assert spec.gpu_required is True
         assert spec.offline_mode is True
@@ -296,9 +289,7 @@ class TestEventTextEncoder:
 
     def test_validate_offline_hub_id_no_parent(self) -> None:
         cfg = EmbeddingConfig(model_id="m", model_hash="h")
-        encoder = EventTextEncoder(
-            config=cfg, weight_path="all-MiniLM-L6-v2"
-        )
+        encoder = EventTextEncoder(config=cfg, weight_path="all-MiniLM-L6-v2")
         # A bare Hub repo ID (no parent) is not offline.
         assert encoder.validate_offline() is False
 
@@ -373,9 +364,7 @@ class TestEventTextEncoder:
             [0.4, 0.5, 0.6],
         ]
         encoder._model = mock_model
-        results = encoder.encode_batch(
-            ["text one", "text two"], ["evt-1", "evt-2"]
-        )
+        results = encoder.encode_batch(["text one", "text two"], ["evt-1", "evt-2"])
 
         assert len(results) == 2
         assert results[0].event_id == "evt-1"
@@ -399,9 +388,7 @@ class TestEventTextEncoder:
             encoder.encode_batch(["a", "b"], ["evt-1"])
 
     def test_encode_missing_weight_raises(self, tmp_path: Path) -> None:
-        cfg = EmbeddingConfig(
-            model_id="m", model_hash="h", device="cpu", embedding_dim=4
-        )
+        cfg = EmbeddingConfig(model_id="m", model_hash="h", device="cpu", embedding_dim=4)
         encoder = EventTextEncoder(
             config=cfg,
             weight_path=str(tmp_path / "nonexistent" / "model"),
@@ -411,9 +398,7 @@ class TestEventTextEncoder:
 
     def test_encode_empty_text_with_mock(self, tmp_path: Path) -> None:
         path, whash = _make_weight_dir(tmp_path)
-        cfg = EmbeddingConfig(
-            model_id="m", model_hash=whash, embedding_dim=3, device="cpu"
-        )
+        cfg = EmbeddingConfig(model_id="m", model_hash=whash, embedding_dim=3, device="cpu")
         encoder = EventTextEncoder(config=cfg, weight_path=path)
         mock_model = MagicMock()
         mock_model.encode.return_value = [[0.0, 0.0, 0.0]]
@@ -425,9 +410,7 @@ class TestEventTextEncoder:
 
     def test_encode_batch_reproducible_with_mock(self, tmp_path: Path) -> None:
         path, whash = _make_weight_dir(tmp_path)
-        cfg = EmbeddingConfig(
-            model_id="m", model_hash=whash, embedding_dim=2, device="cpu"
-        )
+        cfg = EmbeddingConfig(model_id="m", model_hash=whash, embedding_dim=2, device="cpu")
         mock_model = MagicMock()
         mock_model.encode.return_value = [[0.1, 0.2], [0.3, 0.4]]
 
@@ -587,16 +570,12 @@ class TestEventSymbolResolver:
         assert resolver.resolve("APPLE announces new product") == ["AAPL"]
 
     def test_resolve_multiple_entities(self) -> None:
-        resolver = EventSymbolResolver(
-            {"Apple": ["AAPL"], "Tesla": ["TSLA"]}
-        )
+        resolver = EventSymbolResolver({"Apple": ["AAPL"], "Tesla": ["TSLA"]})
         result = resolver.resolve("Apple and Tesla both announce earnings")
         assert result == ["AAPL", "TSLA"]
 
     def test_resolve_deduplicates_symbols(self) -> None:
-        resolver = EventSymbolResolver(
-            {"Apple": ["AAPL", "AAPL"], "iPhone": ["AAPL"]}
-        )
+        resolver = EventSymbolResolver({"Apple": ["AAPL", "AAPL"], "iPhone": ["AAPL"]})
         result = resolver.resolve("Apple iPhone launch")
         assert result == ["AAPL"]
 
@@ -605,9 +584,7 @@ class TestEventSymbolResolver:
         assert resolver.resolve("") == []
 
     def test_resolve_sorted_output(self) -> None:
-        resolver = EventSymbolResolver(
-            {"Zebra": ["ZSYM"], "Apple": ["AAPL"]}
-        )
+        resolver = EventSymbolResolver({"Zebra": ["ZSYM"], "Apple": ["AAPL"]})
         result = resolver.resolve("Zebra and Apple")
         assert result == ["AAPL", "ZSYM"]
 
@@ -634,9 +611,7 @@ class TestEventSymbolResolver:
         assert resolver.list_entities() == []
 
     def test_list_entities_sorted(self) -> None:
-        resolver = EventSymbolResolver(
-            {"Zebra": ["Z"], "Apple": ["A"], "Mango": ["M"]}
-        )
+        resolver = EventSymbolResolver({"Zebra": ["Z"], "Apple": ["A"], "Mango": ["M"]})
         assert resolver.list_entities() == ["Apple", "Mango", "Zebra"]
 
     def test_init_with_mapping_copy(self) -> None:
@@ -659,9 +634,7 @@ class TestEventTextHealthcheck:
         assert hc.embedding_cache_dir == "/opt/embedding_cache"
 
     def test_init_custom(self, tmp_path: Path) -> None:
-        hc = EventTextHealthcheck(
-            timeout_seconds=30, embedding_cache_dir=str(tmp_path)
-        )
+        hc = EventTextHealthcheck(timeout_seconds=30, embedding_cache_dir=str(tmp_path))
         assert hc.timeout_seconds == 30
         assert hc.embedding_cache_dir == str(tmp_path)
 

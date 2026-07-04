@@ -62,6 +62,7 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
     def clear_status(*args, **kwargs):  # type: ignore[no-redef]
         pass
 
+
 from quant_foundry.real_inference import RealInferenceEngine  # noqa: E402
 from quant_foundry.schemas import RunPodInferenceRequest  # noqa: E402
 from quant_foundry.shadow_inference import (  # noqa: E402
@@ -126,9 +127,7 @@ def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _heartbeat_during_inference(
-    job_id: str, interval: float = 5.0
-) -> threading.Event:
+def _heartbeat_during_inference(job_id: str, interval: float = 5.0) -> threading.Event:
     """Start a background heartbeat thread. Returns a stop event.
 
     Inference is faster than training, so a shorter interval (5s) is
@@ -219,9 +218,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # the request carries an artifact_ref that points at a model artifact
     # (file:// or s3://). Otherwise we fall back to the stub engine for
     # backward-compatible testing.
-    use_real = (
-        os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
-        and bool(request.artifact_ref)
+    use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true" and bool(
+        request.artifact_ref
     )
 
     if use_real:

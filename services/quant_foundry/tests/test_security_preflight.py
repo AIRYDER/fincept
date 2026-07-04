@@ -12,9 +12,7 @@ import re
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.security_preflight import (
-    DEFAULT_FORBIDDEN_ENV_VARS,
     DEFAULT_SECRET_ENV_PATTERNS,
     NOT_SET_PLACEHOLDER,
     REDACTED_PLACEHOLDER,
@@ -25,7 +23,6 @@ from quant_foundry.security_preflight import (
     is_secret_like,
     redact_value,
 )
-
 
 # ---------------------------------------------------------------------------
 # PreflightConfig
@@ -64,16 +61,12 @@ def test_preflight_config_extra_forbidden():
 
 
 def test_preflight_config_custom_forbidden_vars():
-    cfg = PreflightConfig(
-        forbidden_env_vars=["MY_SECRET"], allowed_callback_hosts=["h"]
-    )
+    cfg = PreflightConfig(forbidden_env_vars=["MY_SECRET"], allowed_callback_hosts=["h"])
     assert cfg.forbidden_env_vars == ["MY_SECRET"]
 
 
 def test_preflight_config_non_production_mode():
-    cfg = PreflightConfig(
-        allowed_callback_hosts=["h"], production_mode=False
-    )
+    cfg = PreflightConfig(allowed_callback_hosts=["h"], production_mode=False)
     assert cfg.production_mode is False
 
 
@@ -248,10 +241,7 @@ def test_redact_value_empty():
 
 def test_redact_value_secret_empty_still_redacted():
     # Secret-like name wins over the empty check.
-    assert (
-        redact_value("API_SECRET", "", DEFAULT_SECRET_ENV_PATTERNS)
-        == REDACTED_PLACEHOLDER
-    )
+    assert redact_value("API_SECRET", "", DEFAULT_SECRET_ENV_PATTERNS) == REDACTED_PLACEHOLDER
 
 
 # ---------------------------------------------------------------------------
@@ -377,9 +367,7 @@ def test_validate_callback_url_no_scheme():
 
 def test_validate_callback_url_no_host_allowlist_restriction():
     # When allowlist is empty, any host passes (but HTTPS still required).
-    preflight = SecurityPreflight(
-        PreflightConfig(allowed_callback_hosts=[])
-    )
+    preflight = SecurityPreflight(PreflightConfig(allowed_callback_hosts=[]))
     valid, error = preflight.validate_callback_url("https://anywhere.example.com/cb")
     assert valid is True
     assert error is None
@@ -423,9 +411,7 @@ def test_get_writable_dirs_are_unique_and_sorted():
 
 def test_redact_config_secrets_redacted():
     preflight = _make_preflight()
-    out = preflight.redact_config(
-        {"API_SECRET": "s3cr3t", "DB_PASSWORD": "hunter2"}
-    )
+    out = preflight.redact_config({"API_SECRET": "s3cr3t", "DB_PASSWORD": "hunter2"})
     assert out["API_SECRET"] == REDACTED_PLACEHOLDER
     assert out["DB_PASSWORD"] == REDACTED_PLACEHOLDER
 
@@ -528,9 +514,7 @@ def test_run_redacts_secret_like_env_names():
 
 def test_run_records_container_user_and_writable_dirs():
     preflight = _make_preflight()
-    result = preflight.run(
-        env={}, callback_url="https://api.example.com/cb", config={}
-    )
+    result = preflight.run(env={}, callback_url="https://api.example.com/cb", config={})
     assert isinstance(result.container_user, str)
     assert len(result.container_user) > 0
     assert isinstance(result.writable_dirs, list)
@@ -538,9 +522,7 @@ def test_run_records_container_user_and_writable_dirs():
 
 def test_run_timestamp_is_iso():
     preflight = _make_preflight()
-    result = preflight.run(
-        env={}, callback_url="https://api.example.com/cb", config={}
-    )
+    result = preflight.run(env={}, callback_url="https://api.example.com/cb", config={})
     # ISO-8601 with timezone offset.
     assert re.match(r"\d{4}-\d{2}-\d{2}T", result.timestamp)
 
@@ -585,9 +567,7 @@ def test_run_app_credentials_blocked_in_production():
 
 def test_run_empty_env_passes():
     preflight = _make_preflight()
-    result = preflight.run(
-        env={}, callback_url="https://api.example.com/cb", config={}
-    )
+    result = preflight.run(env={}, callback_url="https://api.example.com/cb", config={})
     assert result.passed is True
 
 
@@ -653,9 +633,7 @@ def test_format_report_fail():
 
 def test_format_report_contains_container_user():
     preflight = _make_preflight()
-    result = preflight.run(
-        env={}, callback_url="https://api.example.com/cb", config={}
-    )
+    result = preflight.run(env={}, callback_url="https://api.example.com/cb", config={})
     report = preflight.format_report(result)
     assert "container_user" in report
     assert result.container_user in report
@@ -663,9 +641,7 @@ def test_format_report_contains_container_user():
 
 def test_format_report_contains_writable_dirs():
     preflight = _make_preflight()
-    result = preflight.run(
-        env={}, callback_url="https://api.example.com/cb", config={}
-    )
+    result = preflight.run(env={}, callback_url="https://api.example.com/cb", config={})
     report = preflight.format_report(result)
     assert "writable_dirs" in report
 

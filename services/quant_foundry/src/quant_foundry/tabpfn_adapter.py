@@ -54,7 +54,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Hard limits (TabPFN published model caps)
 # ---------------------------------------------------------------------------
@@ -71,9 +70,7 @@ TABPFN_HARD_MAX_TRAIN_SAMPLES: int = 10_000
 TABPFN_HARD_MAX_FEATURES: int = 500
 
 # Allowed task types.
-ALLOWED_TASK_TYPES: frozenset[str] = frozenset(
-    {"binary", "multiclass", "regression"}
-)
+ALLOWED_TASK_TYPES: frozenset[str] = frozenset({"binary", "multiclass", "regression"})
 
 # Allowed device strings.
 ALLOWED_DEVICES: frozenset[str] = frozenset({"auto", "cpu", "cuda"})
@@ -121,13 +118,10 @@ class TabPFNConfig(BaseModel):
     def _validate_max_train_samples(cls, v: int) -> int:
         """Reject values above the TabPFN hard limit or below 1."""
         if v < 1:
-            raise ValueError(
-                "max_train_samples must be >= 1"
-            )
+            raise ValueError("max_train_samples must be >= 1")
         if v > TABPFN_HARD_MAX_TRAIN_SAMPLES:
             raise ValueError(
-                f"max_train_samples must be <= {TABPFN_HARD_MAX_TRAIN_SAMPLES} "
-                "(TabPFN hard limit)"
+                f"max_train_samples must be <= {TABPFN_HARD_MAX_TRAIN_SAMPLES} (TabPFN hard limit)"
             )
         return v
 
@@ -139,8 +133,7 @@ class TabPFNConfig(BaseModel):
             raise ValueError("max_features must be >= 1")
         if v > TABPFN_HARD_MAX_FEATURES:
             raise ValueError(
-                f"max_features must be <= {TABPFN_HARD_MAX_FEATURES} "
-                "(TabPFN hard limit)"
+                f"max_features must be <= {TABPFN_HARD_MAX_FEATURES} (TabPFN hard limit)"
             )
         return v
 
@@ -149,9 +142,7 @@ class TabPFNConfig(BaseModel):
     def _validate_device(cls, v: str) -> str:
         """Reject device strings outside the allowlist."""
         if v not in ALLOWED_DEVICES:
-            raise ValueError(
-                f"device must be one of {sorted(ALLOWED_DEVICES)}, got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(ALLOWED_DEVICES)}, got {v!r}")
         return v
 
     @field_validator("task_type")
@@ -159,10 +150,7 @@ class TabPFNConfig(BaseModel):
     def _validate_task_type(cls, v: str) -> str:
         """Reject task types outside the allowlist."""
         if v not in ALLOWED_TASK_TYPES:
-            raise ValueError(
-                f"task_type must be one of {sorted(ALLOWED_TASK_TYPES)}, "
-                f"got {v!r}"
-            )
+            raise ValueError(f"task_type must be one of {sorted(ALLOWED_TASK_TYPES)}, got {v!r}")
         return v
 
     @field_validator("n_ensemble_configurations")
@@ -241,9 +229,7 @@ class TabPFNShadowResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def check_dataset_size(
-    n_samples: int, n_features: int, config: TabPFNConfig
-) -> DatasetSizeCheck:
+def check_dataset_size(n_samples: int, n_features: int, config: TabPFNConfig) -> DatasetSizeCheck:
     """Check whether a dataset fits within ``config``'s limits.
 
     Returns a :class:`DatasetSizeCheck` with ``within_limit=True`` when
@@ -263,14 +249,10 @@ def check_dataset_size(
     reasons: list[str] = []
     if n_samples > config.max_train_samples:
         reasons.append(
-            f"n_samples={n_samples} exceeds max_train_samples="
-            f"{config.max_train_samples}"
+            f"n_samples={n_samples} exceeds max_train_samples={config.max_train_samples}"
         )
     if n_features > config.max_features:
-        reasons.append(
-            f"n_features={n_features} exceeds max_features="
-            f"{config.max_features}"
-        )
+        reasons.append(f"n_features={n_features} exceeds max_features={config.max_features}")
     if reasons:
         return DatasetSizeCheck(
             n_samples=n_samples,
@@ -307,9 +289,7 @@ def _as_row_set(data: Any) -> set[tuple[float, ...]]:
     return set(rows)
 
 
-def detect_in_context_leakage(
-    train_data: Any, train_labels: Any, test_data: Any
-) -> bool:
+def detect_in_context_leakage(train_data: Any, train_labels: Any, test_data: Any) -> bool:
     """Detect in-context label leakage for a TabPFN run.
 
     TabPFN uses in-context learning — the train set is fed into the forward
@@ -384,9 +364,7 @@ def _compute_metrics(
     if task_type == "regression":
         if not labels_list:
             return {"rmse": float("nan"), "mae": float("nan")}
-        sq_errors = [
-            (p - y) ** 2 for p, y in zip(predictions, labels_list)
-        ]
+        sq_errors = [(p - y) ** 2 for p, y in zip(predictions, labels_list)]
         abs_errors = [abs(p - y) for p, y in zip(predictions, labels_list)]
         metrics["rmse"] = float(sum(sq_errors) / len(sq_errors)) ** 0.5
         metrics["mae"] = float(sum(abs_errors) / len(abs_errors))
@@ -394,11 +372,7 @@ def _compute_metrics(
         # binary / multiclass — round predictions to nearest class index.
         if not labels_list:
             return {"accuracy": float("nan")}
-        correct = sum(
-            1
-            for p, y in zip(predictions, labels_list)
-            if round(p) == round(y)
-        )
+        correct = sum(1 for p, y in zip(predictions, labels_list) if round(p) == round(y))
         metrics["accuracy"] = float(correct) / len(labels_list)
     return metrics
 
@@ -487,9 +461,7 @@ class TabPFNShadowAdapter:
             return self._maybe_save(result, artifact_path)
 
         # 2. Leakage guard (fail closed).
-        leakage_ok = detect_in_context_leakage(
-            train_data, train_labels, test_data
-        )
+        leakage_ok = detect_in_context_leakage(train_data, train_labels, test_data)
         if not leakage_ok:
             result = TabPFNShadowResult(
                 config=self.config,
@@ -504,14 +476,10 @@ class TabPFNShadowAdapter:
             return self._maybe_save(result, artifact_path)
 
         # 3. Run TabPFN inference (lazy import).
-        predictions = self._run_tabpfn_inference(
-            train_data, train_labels, test_data
-        )
+        predictions = self._run_tabpfn_inference(train_data, train_labels, test_data)
 
         # 4. Compute metrics.
-        metrics = _compute_metrics(
-            predictions, test_labels, self.config.task_type
-        )
+        metrics = _compute_metrics(predictions, test_labels, self.config.task_type)
 
         # 5. Build result (shadow-only forces promotion_eligible=False).
         is_shadow = self.config.shadow_only
@@ -564,9 +532,7 @@ class TabPFNShadowAdapter:
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"artifact not found: {path}")
-        return TabPFNShadowResult.model_validate_json(
-            p.read_text(encoding="utf-8")
-        )
+        return TabPFNShadowResult.model_validate_json(p.read_text(encoding="utf-8"))
 
     # --- internals ----------------------------------------------------
 
@@ -618,11 +584,10 @@ class TabPFNShadowAdapter:
         Raises ``ImportError`` if ``tabpfn`` is not installed.
         """
         try:
-            from tabpfn import TabPFNClassifier, TabPFNRegressor  # noqa: WPS433
+            from tabpfn import TabPFNClassifier, TabPFNRegressor
         except Exception as exc:  # pragma: no cover - environment-specific
             raise ImportError(
-                "tabpfn is not installed; install the 'tabpfn' package to "
-                "run TabPFN inference"
+                "tabpfn is not installed; install the 'tabpfn' package to run TabPFN inference"
             ) from exc
 
         # Normalise inputs to lists.

@@ -18,7 +18,6 @@ import pathlib
 
 import pytest
 
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
@@ -35,7 +34,7 @@ def _make_version(
     content_hash: str = "hash-1",
     parquet_path: str = "/tmp/ds-a.parquet",
     manifest_path: str = "/tmp/ds-a.manifest.json",
-) -> "object":
+) -> object:
     from quant_foundry.modules.versioning import DatasetVersion, make_version_id
 
     return DatasetVersion(
@@ -46,7 +45,8 @@ def _make_version(
         parquet_path=parquet_path,
         manifest_path=manifest_path,
         row_count=row_count,
-        module_config=module_config or {
+        module_config=module_config
+        or {
             "universe": "universe:sp500:1.0.0",
             "source": "source:mock:1.0.0",
             "sentiment": "sentiment:naive-wordlist:1.0.0",
@@ -337,10 +337,22 @@ def test_compare_datasets(tmp_path: pathlib.Path) -> None:
         "price_join": "price_join:mock:1.0.0",
     }
     registry.register_version(
-        _make_version(dataset_id="ds-a", version_number=1, module_config=cfg_a, row_count=100, content_hash="ha"),
+        _make_version(
+            dataset_id="ds-a",
+            version_number=1,
+            module_config=cfg_a,
+            row_count=100,
+            content_hash="ha",
+        ),
     )
     registry.register_version(
-        _make_version(dataset_id="ds-b", version_number=1, module_config=cfg_b, row_count=150, content_hash="hb"),
+        _make_version(
+            dataset_id="ds-b",
+            version_number=1,
+            module_config=cfg_b,
+            row_count=150,
+            content_hash="hb",
+        ),
     )
 
     cmp = registry.compare_datasets("ds-a", "ds-b")

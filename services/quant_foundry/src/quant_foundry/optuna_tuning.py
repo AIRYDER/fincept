@@ -34,11 +34,11 @@ import hashlib
 import json
 import pathlib
 import time
+from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -130,12 +130,10 @@ class TuningSpec(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_direction(self) -> "TuningSpec":
+    def _validate_direction(self) -> TuningSpec:
         """Ensure ``direction`` is one of the allowed values."""
         if self.direction not in ("minimize", "maximize"):
-            raise ValueError(
-                f"direction must be 'minimize' or 'maximize'; got {self.direction!r}"
-            )
+            raise ValueError(f"direction must be 'minimize' or 'maximize'; got {self.direction!r}")
         return self
 
 
@@ -310,9 +308,7 @@ class BudgetEnforcer:
                 Must be >= 0.
         """
         if max_wall_clock_seconds < 0:
-            raise ValueError(
-                f"max_wall_clock_seconds must be >= 0; got {max_wall_clock_seconds}"
-            )
+            raise ValueError(f"max_wall_clock_seconds must be >= 0; got {max_wall_clock_seconds}")
         self.max_wall_clock_seconds = max_wall_clock_seconds
 
     def should_stop(self, elapsed_seconds: float) -> bool:
@@ -347,7 +343,7 @@ class BudgetEnforcer:
 
 def _iso_now() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+    return _dt.datetime.now(_dt.UTC).isoformat()
 
 
 def _sample_params(trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
@@ -541,7 +537,7 @@ class OptunaTuner:
                     )
                 )
                 raise
-            except Exception as exc:  # noqa: BLE001 - record any failure
+            except Exception as exc:
                 duration = time.monotonic() - trial_start
                 trial_results.append(
                     TrialResult(
@@ -616,7 +612,9 @@ class OptunaTuner:
 
         # Build best trial from completed trials.
         best_trial: TrialResult | None = None
-        completed = [t for t in trial_results if t.state == "COMPLETE" and t.metric_value is not None]
+        completed = [
+            t for t in trial_results if t.state == "COMPLETE" and t.metric_value is not None
+        ]
         if completed:
             if self.tuning_spec.direction == "minimize":
                 best_trial = min(completed, key=lambda t: t.metric_value or float("inf"))
@@ -668,7 +666,9 @@ class OptunaTuner:
             p = p / "study.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w", encoding="utf-8") as f:
-            json.dump(self._last_study_artifact.model_dump(mode="json"), f, indent=2, sort_keys=True)
+            json.dump(
+                self._last_study_artifact.model_dump(mode="json"), f, indent=2, sort_keys=True
+            )
 
     def save_best_trial(self, path: str) -> None:
         """Write the best-trial artifact to ``path`` as ``best_trial.json``.

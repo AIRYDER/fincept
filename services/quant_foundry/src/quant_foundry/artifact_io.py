@@ -224,8 +224,5 @@ def resolve_loader(name: str) -> Callable[..., Any]:
     if not name or not isinstance(name, str) or not name.strip():
         raise ValueError("loader name must be a non-empty string")
     if name not in LOADER_REGISTRY:
-        raise ValueError(
-            f"unknown artifact loader {name!r}; known: "
-            f"{sorted(LOADER_REGISTRY)}"
-        )
+        raise ValueError(f"unknown artifact loader {name!r}; known: {sorted(LOADER_REGISTRY)}")
     return LOADER_REGISTRY[name]

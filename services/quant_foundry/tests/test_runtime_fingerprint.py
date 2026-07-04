@@ -22,13 +22,12 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.runtime_fingerprint import (
     FingerprintValidationError,
     RuntimeFingerprint,
@@ -39,7 +38,6 @@ from quant_foundry.runtime_fingerprint import (
     validate_fingerprint,
     verify_signature,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -87,7 +85,7 @@ def _make_fingerprint(
         training_manifest_hash=training_manifest_hash,
         fingerprint_hash=fingerprint_hash,
         signature=signature,
-        created_at=created_at or datetime.now(timezone.utc).isoformat(),
+        created_at=created_at or datetime.now(UTC).isoformat(),
         is_canary=is_canary,
         promotion_eligible=promotion_eligible,
     )
@@ -264,9 +262,7 @@ def test_collect_image_digest_missing(builder: RuntimeFingerprintBuilder) -> Non
         assert builder.collect_image_digest() is None
 
 
-def test_collect_dockerfile_hash_success(
-    builder: RuntimeFingerprintBuilder, tmp_path: Any
-) -> None:
+def test_collect_dockerfile_hash_success(builder: RuntimeFingerprintBuilder, tmp_path: Any) -> None:
     """collect_dockerfile_hash computes SHA-256 of the Dockerfile."""
     dockerfile = tmp_path / "Dockerfile"
     content = b"FROM python:3.11\nRUN pip install numpy\n"
@@ -280,9 +276,7 @@ def test_collect_dockerfile_hash_missing(builder: RuntimeFingerprintBuilder) -> 
     assert builder.collect_dockerfile_hash("/nonexistent/Dockerfile") is None
 
 
-def test_collect_dependency_hash_success(
-    builder: RuntimeFingerprintBuilder, tmp_path: Any
-) -> None:
+def test_collect_dependency_hash_success(builder: RuntimeFingerprintBuilder, tmp_path: Any) -> None:
     """collect_dependency_hash computes SHA-256 of the requirements file."""
     req = tmp_path / "requirements.txt"
     content = b"numpy==1.24.0\npandas==2.0.0\n"
@@ -353,9 +347,7 @@ def test_collect_gpu_info_no_gpu(builder: RuntimeFingerprintBuilder) -> None:
     """collect_gpu_info returns None when no GPU is available."""
     with patch(
         "quant_foundry.tabular_neural_runtime.check_gpu",
-        return_value=type(
-            "S", (), {"available": False, "device_name": None}
-        )(),
+        return_value=type("S", (), {"available": False, "device_name": None})(),
     ):
         assert builder.collect_gpu_info() is None
 
@@ -364,9 +356,7 @@ def test_collect_gpu_info_with_gpu(builder: RuntimeFingerprintBuilder) -> None:
     """collect_gpu_info returns the device name when a GPU is available."""
     with patch(
         "quant_foundry.tabular_neural_runtime.check_gpu",
-        return_value=type(
-            "S", (), {"available": True, "device_name": "NVIDIA RTX 4090"}
-        )(),
+        return_value=type("S", (), {"available": True, "device_name": "NVIDIA RTX 4090"})(),
     ):
         assert builder.collect_gpu_info() == "NVIDIA RTX 4090"
 
@@ -418,12 +408,8 @@ def test_fingerprint_hash_changes_with_fields(builder: RuntimeFingerprintBuilder
 def test_fingerprint_hash_order_independence(builder: RuntimeFingerprintBuilder) -> None:
     """Dict field key order does not affect the hash."""
     ts = "2024-01-01T00:00:00Z"
-    fp1 = _make_fingerprint(
-        library_versions={"numpy": "1.24.0", "torch": "2.1.0"}, created_at=ts
-    )
-    fp2 = _make_fingerprint(
-        library_versions={"torch": "2.1.0", "numpy": "1.24.0"}, created_at=ts
-    )
+    fp1 = _make_fingerprint(library_versions={"numpy": "1.24.0", "torch": "2.1.0"}, created_at=ts)
+    fp2 = _make_fingerprint(library_versions={"torch": "2.1.0", "numpy": "1.24.0"}, created_at=ts)
     assert builder.compute_fingerprint_hash(fp1) == builder.compute_fingerprint_hash(fp2)
 
 
@@ -586,7 +572,9 @@ def test_validate_fingerprint_hash_match() -> None:
 
 def test_validate_fingerprint_canary_missing_digest_allowed() -> None:
     """Canary with missing digest is allowed in non-production mode."""
-    fp = _make_fingerprint(image_digest=None, git_sha=None, is_canary=True, promotion_eligible=False)
+    fp = _make_fingerprint(
+        image_digest=None, git_sha=None, is_canary=True, promotion_eligible=False
+    )
     validate_fingerprint(fp, production_mode=False)
 
 

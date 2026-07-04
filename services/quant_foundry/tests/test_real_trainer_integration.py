@@ -115,9 +115,7 @@ _LIGHTGBM = pytest.importorskip("lightgbm")
 _NUMPY = pytest.importorskip("numpy")
 
 
-def _make_test_dataset(
-    tmp_path: Path, n: int = 300, seed: int = 42
-) -> Path:
+def _make_test_dataset(tmp_path: Path, n: int = 300, seed: int = 42) -> Path:
     """Create a synthetic CSV dataset: timestamp, f1, f2, f3, f4, label."""
     import numpy as np
 
@@ -141,9 +139,7 @@ def _make_test_dataset(
     return path
 
 
-def _make_test_dataset_with_roles(
-    tmp_path: Path, n: int = 300, seed: int = 42
-) -> Path:
+def _make_test_dataset_with_roles(tmp_path: Path, n: int = 300, seed: int = 42) -> Path:
     """CSV with timestamp, f1, f2, f3, leakage_col, weight, label."""
     import numpy as np
 
@@ -224,37 +220,45 @@ def _make_date_dataset(
     dates_f1_val = pd.date_range("2024-09-10", "2024-10-31", freq="D")
 
     for d in dates_f0_train:
-        rows.append({
-            "decision_time": d.strftime("%Y-%m-%d"),
-            "symbol": "AAPL",
-            "f1": rng.randn(),
-            "f2": rng.randn(),
-            "label": float(rng.randint(0, 2)),
-        })
+        rows.append(
+            {
+                "decision_time": d.strftime("%Y-%m-%d"),
+                "symbol": "AAPL",
+                "f1": rng.randn(),
+                "f2": rng.randn(),
+                "label": float(rng.randint(0, 2)),
+            }
+        )
     for d in dates_f0_val:
-        rows.append({
-            "decision_time": d.strftime("%Y-%m-%d"),
-            "symbol": "AAPL",
-            "f1": rng.randn(),
-            "f2": rng.randn(),
-            "label": float(rng.randint(0, 2)),
-        })
+        rows.append(
+            {
+                "decision_time": d.strftime("%Y-%m-%d"),
+                "symbol": "AAPL",
+                "f1": rng.randn(),
+                "f2": rng.randn(),
+                "label": float(rng.randint(0, 2)),
+            }
+        )
     for d in dates_f1_train:
-        rows.append({
-            "decision_time": d.strftime("%Y-%m-%d"),
-            "symbol": "AAPL",
-            "f1": rng.randn(),
-            "f2": rng.randn(),
-            "label": float(rng.randint(0, 2)),
-        })
+        rows.append(
+            {
+                "decision_time": d.strftime("%Y-%m-%d"),
+                "symbol": "AAPL",
+                "f1": rng.randn(),
+                "f2": rng.randn(),
+                "label": float(rng.randint(0, 2)),
+            }
+        )
     for d in dates_f1_val:
-        rows.append({
-            "decision_time": d.strftime("%Y-%m-%d"),
-            "symbol": "AAPL",
-            "f1": rng.randn(),
-            "f2": rng.randn(),
-            "label": float(rng.randint(0, 2)),
-        })
+        rows.append(
+            {
+                "decision_time": d.strftime("%Y-%m-%d"),
+                "symbol": "AAPL",
+                "f1": rng.randn(),
+                "f2": rng.randn(),
+                "label": float(rng.randint(0, 2)),
+            }
+        )
 
     df = pd.DataFrame(rows)
     path = tmp_path / "date_data.csv"
@@ -262,9 +266,7 @@ def _make_date_dataset(
     return path
 
 
-def _make_training_request(
-    job_id: str, dataset_ref: str, seed: int = 42
-) -> RunPodTrainingRequest:
+def _make_training_request(job_id: str, dataset_ref: str, seed: int = 42) -> RunPodTrainingRequest:
     return RunPodTrainingRequest(
         job_id=job_id,
         dataset_manifest_ref=dataset_ref,
@@ -779,8 +781,8 @@ def test_rank_metrics_for_ranking_task_xgboost(tmp_path: Path) -> None:
 def test_rank_report_is_rank_report_instance(tmp_path: Path) -> None:
     """The rank_report in metrics is a RankReport instance."""
     from quant_foundry.dataset_manifest import ColumnRoles
-    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.rank_metrics import RankReport
+    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.training_manifest import ModelTaskSpec
 
     data = _make_ranking_dataset(tmp_path)
@@ -998,8 +1000,11 @@ def test_load_model_lightgbm(tmp_path: Path) -> None:
     import lightgbm as lgb
 
     # Re-create a booster from the pickled bytes and save in native format.
-    model = lgb.Booster(model_str=trainer.last_model_bytes.decode("utf-8", errors="replace")) \
-        if False else None  # noqa: F841
+    model = (
+        lgb.Booster(model_str=trainer.last_model_bytes.decode("utf-8", errors="replace"))
+        if False
+        else None
+    )
     # The last_model_bytes is a pickle of an lgb.Booster; unpickle + save.
     import pickle
 
@@ -1139,12 +1144,18 @@ def test_catboost_backend_deterministic_same_seed(tmp_path: Path) -> None:
     deadline = time.time_ns() + 120_000_000_000
 
     t1 = RealLightGBMTrainer(
-        backend="catboost", column_roles=roles, task_spec=spec, n_folds=2,
+        backend="catboost",
+        column_roles=roles,
+        task_spec=spec,
+        n_folds=2,
     )
     a1, d1 = t1.train(req1, deadline_ns=deadline)
 
     t2 = RealLightGBMTrainer(
-        backend="catboost", column_roles=roles, task_spec=spec, n_folds=2,
+        backend="catboost",
+        column_roles=roles,
+        task_spec=spec,
+        n_folds=2,
     )
     a2, d2 = t2.train(req2, deadline_ns=deadline)
 
@@ -1173,12 +1184,18 @@ def test_xgboost_backend_deterministic_same_seed(tmp_path: Path) -> None:
     deadline = time.time_ns() + 120_000_000_000
 
     t1 = RealLightGBMTrainer(
-        backend="xgboost", column_roles=roles, task_spec=spec, n_folds=2,
+        backend="xgboost",
+        column_roles=roles,
+        task_spec=spec,
+        n_folds=2,
     )
     a1, _ = t1.train(req1, deadline_ns=deadline)
 
     t2 = RealLightGBMTrainer(
-        backend="xgboost", column_roles=roles, task_spec=spec, n_folds=2,
+        backend="xgboost",
+        column_roles=roles,
+        task_spec=spec,
+        n_folds=2,
     )
     a2, _ = t2.train(req2, deadline_ns=deadline)
 

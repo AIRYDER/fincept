@@ -29,6 +29,7 @@ WORKDIR /build
 COPY pyproject.toml uv.lock ./
 COPY libs libs
 COPY services services
+COPY experiments experiments
 
 # Sync only the api service and its dependencies. Frozen = reproducible.
 # --no-dev strips mypy/pytest/etc. out of the production image.

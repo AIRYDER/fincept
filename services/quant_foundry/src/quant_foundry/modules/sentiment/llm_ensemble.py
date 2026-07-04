@@ -59,7 +59,8 @@ class LLMEnsemble4Sentiment:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.provider_names: list[str] = self.config.get(
-            "providers", ["openai", "anthropic", "xai", "minimax"],
+            "providers",
+            ["openai", "anthropic", "xai", "minimax"],
         )
         self.aggregation: str = self.config.get("aggregation", "mean")
         self.min_providers: int = self.config.get("min_providers", 2)
@@ -106,22 +107,20 @@ class LLMEnsemble4Sentiment:
 
         results: list[SentimentResult] = []
         for item_details in detailed:
-            scores = [
-                p["score"] for p in item_details["providers"]
-                if p["confidence"] > 0.0
-            ]
+            scores = [p["score"] for p in item_details["providers"] if p["confidence"] > 0.0]
             confidences = [
-                p["confidence"] for p in item_details["providers"]
-                if p["confidence"] > 0.0
+                p["confidence"] for p in item_details["providers"] if p["confidence"] > 0.0
             ]
 
             if len(scores) < self.min_providers:
-                results.append(SentimentResult(
-                    item_id=item_details["item_id"],
-                    provider="llm-ensemble",
-                    score=0.0,
-                    confidence=0.0,
-                ))
+                results.append(
+                    SentimentResult(
+                        item_id=item_details["item_id"],
+                        provider="llm-ensemble",
+                        score=0.0,
+                        confidence=0.0,
+                    )
+                )
                 continue
 
             if self.aggregation == "median":
@@ -139,12 +138,14 @@ class LLMEnsemble4Sentiment:
                 agreement = 1.0
             ensemble_conf = mean_conf * agreement
 
-            results.append(SentimentResult(
-                item_id=item_details["item_id"],
-                provider="llm-ensemble",
-                score=round(agg_score, 6),
-                confidence=round(min(1.0, ensemble_conf), 6),
-            ))
+            results.append(
+                SentimentResult(
+                    item_id=item_details["item_id"],
+                    provider="llm-ensemble",
+                    score=round(agg_score, 6),
+                    confidence=round(min(1.0, ensemble_conf), 6),
+                )
+            )
 
         return results
 
@@ -208,25 +209,27 @@ class LLMEnsemble4Sentiment:
                 if name not in per_provider_results:
                     continue
                 result = per_provider_results[name][i]
-                provider_details.append({
-                    "provider": name,
-                    "score": result.score,
-                    "confidence": result.confidence,
-                })
+                provider_details.append(
+                    {
+                        "provider": name,
+                        "score": result.score,
+                        "confidence": result.confidence,
+                    }
+                )
                 if result.confidence > 0.0:
                     scores.append(result.score)
 
             ensemble_score = statistics.mean(scores) if scores else 0.0
-            ensemble_std = (
-                statistics.stdev(scores) if len(scores) > 1 else 0.0
-            )
+            ensemble_std = statistics.stdev(scores) if len(scores) > 1 else 0.0
 
-            detailed.append({
-                "item_id": item.item_id,
-                "providers": provider_details,
-                "ensemble_score": round(ensemble_score, 6),
-                "ensemble_std": round(ensemble_std, 6),
-            })
+            detailed.append(
+                {
+                    "item_id": item.item_id,
+                    "providers": provider_details,
+                    "ensemble_score": round(ensemble_score, 6),
+                    "ensemble_std": round(ensemble_std, 6),
+                }
+            )
 
         return detailed
 

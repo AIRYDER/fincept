@@ -25,7 +25,6 @@ from quant_foundry.job_ledger import (
     TrainingJobLedger,
 )
 
-
 # --- module imports / types ------------------------------------------------
 
 

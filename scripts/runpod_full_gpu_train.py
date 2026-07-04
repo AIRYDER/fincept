@@ -13,14 +13,15 @@ Requirements:
 - Updated RunPod container with write_volume/stat_volume tasks
 - RUNPOD_API_KEY, RUNPOD_TRAINING_ENDPOINT_ID, QUANT_FOUNDRY_CALLBACK_SECRET
 """
+
 from __future__ import annotations
 
 import json
-import math
 import os
 import pathlib
 import sys
 import time
+
 import requests
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -114,8 +115,8 @@ def main() -> int:
         print(f"  File exists: {output.get('volume_path')}")
         print(f"  Size: {output.get('file_size_mb')} MB ({output.get('file_size_bytes'):,} bytes)")
     else:
-        print(f"  ERROR: dataset not found on volume!")
-        print(f"  Run scripts/runpod_s3_upload.py first to upload the dataset.")
+        print("  ERROR: dataset not found on volume!")
+        print("  Run scripts/runpod_s3_upload.py first to upload the dataset.")
         return 1
 
     # 2. Dispatch training job
@@ -149,7 +150,7 @@ def main() -> int:
     print(f"  job_id: {train_job_id}")
     print(f"  dataset: {VOLUME_PATH}")
     print(f"  output:  {job_input['output_prefix']}")
-    print(f"  model: 500 trees, 127 leaves, depth 8, lr=0.01")
+    print("  model: 500 trees, 127 leaves, depth 8, lr=0.01")
 
     runpod_job_id = dispatch_job(job_input)
     print(f"  RunPod job: {runpod_job_id}")
@@ -172,7 +173,7 @@ def main() -> int:
     artifact_id = output.get("artifact_id", "unknown")
 
     if not callback_payload_str:
-        print(f"  ERROR: no callback payload in output")
+        print("  ERROR: no callback payload in output")
         print(f"  Output keys: {list(output.keys())}")
         print(f"  Full output: {json.dumps(output, indent=2, default=str)[:500]}")
         return 1
@@ -205,13 +206,13 @@ def main() -> int:
     print("STEP 6: FULL RESULTS")
     print("=" * 70)
 
-    print(f"\n  Artifact:")
+    print("\n  Artifact:")
     print(f"    artifact_id:       {artifact.get('artifact_id', 'n/a')}")
     print(f"    sha256:            {artifact.get('sha256', 'n/a')[:16]}...")
     print(f"    size_bytes:        {artifact.get('size_bytes', 0):,}")
     print(f"    model_family:      {artifact.get('model_family', 'n/a')}")
 
-    print(f"\n  Dossier:")
+    print("\n  Dossier:")
     print(f"    model_id:          {dossier.get('model_id', 'n/a')}")
     print(f"    authority:         {dossier.get('authority', 'n/a')}")
     print(f"    trainer:           {meta.get('trainer', 'n/a')}")
@@ -219,7 +220,7 @@ def main() -> int:
     print(f"    n_features:        {meta.get('n_features', 'n/a')}")
     print(f"    n_folds:           {meta.get('n_folds', 'n/a')}")
 
-    print(f"\n  Walk-Forward Metrics (out-of-sample):")
+    print("\n  Walk-Forward Metrics (out-of-sample):")
     print(f"    accuracy:          {metrics.get('accuracy', 'n/a')}")
     print(f"    logloss:           {metrics.get('logloss', 'n/a')}")
     print(f"    brier_score:       {meta.get('brier_score', 'n/a')}")
@@ -235,9 +236,7 @@ def main() -> int:
     (results_dir / "callback_envelope.json").write_text(
         json.dumps(envelope, indent=2), encoding="utf-8"
     )
-    (results_dir / "dossier.json").write_text(
-        json.dumps(dossier, indent=2), encoding="utf-8"
-    )
+    (results_dir / "dossier.json").write_text(json.dumps(dossier, indent=2), encoding="utf-8")
     (results_dir / "artifact_manifest.json").write_text(
         json.dumps(artifact, indent=2), encoding="utf-8"
     )
@@ -257,7 +256,7 @@ def main() -> int:
                 print(f"    {f['name']}: {f['size_bytes']:,} bytes")
 
     print(f"\n{'=' * 70}")
-    print(f"FULL GPU TRAINING COMPLETE")
+    print("FULL GPU TRAINING COMPLETE")
     print(f"{'=' * 70}")
     print(f"  RunPod Job:    {runpod_job_id}")
     print(f"  Artifact:      {artifact_id}")

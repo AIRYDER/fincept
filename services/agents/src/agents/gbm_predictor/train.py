@@ -330,7 +330,9 @@ def walk_forward_cv(
                         "train_rows": int(len(X_tr)),
                         "val_rows": int(len(X_va)),
                         "best_iter": int(booster.best_iteration or num_boost_round),
-                        "best_auc": float(best_score) if best_score is not None else None,
+                        "best_auc": float(best_score)
+                        if best_score is not None
+                        else None,
                         "checkpoint_path": str(ckpt_path),
                     },
                     indent=2,
@@ -768,9 +770,7 @@ def main(argv: list[str] | None = None) -> None:
             code_git_sha=None,  # filled by CI if available
         )
         artifact_manifest_path = out_dir / "artifact_manifest.json"
-        artifact_manifest_path.write_text(
-            artifact_manifest.model_dump_json(indent=2)
-        )
+        artifact_manifest_path.write_text(artifact_manifest.model_dump_json(indent=2))
         print(
             f"Saved {args.out_dir} "
             f"(eval=walk_forward, n_folds={cv_summary.get('n_folds')}, "

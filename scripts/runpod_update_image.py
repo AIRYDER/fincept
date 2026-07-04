@@ -1,7 +1,8 @@
 """Update RunPod template to point to the new container image."""
-import json
+
 import os
 import subprocess
+
 import requests
 
 KEY = os.environ["RUNPOD_API_KEY"]
@@ -10,10 +11,14 @@ TEMPLATE_ID = "me58r5vdrp"
 BASE = "https://rest.runpod.io/v1"
 HEADERS = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
 
-full_sha = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"],
-    cwd="C:/Users/nolan/CascadeProjects/fincept-terminal",
-).decode().strip()
+full_sha = (
+    subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd="C:/Users/nolan/CascadeProjects/fincept-terminal",
+    )
+    .decode()
+    .strip()
+)
 NEW_IMAGE = f"ghcr.io/airyder/fincept/quant-foundry-training:{full_sha}"
 
 r = requests.get(f"{BASE}/templates/{TEMPLATE_ID}", headers=HEADERS, timeout=15)

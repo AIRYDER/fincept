@@ -17,7 +17,6 @@ import types
 from pathlib import Path
 
 import pytest
-
 from quant_foundry.tabpfn_adapter import (
     ALLOWED_DEVICES,
     ALLOWED_TASK_TYPES,
@@ -32,7 +31,6 @@ from quant_foundry.tabpfn_adapter import (
     register_tabpfn_family,
     validate_promotion_eligibility,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,7 +55,7 @@ def _make_fake_tabpfn_module(
             self.fitted_x: object = None
             self.fitted_y: object = None
 
-        def fit(self, x: object, y: object) -> "_StubClassifier":
+        def fit(self, x: object, y: object) -> _StubClassifier:
             self.fitted_x = x
             self.fitted_y = y
             return self
@@ -75,7 +73,7 @@ def _make_fake_tabpfn_module(
             self.fitted_x: object = None
             self.fitted_y: object = None
 
-        def fit(self, x: object, y: object) -> "_StubRegressor":
+        def fit(self, x: object, y: object) -> _StubRegressor:
             self.fitted_x = x
             self.fitted_y = y
             return self
@@ -208,9 +206,7 @@ class TestTabPFNConfig:
 
 class TestDatasetSizeCheck:
     def test_within_limit_construction(self) -> None:
-        chk = DatasetSizeCheck(
-            n_samples=100, n_features=10, within_limit=True, reason=None
-        )
+        chk = DatasetSizeCheck(n_samples=100, n_features=10, within_limit=True, reason=None)
         assert chk.n_samples == 100
         assert chk.n_features == 10
         assert chk.within_limit is True
@@ -246,9 +242,7 @@ class TestDatasetSizeCheck:
 class TestTabPFNShadowResult:
     def test_construction_defaults(self) -> None:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         res = TabPFNShadowResult(config=cfg, size_check=chk)
         assert res.config is cfg
         assert res.size_check is chk
@@ -261,18 +255,14 @@ class TestTabPFNShadowResult:
 
     def test_frozen(self) -> None:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         res = TabPFNShadowResult(config=cfg, size_check=chk)
         with pytest.raises(Exception):
             res.predictions = [0.1]  # type: ignore[misc]
 
     def test_extra_forbid(self) -> None:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         with pytest.raises(Exception):
             TabPFNShadowResult(  # type: ignore[call-arg]
                 config=cfg, size_check=chk, unexpected="x"
@@ -280,9 +270,7 @@ class TestTabPFNShadowResult:
 
     def test_full_construction(self) -> None:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         res = TabPFNShadowResult(
             config=cfg,
             size_check=chk,
@@ -414,9 +402,7 @@ class TestTabPFNShadowAdapter:
         with pytest.raises(TypeError):
             TabPFNShadowAdapter("not a config")  # type: ignore[arg-type]
 
-    def test_shadow_only_default_promotion_ineligible(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_shadow_only_default_promotion_ineligible(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()  # shadow_only=True by default
         adapter = TabPFNShadowAdapter(cfg)
         train = [[float(i), float(i + 1)] for i in range(10)]
@@ -428,9 +414,7 @@ class TestTabPFNShadowAdapter:
         assert result.leakage_check_passed is True
         assert result.predictions is not None
 
-    def test_shadow_only_false_promotion_eligible(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_shadow_only_false_promotion_eligible(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig(shadow_only=False)
         adapter = TabPFNShadowAdapter(cfg)
         train = [[float(i), float(i + 1)] for i in range(10)]
@@ -440,9 +424,7 @@ class TestTabPFNShadowAdapter:
         assert result.is_shadow is False
         assert result.promotion_eligible is True
 
-    def test_fail_closed_oversized_dataset(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_fail_closed_oversized_dataset(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig(max_train_samples=100, max_features=100)
         adapter = TabPFNShadowAdapter(cfg)
         # 200 samples exceeds the 100 limit.
@@ -457,9 +439,7 @@ class TestTabPFNShadowAdapter:
         assert result.size_check.reason is not None
         assert "status_oversized" in result.metrics
 
-    def test_fail_closed_over_feature_limit(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_fail_closed_over_feature_limit(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig(max_train_samples=1000, max_features=5)
         adapter = TabPFNShadowAdapter(cfg)
         # 10 features exceeds the 5 limit.
@@ -471,9 +451,7 @@ class TestTabPFNShadowAdapter:
         assert result.size_check.within_limit is False
         assert "n_features" in (result.size_check.reason or "")
 
-    def test_fail_closed_leakage_exact_row(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_fail_closed_leakage_exact_row(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()
         adapter = TabPFNShadowAdapter(cfg)
         train = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
@@ -487,9 +465,7 @@ class TestTabPFNShadowAdapter:
         assert result.promotion_eligible is False
         assert "status_leakage_detected" in result.metrics
 
-    def test_fail_closed_leakage_label_embedding(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_fail_closed_leakage_label_embedding(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()
         adapter = TabPFNShadowAdapter(cfg)
         train = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
@@ -511,9 +487,7 @@ class TestTabPFNShadowAdapter:
         labels = [float(i % 2) for i in range(10)]
         test = [[100.0, 101.0], [102.0, 103.0]]
         art = tmp_path / "result.json"
-        result = adapter.run_shadow(
-            train, labels, test, [0.0, 1.0], artifact_path=str(art)
-        )
+        result = adapter.run_shadow(train, labels, test, [0.0, 1.0], artifact_path=str(art))
         assert result.artifact_path == str(art)
         assert art.exists()
 
@@ -544,9 +518,7 @@ class TestTabPFNShadowAdapter:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Canned probabilities: [0.2, 0.8] -> positive prob 0.8 -> round=1.
-        mod = _make_fake_tabpfn_module(
-            proba_rows=[[0.2, 0.8], [0.9, 0.1]]
-        )
+        mod = _make_fake_tabpfn_module(proba_rows=[[0.2, 0.8], [0.9, 0.1]])
         monkeypatch.setitem(sys.modules, "tabpfn", mod)
         cfg = TabPFNConfig(task_type="binary")
         adapter = TabPFNShadowAdapter(cfg)
@@ -558,9 +530,7 @@ class TestTabPFNShadowAdapter:
         assert result.predictions == [0.8, 0.1]
         assert result.metrics["accuracy"] == 1.0
 
-    def test_single_sample_train(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_single_sample_train(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()
         adapter = TabPFNShadowAdapter(cfg)
         train = [[1.0, 2.0]]
@@ -570,9 +540,7 @@ class TestTabPFNShadowAdapter:
         assert result.size_check.within_limit is True
         assert result.predictions is not None
 
-    def test_exactly_at_sample_limit(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_exactly_at_sample_limit(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig(max_train_samples=10, max_features=10)
         adapter = TabPFNShadowAdapter(cfg)
         train = [[float(i), float(i + 1)] for i in range(10)]
@@ -582,9 +550,7 @@ class TestTabPFNShadowAdapter:
         assert result.size_check.within_limit is True
         assert result.predictions is not None
 
-    def test_empty_train_data(
-        self, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_empty_train_data(self, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()
         adapter = TabPFNShadowAdapter(cfg)
         result = adapter.run_shadow([], [], [[1.0, 2.0]], [0.0])
@@ -599,13 +565,9 @@ class TestTabPFNShadowAdapter:
 
 
 class TestValidatePromotionEligibility:
-    def _make_result(
-        self, is_shadow: bool, promotion_eligible: bool
-    ) -> TabPFNShadowResult:
+    def _make_result(self, is_shadow: bool, promotion_eligible: bool) -> TabPFNShadowResult:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         return TabPFNShadowResult(
             config=cfg,
             size_check=chk,
@@ -632,9 +594,7 @@ class TestValidatePromotionEligibility:
     def test_fail_closed_result_not_eligible(self) -> None:
         # A fail-closed result is shadow with no predictions.
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=2000, n_features=10, within_limit=False, reason="too big"
-        )
+        chk = DatasetSizeCheck(n_samples=2000, n_features=10, within_limit=False, reason="too big")
         res = TabPFNShadowResult(
             config=cfg,
             size_check=chk,
@@ -647,9 +607,7 @@ class TestValidatePromotionEligibility:
         assert validate_promotion_eligibility(res) is False
         # Even with override, a fail-closed oversized run should require
         # the explicit override — which authorises it.
-        assert (
-            validate_promotion_eligibility(res, manual_override=True) is True
-        )
+        assert validate_promotion_eligibility(res, manual_override=True) is True
 
 
 # ---------------------------------------------------------------------------
@@ -658,29 +616,21 @@ class TestValidatePromotionEligibility:
 
 
 class TestArtifactSaveLoad:
-    def test_save_and_load_roundtrip(
-        self, tmp_path: Path, fake_tabpfn: types.ModuleType
-    ) -> None:
+    def test_save_and_load_roundtrip(self, tmp_path: Path, fake_tabpfn: types.ModuleType) -> None:
         cfg = TabPFNConfig()
         adapter = TabPFNShadowAdapter(cfg)
         train = [[float(i), float(i + 1)] for i in range(10)]
         labels = [float(i % 2) for i in range(10)]
         test = [[100.0, 101.0], [102.0, 103.0]]
         art = tmp_path / "art.json"
-        result = adapter.run_shadow(
-            train, labels, test, [0.0, 1.0], artifact_path=str(art)
-        )
+        result = adapter.run_shadow(train, labels, test, [0.0, 1.0], artifact_path=str(art))
         assert art.exists()
         loaded = adapter.load_artifact(str(art))
         assert loaded == result
 
-    def test_save_creates_parent_dirs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_save_creates_parent_dirs(self, tmp_path: Path) -> None:
         cfg = TabPFNConfig()
-        chk = DatasetSizeCheck(
-            n_samples=10, n_features=5, within_limit=True
-        )
+        chk = DatasetSizeCheck(n_samples=10, n_features=5, within_limit=True)
         res = TabPFNShadowResult(config=cfg, size_check=chk)
         adapter = TabPFNShadowAdapter(cfg)
         nested = tmp_path / "nested" / "dir" / "art.json"
@@ -704,9 +654,7 @@ class TestArtifactSaveLoad:
         labels = [float(i % 2) for i in range(20)]
         test = [[100.0, 101.0]]
         art = tmp_path / "fail.json"
-        result = adapter.run_shadow(
-            train, labels, test, [0.0], artifact_path=str(art)
-        )
+        result = adapter.run_shadow(train, labels, test, [0.0], artifact_path=str(art))
         assert result.predictions is None
         assert art.exists()
         loaded = adapter.load_artifact(str(art))
@@ -806,18 +754,13 @@ class TestShadowRunIntegration:
         labels = [float(i % 2) for i in range(50)]
         test = [[100.0, 101.0], [102.0, 103.0]]
         art = tmp_path / "shadow.json"
-        result = adapter.run_shadow(
-            train, labels, test, [0.0, 1.0], artifact_path=str(art)
-        )
+        result = adapter.run_shadow(train, labels, test, [0.0, 1.0], artifact_path=str(art))
         # Shadow-only -> not promotion eligible.
         assert result.is_shadow is True
         assert result.promotion_eligible is False
         assert validate_promotion_eligibility(result) is False
         # Manual override authorises promotion.
-        assert (
-            validate_promotion_eligibility(result, manual_override=True)
-            is True
-        )
+        assert validate_promotion_eligibility(result, manual_override=True) is True
         # Artifact saved and reloadable.
         assert art.exists()
         loaded = adapter.load_artifact(str(art))

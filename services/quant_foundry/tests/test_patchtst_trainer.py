@@ -35,7 +35,6 @@ from quant_foundry.patchtst_trainer import (
 )
 from quant_foundry.tabular_neural_runtime import GPUStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -340,9 +339,7 @@ class TestPatchEmbedding:
     def test_forward_shape(self) -> None:
         import torch
 
-        emb = PatchEmbedding(
-            seq_len=32, patch_len=8, stride=4, input_dim=3, d_model=16
-        )
+        emb = PatchEmbedding(seq_len=32, patch_len=8, stride=4, input_dim=3, d_model=16)
         x = torch.randn(4, 32, 3)
         out = emb.forward(x)
         # num_patches = 1 + (32-8)//4 = 7
@@ -351,9 +348,7 @@ class TestPatchEmbedding:
     def test_forward_single_batch(self) -> None:
         import torch
 
-        emb = PatchEmbedding(
-            seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8
-        )
+        emb = PatchEmbedding(seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8)
         x = torch.randn(1, 16, 2)
         out = emb.forward(x)
         # num_patches = 1 + (16-4)//4 = 4
@@ -362,9 +357,7 @@ class TestPatchEmbedding:
     def test_patch_len_equals_seq_len(self) -> None:
         import torch
 
-        emb = PatchEmbedding(
-            seq_len=8, patch_len=8, stride=4, input_dim=2, d_model=8
-        )
+        emb = PatchEmbedding(seq_len=8, patch_len=8, stride=4, input_dim=2, d_model=8)
         x = torch.randn(3, 8, 2)
         out = emb.forward(x)
         # Exactly 1 patch.
@@ -376,22 +369,16 @@ class TestPatchEmbedding:
         with pytest.raises(ValueError):
             PatchEmbedding(seq_len=32, patch_len=64, stride=4, input_dim=3, d_model=16)
         with pytest.raises(ValueError):
-            PatchEmbedding(
-                seq_len=32, patch_len=8, stride=4, input_dim=3, d_model=16, dropout=1.0
-            )
+            PatchEmbedding(seq_len=32, patch_len=8, stride=4, input_dim=3, d_model=16, dropout=1.0)
 
     def test_state_dict_round_trip(self) -> None:
         import torch
 
-        emb = PatchEmbedding(
-            seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8
-        )
+        emb = PatchEmbedding(seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8)
         _ = emb.module  # build
         emb.eval()
         sd = emb.state_dict()
-        emb2 = PatchEmbedding(
-            seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8
-        )
+        emb2 = PatchEmbedding(seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8)
         _ = emb2.module
         emb2.load_state_dict(sd)
         emb2.eval()
@@ -399,9 +386,7 @@ class TestPatchEmbedding:
         torch.testing.assert_close(emb.forward(x), emb2.forward(x))
 
     def test_to_and_eval(self) -> None:
-        emb = PatchEmbedding(
-            seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8
-        )
+        emb = PatchEmbedding(seq_len=16, patch_len=4, stride=4, input_dim=2, d_model=8)
         ret = emb.to("cpu")
         assert ret is emb
         ret2 = emb.eval()
@@ -475,18 +460,36 @@ class TestPatchTSTModel:
     def test_invalid_construction(self) -> None:
         with pytest.raises(ValueError):
             PatchTSTModel(
-                input_dim=0, seq_len=32, patch_len=8, stride=4,
-                d_model=16, n_heads=4, n_layers=2, ff_dim=32,
+                input_dim=0,
+                seq_len=32,
+                patch_len=8,
+                stride=4,
+                d_model=16,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
         with pytest.raises(ValueError):
             PatchTSTModel(
-                input_dim=3, seq_len=8, patch_len=16, stride=4,
-                d_model=16, n_heads=4, n_layers=2, ff_dim=32,
+                input_dim=3,
+                seq_len=8,
+                patch_len=16,
+                stride=4,
+                d_model=16,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
         with pytest.raises(ValueError):
             PatchTSTModel(
-                input_dim=3, seq_len=32, patch_len=8, stride=4,
-                d_model=17, n_heads=4, n_layers=2, ff_dim=32,
+                input_dim=3,
+                seq_len=32,
+                patch_len=8,
+                stride=4,
+                d_model=17,
+                n_heads=4,
+                n_layers=2,
+                ff_dim=32,
             )
 
     def test_state_dict_round_trip(self) -> None:
@@ -1066,7 +1069,7 @@ class TestPatchTSTIntegration:
             fold_predictions=preds,
             fold_ids=[0] * 20,
             symbols=["AAPL"] * 20,
-            timestamps=[f"2024-01-{i+1:02d}" for i in range(20)],
+            timestamps=[f"2024-01-{i + 1:02d}" for i in range(20)],
             labels=list(y),
             horizons=[5] * 20,
             weights=None,

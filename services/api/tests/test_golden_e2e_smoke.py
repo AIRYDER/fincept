@@ -68,9 +68,7 @@ def golden_stores(
     monkeypatch.setattr(
         "api.routes.models._get_settlement_store", lambda: settlement_store
     )
-    monkeypatch.setattr(
-        "api.routes.models._get_snapshot_store", lambda: snapshot_store
-    )
+    monkeypatch.setattr("api.routes.models._get_snapshot_store", lambda: snapshot_store)
     # Redirect MODELS_DIR so the test doesn't see real models on disk.
     monkeypatch.setattr("api.routes.models._MODELS_DIR", models_dir)
     return {
@@ -91,15 +89,11 @@ FEATURE_NAMES = ("ret_1d", "ret_5d", "vol_20d", "mom_10d", "vol_ratio")
 
 
 def _feature_schema_hash() -> str:
-    return hashlib.sha256(
-        ":".join(sorted(FEATURE_NAMES)).encode()
-    ).hexdigest()
+    return hashlib.sha256(":".join(sorted(FEATURE_NAMES)).encode()).hexdigest()
 
 
 def _label_schema_hash() -> str:
-    return hashlib.sha256(
-        b"binary_forward_return_direction_5d"
-    ).hexdigest()
+    return hashlib.sha256(b"binary_forward_return_direction_5d").hexdigest()
 
 
 def _write_artifact_manifest(model_dir: pathlib.Path) -> ArtifactManifest:
@@ -107,12 +101,16 @@ def _write_artifact_manifest(model_dir: pathlib.Path) -> ArtifactManifest:
     model_dir.mkdir(parents=True, exist_ok=True)
     # Write a dummy model.txt so the model listing recognizes it.
     (model_dir / "model.txt").write_text("dummy-model")
-    (model_dir / "meta.json").write_text(json.dumps({
-        "features": list(FEATURE_NAMES),
-        "horizon_ns": 5 * 86_400_000_000_000,
-        "trained_at": time.time(),
-        "eval_mode": "walk_forward",
-    }))
+    (model_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "features": list(FEATURE_NAMES),
+                "horizon_ns": 5 * 86_400_000_000_000,
+                "trained_at": time.time(),
+                "eval_mode": "walk_forward",
+            }
+        )
+    )
 
     manifest = ArtifactManifest(
         artifact_id=f"gbm-{model_dir.name}",
@@ -286,16 +284,16 @@ async def test_golden_e2e_pending_prediction(
     # Write snapshot but NO settlement
     snapshot = FeatureSnapshot(
         decision_time_ns=1_800_000_000_000_000_000,
-        rows=[FeatureRow(
-            symbol="MSFT",
-            ts=1_800_000_000_000_000_000,
-            features={"ret_1d": -0.01, "ret_5d": 0.02},
-        )],
+        rows=[
+            FeatureRow(
+                symbol="MSFT",
+                ts=1_800_000_000_000_000_000,
+                features={"ret_1d": -0.01, "ret_5d": 0.02},
+            )
+        ],
         feature_schema_hash=_feature_schema_hash(),
     )
-    snapshot_store.append_if_missing(
-        pred_row.id, snapshot, agent_id=agent_id
-    )
+    snapshot_store.append_if_missing(pred_row.id, snapshot, agent_id=agent_id)
 
     # Verify outcomes
     r = await client.get(
@@ -370,6 +368,7 @@ async def test_golden_e2e_resume_endpoint(
 
     # Also need to patch approved_roots to allow tmp_path.
     from fincept_core.datasets import ApprovedRoots
+
     monkeypatch.setattr(
         "api.training.default_approved_roots",
         lambda: ApprovedRoots(roots=[tmp_path]),

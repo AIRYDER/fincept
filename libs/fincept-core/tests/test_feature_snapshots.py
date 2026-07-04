@@ -242,9 +242,7 @@ def test_read_by_prediction_id_returns_none_when_missing(
 ) -> None:
     """read_by_prediction_id returns None when no match is found."""
     store = FeatureSnapshotStore(root=tmp_path)
-    store.append_if_missing(
-        "pred-0001", _snapshot(), agent_id="agent-a"
-    )
+    store.append_if_missing("pred-0001", _snapshot(), agent_id="agent-a")
 
     assert store.read_by_prediction_id("pred-9999", agent_id="agent-a") is None
 

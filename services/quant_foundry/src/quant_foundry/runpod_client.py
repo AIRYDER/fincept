@@ -35,7 +35,6 @@ from quant_foundry.job_ledger import JobLedgerState, TrainingJobLedger
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.telemetry import CostTelemetry, PhaseTiming, TimingPhase, infer_gpu_type
 
-
 # --- helpers --------------------------------------------------------------- #
 
 

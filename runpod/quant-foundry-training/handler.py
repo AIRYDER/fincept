@@ -84,7 +84,7 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
 # storage backend so canary/research/production runs can use different
 # backends (volume path, presigned object upload, or a fake in-memory
 # writer for tests) behind a single contract.
-from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+from pydantic import BaseModel, ConfigDict  # noqa: E402
 
 # Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
 # policy registry + validation function so the worker can recompute cheap
@@ -116,11 +116,9 @@ from quant_foundry.real_trainer import (  # noqa: E402
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
-    SignedFailureEnvelope,
     TrainingFailure,
     build_callback,
     build_failure_envelope,
-    verify_failure_envelope,
 )
 from quant_foundry.schemas import RunPodTrainingRequest  # noqa: E402
 from quant_foundry.signatures import sign_callback  # noqa: E402
@@ -195,7 +193,7 @@ def _is_under_tmp(path_str: str) -> bool:
         return False
     cleaned = path_str
     if cleaned.startswith("file://"):
-        cleaned = cleaned[len("file://"):]
+        cleaned = cleaned[len("file://") :]
     try:
         p = Path(cleaned)
     except Exception:
@@ -280,7 +278,7 @@ def _validate_output_prefix_durable(
     if output_prefix.startswith("s3://") or output_prefix.startswith("https://"):
         return None
     if output_prefix.startswith("file://"):
-        inner = output_prefix[len("file://"):]
+        inner = output_prefix[len("file://") :]
         if inner.startswith("/runpod-volume/") or inner.startswith("/workspace/"):
             return None
         return (
@@ -1641,7 +1639,7 @@ def _probe_nvidia_smi() -> tuple[
                         cuda_version = token
                         break
                 break
-    except Exception:  # noqa: BLE001 - best-effort CUDA version probe
+    except Exception:
         pass
 
     available = gpu_count > 0
@@ -1663,7 +1661,7 @@ def _probe_cuda_via_torch() -> str | None:
         if not torch.cuda.is_available():
             return None
         return torch.version.cuda  # type: ignore[no-any-return]
-    except Exception:  # noqa: BLE001 - best-effort torch probe
+    except Exception:
         return None
 
 
@@ -1696,14 +1694,14 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
             default_params = lgb.LGBMModel().get_params()  # type: ignore[attr-defined]
             if "device_type" in default_params or "device" in default_params:
                 flags["lightgbm_gpu"] = True
-        except Exception:  # noqa: BLE001
+        except Exception:
             # Conservative: if lightgbm imports, assume GPU-capable
             # build may be present (the healthcheck reports the flag,
             # the dispatcher decides whether to trust it).
             flags["lightgbm_gpu"] = hasattr(lgb, "LGBMClassifier")
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # XGBoost: GPU support via ``tree_method="gpu_hist"`` or
@@ -1718,7 +1716,7 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
         flags["xgboost_gpu"] = hasattr(xgb, "XGBClassifier") or hasattr(xgb, "Booster")
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # CatBoost: GPU support via ``task_type="GPU"``. Check if the
@@ -1731,7 +1729,7 @@ def _probe_library_gpu_flags() -> dict[str, bool]:
         )
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return flags
@@ -2311,7 +2309,7 @@ def _df_columns(df: Any) -> list[str]:
     if hasattr(df, "columns"):
         try:
             return [str(c) for c in df.columns]
-        except Exception:  # noqa: BLE001 - best-effort column extraction
+        except Exception:
             pass
     if hasattr(df, "column_names"):
         return list(df.column_names)
@@ -2336,7 +2334,7 @@ def _df_to_pandas(df: Any) -> Any:
     if hasattr(df, "to_pandas"):
         try:
             return df.to_pandas()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return df
 
@@ -2347,13 +2345,13 @@ def _df_duplicate_count(df: Any) -> int:
     if hasattr(pdf, "duplicated"):
         try:
             return int(pdf.duplicated().sum())
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     # pyarrow fallback: unique() height difference.
     if hasattr(df, "unique") and hasattr(df, "num_rows"):
         try:
             return int(df.num_rows - df.unique().num_rows)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return 0
 
@@ -2378,7 +2376,7 @@ def _df_label_balance(df: Any, label_col: str) -> float:
                 return 0.0
             counts = non_null.value_counts()
             return float(counts.min()) / total
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return 0.0
 
@@ -2407,7 +2405,7 @@ def _df_feature_coverage(df: Any, feature_cols: list[str]) -> float:
                 frac = (total_rows - null_count) / total_rows
                 min_frac = min(min_frac, frac)
                 continue
-            except Exception:  # noqa: BLE101
+            except Exception:
                 pass
         # pyarrow path.
         if hasattr(df, "column") and hasattr(df, "num_rows"):
@@ -2417,7 +2415,7 @@ def _df_feature_coverage(df: Any, feature_cols: list[str]) -> float:
                 frac = (total_rows - null_count) / total_rows
                 min_frac = min(min_frac, frac)
                 continue
-            except Exception:  # noqa: BLE101
+            except Exception:
                 pass
         # Cannot determine coverage for this column → fail closed.
         return 0.0
@@ -3872,9 +3870,7 @@ if __name__ == "__main__":  # pragma: no cover
         try:
             import importlib.util
 
-            _pf_spec = importlib.util.spec_from_file_location(
-                "preflight", "/worker/preflight.py"
-            )
+            _pf_spec = importlib.util.spec_from_file_location("preflight", "/worker/preflight.py")
             if _pf_spec and _pf_spec.loader:
                 _pf_mod = importlib.util.module_from_spec(_pf_spec)
                 _pf_spec.loader.exec_module(_pf_mod)
@@ -3882,7 +3878,8 @@ if __name__ == "__main__":  # pragma: no cover
                 if _pf_rc != 0:
                     print(
                         f"[handler] preflight failed (rc={_pf_rc}), exiting",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
                     raise SystemExit(_pf_rc)
         except FileNotFoundError:

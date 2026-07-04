@@ -17,14 +17,12 @@ Tests verify:
 
 from __future__ import annotations
 
-import hashlib
 import importlib
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
-
 from quant_foundry.sequence_manifest import (
     SequenceChannel,
     SequenceDatasetManifest,
@@ -39,7 +37,6 @@ from quant_foundry.windowed_tensor_builder import (
     compute_tensor_hash,
     validate_no_label_in_features,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,9 +102,7 @@ def _make_manifest(**overrides) -> SequenceDatasetManifest:
         )
         .with_data(
             uri="s3://bucket/seq_test_001.npy",
-            data_hash=compute_sequence_data_hash(
-                np.zeros((10, 3, 2), dtype=np.float32)
-            ),
+            data_hash=compute_sequence_data_hash(np.zeros((10, 3, 2), dtype=np.float32)),
         )
         .with_created_at("2024-01-01T00:00:00Z")
     )
@@ -119,7 +114,7 @@ def _make_synthetic_df(
     n_symbols: int = 2,
     n_rows: int = 10,
     start_date: str = "2024-01-01",
-) -> "Any":
+) -> Any:
     """Build a synthetic daily-bar dataframe.
 
     Columns: symbol, timestamp, close, volume. The close price increases
@@ -228,9 +223,7 @@ class TestWindowedTensorConfig:
             _make_config(horizons=[1, 1])
 
     def test_output_format_default_npz(self) -> None:
-        cfg = WindowedTensorConfig(
-            window_length=3, stride=1, horizons=[1], channels=["close"]
-        )
+        cfg = WindowedTensorConfig(window_length=3, stride=1, horizons=[1], channels=["close"])
         assert cfg.output_format == "npz"
 
     def test_output_format_parquet_allowed(self) -> None:
@@ -274,9 +267,7 @@ class TestWindowedTensor:
 
     def test_extra_forbid(self) -> None:
         with pytest.raises(Exception):
-            WindowedTensor(
-                **{**_make_window_kwargs(), "bogus": 1}
-            )
+            WindowedTensor(**{**_make_window_kwargs(), "bogus": 1})
 
     def test_window_id_nonempty(self) -> None:
         with pytest.raises(Exception):
@@ -641,9 +632,8 @@ class TestWindowedTensorBuilderBuild:
         loaded = builder._load_windows(out)
         for w in loaded:
             from quant_foundry.dataset_manifest import _parse_temporal
-            assert _parse_temporal(w.label_timestamp) > _parse_temporal(
-                w.end_timestamp
-            )
+
+            assert _parse_temporal(w.label_timestamp) > _parse_temporal(w.end_timestamp)
 
     def test_build_missing_columns_raises(self, tmp_path: Path) -> None:
         import pandas as pd
@@ -782,9 +772,15 @@ class TestNpzOutput:
         builder.build(df, manifest, out)
         archive = np.load(out, allow_pickle=True)
         for key in [
-            "data", "label", "weight", "horizon",
-            "symbol", "start_timestamp", "end_timestamp",
-            "label_timestamp", "window_id",
+            "data",
+            "label",
+            "weight",
+            "horizon",
+            "symbol",
+            "start_timestamp",
+            "end_timestamp",
+            "label_timestamp",
+            "window_id",
         ]:
             assert key in archive.files, f"missing {key}"
 
@@ -937,9 +933,7 @@ class TestValidateOutput:
         manifest = _make_manifest()
         out = str(tmp_path / "out.npz")
         receipt = builder.build(df, manifest, out)
-        bad_receipt = receipt.model_copy(
-            update={"output_hash": "b" * 64}
-        )
+        bad_receipt = receipt.model_copy(update={"output_hash": "b" * 64})
         with pytest.raises(ValueError, match="hash mismatch"):
             builder.validate_output(bad_receipt, out)
 

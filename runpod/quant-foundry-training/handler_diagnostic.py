@@ -4,27 +4,16 @@ This handler imports everything the real handler imports, then wraps the
 handler() logic in a try/except to capture and return any exception instead
 of crashing the worker. This helps isolate the exact crash point.
 """
+
 from __future__ import annotations
 
-import getpass
-import hashlib
-import hmac
 import importlib
-import ipaddress
 import json
 import os
-import re
-import socket
-import subprocess
 import sys
-import threading
 import time
 import traceback
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Protocol
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from typing import Any
 
 # Add shared utilities to sys.path
 _shared_paths = [
@@ -43,26 +32,22 @@ try:
     write_heartbeat = _worker_status.write_heartbeat
     write_status = _worker_status.write_status
 except ImportError:
-    def write_status(*args, **kwargs): pass
-    def write_heartbeat(*args, **kwargs): pass
-    def clear_status(*args, **kwargs): pass
 
-from pydantic import BaseModel, ConfigDict, Field
+    def write_status(*args, **kwargs):
+        pass
+
+    def write_heartbeat(*args, **kwargs):
+        pass
+
+    def clear_status(*args, **kwargs):
+        pass
+
 
 # === ALL quant_foundry imports (same as real handler) ===
 print("[diag] importing quant_foundry...", flush=True)
 sys.stdout.flush()
 
 try:
-    from quant_foundry.data_ingestion.quality_report import (
-        QUALITY_POLICY_REGISTRY,
-        DatasetQualityReport,
-        FailedCheck,
-        QualityGateResult,
-        QualityPolicy,
-        resolve_quality_policy,
-        validate_quality_policy,
-    )
     print("[diag] imported quality_report", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -71,12 +56,6 @@ except Exception as e:
     raise
 
 try:
-    from quant_foundry.dataset_manifest import (
-        ColumnRoles as QFColumnRoles,
-    )
-    from quant_foundry.dataset_manifest import (
-        FoldSpec as QFFoldSpec,
-    )
     print("[diag] imported dataset_manifest", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -85,10 +64,6 @@ except Exception as e:
     raise
 
 try:
-    from quant_foundry.real_trainer import (
-        TypedArtifactResult,
-        build_artifact_result,
-    )
     print("[diag] imported real_trainer", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -98,14 +73,9 @@ except Exception as e:
 
 try:
     from quant_foundry.runpod_training import (
-        LocalTrainer,
-        RunPodTrainingHandler,
-        SignedFailureEnvelope,
-        TrainingFailure,
-        build_callback,
         build_failure_envelope,
-        verify_failure_envelope,
     )
+
     print("[diag] imported runpod_training", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -115,6 +85,7 @@ except Exception as e:
 
 try:
     from quant_foundry.schemas import RunPodTrainingRequest
+
     print("[diag] imported schemas", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -124,6 +95,7 @@ except Exception as e:
 
 try:
     from quant_foundry.signatures import sign_callback
+
     print("[diag] imported signatures", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -132,11 +104,6 @@ except Exception as e:
     raise
 
 try:
-    from quant_foundry.training_manifest import (
-        MODE_RULES,
-        ModelTaskSpec,
-        TrainingMode,
-    )
     print("[diag] imported training_manifest", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -145,11 +112,6 @@ except Exception as e:
     raise
 
 try:
-    from fincept_core.datasets import (
-        DatasetLoadError,
-        LoadedDataset,
-        ManifestDatasetLoader,
-    )
     print("[diag] imported fincept_core.datasets", flush=True)
     sys.stdout.flush()
 except Exception as e:
@@ -177,10 +139,14 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         task = input_data.get("task", "")
         job_id = input_data.get("job_id", "unknown")
 
-        diagnostic_mode = os.environ.get(
-            "QUANT_FOUNDRY_DIAGNOSTIC_HANDLER_MODE",
-            "return_only",
-        ).strip().lower()
+        diagnostic_mode = (
+            os.environ.get(
+                "QUANT_FOUNDRY_DIAGNOSTIC_HANDLER_MODE",
+                "return_only",
+            )
+            .strip()
+            .lower()
+        )
         print(f"[diag] diagnostic_mode={diagnostic_mode!r}", flush=True)
         sys.stdout.flush()
         if diagnostic_mode in {"return_only", "immediate"}:
@@ -204,13 +170,16 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
         sys.stdout.flush()
 
         # Test sign_callback
-        callback_payload = json.dumps({
-            "schema_version": 1,
-            "job_id": job_id,
-            "worker_id": "runpod-diagnostic",
-            "result_type": "callback_secret_canary",
-            "payload": {"nonce": nonce},
-        }, sort_keys=True).encode("utf-8")
+        callback_payload = json.dumps(
+            {
+                "schema_version": 1,
+                "job_id": job_id,
+                "worker_id": "runpod-diagnostic",
+                "result_type": "callback_secret_canary",
+                "payload": {"nonce": nonce},
+            },
+            sort_keys=True,
+        ).encode("utf-8")
 
         callback_ts = int(time.time())
         print("[diag] calling sign_callback...", flush=True)
@@ -245,7 +214,10 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             req = RunPodTrainingRequest.model_validate(input_data)
             print(f"[diag] RunPodTrainingRequest OK: {req.job_id}", flush=True)
         except Exception as e:
-            print(f"[diag] RunPodTrainingRequest validation failed (expected for canary): {e}", flush=True)
+            print(
+                f"[diag] RunPodTrainingRequest validation failed (expected for canary): {e}",
+                flush=True,
+            )
         sys.stdout.flush()
 
         result = {
@@ -270,17 +242,20 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
             "error": str(e),
             "traceback": tb,
             "status": "error",
-            "job_id": event.get("input", {}).get("job_id", "unknown") if isinstance(event, dict) else "unknown",
+            "job_id": event.get("input", {}).get("job_id", "unknown")
+            if isinstance(event, dict)
+            else "unknown",
         }
 
 
 if __name__ == "__main__":
     import sys
+
     try:
         runpod = importlib.import_module("runpod")
         print(f"[diag] runpod SDK version: {getattr(runpod, '__version__', 'unknown')}", flush=True)
         sys.stdout.flush()
-        serverless = getattr(runpod, "serverless")
+        serverless = runpod.serverless
         serverless.start({"handler": handler})
     except ImportError:
         event = json.loads(sys.stdin.read())

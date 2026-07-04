@@ -510,3 +510,223 @@ def test_handler_volume_writer_persists_artifact(handler_module, monkeypatch, tm
     assert model_path.exists()
     # Write receipt verifies.
     assert result["artifact_write_receipt"] is not None
+
+
+# --- Durable artifact deny gate (Tier 0.2) --------------------------------- #
+#
+# Tests for the /tmp deny gate and output_prefix validation. The deny gate
+# fires for non-canary jobs (training_mode != "canary") when the resolved
+# output_prefix is under /tmp or no durable destination is supplied. Canary
+# jobs may use /tmp (FakeArtifactWriter is canary-only by design).
+
+
+def test_is_under_tmp_detects_tmp_paths(handler_module):
+    """_is_under_tmp detects /tmp and /tmp/... paths."""
+    assert handler_module._is_under_tmp("/tmp") is True
+    assert handler_module._is_under_tmp("/tmp/foo") is True
+    assert handler_module._is_under_tmp("/tmp/a/b/c") is True
+    assert handler_module._is_under_tmp("file:///tmp/foo") is True
+    # Non-/tmp paths are not under /tmp.
+    assert handler_module._is_under_tmp("/runpod-volume/artifacts") is False
+    assert handler_module._is_under_tmp("/workspace/artifacts") is False
+    assert handler_module._is_under_tmp("/var/tmp/foo") is False
+    assert handler_module._is_under_tmp("") is False
+    assert handler_module._is_under_tmp(None) is False
+
+
+def test_validate_output_prefix_denies_tmp_for_real_jobs(handler_module):
+    """_validate_output_prefix_durable denies /tmp for non-canary jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/tmp/a7-train-artifacts",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is not None
+    assert "/tmp" in err
+    assert "durable" in err.lower() or "die with the worker" in err
+
+
+def test_validate_output_prefix_denies_tmp_for_research_mode(handler_module):
+    """Deny gate fires for research mode too (not just production)."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/tmp/research-out",
+        presigned_artifact_url=None,
+        training_mode="research",
+    )
+    assert err is not None
+    assert "/tmp" in err
+
+
+def test_validate_output_prefix_allows_tmp_for_canary(handler_module):
+    """Canary jobs may use /tmp (canary-only by design)."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/tmp/canary-out",
+        presigned_artifact_url=None,
+        training_mode="canary",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_rejects_invalid_prefix(handler_module):
+    """Non-volume, non-URI prefixes are rejected for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/var/tmp/artifacts",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is not None
+    assert "durable" in err.lower() or "not a durable" in err.lower()
+
+
+def test_validate_output_prefix_accepts_runpod_volume(handler_module):
+    """/runpod-volume/ paths are accepted for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/runpod-volume/artifacts/train1",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_accepts_workspace(handler_module):
+    """/workspace/ paths are accepted for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="/workspace/artifacts/train1",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_accepts_presigned_url(handler_module):
+    """Presigned https:// URL is accepted for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix=None,
+        presigned_artifact_url="https://s3.example.com/bucket/model.pkl",
+        training_mode="production",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_accepts_s3_uri(handler_module):
+    """s3:// URI is accepted for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="s3://my-bucket/artifacts/model.pkl",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_rejects_file_uri_to_tmp(handler_module):
+    """file:// URI to /tmp is rejected for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="file:///tmp/artifacts/train1",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is not None
+    assert "/tmp" in err
+
+
+def test_validate_output_prefix_accepts_file_uri_to_volume(handler_module):
+    """file:// URI to /runpod-volume/ is accepted for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="file:///runpod-volume/artifacts/train1",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is None
+
+
+def test_validate_output_prefix_rejects_no_destination_for_real_job(handler_module):
+    """No output_prefix and no presigned URL fails for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix=None,
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is not None
+    assert "durable" in err.lower() or "output_prefix" in err.lower()
+
+
+def test_validate_output_prefix_rejects_file_uri_to_non_volume(handler_module):
+    """file:// URI to a non-volume path is rejected for real jobs."""
+    err = handler_module._validate_output_prefix_durable(
+        output_prefix="file:///opt/artifacts/train1",
+        presigned_artifact_url=None,
+        training_mode="production",
+    )
+    assert err is not None
+    assert "file://" in err or "non-volume" in err
+
+
+# --- Handler integration: /tmp deny gate ----------------------------------- #
+
+
+def test_handler_denies_tmp_for_real_jobs(handler_module, monkeypatch):
+    """Handler rejects /tmp output_prefix for non-canary jobs (signed failure)."""
+    secret = "deny-gate-secret"
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", secret)
+    # Use a canary request (local trainer) but set training_mode=production
+    # so the deny gate fires. No GPU/ML deps needed (local trainer).
+    event = _make_training_input(
+        "qf:train:deny:tmp:1",
+        output_prefix="/tmp/a7-train-artifacts",
+        extra_constraints={"training_mode": "production"},
+    )
+    result = handler_module.handler(event)
+    # Signed failure envelope.
+    assert result["error_code"] == "artifact_destination_not_durable"
+    assert result["job_id"] == "qf:train:deny:tmp:1"
+    assert result["callback_signature"]
+    assert result["callback_payload"]
+    payload = json.loads(result["callback_payload"])
+    assert payload["result_type"] == "artifact_destination_not_durable"
+    # Error message names /tmp and the missing durable destination.
+    error_msg = result["error_summary"]
+    assert "/tmp" in error_msg
+    assert "durable" in error_msg.lower() or "die with the worker" in error_msg.lower()
+
+
+def test_handler_allows_tmp_for_canary_jobs(handler_module, monkeypatch, tmp_path):
+    """Handler allows /tmp output_prefix for canary jobs (canary-only by design)."""
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "canary-tmp-secret")
+    out_dir = str(tmp_path / "canary_tmp_out")
+    event = _make_training_input(
+        "qf:train:canary:tmp:1",
+        output_prefix=out_dir,
+        extra_constraints={"training_mode": "canary"},
+    )
+    result = handler_module.handler(event)
+    assert result.get("job_id") == "qf:train:canary:tmp:1"
+    assert "error_code" not in result
+    artifact = result["artifact_result"]
+    assert artifact["artifact_uri"].startswith("file://")
+
+
+def test_handler_denies_invalid_prefix_for_real_jobs(handler_module, monkeypatch):
+    """Handler rejects non-volume, non-URI output_prefix for real jobs."""
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "deny-invalid-secret")
+    event = _make_training_input(
+        "qf:train:deny:invalid:1",
+        output_prefix="/var/tmp/artifacts",
+        extra_constraints={"training_mode": "production"},
+    )
+    result = handler_module.handler(event)
+    assert result["error_code"] == "artifact_destination_not_durable"
+    assert result["job_id"] == "qf:train:deny:invalid:1"
+    assert result["callback_signature"]
+
+
+def test_handler_denies_no_destination_for_real_jobs(handler_module, monkeypatch):
+    """Handler fails closed when no durable destination is supplied for real jobs."""
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "deny-nodest-secret")
+    event = _make_training_input(
+        "qf:train:deny:nodest:1",
+        extra_constraints={"training_mode": "production"},
+    )
+    result = handler_module.handler(event)
+    assert result["error_code"] == "artifact_destination_not_durable"
+    assert result["job_id"] == "qf:train:deny:nodest:1"
+    assert result["callback_signature"]

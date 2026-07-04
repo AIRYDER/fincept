@@ -15,9 +15,7 @@ Design principles
 
 from __future__ import annotations
 
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -119,18 +117,14 @@ class DatasetRegistryViewConfig(BaseModel):
     @classmethod
     def _sort_by_must_be_valid(cls, v: str) -> str:
         if v not in _SORT_BY_FIELDS:
-            raise ValueError(
-                f"sort_by must be one of {_SORT_BY_FIELDS}, got {v!r}"
-            )
+            raise ValueError(f"sort_by must be one of {_SORT_BY_FIELDS}, got {v!r}")
         return v
 
     @field_validator("sort_order")
     @classmethod
     def _sort_order_must_be_valid(cls, v: str) -> str:
         if v not in _SORT_ORDERS:
-            raise ValueError(
-                f"sort_order must be one of {_SORT_ORDERS}, got {v!r}"
-            )
+            raise ValueError(f"sort_order must be one of {_SORT_ORDERS}, got {v!r}")
         return v
 
 
@@ -175,9 +169,7 @@ class DatasetRegistryRow(BaseModel):
     @classmethod
     def _readiness_level_must_be_valid(cls, v: str) -> str:
         if v not in READINESS_LEVELS:
-            raise ValueError(
-                f"readiness_level must be one of {READINESS_LEVELS}, got {v!r}"
-            )
+            raise ValueError(f"readiness_level must be one of {READINESS_LEVELS}, got {v!r}")
         return v
 
     @field_validator("quality_gate_status")
@@ -206,8 +198,7 @@ class DatasetRegistryRow(BaseModel):
         for mode in v:
             if mode not in ELIGIBLE_MODES:
                 raise ValueError(
-                    f"eligible_modes entries must be one of "
-                    f"{ELIGIBLE_MODES}, got {mode!r}"
+                    f"eligible_modes entries must be one of {ELIGIBLE_MODES}, got {mode!r}"
                 )
         return v
 
@@ -290,19 +281,13 @@ def get_blocking_reasons(row: DatasetRegistryRow) -> list[str]:
     reasons: list[str] = []
 
     if _readiness_rank(row.readiness_level) < _PRODUCTION_MIN_RANK:
-        reasons.append(
-            f"readiness_level {row.readiness_level} below L3_production"
-        )
+        reasons.append(f"readiness_level {row.readiness_level} below L3_production")
 
     if row.quality_gate_status != "passed":
-        reasons.append(
-            f"quality_gate_status {row.quality_gate_status!r} not 'passed'"
-        )
+        reasons.append(f"quality_gate_status {row.quality_gate_status!r} not 'passed'")
 
     if row.upload_status != "verified":
-        reasons.append(
-            f"upload_status {row.upload_status!r} not 'verified'"
-        )
+        reasons.append(f"upload_status {row.upload_status!r} not 'verified'")
 
     if not row.manifest_hash:
         reasons.append("manifest_hash missing")
@@ -417,9 +402,7 @@ class DatasetRegistryView:
 
         by_readiness: dict[str, int] = {lvl: 0 for lvl in READINESS_LEVELS}
         for row in rows:
-            by_readiness[row.readiness_level] = (
-                by_readiness.get(row.readiness_level, 0) + 1
-            )
+            by_readiness[row.readiness_level] = by_readiness.get(row.readiness_level, 0) + 1
 
         by_quality: dict[str, int] = {}
         for row in rows:
@@ -456,11 +439,19 @@ class DatasetRegistryView:
         lines: list[str] = []
         lines.append(f"Dataset Detail: {row.dataset_id}")
         lines.append("=" * (16 + len(row.dataset_id)))
-        lines.append(f"  Readiness Level : {format_readiness(row.readiness_level)} {row.readiness_level}")
+        lines.append(
+            f"  Readiness Level : {format_readiness(row.readiness_level)} {row.readiness_level}"
+        )
         lines.append(f"  Manifest Hash   : {row.manifest_hash or '—'}")
-        lines.append(f"  Quality Gate    : {format_quality_gate(row.quality_gate_status)} {row.quality_gate_status or '—'}")
-        lines.append(f"  Upload Status   : {format_upload_status(row.upload_status)} {row.upload_status or '—'}")
-        lines.append(f"  Eligible Modes  : {', '.join(row.eligible_modes) if row.eligible_modes else '—'}")
+        lines.append(
+            f"  Quality Gate    : {format_quality_gate(row.quality_gate_status)} {row.quality_gate_status or '—'}"
+        )
+        lines.append(
+            f"  Upload Status   : {format_upload_status(row.upload_status)} {row.upload_status or '—'}"
+        )
+        lines.append(
+            f"  Eligible Modes  : {', '.join(row.eligible_modes) if row.eligible_modes else '—'}"
+        )
         lines.append(f"  Created At      : {row.created_at or '—'}")
         lines.append(f"  Claims Production: {eligible}")
         lines.append("")
@@ -479,9 +470,7 @@ class DatasetRegistryView:
     ) -> list[DatasetRegistryRow]:
         """Return rows whose ``readiness_level`` equals *level*."""
         if level not in READINESS_LEVELS:
-            raise ValueError(
-                f"level must be one of {READINESS_LEVELS}, got {level!r}"
-            )
+            raise ValueError(f"level must be one of {READINESS_LEVELS}, got {level!r}")
         return [row for row in rows if row.readiness_level == level]
 
     def filter_production_eligible(
@@ -497,9 +486,7 @@ class DatasetRegistryView:
 
     # -- sorting ---------------------------------------------------------
 
-    def sort_rows(
-        self, rows: list[DatasetRegistryRow]
-    ) -> list[DatasetRegistryRow]:
+    def sort_rows(self, rows: list[DatasetRegistryRow]) -> list[DatasetRegistryRow]:
         """Return *rows* sorted by ``self.config.sort_by`` / ``sort_order``."""
         reverse = self.config.sort_order == "desc"
 

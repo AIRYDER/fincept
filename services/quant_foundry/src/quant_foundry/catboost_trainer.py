@@ -89,9 +89,7 @@ class CatBoostTrainingResult(BaseModel):
         n_rows: number of training rows.
     """
 
-    model_config = ConfigDict(
-        frozen=True, extra="forbid", arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     model: Any
     feature_importance: dict[str, float]
@@ -207,14 +205,12 @@ class CatBoostTrainer:
         X_feat, feature_names = self._resolve_features(X)
         if X_feat.shape[1] == 0:
             raise ValueError(
-                "no feature columns resolved from column_roles; "
-                "feature_columns must be non-empty"
+                "no feature columns resolved from column_roles; feature_columns must be non-empty"
             )
         y_arr = self._coerce_label(y, np)
         if y_arr.shape[0] != X_feat.shape[0]:
             raise ValueError(
-                f"X and y row count mismatch: X has {X_feat.shape[0]} "
-                f"rows, y has {y_arr.shape[0]}"
+                f"X and y row count mismatch: X has {X_feat.shape[0]} rows, y has {y_arr.shape[0]}"
             )
 
         weights_arr = self._coerce_optional_vector(weights, X_feat.shape[0], np, "weights")
@@ -228,14 +224,25 @@ class CatBoostTrainer:
 
         # Fold metrics (k-fold CV with a fresh estimator per fold).
         fold_metrics = self._compute_fold_metrics(
-            cb, np, X_feat, y_arr, weights_arr, groups_arr,
-            cat_indices, effective_params,
+            cb,
+            np,
+            X_feat,
+            y_arr,
+            weights_arr,
+            groups_arr,
+            cat_indices,
+            effective_params,
         )
 
         # Train the final model on the full dataset.
         model = self._fit_model(
-            cb, X_feat, y_arr, weights_arr, groups_arr,
-            cat_indices, effective_params,
+            cb,
+            X_feat,
+            y_arr,
+            weights_arr,
+            groups_arr,
+            cat_indices,
+            effective_params,
         )
         self.model = model
 
@@ -272,9 +279,7 @@ class CatBoostTrainer:
                 fails.
         """
         if self.model is None:
-            raise ValueError(
-                "no trained model to save; call train() before save_artifact()"
-            )
+            raise ValueError("no trained model to save; call train() before save_artifact()")
         if not path or not isinstance(path, str) or not path.strip():
             raise ValueError("artifact path must be a non-empty string")
         parent = os.path.dirname(os.path.abspath(path))
@@ -283,9 +288,7 @@ class CatBoostTrainer:
         try:
             self.model.save_model(path)
         except Exception as exc:  # pragma: no cover - defensive
-            raise RuntimeError(
-                f"failed to save CatBoost artifact to {path!r}: {exc}"
-            ) from exc
+            raise RuntimeError(f"failed to save CatBoost artifact to {path!r}: {exc}") from exc
         return os.path.abspath(path)
 
     def get_feature_importance(self) -> dict[str, float]:
@@ -301,9 +304,7 @@ class CatBoostTrainer:
             ValueError: if no model has been trained yet.
         """
         if self.model is None:
-            raise ValueError(
-                "no trained model; call train() before get_feature_importance()"
-            )
+            raise ValueError("no trained model; call train() before get_feature_importance()")
         feature_names = list(self.column_roles.feature_columns)
         try:
             importances = self.model.get_feature_importance()
@@ -312,6 +313,7 @@ class CatBoostTrainer:
         # CatBoost returns a numpy array; normalise to Python floats.
         try:
             import numpy as _np  # noqa: F401
+
             vals = list(importances)
         except Exception:
             vals = list(importances)  # type: ignore[assignment]
@@ -381,14 +383,15 @@ class CatBoostTrainer:
         if arr.ndim == 2 and arr.shape[1] == 1:
             arr = arr.ravel()
         if arr.ndim != 1:
-            raise ValueError(
-                f"y must be 1-D (got {arr.ndim}-D with shape {arr.shape})"
-            )
+            raise ValueError(f"y must be 1-D (got {arr.ndim}-D with shape {arr.shape})")
         return arr
 
     @staticmethod
     def _coerce_optional_vector(
-        v: Any, n_rows: int, np: Any, name: str,
+        v: Any,
+        n_rows: int,
+        np: Any,
+        name: str,
     ) -> Any | None:
         """Coerce an optional 1-D vector (weights/groups) or None."""
         if v is None:
@@ -397,13 +400,9 @@ class CatBoostTrainer:
         if arr.ndim == 2 and arr.shape[1] == 1:
             arr = arr.ravel()
         if arr.ndim != 1:
-            raise ValueError(
-                f"{name} must be 1-D (got {arr.ndim}-D with shape {arr.shape})"
-            )
+            raise ValueError(f"{name} must be 1-D (got {arr.ndim}-D with shape {arr.shape})")
         if arr.shape[0] != n_rows:
-            raise ValueError(
-                f"{name} length {arr.shape[0]} does not match X rows {n_rows}"
-            )
+            raise ValueError(f"{name} length {arr.shape[0]} does not match X rows {n_rows}")
         return arr
 
     def _resolve_cat_features(
@@ -488,11 +487,7 @@ class CatBoostTrainer:
                     )
                 else:
                     kind = str(dtype).lower()
-                    is_cat = (
-                        "object" in kind
-                        or "string" in kind
-                        or kind.startswith("category")
-                    )
+                    is_cat = "object" in kind or "string" in kind or kind.startswith("category")
                 mask.append(is_cat)
             return mask
         # numpy array: only object/string dtype is categorical.
@@ -514,7 +509,9 @@ class CatBoostTrainer:
 
     @staticmethod
     def _normalise_cat_features(
-        cat_features: Any, X_feat: Any, feature_names: list[str],
+        cat_features: Any,
+        X_feat: Any,
+        feature_names: list[str],
     ) -> list[int]:
         """Normalise ``cat_features`` (names or indices) to positional ints."""
         out: list[int] = []
@@ -526,21 +523,18 @@ class CatBoostTrainer:
                 if isinstance(cf, str):
                     if cf not in name_to_idx:
                         raise ValueError(
-                            f"cat_features name {cf!r} not found in X "
-                            f"columns {list(name_to_idx)!r}"
+                            f"cat_features name {cf!r} not found in X columns {list(name_to_idx)!r}"
                         )
                     out.append(name_to_idx[cf])
                 elif isinstance(cf, (int,)) and not isinstance(cf, bool):
                     if cf < 0 or cf >= len(cols):
                         raise ValueError(
-                            f"cat_features index {cf} out of range for "
-                            f"{len(cols)} columns"
+                            f"cat_features index {cf} out of range for {len(cols)} columns"
                         )
                     out.append(int(cf))
                 else:
                     raise ValueError(
-                        f"cat_features entries must be str or int; got "
-                        f"{type(cf).__name__} ({cf!r})"
+                        f"cat_features entries must be str or int; got {type(cf).__name__} ({cf!r})"
                     )
             return out
         # Index-based for array-like X.
@@ -552,19 +546,15 @@ class CatBoostTrainer:
                     out.append(feature_names.index(cf))
                 else:
                     raise ValueError(
-                        f"cat_features name {cf!r} not found in feature "
-                        f"names {feature_names!r}"
+                        f"cat_features name {cf!r} not found in feature names {feature_names!r}"
                     )
             elif isinstance(cf, (int,)) and not isinstance(cf, bool):
                 if cf < 0 or cf >= n:
-                    raise ValueError(
-                        f"cat_features index {cf} out of range for {n} columns"
-                    )
+                    raise ValueError(f"cat_features index {cf} out of range for {n} columns")
                 out.append(int(cf))
             else:
                 raise ValueError(
-                    f"cat_features entries must be str or int; got "
-                    f"{type(cf).__name__} ({cf!r})"
+                    f"cat_features entries must be str or int; got {type(cf).__name__} ({cf!r})"
                 )
         return out
 
@@ -595,9 +585,7 @@ class CatBoostTrainer:
             "fail-closed instead.",
             stacklevel=2,
         )
-        logger.warning(
-            "CatBoost GPU fallback: task_type='GPU' -> 'CPU' (no GPU available)"
-        )
+        logger.warning("CatBoost GPU fallback: task_type='GPU' -> 'CPU' (no GPU available)")
         params["task_type"] = "CPU"
         # ``devices`` is meaningless on CPU; drop it to avoid CatBoost warnings.
         params.pop("devices", None)
@@ -616,7 +604,10 @@ class CatBoostTrainer:
             probe_X = np.array([[0.0, 1.0], [1.0, 0.0], [0.0, 0.0], [1.0, 1.0]])
             probe_y = np.array([0, 1, 0, 1])
             probe = cb.CatBoostClassifier(
-                iterations=2, task_type="GPU", devices="0", verbose=False,
+                iterations=2,
+                task_type="GPU",
+                devices="0",
+                verbose=False,
                 allow_writing_files=False,
             )
             probe.fit(probe_X, probe_y)
@@ -664,9 +655,7 @@ class CatBoostTrainer:
         # CatBoostRanker requires a group array via Pool.
         if self.task_spec.task_type == "ranking":
             if groups_arr is None:
-                raise ValueError(
-                    "ranking task_type requires a non-None groups array"
-                )
+                raise ValueError("ranking task_type requires a non-None groups array")
             pool = cb.Pool(X_feat, y_arr, group_id=groups_arr, cat_features=cat_indices or None)
             model = cls(**params)
             model.fit(pool, **{k: v for k, v in fit_kwargs.items() if k != "cat_features"})
@@ -695,8 +684,14 @@ class CatBoostTrainer:
             # Too little data for CV — report a degenerate single-fold
             # metric so the result always carries the required keys.
             return self._single_fit_metrics(
-                cb, np, X_feat, y_arr, weights_arr, groups_arr,
-                cat_indices, params,
+                cb,
+                np,
+                X_feat,
+                y_arr,
+                weights_arr,
+                groups_arr,
+                cat_indices,
+                params,
             )
 
         # Cap folds to the number of rows.
@@ -712,8 +707,8 @@ class CatBoostTrainer:
         rmses: list[float] = []
         cursor = 0
         for fsz in fold_sizes:
-            test_idx = perm[cursor:cursor + fsz]
-            train_idx = np.concatenate([perm[:cursor], perm[cursor + fsz:]])
+            test_idx = perm[cursor : cursor + fsz]
+            train_idx = np.concatenate([perm[:cursor], perm[cursor + fsz :]])
             cursor += fsz
             if train_idx.size == 0 or test_idx.size == 0:
                 continue
@@ -726,7 +721,13 @@ class CatBoostTrainer:
             fold_params.setdefault("verbose", False)
             try:
                 fold_model = self._fit_fold(
-                    cb, X_tr, y_tr, w_tr, g_tr, cat_indices, fold_params,
+                    cb,
+                    X_tr,
+                    y_tr,
+                    w_tr,
+                    g_tr,
+                    cat_indices,
+                    fold_params,
                 )
             except Exception:
                 # A failed fold should not abort training; skip it.
@@ -797,7 +798,12 @@ class CatBoostTrainer:
         return model
 
     def _score_fold(
-        self, model: Any, X_te: Any, y_te: Any, task_type: str, np: Any,
+        self,
+        model: Any,
+        X_te: Any,
+        y_te: Any,
+        task_type: str,
+        np: Any,
     ) -> dict[str, float]:
         """Score a held-out fold; returns accuracy/logloss or rmse."""
         out: dict[str, float] = {}

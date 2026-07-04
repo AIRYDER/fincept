@@ -9,23 +9,20 @@ registry/runner/reporter, and the module-level helpers
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.verification_matrix import (
     VerificationCategory,
     VerificationMatrix,
     VerificationMatrixConfig,
     VerificationResult,
-    VerificationTier,
     VerificationTestSpec,
+    VerificationTier,
     format_result_table,
     summarize_results,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -137,31 +134,19 @@ class TestVerificationCategory:
     """Tests for the VerificationCategory StrEnum."""
 
     def test_schema_validation_value(self) -> None:
-        assert (
-            VerificationCategory.SCHEMA_VALIDATION.value == "schema_validation"
-        )
+        assert VerificationCategory.SCHEMA_VALIDATION.value == "schema_validation"
 
     def test_manifest_hashing_value(self) -> None:
-        assert (
-            VerificationCategory.MANIFEST_HASHING.value == "manifest_hashing"
-        )
+        assert VerificationCategory.MANIFEST_HASHING.value == "manifest_hashing"
 
     def test_request_creation_value(self) -> None:
-        assert (
-            VerificationCategory.REQUEST_CREATION.value == "request_creation"
-        )
+        assert VerificationCategory.REQUEST_CREATION.value == "request_creation"
 
     def test_callback_verification_value(self) -> None:
-        assert (
-            VerificationCategory.CALLBACK_VERIFICATION.value
-            == "callback_verification"
-        )
+        assert VerificationCategory.CALLBACK_VERIFICATION.value == "callback_verification"
 
     def test_artifact_verification_value(self) -> None:
-        assert (
-            VerificationCategory.ARTIFACT_VERIFICATION.value
-            == "artifact_verification"
-        )
+        assert VerificationCategory.ARTIFACT_VERIFICATION.value == "artifact_verification"
 
     def test_promotion_gate_value(self) -> None:
         assert VerificationCategory.PROMOTION_GATE.value == "promotion_gate"
@@ -747,10 +732,15 @@ class TestSummarizeResults:
         results = [
             _make_result(test_id="t1", tier=VerificationTier.UNIT, passed=True),
             _make_result(
-                test_id="t2", tier=VerificationTier.UNIT, passed=False, n_failures=1,
+                test_id="t2",
+                tier=VerificationTier.UNIT,
+                passed=False,
+                n_failures=1,
             ),
             _make_result(
-                test_id="t3", tier=VerificationTier.INTEGRATION, passed=True,
+                test_id="t3",
+                tier=VerificationTier.INTEGRATION,
+                passed=True,
             ),
         ]
         s = summarize_results(results)
@@ -773,10 +763,14 @@ class TestSummarizeResults:
         ]
         s = summarize_results(results)
         assert s["by_category"]["schema_validation"] == {
-            "total": 1, "passed": 1, "failed": 0,
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
         }
         assert s["by_category"]["pit_safety"] == {
-            "total": 1, "passed": 0, "failed": 1,
+            "total": 1,
+            "passed": 0,
+            "failed": 1,
         }
 
     def test_empty(self) -> None:

@@ -16,25 +16,15 @@ from __future__ import annotations
 import os
 
 # --- Template IDs ----------------------------------------------------------
-TRAINING_TEMPLATE_ID = os.environ.get(
-    "RUNPOD_TRAINING_TEMPLATE_ID", "me58r5vdrp"
-)
-INFERENCE_TEMPLATE_ID = os.environ.get(
-    "RUNPOD_INFERENCE_TEMPLATE_ID", "wnasp3v5jn"
-)
+TRAINING_TEMPLATE_ID = os.environ.get("RUNPOD_TRAINING_TEMPLATE_ID", "me58r5vdrp")
+INFERENCE_TEMPLATE_ID = os.environ.get("RUNPOD_INFERENCE_TEMPLATE_ID", "wnasp3v5jn")
 
 # --- Endpoint IDs ----------------------------------------------------------
-TRAINING_ENDPOINT_ID = os.environ.get(
-    "RUNPOD_TRAINING_ENDPOINT_ID", "h2blqodcicxqyy"
-)
-INFERENCE_ENDPOINT_ID = os.environ.get(
-    "RUNPOD_INFERENCE_ENDPOINT_ID", "t31u1z426jy1ub"
-)
+TRAINING_ENDPOINT_ID = os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", "h2blqodcicxqyy")
+INFERENCE_ENDPOINT_ID = os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", "t31u1z426jy1ub")
 
 # --- Network Volume ID -----------------------------------------------------
-NETWORK_VOLUME_ID = os.environ.get(
-    "RUNPOD_NETWORK_VOLUME_ID", "rrsd005i3g"
-)
+NETWORK_VOLUME_ID = os.environ.get("RUNPOD_NETWORK_VOLUME_ID", "rrsd005i3g")
 
 # --- Endpoint names (human-readable, used in API queries) ------------------
 TRAINING_NAME = "fincept-qf-training"

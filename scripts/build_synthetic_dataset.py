@@ -215,8 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not data_rows:
         raise SystemExit(
-            "no usable rows after feature/label computation "
-            "(increase --n-days).",
+            "no usable rows after feature/label computation (increase --n-days).",
         )
 
     # --- export parquet + manifest ---------------------------------------

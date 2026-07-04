@@ -454,9 +454,7 @@ class TestProductionArtifactVerificationRequired:
         artifact_verification_required is not set to 1 (dispatch-layer
         enforcement)."""
         with pytest.raises(ModeValidationError, match="artifact_verification"):
-            validate_mode(
-                _production_request(extra={"artifact_verification_required": "0"})
-            )
+            validate_mode(_production_request(extra={"artifact_verification_required": "0"}))
 
     def test_request_rejects_artifact_verification_missing(self) -> None:
         """A production request without artifact_verification_required in
@@ -508,9 +506,7 @@ class TestProductionRegisteredDatasetRequired:
         """validate_mode rejects a production request whose
         dataset_manifest_ref is a raw CSV path."""
         with pytest.raises(ModeValidationError, match="registered dataset"):
-            validate_mode(
-                _production_request(dataset_manifest_ref="data/raw/prices.csv")
-            )
+            validate_mode(_production_request(dataset_manifest_ref="data/raw/prices.csv"))
 
     def test_request_accepts_registered_ref(self) -> None:
         """validate_mode accepts a production request with a registered
@@ -541,9 +537,7 @@ class TestProductionFailsClosed:
             "dataset_registry_ref",
         ],
     )
-    def test_manifest_rejects_when_any_required_field_missing(
-        self, drop_field: str
-    ) -> None:
+    def test_manifest_rejects_when_any_required_field_missing(self, drop_field: str) -> None:
         kwargs = _base_manifest_kwargs(
             mode=TrainingMode.PRODUCTION,
             gpu_required=True,

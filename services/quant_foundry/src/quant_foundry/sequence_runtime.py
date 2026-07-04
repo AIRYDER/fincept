@@ -44,12 +44,11 @@ Design notes:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Docker image spec
@@ -82,9 +81,9 @@ class SequenceImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.sequence_runtime import "
+        'python -c "from quant_foundry.sequence_runtime import '
         "SequenceHealthcheck; import sys; "
-        "sys.exit(0 if SequenceHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if SequenceHealthcheck().is_healthy() else 1)"'
     )
     supports_mixed_precision: bool = True
     supports_checkpoint_resume: bool = True
@@ -227,7 +226,7 @@ class SequenceTensorLoader:
             raise FileNotFoundError(f"data path not found: {self.data_path}")
 
         if path.is_file() and path.suffix == ".npz":
-            import numpy as np  # noqa: WPS433 lazy import
+            import numpy as np
 
             with np.load(str(path), allow_pickle=False) as npz:
                 self._data = {k: npz[k] for k in npz.files}
@@ -235,14 +234,12 @@ class SequenceTensorLoader:
 
         if path.is_dir():
             # Sharded parquet directory.
-            import numpy as np  # noqa: WPS433 lazy import
-            import pandas as pd  # noqa: WPS433 lazy import
+            import numpy as np
+            import pandas as pd
 
             shards = sorted(path.glob("*.parquet"))
             if not shards:
-                raise ValueError(
-                    f"no parquet shards found in directory: {self.data_path}"
-                )
+                raise ValueError(f"no parquet shards found in directory: {self.data_path}")
             frames = [pd.read_parquet(str(s)) for s in shards]
             df = pd.concat(frames, ignore_index=True)
 
@@ -290,7 +287,7 @@ class SequenceTensorLoader:
             raise ValueError("indices must be non-empty")
 
         data = self.load()
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
 
         batch: dict[str, Any] = {}
         if "sequences" in data:
@@ -351,7 +348,7 @@ class CheckpointManager:
         Returns:
             The string path to the written checkpoint file.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         self._dir.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -359,7 +356,7 @@ class CheckpointManager:
             "optimizer_state": optimizer_state,
             "epoch": epoch,
             "metrics": metrics,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         path = self._checkpoint_path(epoch)
         torch.save(payload, str(path))
@@ -372,16 +369,14 @@ class CheckpointManager:
             FileNotFoundError: if ``path`` does not exist.
             ValueError: if the loaded payload is not a dict.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"checkpoint not found: {path}")
         payload = torch.load(str(p), map_location="cpu")
         if not isinstance(payload, dict):
-            raise ValueError(
-                f"checkpoint payload is not a dict: {type(payload).__name__}"
-            )
+            raise ValueError(f"checkpoint payload is not a dict: {type(payload).__name__}")
         return payload
 
     def latest_checkpoint(self) -> str | None:
@@ -453,7 +448,7 @@ class MixedPrecisionManager:
 
     def _torch_dtype(self) -> Any:
         """Map the config dtype string to a torch dtype."""
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.config.dtype == "float16":
             return torch.float16
@@ -469,8 +464,9 @@ class MixedPrecisionManager:
         on CPU with bfloat16, uses ``torch.autocast('cpu', ...)``; on CUDA
         uses ``torch.autocast('cuda', ...)``.
         """
-        import contextlib  # noqa: WPS433 lazy import
-        import torch  # noqa: WPS433 lazy import
+        import contextlib
+
+        import torch
 
         if not self.config.enabled:
             return contextlib.nullcontext()
@@ -488,7 +484,7 @@ class MixedPrecisionManager:
         if not self.config.enabled or not self.config.grad_scaler:
             self._scaler = False  # sentinel: no scaler
             return self._scaler
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         # GradScaler is only meaningful for float16 on CUDA. On CPU or
         # bfloat16 we skip it.
@@ -578,8 +574,8 @@ class SequenceHealthcheck:
 
         # Tiny synthetic sequence tensor load + forward pass on CPU.
         try:
-            import torch  # noqa: WPS433 lazy import
-            import torch.nn as nn  # noqa: WPS433 lazy import
+            import torch
+            import torch.nn as nn
 
             # Synthetic sequence: (batch=4, seq_len=8, features=3).
             x = torch.randn(4, 8, 3)
@@ -595,10 +591,7 @@ class SequenceHealthcheck:
 
         gpu_ok = bool(result["gpu"].get("available")) if result["gpu"] else False
         result["healthy"] = bool(
-            gpu_ok
-            and result["tensor_load"]
-            and result["forward_pass"]
-            and result["error"] is None
+            gpu_ok and result["tensor_load"] and result["forward_pass"] and result["error"] is None
         )
         result["duration_seconds"] = time.perf_counter() - start
         return result
@@ -615,12 +608,12 @@ class SequenceHealthcheck:
 
 
 __all__ = [
-    "SequenceImageSpec",
     "CheckpointConfig",
-    "MixedPrecisionConfig",
-    "MetricsArtifact",
-    "SequenceTensorLoader",
     "CheckpointManager",
+    "MetricsArtifact",
+    "MixedPrecisionConfig",
     "MixedPrecisionManager",
     "SequenceHealthcheck",
+    "SequenceImageSpec",
+    "SequenceTensorLoader",
 ]

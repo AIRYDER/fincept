@@ -82,7 +82,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 
-
 # ---------------------------------------------------------------------------
 # Covariate roles
 # ---------------------------------------------------------------------------
@@ -151,8 +150,7 @@ class CovariateRoles(BaseModel):
         for col in v:
             if not isinstance(col, str) or not col.strip():
                 raise ValueError(
-                    f"{info.field_name} contains an empty or whitespace-only "
-                    f"column name"
+                    f"{info.field_name} contains an empty or whitespace-only column name"
                 )
         return v
 
@@ -164,7 +162,7 @@ class CovariateRoles(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _no_overlap_between_categories(self) -> "CovariateRoles":
+    def _no_overlap_between_categories(self) -> CovariateRoles:
         """No column may appear in more than one category."""
         static_set = set(self.static_cols)
         known_future_set = set(self.known_future_cols)
@@ -172,57 +170,34 @@ class CovariateRoles(BaseModel):
 
         overlap = static_set & known_future_set
         if overlap:
-            raise ValueError(
-                f"static_cols and known_future_cols overlap: "
-                f"{sorted(overlap)}"
-            )
+            raise ValueError(f"static_cols and known_future_cols overlap: {sorted(overlap)}")
         overlap = static_set & observed_set
         if overlap:
-            raise ValueError(
-                f"static_cols and observed_cols overlap: "
-                f"{sorted(overlap)}"
-            )
+            raise ValueError(f"static_cols and observed_cols overlap: {sorted(overlap)}")
         overlap = known_future_set & observed_set
         if overlap:
-            raise ValueError(
-                f"known_future_cols and observed_cols overlap: "
-                f"{sorted(overlap)}"
-            )
+            raise ValueError(f"known_future_cols and observed_cols overlap: {sorted(overlap)}")
         return self
 
     @model_validator(mode="after")
-    def _target_not_in_other_categories(self) -> "CovariateRoles":
+    def _target_not_in_other_categories(self) -> CovariateRoles:
         """target_col must not appear in any other category."""
         target = self.target_col
         if target in self.static_cols:
-            raise ValueError(
-                f"target_col {target!r} must not appear in static_cols"
-            )
+            raise ValueError(f"target_col {target!r} must not appear in static_cols")
         if target in self.known_future_cols:
-            raise ValueError(
-                f"target_col {target!r} must not appear in known_future_cols"
-            )
+            raise ValueError(f"target_col {target!r} must not appear in known_future_cols")
         if target in self.observed_cols:
-            raise ValueError(
-                f"target_col {target!r} must not appear in observed_cols"
-            )
+            raise ValueError(f"target_col {target!r} must not appear in observed_cols")
         return self
 
     def all_feature_cols(self) -> list[str]:
         """Return all non-target columns in declaration order."""
-        return (
-            list(self.static_cols)
-            + list(self.known_future_cols)
-            + list(self.observed_cols)
-        )
+        return list(self.static_cols) + list(self.known_future_cols) + list(self.observed_cols)
 
     def n_features(self) -> int:
         """Return the total number of non-target feature columns."""
-        return (
-            len(self.static_cols)
-            + len(self.known_future_cols)
-            + len(self.observed_cols)
-        )
+        return len(self.static_cols) + len(self.known_future_cols) + len(self.observed_cols)
 
 
 # ---------------------------------------------------------------------------
@@ -351,13 +326,11 @@ class TFTConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
     @model_validator(mode="after")
-    def _d_model_divisible_by_n_heads(self) -> "TFTConfig":
+    def _d_model_divisible_by_n_heads(self) -> TFTConfig:
         """d_model must be divisible by n_heads."""
         if self.d_model % self.n_heads != 0:
             raise ValueError(
@@ -546,17 +519,17 @@ class TFTModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "TFTModel":
+    def to(self, device: Any) -> TFTModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "TFTModel":
+    def train(self, mode: bool = True) -> TFTModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "TFTModel":
+    def eval(self) -> TFTModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -567,9 +540,9 @@ def _make_tft_module_class() -> Any:
     Lazily imports torch. Called from :meth:`TFTModel._build_module` each
     time a new model is built.
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
-    import torch.nn.functional as F  # noqa: WPS433 lazy import
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
 
     class _VariableSelectionNetwork(nn.Module):
         """Variable Selection Network (VSN).
@@ -659,9 +632,7 @@ def _make_tft_module_class() -> Any:
                 self.static_encoder = None
 
             # Positional encoding (learned).
-            self.pos_embedding = nn.Parameter(
-                torch.randn(1, seq_len, d_model) * 0.02
-            )
+            self.pos_embedding = nn.Parameter(torch.randn(1, seq_len, d_model) * 0.02)
 
             # Temporal self-attention encoder.
             encoder_layer = nn.TransformerEncoderLayer(
@@ -671,17 +642,13 @@ def _make_tft_module_class() -> Any:
                 dropout=dropout,
                 batch_first=True,
             )
-            self.temporal_attention = nn.TransformerEncoder(
-                encoder_layer, num_layers=n_layers
-            )
+            self.temporal_attention = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
             # Gated Residual Network after attention.
             self.grn = _GatedResidualNetwork(d_model, ff_dim, dropout)
 
             # Multi-horizon output head: one output per horizon step.
-            self.horizon_heads = nn.ModuleList(
-                [nn.Linear(d_model, 1) for _ in range(horizon)]
-            )
+            self.horizon_heads = nn.ModuleList([nn.Linear(d_model, 1) for _ in range(horizon)])
 
             self.dropout = nn.Dropout(dropout)
 
@@ -732,7 +699,7 @@ def _resolve_device(config: TFTConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -793,10 +760,7 @@ class TFTTrainer:
                 "covariate role declaration before training (fail-closed)"
             )
         if not isinstance(roles, CovariateRoles):
-            raise ValueError(
-                "covariate_roles must be a CovariateRoles instance "
-                "(fail-closed)"
-            )
+            raise ValueError("covariate_roles must be a CovariateRoles instance (fail-closed)")
         # Check all required categories are present and non-empty.
         if not roles.static_cols:
             raise ValueError(
@@ -847,9 +811,9 @@ class TFTTrainer:
             A :class:`TFTTrainingResult` with epoch losses, GPU status,
             multi-horizon predictions, and promotion eligibility.
         """
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
+        import torch.nn as nn
 
         # Fail-closed: validate covariate roles before anything else.
         self.validate_covariates()
@@ -868,13 +832,11 @@ class TFTTrainer:
         X_arr = np.array(X, dtype=float)
         if X_arr.ndim != 3:
             raise ValueError(
-                f"X must be 3-D (n_samples, seq_len, n_features); "
-                f"got shape {X_arr.shape}"
+                f"X must be 3-D (n_samples, seq_len, n_features); got shape {X_arr.shape}"
             )
         if X_arr.shape[1] != self.config.seq_len:
             raise ValueError(
-                f"X.shape[1] must equal seq_len={self.config.seq_len}; "
-                f"got {X_arr.shape[1]}"
+                f"X.shape[1] must equal seq_len={self.config.seq_len}; got {X_arr.shape[1]}"
             )
         if X_arr.shape[2] != n_features:
             raise ValueError(
@@ -891,13 +853,11 @@ class TFTTrainer:
             y_arr = np.tile(y_arr.reshape(-1, 1), (1, self.config.horizon))
         if y_arr.ndim != 2:
             raise ValueError(
-                f"y must be 1-D (n_samples,) or 2-D (n_samples, horizon); "
-                f"got shape {y_arr.shape}"
+                f"y must be 1-D (n_samples,) or 2-D (n_samples, horizon); got shape {y_arr.shape}"
             )
         if y_arr.shape[1] != self.config.horizon:
             raise ValueError(
-                f"y.shape[1] must equal horizon={self.config.horizon}; "
-                f"got {y_arr.shape[1]}"
+                f"y.shape[1] must equal horizon={self.config.horizon}; got {y_arr.shape[1]}"
             )
 
         n_samples = X_arr.shape[0]
@@ -907,8 +867,7 @@ class TFTTrainer:
             static_arr = np.array(static_data, dtype=float)
             if static_arr.ndim != 2:
                 raise ValueError(
-                    f"static_data must be 2-D (n_samples, n_static); "
-                    f"got shape {static_arr.shape}"
+                    f"static_data must be 2-D (n_samples, n_static); got shape {static_arr.shape}"
                 )
             if static_arr.shape[1] != n_static:
                 raise ValueError(
@@ -994,9 +953,7 @@ class TFTTrainer:
                 # preds: (n_samples, horizon, 1)
                 preds_np = preds.squeeze(-1).cpu().numpy()
                 # Multi-horizon predictions: list[list[float]]
-                multi_horizon_preds = [
-                    [float(v) for v in row] for row in preds_np
-                ]
+                multi_horizon_preds = [[float(v) for v in row] for row in preds_np]
                 mse = float(np.mean((preds_np - y_arr) ** 2))
                 metrics["mse"] = mse
                 metrics["final_loss"] = final_loss
@@ -1036,14 +993,11 @@ class TFTTrainer:
             A list of lists of floats — one inner list per sample, each
             containing ``horizon`` predictions.
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
 
         n_features = self.covariate_roles.n_features()
         n_static = len(self.covariate_roles.static_cols)
@@ -1051,19 +1005,14 @@ class TFTTrainer:
         X_arr = np.array(X, dtype=float)
         if X_arr.ndim != 3:
             raise ValueError(
-                f"X must be 3-D (n_samples, seq_len, n_features); "
-                f"got shape {X_arr.shape}"
+                f"X must be 3-D (n_samples, seq_len, n_features); got shape {X_arr.shape}"
             )
         if X_arr.shape[1] != self.config.seq_len:
             raise ValueError(
-                f"X.shape[1] must equal seq_len={self.config.seq_len}; "
-                f"got {X_arr.shape[1]}"
+                f"X.shape[1] must equal seq_len={self.config.seq_len}; got {X_arr.shape[1]}"
             )
         if X_arr.shape[2] != n_features:
-            raise ValueError(
-                f"X.shape[2] must equal n_features={n_features}; "
-                f"got {X_arr.shape[2]}"
-            )
+            raise ValueError(f"X.shape[2] must equal n_features={n_features}; got {X_arr.shape[2]}")
 
         n_samples = X_arr.shape[0]
 
@@ -1071,8 +1020,7 @@ class TFTTrainer:
             static_arr = np.array(static_data, dtype=float)
             if static_arr.ndim != 2:
                 raise ValueError(
-                    f"static_data must be 2-D (n_samples, n_static); "
-                    f"got shape {static_arr.shape}"
+                    f"static_data must be 2-D (n_samples, n_static); got shape {static_arr.shape}"
                 )
         else:
             static_arr = np.zeros((n_samples, n_static), dtype=float)
@@ -1107,12 +1055,10 @@ class TFTTrainer:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -1129,7 +1075,7 @@ class TFTTrainer:
         Returns:
             The loaded :class:`TFTModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         n_features = self.covariate_roles.n_features()
         n_static = len(self.covariate_roles.static_cols)
@@ -1202,10 +1148,7 @@ class TFTTrainer:
                 "labels, and horizons must all have the same length"
             )
         if weights is not None and len(weights) != n:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="tft", output_dir=output_dir)
@@ -1324,9 +1267,9 @@ __all__ = [
     "CovariateRole",
     "CovariateRoles",
     "TFTConfig",
-    "TFTTrainingResult",
     "TFTModel",
     "TFTTrainer",
-    "validate_promotion_eligibility",
+    "TFTTrainingResult",
     "register_tft_family",
+    "validate_promotion_eligibility",
 ]

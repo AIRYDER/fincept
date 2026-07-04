@@ -31,11 +31,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -97,9 +95,7 @@ class PolicyConfig(BaseModel):
     @classmethod
     def _validate_max_weight(cls, v: float) -> float:
         if not (0.0 < v <= 1.0):
-            raise ValueError(
-                f"max_weight must be in (0, 1]; got {v}"
-            )
+            raise ValueError(f"max_weight must be in (0, 1]; got {v}")
         return float(v)
 
     @field_validator("max_turnover")
@@ -113,9 +109,7 @@ class PolicyConfig(BaseModel):
     @classmethod
     def _validate_max_drawdown(cls, v: float) -> float:
         if not (0.0 < v < 1.0):
-            raise ValueError(
-                f"max_drawdown must be in (0, 1); got {v}"
-            )
+            raise ValueError(f"max_drawdown must be in (0, 1); got {v}")
         return float(v)
 
     @field_validator("cost_bps")
@@ -129,9 +123,7 @@ class PolicyConfig(BaseModel):
     @classmethod
     def _validate_abstention_threshold(cls, v: float) -> float:
         if not (0.0 <= v <= 1.0):
-            raise ValueError(
-                f"abstention_threshold must be in [0, 1]; got {v}"
-            )
+            raise ValueError(f"abstention_threshold must be in [0, 1]; got {v}")
         return float(v)
 
 
@@ -220,9 +212,7 @@ class RiskLimits(BaseModel):
     @classmethod
     def _validate_max_weight(cls, v: float) -> float:
         if not (0.0 < v <= 1.0):
-            raise ValueError(
-                f"max_weight must be in (0, 1]; got {v}"
-            )
+            raise ValueError(f"max_weight must be in (0, 1]; got {v}")
         return float(v)
 
     @field_validator("max_turnover")
@@ -236,9 +226,7 @@ class RiskLimits(BaseModel):
     @classmethod
     def _validate_max_drawdown(cls, v: float) -> float:
         if not (0.0 < v < 1.0):
-            raise ValueError(
-                f"max_drawdown must be in (0, 1); got {v}"
-            )
+            raise ValueError(f"max_drawdown must be in (0, 1); got {v}")
         return float(v)
 
     @field_validator("min_positions")
@@ -317,10 +305,7 @@ class PortfolioPolicy:
                 risk-limit constraints.
         """
         if not _is_hex64(cost_model_hash):
-            raise ValueError(
-                "cost_model_hash must be a 64-character lowercase hex "
-                "SHA-256 digest"
-            )
+            raise ValueError("cost_model_hash must be a 64-character lowercase hex SHA-256 digest")
         # The per-asset max weight must allow at least min_positions
         # assets to sum to 1.0; otherwise the policy can never satisfy
         # both the max-weight and the sum-to-1 constraints.
@@ -359,8 +344,7 @@ class PortfolioPolicy:
         signal = np.asarray(model_outputs, dtype=float)
         if signal.shape[0] != self._n_assets:
             raise ValueError(
-                f"model_outputs length {signal.shape[0]} does not match "
-                f"n_assets {self._n_assets}"
+                f"model_outputs length {signal.shape[0]} does not match n_assets {self._n_assets}"
             )
         # Use the positive part of the signal as the weight basis.
         positive = np.maximum(signal, 0.0)
@@ -396,16 +380,12 @@ class PortfolioPolicy:
                 clipped = np.full(n, 1.0 / n)
                 clipped = np.minimum(clipped, self._max_weight)
                 break
-            if abs(total - 1.0) <= _SUM_TOL and np.all(
-                clipped <= self._max_weight + _EPS
-            ):
+            if abs(total - 1.0) <= _SUM_TOL and np.all(clipped <= self._max_weight + _EPS):
                 break
             # Step 1: clip over-weight assets.
             over_mask = clipped > self._max_weight + _EPS
             if over_mask.any():
-                excess = float(
-                    (clipped[over_mask] - self._max_weight).sum()
-                )
+                excess = float((clipped[over_mask] - self._max_weight).sum())
                 clipped[over_mask] = self._max_weight
             else:
                 excess = 0.0
@@ -424,9 +404,7 @@ class PortfolioPolicy:
             if unclipped_sum <= _EPS:
                 clipped[unclipped_mask] += residual / n_unclipped
             else:
-                clipped[unclipped_mask] += residual * (
-                    clipped[unclipped_mask] / unclipped_sum
-                )
+                clipped[unclipped_mask] += residual * (clipped[unclipped_mask] / unclipped_sum)
             clipped = np.minimum(clipped, self._max_weight)
         # Final normalization to guarantee sum == 1.0 within tolerance.
         total = clipped.sum()
@@ -454,25 +432,17 @@ class PortfolioPolicy:
             raise ValueError("weights must be a list of floats")
         if len(weights) != self._n_assets:
             raise ValueError(
-                f"weights length {len(weights)} does not match n_assets "
-                f"{self._n_assets}"
+                f"weights length {len(weights)} does not match n_assets {self._n_assets}"
             )
         w = [float(x) for x in weights]
         total = sum(w)
         if abs(total - 1.0) > _SUM_TOL:
-            raise ValueError(
-                f"weights must sum to 1.0 (within {_SUM_TOL}), got {total}"
-            )
+            raise ValueError(f"weights must sum to 1.0 (within {_SUM_TOL}), got {total}")
         for i, x in enumerate(w):
             if x < -_EPS:
-                raise ValueError(
-                    f"weight {x} at index {i} is negative"
-                )
+                raise ValueError(f"weight {x} at index {i} is negative")
             if x > self._max_weight + _SUM_TOL:
-                raise ValueError(
-                    f"weight {x} at index {i} exceeds max_weight "
-                    f"{self._max_weight}"
-                )
+                raise ValueError(f"weight {x} at index {i} exceeds max_weight {self._max_weight}")
         n_positions = sum(1 for x in w if x > _EPS)
         if n_positions < self.risk_limits.min_positions:
             raise ValueError(
@@ -503,14 +473,10 @@ class PortfolioPolicy:
                 f"new_weights length {len(new_weights)}"
             )
         turnover = sum(
-            abs(float(new_weights[i]) - float(old_weights[i]))
-            for i in range(len(old_weights))
+            abs(float(new_weights[i]) - float(old_weights[i])) for i in range(len(old_weights))
         )
         if turnover > self._max_turnover + _SUM_TOL:
-            raise ValueError(
-                f"turnover {turnover} exceeds max_turnover "
-                f"{self._max_turnover}"
-            )
+            raise ValueError(f"turnover {turnover} exceeds max_turnover {self._max_turnover}")
 
     # -- reward ----------------------------------------------------------
 
@@ -543,18 +509,15 @@ class PortfolioPolicy:
         """
         if len(returns) != self._n_assets:
             raise ValueError(
-                f"returns length {len(returns)} does not match n_assets "
-                f"{self._n_assets}"
+                f"returns length {len(returns)} does not match n_assets {self._n_assets}"
             )
         if len(weights) != self._n_assets:
             raise ValueError(
-                f"weights length {len(weights)} does not match n_assets "
-                f"{self._n_assets}"
+                f"weights length {len(weights)} does not match n_assets {self._n_assets}"
             )
         if len(old_weights) != self._n_assets:
             raise ValueError(
-                f"old_weights length {len(old_weights)} does not match "
-                f"n_assets {self._n_assets}"
+                f"old_weights length {len(old_weights)} does not match n_assets {self._n_assets}"
             )
         r = np.asarray(returns, dtype=float)
         w = np.asarray(weights, dtype=float)
@@ -622,9 +585,7 @@ class PortfolioPolicy:
                 f"match n_assets {self._n_assets}"
             )
         if not (0.0 <= confidence <= 1.0):
-            raise ValueError(
-                f"confidence must be in [0, 1]; got {confidence}"
-            )
+            raise ValueError(f"confidence must be in [0, 1]; got {confidence}")
 
         # Forced abstention on drawdown breach.
         if drawdown >= self._max_drawdown:
@@ -702,9 +663,7 @@ class PortfolioPolicy:
             try:
                 self.validate_weights(current_weights)
                 # current weights are valid; emit them (no change).
-                reward = self.compute_reward(
-                    model_outputs, current_weights, current_weights
-                )
+                reward = self.compute_reward(model_outputs, current_weights, current_weights)
                 return PolicyOutput(
                     target_weights=[float(x) for x in current_weights],
                     abstain=True,
@@ -778,23 +737,17 @@ def validate_no_risk_violation(
     # Max weight.
     for i, w in enumerate(weights):
         if w > risk_limits.max_weight + _SUM_TOL:
-            raise ValueError(
-                f"weight {w} at index {i} exceeds max_weight "
-                f"{risk_limits.max_weight}"
-            )
+            raise ValueError(f"weight {w} at index {i} exceeds max_weight {risk_limits.max_weight}")
     # Min positions.
     n_positions = sum(1 for w in weights if w > _EPS)
     if n_positions < risk_limits.min_positions:
         raise ValueError(
-            f"only {n_positions} non-zero positions; min_positions "
-            f"is {risk_limits.min_positions}"
+            f"only {n_positions} non-zero positions; min_positions is {risk_limits.min_positions}"
         )
     # Sum to 1.0.
     total = sum(weights)
     if abs(total - 1.0) > _SUM_TOL:
-        raise ValueError(
-            f"weights must sum to 1.0 (within {_SUM_TOL}), got {total}"
-        )
+        raise ValueError(f"weights must sum to 1.0 (within {_SUM_TOL}), got {total}")
     return True
 
 
@@ -832,8 +785,7 @@ class ReplayEngine:
         """
         if not config.shadow_only:
             raise ValueError(
-                "ReplayEngine requires shadow_only=True; the policy must "
-                "be shadow-replay only"
+                "ReplayEngine requires shadow_only=True; the policy must be shadow-replay only"
             )
         self.policy = policy
         self.config = config
@@ -870,8 +822,7 @@ class ReplayEngine:
         n_assets = self.config.n_assets
         if len(initial_weights) != n_assets:
             raise ValueError(
-                f"initial_weights length {len(initial_weights)} does not "
-                f"match n_assets {n_assets}"
+                f"initial_weights length {len(initial_weights)} does not match n_assets {n_assets}"
             )
         # Validate initial weights (fail-closed).
         self.policy.validate_weights(initial_weights)
@@ -889,15 +840,12 @@ class ReplayEngine:
         for step_returns in returns_series:
             if len(step_returns) != n_assets:
                 raise ValueError(
-                    f"returns row length {len(step_returns)} does not "
-                    f"match n_assets {n_assets}"
+                    f"returns row length {len(step_returns)} does not match n_assets {n_assets}"
                 )
             r = np.asarray(step_returns, dtype=float)
 
             # Current drawdown.
-            drawdown = (peak_value - portfolio_value) / max(
-                peak_value, _EPS
-            )
+            drawdown = (peak_value - portfolio_value) / max(peak_value, _EPS)
             if drawdown > max_drawdown:
                 max_drawdown = drawdown
 
@@ -924,15 +872,11 @@ class ReplayEngine:
             else:
                 # Validate the emitted weights fail-closed.
                 self.policy.validate_weights(output.target_weights)
-                self.policy.validate_turnover(
-                    current_weights, output.target_weights
-                )
+                self.policy.validate_turnover(current_weights, output.target_weights)
                 held_weights = [float(x) for x in output.target_weights]
 
             # Compute portfolio return for the period.
-            portfolio_return = float(
-                np.dot(np.asarray(held_weights, dtype=float), r)
-            )
+            portfolio_return = float(np.dot(np.asarray(held_weights, dtype=float), r))
             # Compute turnover / cost.
             turnover = float(
                 np.sum(
@@ -946,9 +890,7 @@ class ReplayEngine:
             total_cost += cost
 
             # Update portfolio value.
-            portfolio_value = portfolio_value * (
-                1.0 + portfolio_return - cost
-            )
+            portfolio_value = portfolio_value * (1.0 + portfolio_return - cost)
             if portfolio_value > peak_value:
                 peak_value = portfolio_value
 
@@ -970,9 +912,7 @@ class ReplayEngine:
         turnovers = []
         prev = list(initial_weights)
         for wh in weight_history:
-            turnovers.append(
-                float(np.sum(np.abs(np.asarray(wh) - np.asarray(prev))))
-            )
+            turnovers.append(float(np.sum(np.abs(np.asarray(wh) - np.asarray(prev)))))
             prev = list(wh)
         avg_turnover = float(np.mean(turnovers)) if turnovers else 0.0
 
@@ -991,9 +931,7 @@ class ReplayEngine:
             weight_history=weight_history,
         )
 
-    def compute_sharpe(
-        self, reward_history: list[float]
-    ) -> float | None:
+    def compute_sharpe(self, reward_history: list[float]) -> float | None:
         """Compute the annualized Sharpe ratio from a reward history.
 
         Assumes daily data and annualizes by ``sqrt(252)``. Returns

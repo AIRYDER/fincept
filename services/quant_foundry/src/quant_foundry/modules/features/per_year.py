@@ -81,7 +81,8 @@ class PerYearFeatures:
         have generated the base features.
         """
         year = dt.datetime.fromtimestamp(
-            decision_time / NS_PER_SECOND, tz=dt.timezone.utc,
+            decision_time / NS_PER_SECOND,
+            tz=dt.UTC,
         ).year
         features: dict[str, float] = {"year": float(year)}
         for y in self.years:

@@ -55,12 +55,10 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Docker image spec
@@ -94,9 +92,9 @@ class GraphImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.graph_runtime import "
+        'python -c "from quant_foundry.graph_runtime import '
         "GraphHealthcheck; import sys; "
-        "sys.exit(0 if GraphHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if GraphHealthcheck().is_healthy() else 1)"'
     )
     supports_mixed_precision: bool = True
     graph_cache_dir: str = "/opt/graph_cache"
@@ -197,33 +195,25 @@ def _compute_snapshot_hash(
     """
     h = hashlib.sha256()
     h.update(snapshot_id.encode("utf-8"))
-    h.update(f"|n_nodes={n_nodes}|n_edges={n_edges}".encode("utf-8"))
-    h.update(f"|t={snapshot_time}".encode("utf-8"))
+    h.update(f"|n_nodes={n_nodes}|n_edges={n_edges}".encode())
+    h.update(f"|t={snapshot_time}".encode())
 
     # Node features: serialize with fixed precision.
     for row in node_features:
         h.update(b"|n:")
-        h.update(
-            ",".join(f"{float(v):.6f}" for v in row).encode("utf-8")
-        )
+        h.update(",".join(f"{float(v):.6f}" for v in row).encode("utf-8"))
 
     # Edge index.
     h.update(b"|ei:")
     if len(edge_index) >= 2:
-        h.update(
-            ",".join(str(int(s)) for s in edge_index[0]).encode("utf-8")
-        )
+        h.update(",".join(str(int(s)) for s in edge_index[0]).encode("utf-8"))
         h.update(b";")
-        h.update(
-            ",".join(str(int(d)) for d in edge_index[1]).encode("utf-8")
-        )
+        h.update(",".join(str(int(d)) for d in edge_index[1]).encode("utf-8"))
 
     # Edge weights.
     if edge_weights is not None:
         h.update(b"|ew:")
-        h.update(
-            ",".join(f"{float(w):.6f}" for w in edge_weights).encode("utf-8")
-        )
+        h.update(",".join(f"{float(w):.6f}" for w in edge_weights).encode("utf-8"))
 
     return h.hexdigest()
 
@@ -251,31 +241,26 @@ class GraphSnapshot(BaseModel):
     data_hash: str
 
     @model_validator(mode="after")
-    def _validate_shapes(self) -> "GraphSnapshot":
+    def _validate_shapes(self) -> GraphSnapshot:
         if len(self.node_features) != self.n_nodes:
             raise ValueError(
-                f"len(node_features) ({len(self.node_features)}) "
-                f"!= n_nodes ({self.n_nodes})"
+                f"len(node_features) ({len(self.node_features)}) != n_nodes ({self.n_nodes})"
             )
         if len(self.edge_index) != 2:
             raise ValueError(
-                f"edge_index must have exactly 2 rows (src, dst), "
-                f"got {len(self.edge_index)}"
+                f"edge_index must have exactly 2 rows (src, dst), got {len(self.edge_index)}"
             )
         if len(self.edge_index[0]) != self.n_edges:
             raise ValueError(
-                f"len(edge_index[0]) ({len(self.edge_index[0])}) "
-                f"!= n_edges ({self.n_edges})"
+                f"len(edge_index[0]) ({len(self.edge_index[0])}) != n_edges ({self.n_edges})"
             )
         if len(self.edge_index[1]) != self.n_edges:
             raise ValueError(
-                f"len(edge_index[1]) ({len(self.edge_index[1])}) "
-                f"!= n_edges ({self.n_edges})"
+                f"len(edge_index[1]) ({len(self.edge_index[1])}) != n_edges ({self.n_edges})"
             )
         if self.edge_weights is not None and len(self.edge_weights) != self.n_edges:
             raise ValueError(
-                f"len(edge_weights) ({len(self.edge_weights)}) "
-                f"!= n_edges ({self.n_edges})"
+                f"len(edge_weights) ({len(self.edge_weights)}) != n_edges ({self.n_edges})"
             )
         return self
 
@@ -289,7 +274,7 @@ class GraphSnapshot(BaseModel):
         edge_index: list[list[int]],
         snapshot_time: str,
         edge_weights: list[float] | None = None,
-    ) -> "GraphSnapshot":
+    ) -> GraphSnapshot:
         """Construct a :class:`GraphSnapshot` computing ``data_hash``.
 
         This is the preferred constructor when the caller does not already
@@ -369,7 +354,7 @@ class GraphSnapshotLoader:
         self._dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            import numpy as np  # noqa: WPS433 lazy import
+            import numpy as np
         except Exception:
             # Fall back to JSON.
             path = self._path_for(snapshot.snapshot_id, "json")
@@ -387,9 +372,7 @@ class GraphSnapshotLoader:
             "edge_index": edge_index,
         }
         if snapshot.edge_weights is not None:
-            arrays["edge_weights"] = np.asarray(
-                snapshot.edge_weights, dtype=np.float32
-            )
+            arrays["edge_weights"] = np.asarray(snapshot.edge_weights, dtype=np.float32)
         # Scalar metadata stored as 0-d arrays.
         arrays["snapshot_id"] = np.array(snapshot.snapshot_id)
         arrays["n_nodes"] = np.array(snapshot.n_nodes)
@@ -412,7 +395,7 @@ class GraphSnapshotLoader:
         json_path = self._path_for(snapshot_id, "json")
 
         if npz_path.exists():
-            import numpy as np  # noqa: WPS433 lazy import
+            import numpy as np
 
             with np.load(str(npz_path), allow_pickle=True) as npz:
                 node_features = npz["node_features"].tolist()
@@ -440,9 +423,7 @@ class GraphSnapshotLoader:
             data = json.loads(json_path.read_text(encoding="utf-8"))
             return GraphSnapshot(**data)
 
-        raise FileNotFoundError(
-            f"snapshot not found in cache dir {self.cache_dir}: {snapshot_id}"
-        )
+        raise FileNotFoundError(f"snapshot not found in cache dir {self.cache_dir}: {snapshot_id}")
 
     def list_snapshots(self) -> list[str]:
         """Return a sorted list of snapshot ids present in the cache dir."""
@@ -474,9 +455,7 @@ class GraphSnapshotLoader:
                 return False
             if len(snapshot.edge_index[1]) != snapshot.n_edges:
                 return False
-            if snapshot.edge_weights is not None and len(
-                snapshot.edge_weights
-            ) != snapshot.n_edges:
+            if snapshot.edge_weights is not None and len(snapshot.edge_weights) != snapshot.n_edges:
                 return False
             # Hash integrity.
             if not snapshot.verify_hash():
@@ -631,8 +610,8 @@ class TinyGNNModel:
         if self._module is not None:
             return self._module
 
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch
+        import torch.nn as nn
 
         planner = self
 
@@ -668,9 +647,7 @@ class TinyGNNModel:
 
             def __init__(self) -> None:
                 super().__init__()
-                self.conv1 = _GCNLayer(
-                    planner.node_feature_dim, planner.hidden_dim
-                )
+                self.conv1 = _GCNLayer(planner.node_feature_dim, planner.hidden_dim)
                 self.conv2 = _GCNLayer(planner.hidden_dim, planner.output_dim)
                 self.dropout = nn.Dropout(planner.dropout)
 
@@ -725,17 +702,17 @@ class TinyGNNModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "TinyGNNModel":
+    def to(self, device: Any) -> TinyGNNModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "TinyGNNModel":
+    def train(self, mode: bool = True) -> TinyGNNModel:
         """Set the underlying module's training mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "TinyGNNModel":
+    def eval(self) -> TinyGNNModel:
         """Set the underlying module to eval mode and return self."""
         self.module.eval()
         return self
@@ -825,20 +802,14 @@ class GraphHealthcheck:
 
         # Tiny synthetic graph snapshot load + GNN forward pass on CPU.
         try:
-            import torch  # noqa: WPS433 lazy import
+            import torch
 
             snapshot = _build_synthetic_snapshot()
             result["snapshot_load"] = True
 
-            node_features = torch.tensor(
-                snapshot.node_features, dtype=torch.float32
-            )
-            edge_index = torch.tensor(
-                snapshot.edge_index, dtype=torch.long
-            )
-            model = TinyGNNModel(
-                node_feature_dim=3, hidden_dim=8, output_dim=8
-            )
+            node_features = torch.tensor(snapshot.node_features, dtype=torch.float32)
+            edge_index = torch.tensor(snapshot.edge_index, dtype=torch.long)
+            model = TinyGNNModel(node_feature_dim=3, hidden_dim=8, output_dim=8)
             out = model.forward(node_features, edge_index)
             # Force a reduction so the output is a scalar-ish value.
             _ = float(out.sum().item())
@@ -868,11 +839,11 @@ class GraphHealthcheck:
 
 
 __all__ = [
-    "GraphImageSpec",
-    "GraphSnapshotConfig",
-    "GraphSnapshot",
-    "GraphSnapshotLoader",
     "GPUMemoryPlanner",
     "GraphHealthcheck",
+    "GraphImageSpec",
+    "GraphSnapshot",
+    "GraphSnapshotConfig",
+    "GraphSnapshotLoader",
     "TinyGNNModel",
 ]

@@ -19,7 +19,6 @@ are skipped in environments without those deps.
 
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import json
 import math
@@ -44,7 +43,6 @@ def test_registry_importable() -> None:
     """The modules package must be importable without heavy deps."""
     from quant_foundry.modules import (
         MODULE_CATEGORIES,
-        ModuleRegistry,
         load_all_modules,
         register_module,
     )
@@ -226,16 +224,18 @@ def _make_bars(
     for i in range(n_days):
         # Daily return = drift + noise
         ret = drift + rng.gauss(0, volatility)
-        price *= (1.0 + ret)
-        bars.append(PriceBar(
-            symbol=symbol,
-            ts_ns=start_ns + i * NS_PER_DAY,
-            open=price * 0.999,
-            high=price * 1.005,
-            low=price * 0.995,
-            close=price,
-            volume=1_000_000.0,
-        ))
+        price *= 1.0 + ret
+        bars.append(
+            PriceBar(
+                symbol=symbol,
+                ts_ns=start_ns + i * NS_PER_DAY,
+                open=price * 0.999,
+                high=price * 1.005,
+                low=price * 0.995,
+                close=price,
+                volume=1_000_000.0,
+            )
+        )
     return bars
 
 
@@ -245,14 +245,13 @@ def test_abnormal_return_label_basic() -> None:
     from quant_foundry.modules.registry import (
         FeatureRowData,
         ModuleRegistry,
-        PriceBar,
     )
 
     load_all_modules()
     label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Generate 400 days of asset + benchmark bars (need 260 + 63d horizon = 323+)
     asset_bars = _make_bars("AAPL", start_ns, 400, base_price=100.0, seed=42)
@@ -260,11 +259,13 @@ def test_abnormal_return_label_basic() -> None:
 
     # A feature row at day 260 (enough for β window + forward horizons)
     decision_time = start_ns + 260 * NS_PER_DAY
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -296,18 +297,20 @@ def test_abnormal_return_label_drops_no_history() -> None:
     label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Only 10 days of bars — not enough for β window (min 60)
     asset_bars = _make_bars("AAPL", start_ns, 10)
     bench_bars = _make_bars("SPY", start_ns, 10)
 
     decision_time = start_ns + 5 * NS_PER_DAY
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -320,10 +323,9 @@ def test_abnormal_return_label_drops_no_history() -> None:
 def test_abnormal_return_beta_no_lookahead() -> None:
     """β must be estimated only from bars BEFORE the decision time."""
     from quant_foundry.modules.labels.abnormal_return import _estimate_beta_v1
-    from quant_foundry.modules.registry import PriceBar
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 300, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 300, seed=99)
@@ -334,8 +336,12 @@ def test_abnormal_return_beta_no_lookahead() -> None:
 
     # β should be computable (different seeds → non-zero variance)
     beta = _estimate_beta_v1(
-        asset_bars, bench_ts, bench_close, decision_time,
-        window=252, min_window=60,
+        asset_bars,
+        bench_ts,
+        bench_close,
+        decision_time,
+        window=252,
+        min_window=60,
     )
     assert beta is not None
     # β should be a finite number
@@ -360,7 +366,7 @@ def test_per_event_type_features_basic() -> None:
     mod = ModuleRegistry.instance().create("feature:per-event-type:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     items = [
         MediaItem(
@@ -388,7 +394,8 @@ def test_per_event_type_features_basic() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 10 * NS_PER_DAY,
@@ -416,8 +423,8 @@ def test_per_year_features() -> None:
     mod = ModuleRegistry.instance().create("feature:per-year:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    dt_2023 = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
-    dt_2024 = int(dt.datetime(2024, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    dt_2023 = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
+    dt_2024 = int(dt.datetime(2024, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     feats_2023 = mod.annotate_row(dt_2023)
     assert feats_2023["year"] == 2023.0
@@ -501,15 +508,19 @@ def test_composer_end_to_end(tmp_path: pathlib.Path) -> None:
             items = []
             for i, sym in enumerate(symbols[:3]):
                 for day in range(280, 285):
-                    items.append(MediaItem(
-                        item_id=f"mock-{sym}-{day}",
-                        source="mock",
-                        headline=f"Company beats earnings" if day % 2 == 0 else "Stock drops on weak outlook",
-                        body="",
-                        available_at_ns=start_ns + day * NS_PER_DAY,
-                        symbols=(sym,),
-                        event_type="earnings" if day % 2 == 0 else "guidance",
-                    ))
+                    items.append(
+                        MediaItem(
+                            item_id=f"mock-{sym}-{day}",
+                            source="mock",
+                            headline="Company beats earnings"
+                            if day % 2 == 0
+                            else "Stock drops on weak outlook",
+                            body="",
+                            available_at_ns=start_ns + day * NS_PER_DAY,
+                            symbols=(sym,),
+                            event_type="earnings" if day % 2 == 0 else "guidance",
+                        )
+                    )
             return items
 
     # Register a mock price joiner that returns synthetic bars
@@ -531,16 +542,18 @@ def test_composer_end_to_end(tmp_path: pathlib.Path) -> None:
                 price = 100.0
                 for day in range(350):
                     ret = 0.0005 + rng.gauss(0, 0.01)
-                    price *= (1.0 + ret)
-                    bars.append(PriceBar(
-                        symbol=sym,
-                        ts_ns=start_ns + day * NS_PER_DAY,
-                        open=price * 0.999,
-                        high=price * 1.005,
-                        low=price * 0.995,
-                        close=price,
-                        volume=1e6,
-                    ))
+                    price *= 1.0 + ret
+                    bars.append(
+                        PriceBar(
+                            symbol=sym,
+                            ts_ns=start_ns + day * NS_PER_DAY,
+                            open=price * 0.999,
+                            high=price * 1.005,
+                            low=price * 0.995,
+                            close=price,
+                            volume=1e6,
+                        )
+                    )
                 asset_bars[sym] = bars
             # Benchmark bars (different seed for non-zero β variance)
             rng_bench = random.Random(99)
@@ -548,23 +561,25 @@ def test_composer_end_to_end(tmp_path: pathlib.Path) -> None:
             price = 400.0
             for day in range(350):
                 ret = 0.0003 + rng_bench.gauss(0, 0.01)
-                price *= (1.0 + ret)
-                bench_bars.append(PriceBar(
-                    symbol="SPY",
-                    ts_ns=start_ns + day * NS_PER_DAY,
-                    open=price * 0.999,
-                    high=price * 1.005,
-                    low=price * 0.995,
-                    close=price,
-                    volume=1e7,
-                ))
+                price *= 1.0 + ret
+                bench_bars.append(
+                    PriceBar(
+                        symbol="SPY",
+                        ts_ns=start_ns + day * NS_PER_DAY,
+                        open=price * 0.999,
+                        high=price * 1.005,
+                        low=price * 0.995,
+                        close=price,
+                        volume=1e7,
+                    )
+                )
             return asset_bars, bench_bars
 
     try:
         from quant_foundry.modules import DatasetComposer
 
         NS_PER_DAY = 86_400_000_000_000
-        start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+        start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
         end_ns = start_ns + 365 * NS_PER_DAY
 
         composer = DatasetComposer(

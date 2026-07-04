@@ -329,8 +329,7 @@ def _resolve_mode(req: RunPodTrainingRequest) -> TrainingMode:
         return TrainingMode(raw)
     except ValueError:
         raise ModeValidationError(
-            f"unknown training_mode {raw!r}; expected one of "
-            f"{[m.value for m in TrainingMode]}"
+            f"unknown training_mode {raw!r}; expected one of {[m.value for m in TrainingMode]}"
         ) from None
 
 
@@ -385,8 +384,7 @@ def validate_mode(req: RunPodTrainingRequest) -> TrainingMode:
             )
         if not ec.get("quality_policy_id"):
             errors.append(
-                "production mode requires a quality_policy_id "
-                "(quality gates are mandatory)"
+                "production mode requires a quality_policy_id (quality gates are mandatory)"
             )
         if ec.get("artifact_verification_required") != "1":
             errors.append(
@@ -395,9 +393,8 @@ def validate_mode(req: RunPodTrainingRequest) -> TrainingMode:
             )
         ref = req.dataset_manifest_ref or ""
         low = ref.lower()
-        if (
-            low.endswith((".csv", ".parquet", ".csv.gz", ".parquet.gz"))
-            or low.startswith(("file://", "inline://"))
+        if low.endswith((".csv", ".parquet", ".csv.gz", ".parquet.gz")) or low.startswith(
+            ("file://", "inline://")
         ):
             errors.append(
                 "production mode requires a registered dataset "
@@ -405,9 +402,7 @@ def validate_mode(req: RunPodTrainingRequest) -> TrainingMode:
             )
 
     if errors:
-        raise ModeValidationError(
-            "production mode validation failed: " + "; ".join(errors)
-        )
+        raise ModeValidationError("production mode validation failed: " + "; ".join(errors))
     return mode
 
 
@@ -594,7 +589,9 @@ def _runtime_fingerprint_hash(runtime_fingerprint: dict[str, str]) -> str:
     ``gpu_healthcheck``).
     """
     canonical = json.dumps(
-        runtime_fingerprint, sort_keys=True, separators=(",", ":"),
+        runtime_fingerprint,
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
@@ -604,7 +601,7 @@ def build_callback(
     job_id: str,
     training_manifest_hash: str,
     dataset_manifest_hash: str,
-    runtime_fingerprint: dict[str, str] | "RuntimeFingerprint",
+    runtime_fingerprint: dict[str, str] | RuntimeFingerprint,
     primary_artifact: dict[str, Any] | None,
     auxiliary_artifacts: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None = None,
     metrics_summary: dict[str, Any] | None = None,
@@ -656,9 +653,7 @@ def build_callback(
     Returns:
         A frozen, signed :class:`RunPodTrainingCallback`.
     """
-    aux: tuple[dict[str, Any], ...] = (
-        tuple(auxiliary_artifacts) if auxiliary_artifacts else ()
-    )
+    aux: tuple[dict[str, Any], ...] = tuple(auxiliary_artifacts) if auxiliary_artifacts else ()
     metrics: dict[str, Any] = dict(metrics_summary) if metrics_summary else {}
 
     # Tier 0 / metric sanity bounds: validate the raw metrics BEFORE any
@@ -732,7 +727,9 @@ def build_callback(
     )
     canonical = _canonical_callback_payload(unsigned)
     signature = hmac.new(
-        secret.encode("utf-8"), canonical, hashlib.sha256,
+        secret.encode("utf-8"),
+        canonical,
+        hashlib.sha256,
     ).hexdigest()
     return RunPodTrainingCallback(
         schema_version=schema_version,
@@ -787,7 +784,9 @@ def verify_callback(
         return False
     canonical = _canonical_callback_payload(callback)
     expected = hmac.new(
-        secret.encode("utf-8"), canonical, hashlib.sha256,
+        secret.encode("utf-8"),
+        canonical,
+        hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, callback.callback_signature)
 
@@ -830,8 +829,7 @@ def validate_callback(
     else:
         raise CallbackValidationError(
             "schema_validation_failed",
-            f"callback must be a dict or RunPodTrainingCallback, got "
-            f"{type(callback).__name__}",
+            f"callback must be a dict or RunPodTrainingCallback, got {type(callback).__name__}",
         )
 
     # 2. Required fields check (fail-closed).
@@ -994,10 +992,14 @@ class ArtifactVerificationReceipt(BaseModel):
         data = self.model_dump()
         data.pop("receipt_signature", None)
         canonical = json.dumps(
-            data, sort_keys=True, separators=(",", ":"),
+            data,
+            sort_keys=True,
+            separators=(",", ":"),
         ).encode("utf-8")
         expected = hmac.new(
-            secret.encode("utf-8"), canonical, hashlib.sha256,
+            secret.encode("utf-8"),
+            canonical,
+            hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(expected, self.receipt_signature)
 
@@ -1017,7 +1019,9 @@ def _sign_receipt(
     """Compute the HMAC-SHA256 hex over the canonical receipt payload."""
     canonical = _canonical_receipt_payload(receipt)
     return hmac.new(
-        secret.encode("utf-8"), canonical, hashlib.sha256,
+        secret.encode("utf-8"),
+        canonical,
+        hashlib.sha256,
     ).hexdigest()
 
 
@@ -1104,8 +1108,7 @@ def _fetch_artifact_bytes(artifact_uri: str) -> bytes:
                 if status != 200:
                     raise ArtifactVerificationError(
                         "artifact_fetch_failed",
-                        f"artifact fetch failed: HTTP {status} for "
-                        f"{artifact_uri!r}",
+                        f"artifact fetch failed: HTTP {status} for {artifact_uri!r}",
                     )
                 return resp.read()
         except ArtifactVerificationError:
@@ -1151,8 +1154,7 @@ def _load_artifact(
     if loader_family not in _KNOWN_LOADER_FAMILIES:
         raise ArtifactVerificationError(
             "unknown_loader",
-            f"unknown loader family {loader_family!r} "
-            f"(known: {sorted(_KNOWN_LOADER_FAMILIES)})",
+            f"unknown loader family {loader_family!r} (known: {sorted(_KNOWN_LOADER_FAMILIES)})",
         )
     if loader_family == "local-stub":
         # Canary/test loader: accept any non-empty bytes. Return a stub
@@ -1166,8 +1168,7 @@ def _load_artifact(
         if importlib.util.find_spec("lightgbm") is None:
             raise ArtifactVerificationError(
                 "load_failed",
-                "lightgbm dependency not available for loader_family="
-                f"{loader_family!r}",
+                f"lightgbm dependency not available for loader_family={loader_family!r}",
             )
         import lightgbm as lgb
 
@@ -1196,7 +1197,8 @@ def _load_artifact(
             import tempfile
 
             with tempfile.NamedTemporaryFile(
-                suffix=".txt", delete=False,
+                suffix=".txt",
+                delete=False,
             ) as tmp:
                 tmp.write(model_bytes)
                 tmp_path = tmp.name
@@ -1221,7 +1223,7 @@ class _LocalStubModel:
     def __init__(self, n_bytes: int) -> None:
         self._n_bytes = n_bytes
 
-    def predict(self, X: Any, **kwargs: Any) -> Any:  # noqa: ARG002
+    def predict(self, X: Any, **kwargs: Any) -> Any:
         """Return a deterministic prediction based on the input shape."""
         try:
             import numpy as np
@@ -1499,8 +1501,13 @@ def verify_artifact(
     # --- step 3: recompute hash + size, compare (fail-closed) -------------
     recomputed_sha = hashlib.sha256(model_bytes).hexdigest()
     recomputed_size = len(model_bytes)
-    hash_ok = isinstance(sha, str) and len(sha) == 64 and hmac.compare_digest(
-        recomputed_sha, sha.lower(),
+    hash_ok = (
+        isinstance(sha, str)
+        and len(sha) == 64
+        and hmac.compare_digest(
+            recomputed_sha,
+            sha.lower(),
+        )
     )
     size_ok = size is not None and recomputed_size == int(size)
 
@@ -1516,8 +1523,7 @@ def verify_artifact(
         )
         raise _ArtifactVerificationWithReceipt(
             "hash_mismatch",
-            f"artifact sha256 mismatch: declared={sha!r} "
-            f"recomputed={recomputed_sha!r}",
+            f"artifact sha256 mismatch: declared={sha!r} recomputed={recomputed_sha!r}",
             receipt,
         )
     if not size_ok:
@@ -1532,8 +1538,7 @@ def verify_artifact(
         )
         raise _ArtifactVerificationWithReceipt(
             "size_mismatch",
-            f"artifact size mismatch: declared={size!r} "
-            f"recomputed={recomputed_size!r}",
+            f"artifact size mismatch: declared={size!r} recomputed={recomputed_size!r}",
             receipt,
         )
 
@@ -1915,7 +1920,9 @@ def _fingerprint_input_payload(fp: RuntimeFingerprint) -> bytes:
     data.pop("fingerprint_hash", None)
     data.pop("fingerprint_signature", None)
     return json.dumps(
-        data, sort_keys=True, separators=(",", ":"),
+        data,
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
 
 
@@ -1970,7 +1977,7 @@ def _collect_dockerfile_hash() -> str:
         for cand in candidates:
             if cand.is_file():
                 return hashlib.sha256(cand.read_bytes()).hexdigest()
-    except Exception:  # noqa: BLE001 - fail-soft, never raise
+    except Exception:
         pass
     return "unknown"
 
@@ -2000,7 +2007,7 @@ def _collect_dependency_lock_hash() -> str:
         for cand in candidates:
             if cand.is_file():
                 return hashlib.sha256(cand.read_bytes()).hexdigest()
-    except Exception:  # noqa: BLE001 - fail-soft, never raise
+    except Exception:
         pass
     return "unknown"
 
@@ -2014,7 +2021,7 @@ def _collect_os_image_version() -> str:
     """Return a platform/version string describing the OS image."""
     try:
         return platform.platform(terse=True)
-    except Exception:  # noqa: BLE001 - fail-soft
+    except Exception:
         return "unknown"
 
 
@@ -2040,7 +2047,7 @@ def _probe_gpu() -> tuple[str | None, str | None, str | None]:
             check=True,
         )
         raw = proc.stdout.strip()
-    except Exception:  # noqa: BLE001 - fail-soft (no GPU / no nvidia-smi)
+    except Exception:
         return (None, None, None)
 
     gpu_model: str | None = None
@@ -2073,7 +2080,7 @@ def _probe_gpu() -> tuple[str | None, str | None, str | None]:
         out = (proc2.stdout or "").strip()
         if "CUDA Version:" in out:
             cuda_version = out.split("CUDA Version:", 1)[1].split()[0]
-    except Exception:  # noqa: BLE001 - fail-soft
+    except Exception:
         pass
     # Secondary CUDA probe via PyTorch (lazy import).
     if cuda_version is None:
@@ -2085,7 +2092,7 @@ def _probe_gpu() -> tuple[str | None, str | None, str | None]:
 
                 if torch.cuda.is_available():
                     cuda_version = str(torch.version.cuda)
-        except Exception:  # noqa: BLE001 - fail-soft
+        except Exception:
             pass
     return (cuda_version, driver_version, gpu_model)
 
@@ -2104,9 +2111,9 @@ def _collect_training_library_versions() -> dict[str, str]:
         for lib in _TRAINING_LIBRARIES:
             try:
                 versions[lib] = md.version(lib)
-            except Exception:  # noqa: BLE001 - not installed → omit
+            except Exception:
                 continue
-    except Exception:  # noqa: BLE01 - fail-soft
+    except Exception:
         pass
     return versions
 
@@ -2140,7 +2147,7 @@ def _collect_random_seeds(extra_seeds: dict[str, int] | None = None) -> dict[str
 
         if importlib.util.find_spec("numpy") is not None:
             seeds.setdefault("numpy_default", 0)
-    except Exception:  # noqa: BLE001 - fail-soft
+    except Exception:
         pass
     return seeds
 
@@ -2199,20 +2206,14 @@ def build_runtime_fingerprint(
     # --- collect fields (override → env → build-time pin → probe) ----------
     sha = git_sha if git_sha is not None else _collect_git_sha()
     digest = image_digest if image_digest is not None else _collect_image_digest()
-    df_hash = (
-        dockerfile_hash if dockerfile_hash is not None else _collect_dockerfile_hash()
-    )
+    df_hash = dockerfile_hash if dockerfile_hash is not None else _collect_dockerfile_hash()
     lock_hash = (
         dependency_lock_hash
         if dependency_lock_hash is not None
         else _collect_dependency_lock_hash()
     )
     py_ver = python_version if python_version is not None else _collect_python_version()
-    os_ver = (
-        os_image_version
-        if os_image_version is not None
-        else _collect_os_image_version()
-    )
+    os_ver = os_image_version if os_image_version is not None else _collect_os_image_version()
 
     # GPU probe: only run when the caller didn't override ALL three fields.
     if cuda_version is None or driver_version is None or gpu_model is None:
@@ -2573,7 +2574,9 @@ def _canonical_context_bytes(context: dict[str, str]) -> bytes:
     """
     coerced = {str(k): str(v) for k, v in context.items()}
     return json.dumps(
-        coerced, sort_keys=True, separators=(",", ":"),
+        coerced,
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
 
 
@@ -2747,17 +2750,13 @@ def validate_failure_envelope(
             mode=mode.value,
             warnings=(),
             errors=(
-                f"envelope must be a SignedFailureEnvelope or dict, got "
-                f"{type(envelope).__name__}",
+                f"envelope must be a SignedFailureEnvelope or dict, got {type(envelope).__name__}",
             ),
         )
 
     # Signature verification.
     if not verify_failure_envelope(env, secret=secret):
-        msg = (
-            "failure envelope signature verification failed "
-            "(HMAC mismatch — possible tamper)"
-        )
+        msg = "failure envelope signature verification failed (HMAC mismatch — possible tamper)"
         if mode == TrainingMode.PRODUCTION:
             errors.append(msg)
         else:

@@ -19,12 +19,10 @@ Covers:
 from __future__ import annotations
 
 import hashlib
-import os
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.foundation_weights import (
     FoundationWeightSpec,
     WeightManager,
@@ -117,8 +115,12 @@ class TestWeightSource:
         assert WeightSource.BAKED == "baked"
 
     def test_distinct_members(self):
-        members = {WeightSource.BAKED, WeightSource.CACHED, WeightSource.LOCAL,
-                   WeightSource.FORBIDDEN_NETWORK}
+        members = {
+            WeightSource.BAKED,
+            WeightSource.CACHED,
+            WeightSource.LOCAL,
+            WeightSource.FORBIDDEN_NETWORK,
+        }
         assert len(members) == 4
 
     def test_forbidden_member_exists(self):
@@ -560,7 +562,9 @@ class TestListAndFingerprint:
     def test_fingerprint_data_includes_hashes(self, permissive_policy):
         mgr = WeightManager(permissive_policy)
         mgr.register_weight(_spec(model_id="chronos-base", weight_hash=ZERO_HASH))
-        mgr.register_weight(_spec(model_id="moirai-small", model_family="moirai", weight_hash=ALT_HASH))
+        mgr.register_weight(
+            _spec(model_id="moirai-small", model_family="moirai", weight_hash=ALT_HASH)
+        )
         fp = mgr.get_fingerprint_data()
         assert fp == {"chronos-base": ZERO_HASH, "moirai-small": ALT_HASH}
 
@@ -611,7 +615,9 @@ class TestEdgeCases:
         with pytest.raises(ValueError):
             mgr.register_weight(_spec(weight_uri="https://x/y.bin", source=WeightSource.LOCAL))
 
-    def test_receipt_fingerprint_matches_spec_hash(self, permissive_policy, weight_file, weight_file_hash):
+    def test_receipt_fingerprint_matches_spec_hash(
+        self, permissive_policy, weight_file, weight_file_hash
+    ):
         mgr = WeightManager(permissive_policy)
         s = _spec(weight_uri=weight_file, weight_hash=weight_file_hash, source=WeightSource.LOCAL)
         r = mgr.register_weight(s)

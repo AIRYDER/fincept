@@ -38,20 +38,80 @@ from quant_foundry.modules.sentiment.language import (
 # (data_ingestion/news.py) for consistency.
 _POSITIVE_WORDS = frozenset(
     {
-        "beat", "beats", "surge", "surges", "jump", "jumps", "rise", "rises",
-        "gain", "gains", "profit", "profits", "raise", "raises", "upgrade",
-        "outperform", "strong", "growth", "grow", "win", "wins", "approve",
-        "approved", "launch", "unveil", "partner", "partnership", "record",
-        "high", "boost", "boosts", "rally", "soar", "soars", "breakthrough",
+        "beat",
+        "beats",
+        "surge",
+        "surges",
+        "jump",
+        "jumps",
+        "rise",
+        "rises",
+        "gain",
+        "gains",
+        "profit",
+        "profits",
+        "raise",
+        "raises",
+        "upgrade",
+        "outperform",
+        "strong",
+        "growth",
+        "grow",
+        "win",
+        "wins",
+        "approve",
+        "approved",
+        "launch",
+        "unveil",
+        "partner",
+        "partnership",
+        "record",
+        "high",
+        "boost",
+        "boosts",
+        "rally",
+        "soar",
+        "soars",
+        "breakthrough",
     },
 )
 _NEGATIVE_WORDS = frozenset(
     {
-        "miss", "misses", "fall", "falls", "drop", "drops", "cut", "cuts",
-        "lower", "lowers", "loss", "losses", "downgrade", "weak", "decline",
-        "declines", "sue", "sued", "sues", "lawsuit", "settlement", "probe",
-        "investigation", "hack", "breach", "ban", "sanction", "recall",
-        "halt", "delay", "fire", "fraud", "default", "bankrupt", "warning",
+        "miss",
+        "misses",
+        "fall",
+        "falls",
+        "drop",
+        "drops",
+        "cut",
+        "cuts",
+        "lower",
+        "lowers",
+        "loss",
+        "losses",
+        "downgrade",
+        "weak",
+        "decline",
+        "declines",
+        "sue",
+        "sued",
+        "sues",
+        "lawsuit",
+        "settlement",
+        "probe",
+        "investigation",
+        "hack",
+        "breach",
+        "ban",
+        "sanction",
+        "recall",
+        "halt",
+        "delay",
+        "fire",
+        "fraud",
+        "default",
+        "bankrupt",
+        "warning",
     },
 )
 
@@ -108,12 +168,14 @@ class NaiveWordlistSentiment:
         results: list[SentimentResult] = []
         for item in items:
             score, confidence = _score_text(item.text, self._positive, self._negative)
-            results.append(SentimentResult(
-                item_id=item.item_id,
-                provider="naive",
-                score=score,
-                confidence=confidence,
-            ))
+            results.append(
+                SentimentResult(
+                    item_id=item.item_id,
+                    provider="naive",
+                    score=score,
+                    confidence=confidence,
+                )
+            )
         return results
 
 
@@ -145,10 +207,12 @@ class NaiveWordlistMultilingualSentiment:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self._overrides: dict[str, dict[str, list[str]]] = self.config.get(
-            "wordlists", {},
+            "wordlists",
+            {},
         )
         self._fallback_language: str = self.config.get(
-            "fallback_language", DEFAULT_LANGUAGE,
+            "fallback_language",
+            DEFAULT_LANGUAGE,
         )
         # Pre-build frozensets for each supported language.
         self._wordsets: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
@@ -167,7 +231,8 @@ class NaiveWordlistMultilingualSentiment:
         if language in self._wordsets:
             return self._wordsets[language]
         return self._wordsets.get(
-            self._fallback_language, self._wordsets[DEFAULT_LANGUAGE],
+            self._fallback_language,
+            self._wordsets[DEFAULT_LANGUAGE],
         )
 
     def score(self, items: list[MediaItem]) -> list[SentimentResult]:
@@ -176,13 +241,15 @@ class NaiveWordlistMultilingualSentiment:
             language = detect_language(item.text)
             positive, negative = self._wordsets_for(language)
             score, confidence = _score_text(item.text, positive, negative)
-            results.append(SentimentResult(
-                item_id=item.item_id,
-                provider="naive-ml",
-                score=score,
-                confidence=confidence,
-                metadata={"language": language},
-            ))
+            results.append(
+                SentimentResult(
+                    item_id=item.item_id,
+                    provider="naive-ml",
+                    score=score,
+                    confidence=confidence,
+                    metadata={"language": language},
+                )
+            )
         return results
 
 
@@ -190,4 +257,3 @@ __all__ = [
     "NaiveWordlistMultilingualSentiment",
     "NaiveWordlistSentiment",
 ]
-

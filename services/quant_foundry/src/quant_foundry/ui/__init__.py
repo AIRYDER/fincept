@@ -5,15 +5,6 @@ is file-disjoint; this package re-exports the public surface of every view
 so callers can import from ``quant_foundry.ui`` directly.
 """
 
-from quant_foundry.ui.job_ledger_view import (
-    JobLedgerRow,
-    JobLedgerView,
-    JobLedgerViewConfig,
-    format_bool,
-    format_cost,
-    format_status,
-    validate_no_false_health,
-)
 from quant_foundry.ui.dataset_registry_view import (
     DatasetRegistryRow,
     DatasetRegistryView,
@@ -23,6 +14,15 @@ from quant_foundry.ui.dataset_registry_view import (
     format_upload_status,
     get_blocking_reasons,
     validate_no_false_readiness,
+)
+from quant_foundry.ui.job_ledger_view import (
+    JobLedgerRow,
+    JobLedgerView,
+    JobLedgerViewConfig,
+    format_bool,
+    format_cost,
+    format_status,
+    validate_no_false_health,
 )
 from quant_foundry.ui.model_tournament_view import (
     TournamentRow,
@@ -36,27 +36,27 @@ from quant_foundry.ui.model_tournament_view import (
 )
 
 __all__ = [
-    "JobLedgerRow",
-    "JobLedgerView",
-    "JobLedgerViewConfig",
-    "format_bool",
-    "format_cost",
-    "format_status",
-    "validate_no_false_health",
     "DatasetRegistryRow",
     "DatasetRegistryView",
     "DatasetRegistryViewConfig",
-    "format_quality_gate",
-    "format_readiness",
-    "format_upload_status",
-    "get_blocking_reasons",
-    "validate_no_false_readiness",
+    "JobLedgerRow",
+    "JobLedgerView",
+    "JobLedgerViewConfig",
     "TournamentRow",
     "TournamentView",
     "TournamentViewConfig",
     "find_best_in_column",
+    "format_bool",
+    "format_cost",
     "format_delta",
     "format_eligibility",
     "format_metric",
+    "format_quality_gate",
+    "format_readiness",
+    "format_status",
+    "format_upload_status",
+    "get_blocking_reasons",
+    "validate_no_false_health",
+    "validate_no_false_readiness",
     "validate_no_inflated_confidence",
 ]

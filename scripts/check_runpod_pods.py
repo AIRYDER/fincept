@@ -1,7 +1,9 @@
 """Check RunPod endpoint pods/workers for errors."""
-import httpx
+
 import json
 import os
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = os.environ["RUNPOD_ENDPOINT_ID"]

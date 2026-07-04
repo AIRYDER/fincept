@@ -41,6 +41,7 @@ Exit codes:
 - 1: configuration error (missing API key, unknown endpoint)
 - 2: one or more verifications failed
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,6 +61,8 @@ RUNPOD_API_BASE = "https://api.runpod.ai/v2"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from runpod_config import (  # noqa: E402
     INFERENCE_ENDPOINT_ID as DEFAULT_INFERENCE_ENDPOINT_ID,
+)
+from runpod_config import (
     TRAINING_ENDPOINT_ID as DEFAULT_TRAINING_ENDPOINT_ID,
 )
 
@@ -122,10 +125,12 @@ def _get_http_client():
     """Lazy import of an HTTP client. Prefers httpx, falls back to requests."""
     try:
         import httpx  # type: ignore[import-untyped]
+
         return "httpx", httpx
     except ImportError:
         try:
             import requests  # type: ignore[import-untyped]
+
             return "requests", requests
         except ImportError as exc:
             raise RunPodAPIError(
@@ -160,14 +165,11 @@ def runpod_dispatch(
         else:
             resp = lib.post(url, headers=headers, data=body, timeout=timeout)
     except Exception as exc:
-        raise RunPodAPIError(
-            f"Dispatch request failed: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise RunPodAPIError(f"Dispatch request failed: {type(exc).__name__}: {exc}") from exc
 
     if resp.status_code != 200:
         raise RunPodAPIError(
-            f"Dispatch failed: HTTP {resp.status_code}. "
-            f"Response: {getattr(resp, 'text', '')[:500]}"
+            f"Dispatch failed: HTTP {resp.status_code}. Response: {getattr(resp, 'text', '')[:500]}"
         )
     try:
         data = resp.json()
@@ -203,9 +205,7 @@ def runpod_status(
         else:
             resp = lib.get(url, headers=headers, timeout=timeout)
     except Exception as exc:
-        raise RunPodAPIError(
-            f"Status request failed: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise RunPodAPIError(f"Status request failed: {type(exc).__name__}: {exc}") from exc
 
     if resp.status_code != 200:
         raise RunPodAPIError(
@@ -241,9 +241,7 @@ def runpod_health(
         else:
             resp = lib.get(url, headers=headers, timeout=timeout)
     except Exception as exc:
-        raise RunPodAPIError(
-            f"Health check failed: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise RunPodAPIError(f"Health check failed: {type(exc).__name__}: {exc}") from exc
 
     if resp.status_code != 200:
         raise RunPodAPIError(
@@ -454,8 +452,7 @@ def verify_training_endpoint(
     state = status.get("status", "UNKNOWN")
     if state != "COMPLETED":
         verification.error = (
-            f"Job did not complete successfully: status={state}, "
-            f"error={status.get('error', '')}"
+            f"Job did not complete successfully: status={state}, error={status.get('error', '')}"
         )
         return verification
 
@@ -476,7 +473,7 @@ def verify_training_endpoint(
         VerificationCheck(
             name="job_completed",
             passed=True,
-            detail=f"status=COMPLETED",
+            detail="status=COMPLETED",
         )
     )
 
@@ -487,7 +484,11 @@ def verify_training_endpoint(
         return verification
 
     try:
-        envelope = json.loads(callback_payload_str) if isinstance(callback_payload_str, str) else callback_payload_str
+        envelope = (
+            json.loads(callback_payload_str)
+            if isinstance(callback_payload_str, str)
+            else callback_payload_str
+        )
     except (json.JSONDecodeError, TypeError) as exc:
         verification.error = f"callback_payload is not valid JSON: {exc}"
         return verification
@@ -526,11 +527,7 @@ def verify_training_endpoint(
     # synthetic values (accuracy=0.5+pbo/2, logloss=0.7-pbo/4).
     payload = envelope.get("payload", {})
     metrics = payload.get("training_metrics", {})
-    has_real_metrics = (
-        isinstance(metrics, dict)
-        and "accuracy" in metrics
-        and "logloss" in metrics
-    )
+    has_real_metrics = isinstance(metrics, dict) and "accuracy" in metrics and "logloss" in metrics
     verification.checks.append(
         VerificationCheck(
             name="training_metrics_present",
@@ -546,23 +543,16 @@ def verify_training_endpoint(
     # metadata.model_family and may include a lightgbm version. We check
     # for the presence of real training metadata.
     metadata = payload.get("metadata", {})
-    has_lightgbm_marker = (
-        isinstance(metadata, dict)
-        and (
-            "lightgbm_version" in metadata
-            or metadata.get("trainer") == "real"
-            or metadata.get("model_family") == "gbm"
-        )
+    has_lightgbm_marker = isinstance(metadata, dict) and (
+        "lightgbm_version" in metadata
+        or metadata.get("trainer") == "real"
+        or metadata.get("model_family") == "gbm"
     )
     verification.checks.append(
         VerificationCheck(
             name="lightgbm_importable",
             passed=has_lightgbm_marker,
-            detail=(
-                f"metadata: {metadata}"
-                if isinstance(metadata, dict)
-                else "metadata missing"
-            ),
+            detail=(f"metadata: {metadata}" if isinstance(metadata, dict) else "metadata missing"),
         )
     )
 
@@ -645,8 +635,7 @@ def verify_inference_endpoint(
     state = status.get("status", "UNKNOWN")
     if state != "COMPLETED":
         verification.error = (
-            f"Job did not complete successfully: status={state}, "
-            f"error={status.get('error', '')}"
+            f"Job did not complete successfully: status={state}, error={status.get('error', '')}"
         )
         return verification
 
@@ -685,7 +674,11 @@ def verify_inference_endpoint(
         return verification
 
     try:
-        envelope = json.loads(callback_payload_str) if isinstance(callback_payload_str, str) else callback_payload_str
+        envelope = (
+            json.loads(callback_payload_str)
+            if isinstance(callback_payload_str, str)
+            else callback_payload_str
+        )
     except (json.JSONDecodeError, TypeError) as exc:
         verification.error = f"callback_payload is not valid JSON: {exc}"
         return verification
@@ -740,9 +733,7 @@ def verify_inference_endpoint(
 
     # Check each prediction against the stub formula.
     stub_matches = [
-        _is_stub_prediction(p, test_features)
-        for p in predictions
-        if isinstance(p, dict)
+        _is_stub_prediction(p, test_features) for p in predictions if isinstance(p, dict)
     ]
     any_stub = any(stub_matches)
     verification.checks.append(
@@ -774,8 +765,7 @@ def verify_inference_endpoint(
                 f"result_type={result_type}, predictions are real "
                 f"(onnxruntime/lightgbm loaded successfully)"
                 if has_correct_result_type and not any_stub
-                else f"result_type={result_type} — real inference engine "
-                f"not active"
+                else f"result_type={result_type} — real inference engine not active"
             ),
         )
     )
@@ -835,10 +825,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--api-key",
         default=None,
-        help=(
-            "RunPod API key. Defaults to the RUNPOD_API_KEY env var. "
-            "Never hardcoded."
-        ),
+        help=("RunPod API key. Defaults to the RUNPOD_API_KEY env var. Never hardcoded."),
     )
     parser.add_argument(
         "--training-endpoint-id",
@@ -869,20 +856,17 @@ def main(argv: list[str] | None = None) -> int:
     api_key = args.api_key or os.environ.get("RUNPOD_API_KEY", "")
     if not api_key:
         print(
-            "ERROR: RunPod API key required. Set the RUNPOD_API_KEY env var "
-            "or pass --api-key.",
+            "ERROR: RunPod API key required. Set the RUNPOD_API_KEY env var or pass --api-key.",
             file=sys.stderr,
         )
         return 1
 
     # Resolve endpoint IDs.
-    training_endpoint_id = (
-        args.training_endpoint_id
-        or os.environ.get("RUNPOD_TRAINING_ENDPOINT_ID", DEFAULT_TRAINING_ENDPOINT_ID)
+    training_endpoint_id = args.training_endpoint_id or os.environ.get(
+        "RUNPOD_TRAINING_ENDPOINT_ID", DEFAULT_TRAINING_ENDPOINT_ID
     )
-    inference_endpoint_id = (
-        args.inference_endpoint_id
-        or os.environ.get("RUNPOD_INFERENCE_ENDPOINT_ID", DEFAULT_INFERENCE_ENDPOINT_ID)
+    inference_endpoint_id = args.inference_endpoint_id or os.environ.get(
+        "RUNPOD_INFERENCE_ENDPOINT_ID", DEFAULT_INFERENCE_ENDPOINT_ID
     )
 
     # Determine which endpoints to verify.

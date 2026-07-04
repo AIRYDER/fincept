@@ -79,9 +79,7 @@ class CanaryRecordingClient:
         request_payload: dict[str, Any],
         budget_cents: int | None,
     ) -> DispatchResult:
-        self.dispatches.append(
-            {"job_id": job_id, "request_payload": request_payload}
-        )
+        self.dispatches.append({"job_id": job_id, "request_payload": request_payload})
         runpod_job_id = f"rp-{self.endpoint_id}-{len(self.dispatches)}"
 
         # If this is a canary job, pre-build the completed output.
@@ -307,12 +305,8 @@ def test_health_reports_runpod_config_valid_when_wired(tmp_path: Any) -> None:
         callback_secret=secret,
         base_dir=tmp_path / "qf",
         runpod_clients={
-            "training": CanaryRecordingClient(
-                endpoint_id="train-ep", worker_secret=secret
-            ),
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=secret
-            ),
+            "training": CanaryRecordingClient(endpoint_id="train-ep", worker_secret=secret),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=secret),
         },
     )
     h = gw.health()
@@ -333,9 +327,7 @@ def test_health_reports_runpod_config_invalid_when_endpoints_missing(
         callback_secret=secret,
         base_dir=tmp_path / "qf",
         runpod_clients={
-            "training": CanaryRecordingClient(
-                endpoint_id="train-ep", worker_secret=secret
-            ),
+            "training": CanaryRecordingClient(endpoint_id="train-ep", worker_secret=secret),
             # inference client missing
         },
     )
@@ -366,12 +358,8 @@ def test_health_never_exposes_secrets(tmp_path: Any) -> None:
         callback_secret=secret,
         base_dir=tmp_path / "qf",
         runpod_clients={
-            "training": CanaryRecordingClient(
-                endpoint_id="train-ep", worker_secret=secret
-            ),
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=secret
-            ),
+            "training": CanaryRecordingClient(endpoint_id="train-ep", worker_secret=secret),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=secret),
         },
     )
     h = gw.health()
@@ -384,9 +372,7 @@ def test_health_never_exposes_secrets(tmp_path: Any) -> None:
 
 def test_runpod_canary_verifies_when_secrets_match(tmp_path: Any) -> None:
     secret = "shared-canary-secret"
-    client = CanaryRecordingClient(
-        endpoint_id="train-ep", worker_secret=secret
-    )
+    client = CanaryRecordingClient(endpoint_id="train-ep", worker_secret=secret)
     gw = QuantFoundryGateway(
         enabled=True,
         mode="runpod",
@@ -395,9 +381,7 @@ def test_runpod_canary_verifies_when_secrets_match(tmp_path: Any) -> None:
         base_dir=tmp_path / "qf",
         runpod_clients={
             "training": client,
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=secret
-            ),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=secret),
         },
     )
     receipt = gw.runpod_canary(job_type="training")
@@ -414,9 +398,7 @@ def test_runpod_canary_verifies_when_secrets_match(tmp_path: Any) -> None:
 def test_runpod_canary_fails_when_secrets_differ(tmp_path: Any) -> None:
     api_secret = "api-side-secret"
     worker_secret = "worker-side-secret-DIFFERENT"
-    client = CanaryRecordingClient(
-        endpoint_id="train-ep", worker_secret=worker_secret
-    )
+    client = CanaryRecordingClient(endpoint_id="train-ep", worker_secret=worker_secret)
     gw = QuantFoundryGateway(
         enabled=True,
         mode="runpod",
@@ -425,9 +407,7 @@ def test_runpod_canary_fails_when_secrets_differ(tmp_path: Any) -> None:
         base_dir=tmp_path / "qf",
         runpod_clients={
             "training": client,
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=worker_secret
-            ),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=worker_secret),
         },
     )
     receipt = gw.runpod_canary(job_type="training")
@@ -461,9 +441,7 @@ def test_runpod_canary_returns_no_client_when_endpoint_not_wired(
         callback_secret=secret,
         base_dir=tmp_path / "qf",
         runpod_clients={
-            "training": CanaryRecordingClient(
-                endpoint_id="train-ep", worker_secret=secret
-            ),
+            "training": CanaryRecordingClient(endpoint_id="train-ep", worker_secret=secret),
             # inference not wired
         },
     )
@@ -534,9 +512,7 @@ def test_polled_runpod_output_with_valid_hmac_registers_callback(
         "status": "COMPLETED",
         "output": {
             "callback_payload": payload.decode("utf-8"),
-            "callback_signature": sign_callback(
-                payload, secret=secret, ts=ts, job_id=job_id
-            ),
+            "callback_signature": sign_callback(payload, secret=secret, ts=ts, job_id=job_id),
             "callback_ts": ts,
         },
     }
@@ -573,9 +549,7 @@ def test_polled_runpod_output_with_valid_hmac_registers_callback(
         base_dir=tmp_path / "qf",
         runpod_clients={
             "training": client,
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=secret
-            ),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=secret),
         },
     )
 
@@ -635,9 +609,7 @@ def test_polled_runpod_output_missing_signature_fails_closed(
         base_dir=tmp_path / "qf",
         runpod_clients={
             "training": NoSignatureClient(),
-            "inference": CanaryRecordingClient(
-                endpoint_id="infer-ep", worker_secret=secret
-            ),
+            "inference": CanaryRecordingClient(endpoint_id="infer-ep", worker_secret=secret),
         },
     )
     gw.create_job(

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +46,7 @@ from quant_foundry.dataset_manifest import _parse_temporal
 from quant_foundry.sequence_manifest import (
     SequenceDatasetManifest,
     _make_window_id,
-    validate_no_future_leakage,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -122,9 +120,7 @@ class WindowedTensorConfig(BaseModel):
             raise ValueError("horizons must contain at least 1 horizon")
         for h in v:
             if not isinstance(h, int) or h < 1:
-                raise ValueError(
-                    f"each horizon must be an integer >= 1; got {h!r}"
-                )
+                raise ValueError(f"each horizon must be an integer >= 1; got {h!r}")
         return v
 
     @field_validator("channels")
@@ -134,9 +130,7 @@ class WindowedTensorConfig(BaseModel):
             raise ValueError("channels must contain at least 1 channel")
         for c in v:
             if not isinstance(c, str) or not c.strip():
-                raise ValueError(
-                    "channels entries must be non-empty strings"
-                )
+                raise ValueError("channels entries must be non-empty strings")
         return v
 
     @field_validator("output_format")
@@ -144,8 +138,7 @@ class WindowedTensorConfig(BaseModel):
     def _output_format_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_OUTPUT_FORMATS:
             raise ValueError(
-                f"output_format must be one of "
-                f"{sorted(_ALLOWED_OUTPUT_FORMATS)!r}; got {v!r}"
+                f"output_format must be one of {sorted(_ALLOWED_OUTPUT_FORMATS)!r}; got {v!r}"
             )
         return v
 
@@ -153,24 +146,16 @@ class WindowedTensorConfig(BaseModel):
     def _no_duplicate_channels(self) -> WindowedTensorConfig:
         """Channel names must be unique (no duplicate channels)."""
         if len(set(self.channels)) != len(self.channels):
-            dupes = sorted(
-                {c for c in self.channels if self.channels.count(c) > 1}
-            )
-            raise ValueError(
-                f"channels must not contain duplicates: {dupes!r}"
-            )
+            dupes = sorted({c for c in self.channels if self.channels.count(c) > 1})
+            raise ValueError(f"channels must not contain duplicates: {dupes!r}")
         return self
 
     @model_validator(mode="after")
     def _no_duplicate_horizons(self) -> WindowedTensorConfig:
         """Horizons must be unique (no duplicate horizons)."""
         if len(set(self.horizons)) != len(self.horizons):
-            dupes = sorted(
-                {h for h in self.horizons if self.horizons.count(h) > 1}
-            )
-            raise ValueError(
-                f"horizons must not contain duplicates: {dupes!r}"
-            )
+            dupes = sorted({h for h in self.horizons if self.horizons.count(h) > 1})
+            raise ValueError(f"horizons must not contain duplicates: {dupes!r}")
         return self
 
 
@@ -223,20 +208,15 @@ class WindowedTensor(BaseModel):
     @classmethod
     def _nonempty_str(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"{info.field_name} must be a non-empty string"
-            )
+            raise ValueError(f"{info.field_name} must be a non-empty string")
         return v
 
-    @field_validator(
-        "start_timestamp", "end_timestamp", "label_timestamp"
-    )
+    @field_validator("start_timestamp", "end_timestamp", "label_timestamp")
     @classmethod
     def _temporal_parseable(cls, v: str, info: Any) -> str:
         if not isinstance(v, str) or not v.strip():
             raise ValueError(
-                f"{info.field_name} must be a non-empty ISO datetime "
-                f"string; got {v!r}"
+                f"{info.field_name} must be a non-empty ISO datetime string; got {v!r}"
             )
         _parse_temporal(v)
         return v
@@ -260,10 +240,7 @@ class WindowedTensor(BaseModel):
         """All rows must have the same number of columns (>= 1)."""
         n_cols = len(self.data[0])
         if n_cols < 1:
-            raise ValueError(
-                f"each data row must have at least 1 column; "
-                f"got {n_cols}"
-            )
+            raise ValueError(f"each data row must have at least 1 column; got {n_cols}")
         for i, row in enumerate(self.data):
             if len(row) != n_cols:
                 raise ValueError(
@@ -360,27 +337,18 @@ class WindowedTensorReceipt(BaseModel):
     @classmethod
     def _output_hash_shape(cls, v: str) -> str:
         if not isinstance(v, str) or len(v) != 64:
-            raise ValueError(
-                f"output_hash must be a 64-char hex SHA-256; "
-                f"got {v!r}"
-            )
+            raise ValueError(f"output_hash must be a 64-char hex SHA-256; got {v!r}")
         try:
             int(v, 16)
         except ValueError as exc:
-            raise ValueError(
-                f"output_hash must be a 64-char hex SHA-256; "
-                f"got {v!r}"
-            ) from exc
+            raise ValueError(f"output_hash must be a 64-char hex SHA-256; got {v!r}") from exc
         return v.lower()
 
     @field_validator("created_at")
     @classmethod
     def _created_at_parseable(cls, v: str) -> str:
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(
-                f"created_at must be a non-empty ISO datetime string; "
-                f"got {v!r}"
-            )
+            raise ValueError(f"created_at must be a non-empty ISO datetime string; got {v!r}")
         _parse_temporal(v)
         return v
 
@@ -396,8 +364,7 @@ class WindowedTensorReceipt(BaseModel):
         """n_windows must equal len(window_ids)."""
         if self.n_windows != len(self.window_ids):
             raise ValueError(
-                f"n_windows ({self.n_windows}) must equal "
-                f"len(window_ids) ({len(self.window_ids)})"
+                f"n_windows ({self.n_windows}) must equal len(window_ids) ({len(self.window_ids)})"
             )
         return self
 
@@ -574,15 +541,12 @@ class WindowedTensorBuilder:
         elif self.config.output_format == "parquet":
             self.build_parquet(windows, output_path)
         else:  # pragma: no cover — guarded by config validator
-            raise ValueError(
-                f"unsupported output_format: "
-                f"{self.config.output_format!r}"
-            )
+            raise ValueError(f"unsupported output_format: {self.config.output_format!r}")
 
         output_hash = compute_tensor_hash(windows)
         n_symbols = len({w.symbol for w in windows})
         window_ids = sorted(w.window_id for w in windows)
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         return WindowedTensorReceipt(
             manifest=manifest,
@@ -613,8 +577,7 @@ class WindowedTensorBuilder:
         missing = [c for c in required if c not in df.columns]
         if missing:
             raise ValueError(
-                f"dataframe is missing required columns: {missing!r} "
-                f"(have {list(df.columns)!r})"
+                f"dataframe is missing required columns: {missing!r} (have {list(df.columns)!r})"
             )
 
         wl = self.config.window_length
@@ -663,16 +626,12 @@ class WindowedTensorBuilder:
                     current_price = float(ref_vals[end_idx])
                     future_price = float(ref_vals[label_idx])
                     if current_price != 0.0:
-                        label = (future_price - current_price) / abs(
-                            current_price
-                        )
+                        label = (future_price - current_price) / abs(current_price)
                     else:
                         label = 0.0
                     label = float(label)
 
-                    window_id = _make_window_id(
-                        symbol, start_ts, end_ts, horizon
-                    )
+                    window_id = _make_window_id(symbol, start_ts, end_ts, horizon)
                     window = WindowedTensor(
                         window_id=window_id,
                         symbol=symbol,
@@ -720,32 +679,22 @@ class WindowedTensorBuilder:
         archive: dict[str, np.ndarray] = {
             "data": data_stack,
             "label": np.array([w.label for w in windows], dtype=np.float64),
-            "weight": np.array(
-                [w.weight for w in windows], dtype=np.float64
-            ),
-            "horizon": np.array(
-                [w.horizon for w in windows], dtype=np.int64
-            ),
+            "weight": np.array([w.weight for w in windows], dtype=np.float64),
+            "horizon": np.array([w.horizon for w in windows], dtype=np.int64),
         }
 
         if self.config.include_symbol:
-            archive["symbol"] = np.array(
-                [w.symbol for w in windows], dtype=object
-            )
+            archive["symbol"] = np.array([w.symbol for w in windows], dtype=object)
         if self.config.include_timestamp:
             archive["start_timestamp"] = np.array(
                 [w.start_timestamp for w in windows], dtype=object
             )
-            archive["end_timestamp"] = np.array(
-                [w.end_timestamp for w in windows], dtype=object
-            )
+            archive["end_timestamp"] = np.array([w.end_timestamp for w in windows], dtype=object)
             archive["label_timestamp"] = np.array(
                 [w.label_timestamp for w in windows], dtype=object
             )
         if self.config.include_window_id:
-            archive["window_id"] = np.array(
-                [w.window_id for w in windows], dtype=object
-            )
+            archive["window_id"] = np.array([w.window_id for w in windows], dtype=object)
 
         np.savez(str(path), **archive)
         return str(path)
@@ -774,7 +723,7 @@ class WindowedTensorBuilder:
             ImportError: if ``pyarrow`` / ``pandas`` parquet engine is
                 not available.
         """
-        import pandas as pd  # noqa: WPS433 lazy import
+        import pandas as pd
 
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -832,9 +781,7 @@ class WindowedTensorBuilder:
         """
         path = Path(output_path)
         if not path.exists():
-            raise ValueError(
-                f"output file does not exist: {output_path!r}"
-            )
+            raise ValueError(f"output file does not exist: {output_path!r}")
 
         # Load windows from the file and recompute the hash.
         loaded_windows = self._load_windows(output_path)
@@ -875,8 +822,7 @@ class WindowedTensorBuilder:
             return self._load_parquet(output_path)
         else:
             raise ValueError(
-                f"unsupported output file extension: "
-                f"{path.suffix!r} (expected .npz or .parquet)"
+                f"unsupported output file extension: {path.suffix!r} (expected .npz or .parquet)"
             )
 
     def _load_npz(self, output_path: str) -> list[WindowedTensor]:
@@ -893,27 +839,11 @@ class WindowedTensorBuilder:
         labels = archive["label"]
         weights = archive["weight"]
         horizons = archive["horizon"]
-        symbols = (
-            archive["symbol"] if "symbol" in archive.files else None
-        )
-        start_ts = (
-            archive["start_timestamp"]
-            if "start_timestamp" in archive.files
-            else None
-        )
-        end_ts = (
-            archive["end_timestamp"]
-            if "end_timestamp" in archive.files
-            else None
-        )
-        label_ts = (
-            archive["label_timestamp"]
-            if "label_timestamp" in archive.files
-            else None
-        )
-        window_ids = (
-            archive["window_id"] if "window_id" in archive.files else None
-        )
+        symbols = archive["symbol"] if "symbol" in archive.files else None
+        start_ts = archive["start_timestamp"] if "start_timestamp" in archive.files else None
+        end_ts = archive["end_timestamp"] if "end_timestamp" in archive.files else None
+        label_ts = archive["label_timestamp"] if "label_timestamp" in archive.files else None
+        window_ids = archive["window_id"] if "window_id" in archive.files else None
 
         windows: list[WindowedTensor] = []
         n = data_stack.shape[0]
@@ -952,7 +882,7 @@ class WindowedTensorBuilder:
         Returns:
             A list of :class:`WindowedTensor`.
         """
-        import pandas as pd  # noqa: WPS433 lazy import
+        import pandas as pd
 
         df = pd.read_parquet(output_path)
         windows: list[WindowedTensor] = []
@@ -974,10 +904,10 @@ class WindowedTensorBuilder:
 
 
 __all__ = [
-    "WindowedTensorConfig",
     "WindowedTensor",
-    "WindowedTensorReceipt",
     "WindowedTensorBuilder",
+    "WindowedTensorConfig",
+    "WindowedTensorReceipt",
     "compute_tensor_hash",
     "validate_no_label_in_features",
 ]

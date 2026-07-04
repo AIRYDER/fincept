@@ -3,6 +3,7 @@
 Runs against REAL RunPod endpoints using env vars. Uses real wall-clock
 timestamps so the settlement sweep can find actual bar data.
 """
+
 from __future__ import annotations
 
 import json
@@ -89,9 +90,9 @@ def main() -> None:
         receipts = gateway.poll_runpod_results()
         if receipts:
             for r in receipts:
-                print(f"  poll {i+1}: {json.dumps(r, indent=2, default=str)}")
+                print(f"  poll {i + 1}: {json.dumps(r, indent=2, default=str)}")
         else:
-            print(f"  poll {i+1}: no receipts")
+            print(f"  poll {i + 1}: no receipts")
 
         train_rec = gateway.outbox.get(train_job_id)
         infer_rec = gateway.outbox.get(infer_job_id)

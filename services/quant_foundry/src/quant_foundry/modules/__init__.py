@@ -75,12 +75,12 @@ def load_all_modules() -> None:
     modules, which triggers the ``@register_module`` decorator.
     """
     # Import each category package to trigger registration.
-    import quant_foundry.modules.sentiment  # noqa: F401
-    import quant_foundry.modules.sources  # noqa: F401
-    import quant_foundry.modules.labels  # noqa: F401
-    import quant_foundry.modules.features  # noqa: F401
+    import quant_foundry.modules.features
+    import quant_foundry.modules.labels
+    import quant_foundry.modules.price_join
+    import quant_foundry.modules.sentiment
+    import quant_foundry.modules.sources
     import quant_foundry.modules.universe  # noqa: F401
-    import quant_foundry.modules.price_join  # noqa: F401
 
 
 # Lazy import of DatasetComposer to avoid circular imports at module level.
@@ -116,12 +116,12 @@ from typing import Any  # noqa: E402
 
 __all__ = [
     "MODULE_CATEGORIES",
-    "DatasetComposer",
+    "AttributionReport",
     "BenchmarkConfig",
     "BenchmarkHarness",
     "BenchmarkResult",
-    "AttributionReport",
     "ComparisonReport",
+    "DatasetComposer",
     "FeatureComputer",
     "FeatureRowData",
     "LabelComputer",

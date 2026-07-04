@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.ui.dataset_registry_view import (
     DatasetRegistryRow,
     DatasetRegistryView,
@@ -20,7 +19,6 @@ from quant_foundry.ui.dataset_registry_view import (
     get_blocking_reasons,
     validate_no_false_readiness,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -53,7 +51,15 @@ def _row(
 def _sample_rows() -> list[DatasetRegistryRow]:
     """A representative mix of rows across readiness levels."""
     return [
-        _row("ds-001", "L4_golden", "h1", "passed", "verified", ["production", "research"], "2026-01-01"),
+        _row(
+            "ds-001",
+            "L4_golden",
+            "h1",
+            "passed",
+            "verified",
+            ["production", "research"],
+            "2026-01-01",
+        ),
         _row("ds-002", "L3_production", "h2", "passed", "verified", ["production"], "2026-01-02"),
         _row("ds-003", "L2_validated", "h3", "pending", "uploaded", ["research"], "2026-01-03"),
         _row("ds-004", "L1_cleaned", None, "failed", "staged", ["canary"], "2026-01-04"),
@@ -180,9 +186,7 @@ class TestDatasetRegistryRow:
 
     def test_invalid_upload_status(self) -> None:
         with pytest.raises(ValidationError):
-            DatasetRegistryRow(
-                dataset_id="ds-1", readiness_level="L0_raw", upload_status="bogus"
-            )
+            DatasetRegistryRow(dataset_id="ds-1", readiness_level="L0_raw", upload_status="bogus")
 
     def test_invalid_eligible_mode(self) -> None:
         with pytest.raises(ValidationError):
@@ -197,9 +201,7 @@ class TestDatasetRegistryRow:
         assert row.quality_gate_status is None
 
     def test_none_upload_status_allowed(self) -> None:
-        row = DatasetRegistryRow(
-            dataset_id="ds-1", readiness_level="L0_raw", upload_status=None
-        )
+        row = DatasetRegistryRow(dataset_id="ds-1", readiness_level="L0_raw", upload_status=None)
         assert row.upload_status is None
 
 
@@ -282,48 +284,80 @@ class TestFormatUploadStatus:
 
 class TestGetBlockingReasons:
     def test_production_eligible_no_reasons(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="passed",
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="passed",
+            upload_status="verified",
+            manifest_hash="h",
+        )
         assert get_blocking_reasons(row) == []
 
     def test_golden_eligible_no_reasons(self) -> None:
-        row = _row(readiness_level="L4_golden", quality_gate_status="passed",
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L4_golden",
+            quality_gate_status="passed",
+            upload_status="verified",
+            manifest_hash="h",
+        )
         assert get_blocking_reasons(row) == []
 
     def test_low_readiness_blocks(self) -> None:
-        row = _row(readiness_level="L2_validated", quality_gate_status="passed",
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L2_validated",
+            quality_gate_status="passed",
+            upload_status="verified",
+            manifest_hash="h",
+        )
         reasons = get_blocking_reasons(row)
         assert any("below L3_production" in r for r in reasons)
 
     def test_quality_gate_not_passed_blocks(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="pending",
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="pending",
+            upload_status="verified",
+            manifest_hash="h",
+        )
         reasons = get_blocking_reasons(row)
         assert any("not 'passed'" in r for r in reasons)
 
     def test_upload_not_verified_blocks(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="passed",
-                   upload_status="uploaded", manifest_hash="h")
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="passed",
+            upload_status="uploaded",
+            manifest_hash="h",
+        )
         reasons = get_blocking_reasons(row)
         assert any("not 'verified'" in r for r in reasons)
 
     def test_missing_manifest_hash_blocks(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="passed",
-                   upload_status="verified", manifest_hash=None)
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="passed",
+            upload_status="verified",
+            manifest_hash=None,
+        )
         reasons = get_blocking_reasons(row)
         assert any("manifest_hash missing" in r for r in reasons)
 
     def test_all_four_reasons(self) -> None:
-        row = _row(readiness_level="L0_raw", quality_gate_status="failed",
-                   upload_status="staged", manifest_hash=None)
+        row = _row(
+            readiness_level="L0_raw",
+            quality_gate_status="failed",
+            upload_status="staged",
+            manifest_hash=None,
+        )
         reasons = get_blocking_reasons(row)
         assert len(reasons) == 4
 
     def test_quality_gate_none_blocks(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status=None,
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status=None,
+            upload_status="verified",
+            manifest_hash="h",
+        )
         reasons = get_blocking_reasons(row)
         assert any("not 'passed'" in r for r in reasons)
 
@@ -335,41 +369,56 @@ class TestGetBlockingReasons:
 
 class TestValidateNoFalseReadiness:
     def test_honest_production(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="passed",
-                   eligible_modes=["production"])
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="passed",
+            eligible_modes=["production"],
+        )
         assert validate_no_false_readiness(row) is True
 
     def test_honest_golden(self) -> None:
-        row = _row(readiness_level="L4_golden", quality_gate_status="passed",
-                   eligible_modes=["production", "research"])
+        row = _row(
+            readiness_level="L4_golden",
+            quality_gate_status="passed",
+            eligible_modes=["production", "research"],
+        )
         assert validate_no_false_readiness(row) is True
 
     def test_honest_no_production_claim(self) -> None:
-        row = _row(readiness_level="L0_raw", quality_gate_status="not_run",
-                   eligible_modes=["canary"])
+        row = _row(
+            readiness_level="L0_raw", quality_gate_status="not_run", eligible_modes=["canary"]
+        )
         assert validate_no_false_readiness(row) is True
 
     def test_false_readiness_low_level(self) -> None:
-        row = _row(readiness_level="L2_validated", quality_gate_status="passed",
-                   eligible_modes=["production"])
+        row = _row(
+            readiness_level="L2_validated",
+            quality_gate_status="passed",
+            eligible_modes=["production"],
+        )
         with pytest.raises(ValueError, match="receipts do not prove"):
             validate_no_false_readiness(row)
 
     def test_false_readiness_gate_not_passed(self) -> None:
-        row = _row(readiness_level="L3_production", quality_gate_status="failed",
-                   eligible_modes=["production"])
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="failed",
+            eligible_modes=["production"],
+        )
         with pytest.raises(ValueError, match="receipts do not prove"):
             validate_no_false_readiness(row)
 
     def test_false_readiness_both_fail(self) -> None:
-        row = _row(readiness_level="L1_cleaned", quality_gate_status="not_run",
-                   eligible_modes=["production"])
+        row = _row(
+            readiness_level="L1_cleaned",
+            quality_gate_status="not_run",
+            eligible_modes=["production"],
+        )
         with pytest.raises(ValueError):
             validate_no_false_readiness(row)
 
     def test_empty_modes_honest(self) -> None:
-        row = _row(readiness_level="L0_raw", quality_gate_status="not_run",
-                   eligible_modes=[])
+        row = _row(readiness_level="L0_raw", quality_gate_status="not_run", eligible_modes=[])
         assert validate_no_false_readiness(row) is True
 
 
@@ -476,8 +525,12 @@ class TestRenderSummary:
 class TestRenderDatasetDetail:
     def test_includes_blocking_reasons(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        row = _row(readiness_level="L0_raw", quality_gate_status="failed",
-                   upload_status="staged", manifest_hash=None)
+        row = _row(
+            readiness_level="L0_raw",
+            quality_gate_status="failed",
+            upload_status="staged",
+            manifest_hash=None,
+        )
         out = view.render_dataset_detail(row)
         assert "Blocking Reasons" in out
         assert "below L3_production" in out
@@ -485,8 +538,12 @@ class TestRenderDatasetDetail:
 
     def test_production_eligible_no_blocking(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        row = _row(readiness_level="L3_production", quality_gate_status="passed",
-                   upload_status="verified", manifest_hash="h")
+        row = _row(
+            readiness_level="L3_production",
+            quality_gate_status="passed",
+            upload_status="verified",
+            manifest_hash="h",
+        )
         out = view.render_dataset_detail(row)
         assert "production-eligible" in out
 
@@ -554,14 +611,18 @@ class TestFilterProductionEligible:
 
     def test_all_l0(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        rows = [_row("ds-a", "L0_raw", None, "not_run", None, []),
-                _row("ds-b", "L0_raw", None, "not_run", None, [])]
+        rows = [
+            _row("ds-a", "L0_raw", None, "not_run", None, []),
+            _row("ds-b", "L0_raw", None, "not_run", None, []),
+        ]
         assert view.filter_production_eligible(rows) == []
 
     def test_all_l4(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        rows = [_row("ds-a", "L4_golden", "h", "passed", "verified", ["production"]),
-                _row("ds-b", "L4_golden", "h", "passed", "verified", ["production"])]
+        rows = [
+            _row("ds-a", "L4_golden", "h", "passed", "verified", ["production"]),
+            _row("ds-b", "L4_golden", "h", "passed", "verified", ["production"]),
+        ]
         result = view.filter_production_eligible(rows)
         assert len(result) == 2
 
@@ -581,9 +642,7 @@ class TestSortRows:
         cfg = DatasetRegistryViewConfig(sort_by="dataset_id", sort_order="asc")
         view = DatasetRegistryView(cfg)
         result = view.sort_rows(_sample_rows())
-        assert [r.dataset_id for r in result] == [
-            "ds-001", "ds-002", "ds-003", "ds-004", "ds-005"
-        ]
+        assert [r.dataset_id for r in result] == ["ds-001", "ds-002", "ds-003", "ds-004", "ds-005"]
 
     def test_sort_by_dataset_id_desc(self) -> None:
         cfg = DatasetRegistryViewConfig(sort_by="dataset_id", sort_order="desc")
@@ -624,16 +683,20 @@ class TestSortRows:
 class TestEdgeCases:
     def test_all_l0_render(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        rows = [_row("ds-a", "L0_raw", None, "not_run", None, []),
-                _row("ds-b", "L0_raw", None, "not_run", None, [])]
+        rows = [
+            _row("ds-a", "L0_raw", None, "not_run", None, []),
+            _row("ds-b", "L0_raw", None, "not_run", None, []),
+        ]
         out = view.render(rows)
         assert "[L0]" in out
         assert "ds-a" in out
 
     def test_all_l4_summary(self) -> None:
         view = DatasetRegistryView(DatasetRegistryViewConfig())
-        rows = [_row("ds-a", "L4_golden", "h", "passed", "verified", ["production"]),
-                _row("ds-b", "L4_golden", "h", "passed", "verified", ["production"])]
+        rows = [
+            _row("ds-a", "L4_golden", "h", "passed", "verified", ["production"]),
+            _row("ds-b", "L4_golden", "h", "passed", "verified", ["production"]),
+        ]
         out = view.render_summary(rows)
         assert "Production-eligible: 2" in out
 

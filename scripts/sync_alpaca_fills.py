@@ -73,9 +73,7 @@ def compute_realised(
         if side == "buy":
             total_cost = s["avg"] * s["qty"] + price * qty
             s["qty"] += qty
-            s["avg"] = (
-                total_cost / s["qty"] if s["qty"] > 0 else Decimal(0)
-            )
+            s["avg"] = total_cost / s["qty"] if s["qty"] > 0 else Decimal(0)
         elif side == "sell":
             close_qty = min(qty, s["qty"])
             if close_qty > 0:
@@ -101,9 +99,7 @@ async def main() -> int:
         print("ERROR: Alpaca credentials not set in .env", file=sys.stderr)
         return 2
 
-    async with httpx.AsyncClient(
-        base_url=settings.ALPACA_BASE_URL, timeout=30.0
-    ) as http:
+    async with httpx.AsyncClient(base_url=settings.ALPACA_BASE_URL, timeout=30.0) as http:
         client = AlpacaClient(
             http=http,
             api_key=settings.ALPACA_API_KEY,

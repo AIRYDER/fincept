@@ -43,7 +43,6 @@ Usage::
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import pathlib
 import time
@@ -137,9 +136,7 @@ class BenchmarkResult:
             "pbo": self.pbo,
             "parquet_path": str(self.parquet_path) if self.parquet_path else None,
             "manifest_path": str(self.manifest_path) if self.manifest_path else None,
-            "dossier": (
-                json.loads(self.dossier.to_json()) if self.dossier else None
-            ),
+            "dossier": (json.loads(self.dossier.to_json()) if self.dossier else None),
         }
 
 
@@ -284,16 +281,18 @@ class BenchmarkHarness:
         """Build a summary table for the report."""
         rows: list[dict[str, Any]] = []
         for r in results:
-            rows.append({
-                "name": r.config.name,
-                "source": r.config.source,
-                "sentiment": r.config.sentiment,
-                "succeeded": r.succeeded,
-                "deflated_sharpe": r.deflated_sharpe,
-                "pbo": r.pbo,
-                "duration_seconds": round(r.duration_seconds, 3),
-                "error": r.error,
-            })
+            rows.append(
+                {
+                    "name": r.config.name,
+                    "source": r.config.source,
+                    "sentiment": r.config.sentiment,
+                    "succeeded": r.succeeded,
+                    "deflated_sharpe": r.deflated_sharpe,
+                    "pbo": r.pbo,
+                    "duration_seconds": round(r.duration_seconds, 3),
+                    "error": r.error,
+                }
+            )
         return rows
 
 

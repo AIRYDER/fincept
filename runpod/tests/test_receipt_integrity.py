@@ -144,8 +144,7 @@ def test_summary_profiles_have_probe_evidence(bundle: Path) -> None:
         profile = entry["profile"]
         probe_file = bundle / f"probe-{profile}.jsonl"
         assert probe_file.is_file(), (
-            f"{profile}: summary references this profile but "
-            f"probe-{profile}.jsonl is missing"
+            f"{profile}: summary references this profile but probe-{profile}.jsonl is missing"
         )
 
 

@@ -22,10 +22,10 @@ from __future__ import annotations
 import datetime as dt
 import pathlib
 
-import pytest
-
 # Path setup matching test_modules.py
 import sys
+
+import pytest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
@@ -42,9 +42,7 @@ NS_PER_DAY = 86_400_000_000_000
 
 def _ns(year: int, month: int, day: int) -> int:
     """Convert a calendar date to UTC nanoseconds since epoch."""
-    return int(
-        dt.datetime(year, month, day, tzinfo=dt.timezone.utc).timestamp()
-    ) * 1_000_000_000
+    return int(dt.datetime(year, month, day, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
 
 @pytest.fixture(scope="module")
@@ -112,9 +110,7 @@ def test_sp500_pit_changes_file_loads(changes_data) -> None:
         assert "removed" in entry and isinstance(entry["removed"], list)
 
     # Spot-check a known change: TSLA added in 2020.
-    tsla_additions = [
-        e for e in changes_data["changes"] if "TSLA" in e.get("added", [])
-    ]
+    tsla_additions = [e for e in changes_data["changes"] if "TSLA" in e.get("added", [])]
     assert len(tsla_additions) >= 1
     assert any(e["date"].startswith("2020") for e in tsla_additions)
 
@@ -268,9 +264,7 @@ def test_constituents_during_range(changes_data) -> None:
     base = set(changes_data["base_constituents_2018"])
 
     # A 2018 range → base set plus any in-range additions (INFO on 2018-06-26).
-    members_2018 = _constituents_during_range(
-        changes_data, _ns(2018, 1, 2), _ns(2018, 12, 31)
-    )
+    members_2018 = _constituents_during_range(changes_data, _ns(2018, 1, 2), _ns(2018, 12, 31))
     assert base.issubset(members_2018)
     assert "INFO" in members_2018  # added during 2018
     # No future additions leak in.
@@ -278,36 +272,26 @@ def test_constituents_during_range(changes_data) -> None:
     assert "ZM" not in members_2018
 
     # Range spanning the SNAP removal (2019-05-01) → SNAP still included.
-    members_2019_h1 = _constituents_during_range(
-        changes_data, _ns(2019, 1, 1), _ns(2019, 6, 30)
-    )
+    members_2019_h1 = _constituents_during_range(changes_data, _ns(2019, 1, 1), _ns(2019, 6, 30))
     assert "SNAP" in members_2019_h1  # was a member Jan–Apr
     assert "ZM" in members_2019_h1  # added May 1 (within range)
 
     # Range entirely after SNAP removal → SNAP excluded.
-    members_2020 = _constituents_during_range(
-        changes_data, _ns(2020, 1, 1), _ns(2020, 6, 30)
-    )
+    members_2020 = _constituents_during_range(changes_data, _ns(2020, 1, 1), _ns(2020, 6, 30))
     assert "SNAP" not in members_2020
 
     # Range spanning TSLA addition (2020-09-01) → TSLA included.
-    members_2020_full = _constituents_during_range(
-        changes_data, _ns(2020, 1, 1), _ns(2020, 12, 31)
-    )
+    members_2020_full = _constituents_during_range(changes_data, _ns(2020, 1, 1), _ns(2020, 12, 31))
     assert "TSLA" in members_2020_full
     # X removed 2020-09-01 → still included (was a member Jan–Aug).
     assert "X" in members_2020_full
 
     # Range entirely before TSLA addition → TSLA excluded.
-    members_2019_full = _constituents_during_range(
-        changes_data, _ns(2019, 1, 1), _ns(2019, 12, 31)
-    )
+    members_2019_full = _constituents_during_range(changes_data, _ns(2019, 1, 1), _ns(2019, 12, 31))
     assert "TSLA" not in members_2019_full
 
     # Range entirely after X removal → X excluded.
-    members_2021 = _constituents_during_range(
-        changes_data, _ns(2021, 1, 1), _ns(2021, 6, 30)
-    )
+    members_2021 = _constituents_during_range(changes_data, _ns(2021, 1, 1), _ns(2021, 6, 30))
     assert "X" not in members_2021
 
     # Reversed range raises.
@@ -338,8 +322,7 @@ def test_load_sp500_changes_validates_structure(tmp_path: pathlib.Path) -> None:
     # Malformed change entry (missing date).
     bad3 = tmp_path / "bad3.json"
     bad3.write_text(
-        '{"base_constituents_2018": ["AAPL"], '
-        '"changes": [{"added": [], "removed": []}]}'
+        '{"base_constituents_2018": ["AAPL"], "changes": [{"added": [], "removed": []}]}'
     )
     with pytest.raises(ValueError, match="date"):
         _load_sp500_changes(bad3)

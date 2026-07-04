@@ -41,10 +41,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -54,9 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 _HEX256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 #: Allowed LLM providers.
-_ALLOWED_PROVIDERS: frozenset[str] = frozenset(
-    {"openai", "anthropic", "local", "azure"}
-)
+_ALLOWED_PROVIDERS: frozenset[str] = frozenset({"openai", "anthropic", "local", "azure"})
 
 #: Feature names that are *allowed* (informational / tagging features).
 _ALLOWED_FEATURE_NAMES: frozenset[str] = frozenset(
@@ -94,7 +93,7 @@ _TRADE_SIGNAL_NAMES: frozenset[str] = frozenset(
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _validate_hex256(value: str, field_name: str) -> str:
@@ -113,9 +112,7 @@ def _validate_hex256(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty 64-char hex string")
     if not _HEX256_RE.match(value):
-        raise ValueError(
-            f"{field_name} must be a 64-char lowercase hex SHA-256; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a 64-char lowercase hex SHA-256; got {value!r}")
     return value
 
 
@@ -133,9 +130,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         ValueError: if ``value`` is not a parseable ISO datetime.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{field_name} must be a non-empty ISO datetime string; got {value!r}"
-        )
+        raise ValueError(f"{field_name} must be a non-empty ISO datetime string; got {value!r}")
     # Accept anything datetime.fromisoformat can parse (Python 3.11+ handles
     # trailing 'Z' as well). We deliberately do not require a timezone so
     # naive ISO strings are accepted but flagged by callers if needed.
@@ -143,8 +138,7 @@ def _validate_iso_temporal(value: str, field_name: str) -> str:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError(
-            f"{field_name} must be a parseable ISO datetime string; "
-            f"got {value!r}: {exc}"
+            f"{field_name} must be a parseable ISO datetime string; got {value!r}: {exc}"
         ) from exc
     return value
 
@@ -224,9 +218,7 @@ class LLMModelSpec(BaseModel):
     @classmethod
     def _provider_allowed(cls, v: str) -> str:
         if v not in _ALLOWED_PROVIDERS:
-            raise ValueError(
-                f"provider must be one of {sorted(_ALLOWED_PROVIDERS)!r}; got {v!r}"
-            )
+            raise ValueError(f"provider must be one of {sorted(_ALLOWED_PROVIDERS)!r}; got {v!r}")
         return v
 
     @field_validator("max_tokens")
@@ -296,7 +288,7 @@ class PromptSpec(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _hash_matches_template(self) -> "PromptSpec":
+    def _hash_matches_template(self) -> PromptSpec:
         expected = compute_prompt_hash(self.prompt_template)
         if self.prompt_hash != expected:
             raise ValueError(
@@ -397,7 +389,7 @@ class LLMFeature(BaseModel):
         return _validate_iso_temporal(v, "created_at")
 
     @model_validator(mode="after")
-    def _reject_trade_signal_name(self) -> "LLMFeature":
+    def _reject_trade_signal_name(self) -> LLMFeature:
         """Fail-closed: a feature may never be a direct trade signal."""
         if _is_trade_signal_name(self.feature_name):
             raise ValueError(
@@ -442,19 +434,15 @@ class LLMFeatureManifest(BaseModel):
         return _validate_iso_temporal(v, "created_at")
 
     @model_validator(mode="after")
-    def _no_duplicate_ids(self) -> "LLMFeatureManifest":
+    def _no_duplicate_ids(self) -> LLMFeatureManifest:
         feature_ids = [f.feature_id for f in self.features]
         if len(feature_ids) != len(set(feature_ids)):
             dupes = {fid for fid in feature_ids if feature_ids.count(fid) > 1}
-            raise ValueError(
-                f"duplicate feature_id values are not allowed: {sorted(dupes)!r}"
-            )
+            raise ValueError(f"duplicate feature_id values are not allowed: {sorted(dupes)!r}")
         prompt_ids = [p.prompt_id for p in self.prompt_specs]
         if len(prompt_ids) != len(set(prompt_ids)):
             dupes = {pid for pid in prompt_ids if prompt_ids.count(pid) > 1}
-            raise ValueError(
-                f"duplicate prompt_id values are not allowed: {sorted(dupes)!r}"
-            )
+            raise ValueError(f"duplicate prompt_id values are not allowed: {sorted(dupes)!r}")
         return self
 
 
@@ -558,14 +546,10 @@ def _validate_against_schema(value: Any, schema: dict) -> bool:
     if schema_type is not None:
         if isinstance(schema_type, list):
             if not any(_coerce_value_to_schema_type(value, t) for t in schema_type):
-                raise ValueError(
-                    f"value type {type(value).__name__} not in {schema_type!r}"
-                )
+                raise ValueError(f"value type {type(value).__name__} not in {schema_type!r}")
         else:
             if not _coerce_value_to_schema_type(value, schema_type):
-                raise ValueError(
-                    f"value type {type(value).__name__} != required {schema_type!r}"
-                )
+                raise ValueError(f"value type {type(value).__name__} != required {schema_type!r}")
 
     if "enum" in schema:
         if value not in schema["enum"]:
@@ -578,9 +562,7 @@ def _validate_against_schema(value: Any, schema: dict) -> bool:
                 try:
                     _validate_against_schema(item, items_schema)
                 except ValueError as exc:
-                    raise ValueError(
-                        f"array item {i} invalid: {exc}"
-                    ) from exc
+                    raise ValueError(f"array item {i} invalid: {exc}") from exc
 
     if schema_type == "object" or (schema_type is None and isinstance(value, dict)):
         props = schema.get("properties", {})
@@ -594,9 +576,7 @@ def _validate_against_schema(value: Any, schema: dict) -> bool:
                     try:
                         _validate_against_schema(value[key], sub_schema)
                     except ValueError as exc:
-                        raise ValueError(
-                            f"property {key!r} invalid: {exc}"
-                        ) from exc
+                        raise ValueError(f"property {key!r} invalid: {exc}") from exc
 
     return True
 
@@ -654,14 +634,10 @@ class LLMFeatureAgent:
                 raise ValueError("each prompt_spec must be a PromptSpec")
         prompt_ids = [p.prompt_id for p in prompt_specs]
         if len(prompt_ids) != len(set(prompt_ids)):
-            raise ValueError(
-                "prompt_specs contains duplicate prompt_id values"
-            )
+            raise ValueError("prompt_specs contains duplicate prompt_id values")
         self._model_spec = model_spec
         self._prompt_specs = list(prompt_specs)
-        self._prompts_by_id: dict[str, PromptSpec] = {
-            p.prompt_id: p for p in self._prompt_specs
-        }
+        self._prompts_by_id: dict[str, PromptSpec] = {p.prompt_id: p for p in self._prompt_specs}
         self._llm_client = llm_client
 
     # -- properties -------------------------------------------------------
@@ -688,9 +664,7 @@ class LLMFeatureAgent:
             raise ValueError("prompt_id must be a non-empty string")
         ps = self._prompts_by_id.get(prompt_id)
         if ps is None:
-            raise ValueError(
-                f"no prompt_spec registered for prompt_id {prompt_id!r}"
-            )
+            raise ValueError(f"no prompt_spec registered for prompt_id {prompt_id!r}")
         return ps
 
     def _default_llm_client(self, model_spec: LLMModelSpec, prompt_text: str) -> Any:
@@ -708,29 +682,22 @@ class LLMFeatureAgent:
             try:
                 import openai  # type: ignore[import-not-found]  # noqa: F401
             except ImportError as exc:  # pragma: no cover - exercised in prod
-                raise ValueError(
-                    "openai SDK is not installed; cannot call LLM"
-                ) from exc
+                raise ValueError("openai SDK is not installed; cannot call LLM") from exc
             # Real call would go here; tests inject a mock instead.
             raise ValueError(
-                "default openai client requires a real API key; "
-                "inject an llm_client for testing"
+                "default openai client requires a real API key; inject an llm_client for testing"
             )
         if provider == "anthropic":
             try:
                 import anthropic  # type: ignore[import-not-found]  # noqa: F401
             except ImportError as exc:  # pragma: no cover
-                raise ValueError(
-                    "anthropic SDK is not installed; cannot call LLM"
-                ) from exc
+                raise ValueError("anthropic SDK is not installed; cannot call LLM") from exc
             raise ValueError(
-                "default anthropic client requires a real API key; "
-                "inject an llm_client for testing"
+                "default anthropic client requires a real API key; inject an llm_client for testing"
             )
         if provider in ("local", "azure"):
             raise ValueError(
-                f"default client for provider {provider!r} is not "
-                "implemented; inject an llm_client"
+                f"default client for provider {provider!r} is not implemented; inject an llm_client"
             )
         raise ValueError(f"unsupported provider {provider!r}")
 
@@ -750,9 +717,7 @@ class LLMFeatureAgent:
         return prompt_spec.prompt_template + "\n\n" + source_text
 
     @staticmethod
-    def _make_feature_id(
-        prompt_id: str, source_hash: str, model_hash: str
-    ) -> str:
+    def _make_feature_id(prompt_id: str, source_hash: str, model_hash: str) -> str:
         """Build the deterministic feature id."""
         return f"{prompt_id}_{source_hash}_{model_hash}"
 
@@ -818,9 +783,7 @@ class LLMFeatureAgent:
                 "feature name; LLM features must never be direct trade signals"
             )
 
-        availability_time = _validate_iso_temporal(
-            availability_time, "availability_time"
-        )
+        availability_time = _validate_iso_temporal(availability_time, "availability_time")
 
         prompt_text = self._render_prompt(prompt_spec, source_text)
         raw_output = self._call_llm(prompt_text)
@@ -851,9 +814,7 @@ class LLMFeatureAgent:
             validated=validated,
         )
 
-    def validate_feature(
-        self, feature: LLMFeature, prompt_spec: PromptSpec
-    ) -> bool:
+    def validate_feature(self, feature: LLMFeature, prompt_spec: PromptSpec) -> bool:
         """Validate ``feature`` against ``prompt_spec.output_schema``.
 
         Args:
@@ -901,9 +862,7 @@ class LLMFeatureAgent:
         if not isinstance(source_texts, list) or not isinstance(source_hashes, list):
             raise ValueError("source_texts and source_hashes must be lists")
         if len(source_texts) != len(source_hashes):
-            raise ValueError(
-                "source_texts and source_hashes must have the same length"
-            )
+            raise ValueError("source_texts and source_hashes must have the same length")
         features: list[LLMFeature] = []
         for text, shash in zip(source_texts, source_hashes):
             features.append(
@@ -937,10 +896,7 @@ class LLMFeatureAgent:
         if not isinstance(features, list):
             raise ValueError("features must be a list")
         if manifest_id is None:
-            manifest_id = (
-                f"manifest_{self._model_spec.model_hash}_"
-                f"{len(features)}_{_now_iso()}"
-            )
+            manifest_id = f"manifest_{self._model_spec.model_hash}_{len(features)}_{_now_iso()}"
         return LLMFeatureManifest(
             manifest_id=manifest_id,
             model_spec=self._model_spec,

@@ -41,7 +41,7 @@ _SYSTEM_PROMPT = (
     "You are a financial sentiment analyzer. Given a social media post "
     "or news headline about a stock, return a JSON object with two fields: "
     '"score" (a float in [-1, 1] where -1 is very bearish, 0 is neutral, '
-    "1 is very bullish) and \"confidence\" (a float in [0, 1] indicating "
+    '1 is very bullish) and "confidence" (a float in [0, 1] indicating '
     "how confident you are in the assessment). "
     "Return ONLY the JSON object, no other text."
 )
@@ -97,8 +97,7 @@ class OpenAISentiment:
         key = os.environ.get("OPENAI_API_KEY", "")
         if not key:
             raise ValueError(
-                "OPENAI_API_KEY is not set. Set it in the environment "
-                "or RunPod container env."
+                "OPENAI_API_KEY is not set. Set it in the environment or RunPod container env."
             )
         return key
 
@@ -150,20 +149,24 @@ class OpenAISentiment:
                 score = max(-1.0, min(1.0, score))
                 confidence = max(0.0, min(1.0, confidence))
 
-                results.append(SentimentResult(
-                    item_id=item.item_id,
-                    provider="openai",
-                    score=round(score, 6),
-                    confidence=round(confidence, 6),
-                ))
+                results.append(
+                    SentimentResult(
+                        item_id=item.item_id,
+                        provider="openai",
+                        score=round(score, 6),
+                        confidence=round(confidence, 6),
+                    )
+                )
             except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError, TypeError):
                 # On any error, return neutral with zero confidence
-                results.append(SentimentResult(
-                    item_id=item.item_id,
-                    provider="openai",
-                    score=0.0,
-                    confidence=0.0,
-                ))
+                results.append(
+                    SentimentResult(
+                        item_id=item.item_id,
+                        provider="openai",
+                        score=0.0,
+                        confidence=0.0,
+                    )
+                )
 
         return results
 

@@ -1,11 +1,13 @@
 """Update endpoint template to use a specific SHA tag instead of :latest."""
-import httpx
+
 import json
 import os
 import sys
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID  # noqa: E402
+from runpod_config import INFERENCE_ENDPOINT_ID, TRAINING_ENDPOINT_ID
 
 api_key = os.environ["RUNPOD_API_KEY"]
 sha = sys.argv[1] if len(sys.argv) > 1 else "8a74c133380ecebfa7b685f7a7a22e6cba23f644"
@@ -68,8 +70,17 @@ for name, eid, suffix in [
         "dockerArgs": "",
     }
 
-    for field in ["volumeMountPath", "config", "category", "containerRegistryAuthId",
-                  "isPublic", "ports", "readme", "startScript", "advancedStart"]:
+    for field in [
+        "volumeMountPath",
+        "config",
+        "category",
+        "containerRegistryAuthId",
+        "isPublic",
+        "ports",
+        "readme",
+        "startScript",
+        "advancedStart",
+    ]:
         if field in template and template[field] is not None:
             template_input[field] = template[field]
 

@@ -42,12 +42,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,7 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _canonical_json(payload: dict[str, Any]) -> str:
@@ -206,9 +205,7 @@ class ForecastDistributionArtifact(BaseModel):
             except (TypeError, ValueError):
                 raise ValueError(f"quantile level {key!r} is not a number")
             if not (0.0 < lvl < 1.0):
-                raise ValueError(
-                    f"quantile level {lvl!r} must be strictly in (0, 1)"
-                )
+                raise ValueError(f"quantile level {lvl!r} must be strictly in (0, 1)")
             if not isinstance(val, (int, float)):
                 raise ValueError(f"quantile value for level {lvl!r} must be a number")
             levels.append(lvl)
@@ -221,15 +218,11 @@ class ForecastDistributionArtifact(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _uncertainty_band_brackets_median(self) -> "ForecastDistributionArtifact":
+    def _uncertainty_band_brackets_median(self) -> ForecastDistributionArtifact:
         if self.uncertainty_band_lower > self.median:
-            raise ValueError(
-                "uncertainty_band_lower must be <= median"
-            )
+            raise ValueError("uncertainty_band_lower must be <= median")
         if self.median > self.uncertainty_band_upper:
-            raise ValueError(
-                "uncertainty_band_upper must be >= median"
-            )
+            raise ValueError("uncertainty_band_upper must be >= median")
         return self
 
 
@@ -284,27 +277,21 @@ class AlphaAdapterPolicy(BaseModel):
     @classmethod
     def _signal_type_valid(cls, v: str) -> str:
         if v not in cls._VALID_SIGNAL_TYPES:
-            raise ValueError(
-                f"signal_type must be one of {cls._VALID_SIGNAL_TYPES!r}"
-            )
+            raise ValueError(f"signal_type must be one of {cls._VALID_SIGNAL_TYPES!r}")
         return v
 
     @field_validator("reference_point")
     @classmethod
     def _reference_point_valid(cls, v: str) -> str:
         if v not in cls._VALID_REFERENCE_POINTS:
-            raise ValueError(
-                f"reference_point must be one of {cls._VALID_REFERENCE_POINTS!r}"
-            )
+            raise ValueError(f"reference_point must be one of {cls._VALID_REFERENCE_POINTS!r}")
         return v
 
     @field_validator("normalization")
     @classmethod
     def _normalization_valid(cls, v: str) -> str:
         if v not in cls._VALID_NORMALIZATIONS:
-            raise ValueError(
-                f"normalization must be one of {cls._VALID_NORMALIZATIONS!r}"
-            )
+            raise ValueError(f"normalization must be one of {cls._VALID_NORMALIZATIONS!r}")
         return v
 
     @field_validator("min_confidence")
@@ -419,9 +406,7 @@ def compute_forecast_hash(artifact: ForecastDistributionArtifact) -> str:
     payload.pop("artifact_hash", None)
     # Render quantile keys as stable strings for canonical serialization.
     if "quantiles" in payload and isinstance(payload["quantiles"], dict):
-        payload["quantiles"] = {
-            str(float(k)): v for k, v in payload["quantiles"].items()
-        }
+        payload["quantiles"] = {str(float(k)): v for k, v in payload["quantiles"].items()}
     canonical = _canonical_json(payload)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -458,9 +443,7 @@ class ForecastDistributionWriter:
 
     def _path_for(self, artifact_id: str) -> str:
         """Return the on-disk path for a given ``artifact_id``."""
-        safe = "".join(
-            ch if (ch.isalnum() or ch in ("-", "_")) else "_" for ch in artifact_id
-        )
+        safe = "".join(ch if (ch.isalnum() or ch in ("-", "_")) else "_" for ch in artifact_id)
         return os.path.join(self._output_dir, f"{safe}.json")
 
     def write(self, artifact: ForecastDistributionArtifact) -> str:
@@ -481,9 +464,7 @@ class ForecastDistributionWriter:
         payload = artifact.model_dump(mode="json")
         # Render quantile keys as strings for JSON (JSON keys are always str).
         if isinstance(payload.get("quantiles"), dict):
-            payload["quantiles"] = {
-                str(float(k)): v for k, v in payload["quantiles"].items()
-            }
+            payload["quantiles"] = {str(float(k)): v for k, v in payload["quantiles"].items()}
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, sort_keys=True, default=str)
         return path
@@ -505,7 +486,7 @@ class ForecastDistributionWriter:
             raise ValueError("path must be a non-empty string")
         if not os.path.exists(path):
             raise ValueError(f"artifact file not found: {path!r}")
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
         # Coerce string quantile keys back to floats for the model.
         if isinstance(raw.get("quantiles"), dict):
@@ -601,9 +582,7 @@ class AlphaAdapter:
         the adapter never divides by zero.
         """
         norm = self._policy.normalization
-        band_width = float(
-            forecast.uncertainty_band_upper - forecast.uncertainty_band_lower
-        )
+        band_width = float(forecast.uncertainty_band_upper - forecast.uncertainty_band_lower)
         if norm == "band_width":
             scale = band_width
         elif norm == "std":
@@ -611,7 +590,7 @@ class AlphaAdapter:
             if samples and len(samples) > 1:
                 mean = sum(samples) / len(samples)
                 var = sum((s - mean) ** 2 for s in samples) / len(samples)
-                scale = var ** 0.5
+                scale = var**0.5
             else:
                 scale = band_width
         elif norm == "iqr":
@@ -636,9 +615,7 @@ class AlphaAdapter:
         estimate. We use ``max(0, 1 - band_width / (scale + eps))`` clamped
         to [0, 1]. A zero-width band yields confidence 1.0.
         """
-        band_width = float(
-            forecast.uncertainty_band_upper - forecast.uncertainty_band_lower
-        )
+        band_width = float(forecast.uncertainty_band_upper - forecast.uncertainty_band_lower)
         if band_width <= 0.0:
             return 1.0
         scale = self._scale_value(forecast)
@@ -786,8 +763,6 @@ def validate_forecast_artifact(artifact: ForecastDistributionArtifact) -> bool:
     if stored and stored.strip() and stored != "0" * 64:
         recomputed = compute_forecast_hash(artifact)
         if recomputed != stored:
-            raise ValueError(
-                "artifact_hash does not match recomputed canonical hash"
-            )
+            raise ValueError("artifact_hash does not match recomputed canonical hash")
 
     return True

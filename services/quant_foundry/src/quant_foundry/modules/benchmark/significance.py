@@ -45,7 +45,6 @@ import math
 import random
 from typing import Any
 
-
 __all__ = [
     "bootstrap_sharpe_ci",
     "bootstrap_sharpe_difference_ci",
@@ -115,8 +114,7 @@ def diebold_mariano_test(
     """
     if len(errors_a) != len(errors_b):
         raise ValueError(
-            f"error lists must have the same length; "
-            f"got {len(errors_a)} and {len(errors_b)}",
+            f"error lists must have the same length; got {len(errors_a)} and {len(errors_b)}",
         )
     n = len(errors_a)
     if n < 2:

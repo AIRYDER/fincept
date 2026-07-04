@@ -198,7 +198,7 @@ def _cuda_available() -> bool:
         }
         xgb.train(params, dtrain, num_boost_round=1)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Any failure (no driver, no CUDA, built-without-CUDA) → no GPU.
         return False
 
@@ -391,8 +391,7 @@ class XGBoostTrainer:
             import xgboost as xgb  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError(
-                "XGBoost training requires the 'xgboost' and 'numpy' "
-                f"packages; missing: {exc.name}"
+                f"XGBoost training requires the 'xgboost' and 'numpy' packages; missing: {exc.name}"
             ) from exc
 
         # --- resolve device + objective -------------------------------
@@ -403,9 +402,7 @@ class XGBoostTrainer:
         feature_names = self._extract_feature_names(X)
 
         # --- build the training DMatrix -------------------------------
-        dtrain = self._build_dmatrix(
-            X, y, weights, groups, feature_names, objective, np, xgb
-        )
+        dtrain = self._build_dmatrix(X, y, weights, groups, feature_names, objective, np, xgb)
 
         # --- build the params dict for xgb.train ----------------------
         n_estimators = int(self.params.get("n_estimators", 10))
@@ -419,8 +416,14 @@ class XGBoostTrainer:
         # Pass through any extra params the caller supplied (e.g.
         # subsample, colsample_bytree, min_child_weight, num_class).
         for k, v in self.params.items():
-            if k in {"tree_method", "device", "max_depth", "learning_rate",
-                     "objective", "n_estimators"}:
+            if k in {
+                "tree_method",
+                "device",
+                "max_depth",
+                "learning_rate",
+                "objective",
+                "n_estimators",
+            }:
                 continue
             train_params[k] = v
         # multiclass requires num_class.
@@ -477,7 +480,7 @@ class XGBoostTrainer:
         # Last-resort fallback (numpy array without column roles).
         try:
             n = X.shape[1]  # type: ignore[index]
-        except Exception:  # noqa: BLE001
+        except Exception:
             n = 0
         return [f"f{i}" for i in range(n)]
 
@@ -529,11 +532,7 @@ class XGBoostTrainer:
                 f"task_spec.group_column={self.task_spec.group_column!r})"
             )
         arr = np.asarray(groups)
-        if (
-            arr.dtype.kind in {"i", "u"}
-            and (arr > 0).all()
-            and int(arr.sum()) == n_rows
-        ):
+        if arr.dtype.kind in {"i", "u"} and (arr > 0).all() and int(arr.sum()) == n_rows:
             return [int(g) for g in arr]
         # Treat as group ids → contiguous-run sizes in row order.
         sizes: list[int] = []
@@ -586,12 +585,8 @@ class XGBoostTrainer:
             w_tr = self._select_rows(weights, train_idx) if weights is not None else None
             g_tr = self._select_rows(groups, train_idx) if groups is not None else None
             g_va = self._select_rows(groups, val_idx) if groups is not None else None
-            dtr = self._build_dmatrix(
-                X_tr, y_tr, w_tr, g_tr, feature_names, objective, np, xgb
-            )
-            dva = self._build_dmatrix(
-                X_va, y_va, None, g_va, feature_names, objective, np, xgb
-            )
+            dtr = self._build_dmatrix(X_tr, y_tr, w_tr, g_tr, feature_names, objective, np, xgb)
+            dva = self._build_dmatrix(X_va, y_va, None, g_va, feature_names, objective, np, xgb)
             params = {
                 "tree_method": self.params.get("tree_method", "hist"),
                 "device": device,
@@ -605,8 +600,15 @@ class XGBoostTrainer:
                     num_class = int(np.max(y)) + 1
                 params["num_class"] = int(num_class)
             for k, v in self.params.items():
-                if k in {"tree_method", "device", "max_depth", "learning_rate",
-                         "objective", "n_estimators", "num_class"}:
+                if k in {
+                    "tree_method",
+                    "device",
+                    "max_depth",
+                    "learning_rate",
+                    "objective",
+                    "n_estimators",
+                    "num_class",
+                }:
                     continue
                 params[k] = v
             bst = xgb.train(params, dtr, num_boost_round=n_estimators)
@@ -627,7 +629,7 @@ class XGBoostTrainer:
         """Return the number of rows in X (len or shape[0])."""
         try:
             return int(X.shape[0])  # type: ignore[index]
-        except Exception:  # noqa: BLE001
+        except Exception:
             return len(X)
 
     @staticmethod
@@ -667,22 +669,16 @@ class XGBoostTrainer:
         return [arr[i] for i in idx]
 
     @staticmethod
-    def _compute_metrics(
-        y: Any, preds: Any, objective: str, np: Any
-    ) -> dict[str, float]:
+    def _compute_metrics(y: Any, preds: Any, objective: str, np: Any) -> dict[str, float]:
         """Compute task-appropriate metrics for one fold."""
         y_arr = np.asarray(y, dtype=np.float64)
         p_arr = np.asarray(preds, dtype=np.float64)
         metrics: dict[str, float] = {}
         if objective == "binary:logistic":
             # AUC + logloss.
-            metrics["logloss"] = float(
-                XGBoostTrainer._logloss(y_arr, p_arr, np)
-            )
+            metrics["logloss"] = float(XGBoostTrainer._logloss(y_arr, p_arr, np))
             metrics["auc"] = float(XGBoostTrainer._auc(y_arr, p_arr, np))
-            metrics["error"] = float(
-                np.mean((p_arr >= 0.5).astype(int) != y_arr.astype(int))
-            )
+            metrics["error"] = float(np.mean((p_arr >= 0.5).astype(int) != y_arr.astype(int)))
         elif objective == "reg:squarederror":
             metrics["mse"] = float(np.mean((p_arr - y_arr) ** 2))
             metrics["mae"] = float(np.mean(np.abs(p_arr - y_arr)))
@@ -691,16 +687,12 @@ class XGBoostTrainer:
             metrics["ndcg"] = float(XGBoostTrainer._ndcg(y_arr, p_arr, np))
             metrics["mean_group_gain"] = float(np.mean(p_arr))
         elif objective == "multi:softmax":
-            metrics["merror"] = float(
-                np.mean(preds.astype(int) != y_arr.astype(int))
-            )
+            metrics["merror"] = float(np.mean(preds.astype(int) != y_arr.astype(int)))
             # mlogloss requires class probabilities (2D preds from
             # multi:softprob). multi:softmax returns 1D class indices,
             # so mlogloss is only emitted when probabilities are available.
             if p_arr.ndim == 2:
-                metrics["mlogloss"] = float(
-                    XGBoostTrainer._mlogloss(y_arr, p_arr, np)
-                )
+                metrics["mlogloss"] = float(XGBoostTrainer._mlogloss(y_arr, p_arr, np))
         else:
             metrics["mse"] = float(np.mean((p_arr - y_arr) ** 2))
         return metrics
@@ -739,13 +731,9 @@ class XGBoostTrainer:
         if k == 0:
             return 0.0
         order_pred = np.argsort(-p)[:k]
-        dcg = float(np.sum(
-            (2 ** y[order_pred] - 1) / np.log2(np.arange(2, k + 2))
-        ))
+        dcg = float(np.sum((2 ** y[order_pred] - 1) / np.log2(np.arange(2, k + 2))))
         order_ideal = np.argsort(-y)[:k]
-        idcg = float(np.sum(
-            (2 ** y[order_ideal] - 1) / np.log2(np.arange(2, k + 2))
-        ))
+        idcg = float(np.sum((2 ** y[order_ideal] - 1) / np.log2(np.arange(2, k + 2))))
         if idcg == 0:
             return 0.0
         return dcg / idcg
@@ -778,22 +766,19 @@ class XGBoostTrainer:
         """
         if self._model is None:
             raise RuntimeError(
-                "get_feature_importance() called before train(); "
-                "no model is available"
+                "get_feature_importance() called before train(); no model is available"
             )
         return self._extract_importance(self._model, self._feature_names or [])
 
     @staticmethod
-    def _extract_importance(
-        model: Any, feature_names: list[str]
-    ) -> dict[str, dict[str, float]]:
+    def _extract_importance(model: Any, feature_names: list[str]) -> dict[str, dict[str, float]]:
         """Extract gain/weight/cover importance from a Booster."""
         out: dict[str, dict[str, float]] = {}
         raw: dict[str, dict[str, float]] = {}
         for itype in IMPORTANCE_TYPES:
             try:
                 scores = model.get_score(importance_type=itype)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 scores = {}
             for fname, val in scores.items():
                 raw.setdefault(fname, {})[itype] = float(val)
@@ -826,15 +811,12 @@ class XGBoostTrainer:
         if not isinstance(path, str) or not path.strip():
             raise ValueError("artifact path must be a non-empty string")
         if self._model is None:
-            raise RuntimeError(
-                "save_artifact() called before train(); no model to save"
-            )
+            raise RuntimeError("save_artifact() called before train(); no model to save")
         try:
             import xgboost as xgb  # type: ignore[import-not-found]  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "saving an XGBoost artifact requires the 'xgboost' "
-                f"package; missing: {exc.name}"
+                f"saving an XGBoost artifact requires the 'xgboost' package; missing: {exc.name}"
             ) from exc
         # Ensure the parent directory exists (best-effort; ignore errors
         # for paths that are already in the cwd).
@@ -847,9 +829,7 @@ class XGBoostTrainer:
         # to rely on xgboost's extension sniffing and default to UBJ for
         # unknown extensions by appending .ubj internally.
         lower = path.lower()
-        if lower.endswith(".json"):
-            self._model.save_model(path)
-        elif lower.endswith(".ubj"):
+        if lower.endswith(".json") or lower.endswith(".ubj"):
             self._model.save_model(path)
         else:
             # Unknown extension → write UBJ to the given path. XGBoost

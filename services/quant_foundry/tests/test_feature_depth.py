@@ -21,8 +21,6 @@ import math
 import pathlib
 import sys
 
-import pytest
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -55,16 +53,18 @@ def _make_bars(
     price = base_price
     for i in range(n_days):
         ret = drift + rng.gauss(0, volatility)
-        price *= (1.0 + ret)
-        bars.append(PriceBar(
-            symbol=symbol,
-            ts_ns=start_ns + i * NS_PER_DAY,
-            open=price * 0.999,
-            high=price * 1.005,
-            low=price * 0.995,
-            close=price,
-            volume=1_000_000.0,
-        ))
+        price *= 1.0 + ret
+        bars.append(
+            PriceBar(
+                symbol=symbol,
+                ts_ns=start_ns + i * NS_PER_DAY,
+                open=price * 0.999,
+                high=price * 1.005,
+                low=price * 0.995,
+                close=price,
+                volume=1_000_000.0,
+            )
+        )
     return bars
 
 
@@ -97,7 +97,7 @@ def test_time_decay_exponential_weighting() -> None:
         config={"half_life_days": 2.0, "lookback_days": 30},
     )
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Three items at 0d, 5d, 10d before the decision time.
     # The decision time is the latest item's available_at_ns.
@@ -142,7 +142,8 @@ def test_time_decay_exponential_weighting() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 20 * NS_PER_DAY,
@@ -157,9 +158,7 @@ def test_time_decay_exponential_weighting() -> None:
 
     # Flat mean would be (0.9 - 0.9 + 0.9) / 3 = 0.3
     # Decay-weighted should be higher (closer to 0.9) because recent dominates
-    assert decay_mean > 0.3, (
-        f"decay-weighted mean {decay_mean} should exceed flat mean 0.3"
-    )
+    assert decay_mean > 0.3, f"decay-weighted mean {decay_mean} should exceed flat mean 0.3"
 
 
 def test_time_decay_half_life() -> None:
@@ -177,7 +176,7 @@ def test_time_decay_half_life() -> None:
         config={"half_life_days": 2.0, "lookback_days": 30},
     )
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Two items: one fresh (age 0), one 2 days old.
     # Fresh has sentiment -1.0, old has sentiment +1.0.
@@ -209,7 +208,8 @@ def test_time_decay_half_life() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 20 * NS_PER_DAY,
@@ -240,7 +240,7 @@ def test_time_decay_lookback_window() -> None:
         config={"half_life_days": 3.0, "lookback_days": 5},
     )
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # An item 10 days old (outside 5-day lookback) and a fresh item.
     items = [
@@ -269,7 +269,8 @@ def test_time_decay_lookback_window() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 20 * NS_PER_DAY,
@@ -310,7 +311,7 @@ def test_engagement_weighted_reddit() -> None:
         config={"lookback_days": 30},
     )
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Two Reddit items at the same time: low-score with +1.0 sentiment,
     # high-score with -1.0 sentiment.  High-score item should dominate.
@@ -342,7 +343,8 @@ def test_engagement_weighted_reddit() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 20 * NS_PER_DAY,
@@ -373,7 +375,7 @@ def test_engagement_weighted_newsapi() -> None:
         config={"lookback_days": 30},
     )
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     items = [
         MediaItem(
@@ -401,7 +403,8 @@ def test_engagement_weighted_newsapi() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 20 * NS_PER_DAY,
@@ -411,9 +414,7 @@ def test_engagement_weighted_newsapi() -> None:
     eng_mean = feats["sent_eng_earnings"]
 
     # Equal weighting → simple mean = (0.8 + 0.4) / 2 = 0.6
-    assert abs(eng_mean - 0.6) < 1e-5, (
-        f"newsapi equal-weighted mean {eng_mean} != 0.6"
-    )
+    assert abs(eng_mean - 0.6) < 1e-5, f"newsapi equal-weighted mean {eng_mean} != 0.6"
 
 
 def test_engagement_weighted_log_scale() -> None:
@@ -425,7 +426,7 @@ def test_engagement_weighted_log_scale() -> None:
 
     mod = EngagementWeightedFeatures(config={"lookback_days": 30})
 
-    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 6, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # A viral post (score=1_000_000) vs a normal post (score=10).
     viral = MediaItem(
@@ -456,9 +457,7 @@ def test_engagement_weighted_log_scale() -> None:
     # The ratio is ~5.7x, NOT 100000x — log scale tames the viral post.
     assert w_viral > w_normal
     ratio = w_viral / w_normal
-    assert ratio < 20.0, (
-        f"log-scale ratio {ratio} should be modest (< 20), not 100000x"
-    )
+    assert ratio < 20.0, f"log-scale ratio {ratio} should be modest (< 20), not 100000x"
 
 
 # --------------------------------------------------------------------------- #
@@ -511,9 +510,7 @@ def test_interactions_only_nonzero() -> None:
     annotated = mod.annotate_row(row)
 
     # No interaction feature should involve earnings
-    interaction_keys = [
-        k for k in annotated if "_x_" in k
-    ]
+    interaction_keys = [k for k in annotated if "_x_" in k]
     for key in interaction_keys:
         assert "earnings" not in key, (
             f"interaction feature {key} should not involve earnings (sent_earnings=0)"
@@ -530,8 +527,14 @@ def test_interactions_max_limit() -> None:
     load_all_modules()
     # Use many event types to generate many candidate pairs
     event_types = [
-        "regulatory", "earnings", "guidance", "macro", "product",
-        "security", "litigation", "partnership",
+        "regulatory",
+        "earnings",
+        "guidance",
+        "macro",
+        "product",
+        "security",
+        "litigation",
+        "partnership",
     ]
     mod = ModuleRegistry.instance().create(
         "feature:interactions:1.0.0",
@@ -577,7 +580,7 @@ def test_pre_event_momentum_basic() -> None:
     load_all_modules()
     mod = ModuleRegistry.instance().create("feature:pre-event-momentum:1.0.0")
 
-    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # 100 days of bars, decision at day 80
     bars = _make_bars("AAPL", base_ns, 100, seed=42)
@@ -599,7 +602,8 @@ def test_pre_event_momentum_basic() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 200 * NS_PER_DAY,
@@ -637,22 +641,24 @@ def test_pre_event_momentum_pit_correctness() -> None:
     load_all_modules()
     mod = ModuleRegistry.instance().create("feature:pre-event-momentum:1.0.0")
 
-    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
     decision_ns = base_ns + 10 * NS_PER_DAY
 
     # Create bars: some before, some after the decision time.
     # The bar AT decision_ns should NOT be used (strict <).
     bars = []
     for i in range(20):
-        bars.append(PriceBar(
-            symbol="AAPL",
-            ts_ns=base_ns + i * NS_PER_DAY,
-            open=100.0 + i,
-            high=101.0 + i,
-            low=99.0 + i,
-            close=100.0 + i,  # close increases by 1 each day
-            volume=1_000_000.0,
-        ))
+        bars.append(
+            PriceBar(
+                symbol="AAPL",
+                ts_ns=base_ns + i * NS_PER_DAY,
+                open=100.0 + i,
+                high=101.0 + i,
+                low=99.0 + i,
+                close=100.0 + i,  # close increases by 1 each day
+                volume=1_000_000.0,
+            )
+        )
 
     items = [
         MediaItem(
@@ -670,7 +676,8 @@ def test_pre_event_momentum_pit_correctness() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 200 * NS_PER_DAY,
@@ -701,7 +708,7 @@ def test_pre_event_momentum_insufficient_history() -> None:
     load_all_modules()
     mod = ModuleRegistry.instance().create("feature:pre-event-momentum:1.0.0")
 
-    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    base_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
     decision_ns = base_ns + 5 * NS_PER_DAY
 
     # Only 3 bars — not enough for 20d/60d volatility or 5d return
@@ -723,7 +730,8 @@ def test_pre_event_momentum_insufficient_history() -> None:
     ]
 
     result = mod.compute_features(
-        items, sentiments,
+        items,
+        sentiments,
         symbols=["AAPL"],
         start_ns=base_ns,
         end_ns=base_ns + 200 * NS_PER_DAY,

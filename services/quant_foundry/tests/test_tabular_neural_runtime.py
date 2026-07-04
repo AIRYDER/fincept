@@ -11,7 +11,6 @@ training + forward pass + artifact round-trip run on CPU.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -19,8 +18,8 @@ import pytest
 pytest.importorskip("torch")
 
 from quant_foundry.tabular_neural_runtime import (
-    GPUStatus,
     GPUMemorySnapshot,
+    GPUStatus,
     ImageSpec,
     NeuralCanaryConfig,
     NeuralCanaryResult,
@@ -32,7 +31,6 @@ from quant_foundry.tabular_neural_runtime import (
     run_neural_canary,
     save_neural_artifact,
 )
-
 
 # ---------------------------------------------------------------------------
 # GPUStatus
@@ -100,9 +98,7 @@ class TestGPUMemorySnapshot:
         assert snap.free_mb is None
 
     def test_frozen(self) -> None:
-        snap = GPUMemorySnapshot(
-            allocated_mb=0.0, reserved_mb=0.0, timestamp="t"
-        )
+        snap = GPUMemorySnapshot(allocated_mb=0.0, reserved_mb=0.0, timestamp="t")
         with pytest.raises(Exception):
             snap.allocated_mb = 1.0  # type: ignore[misc]
 
@@ -131,9 +127,7 @@ class TestNeuralCanaryConfig:
         assert cfg.seed == 42
 
     def test_custom(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=20, hidden_dims=[64, 32, 16], output_dim=3, epochs=2
-        )
+        cfg = NeuralCanaryConfig(input_dim=20, hidden_dims=[64, 32, 16], output_dim=3, epochs=2)
         assert cfg.input_dim == 20
         assert cfg.hidden_dims == [64, 32, 16]
         assert cfg.output_dim == 3
@@ -230,7 +224,11 @@ class TestGPUProbe:
         snap = get_gpu_memory_snapshot()
         # ISO-8601 string with timezone offset.
         assert "T" in snap.timestamp
-        assert snap.timestamp.endswith("+00:00") or snap.timestamp.endswith("Z") or "+" in snap.timestamp
+        assert (
+            snap.timestamp.endswith("+00:00")
+            or snap.timestamp.endswith("Z")
+            or "+" in snap.timestamp
+        )
 
     def test_get_gpu_memory_snapshot_no_gpu_zeros(self) -> None:
         snap = get_gpu_memory_snapshot()
@@ -259,9 +257,7 @@ class TestTinyTabularNet:
     def test_build_and_forward(self) -> None:
         import torch
 
-        net = TinyTabularNet(
-            input_dim=10, hidden_dims=[32, 16], output_dim=1
-        )
+        net = TinyTabularNet(input_dim=10, hidden_dims=[32, 16], output_dim=1)
         net.eval()
         x = torch.randn(8, 10)
         out = net.forward(x)
@@ -270,9 +266,7 @@ class TestTinyTabularNet:
     def test_forward_multi_output(self) -> None:
         import torch
 
-        net = TinyTabularNet(
-            input_dim=5, hidden_dims=[16], output_dim=3
-        )
+        net = TinyTabularNet(input_dim=5, hidden_dims=[16], output_dim=3)
         net.eval()
         x = torch.randn(4, 5)
         out = net.forward(x)
@@ -281,9 +275,7 @@ class TestTinyTabularNet:
     def test_binary_sigmoid_output(self) -> None:
         import torch
 
-        net = TinyTabularNet(
-            input_dim=4, hidden_dims=[8], output_dim=1, binary=True
-        )
+        net = TinyTabularNet(input_dim=4, hidden_dims=[8], output_dim=1, binary=True)
         net.eval()
         x = torch.randn(16, 4)
         out = net.forward(x)
@@ -367,50 +359,38 @@ class TestRunNeuralCanary:
         assert len(result.memory_snapshots) == 2
 
     def test_canary_zero_epochs(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=0, batch_size=8, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=0, batch_size=8, device="cpu")
         result = run_neural_canary(cfg)
         assert result.trained is False
         # initial + final snapshot
         assert len(result.memory_snapshots) == 2
 
     def test_canary_saves_artifact(self, tmp_path: Path) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu")
         artifact = tmp_path / "model.pt"
         result = run_neural_canary(cfg, artifact_path=str(artifact))
         assert result.artifact_path == str(artifact)
         assert artifact.exists()
 
     def test_canary_creates_parent_dirs(self, tmp_path: Path) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu")
         artifact = tmp_path / "nested" / "deep" / "model.pt"
         result = run_neural_canary(cfg, artifact_path=str(artifact))
         assert result.artifact_path == str(artifact)
         assert artifact.exists()
 
     def test_canary_no_artifact_when_path_none(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=1, batch_size=8, device="cpu")
         result = run_neural_canary(cfg, artifact_path=None)
         assert result.artifact_path is None
 
     def test_canary_invalid_epochs(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=-1, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=-1, device="cpu")
         with pytest.raises(ValueError):
             run_neural_canary(cfg)
 
     def test_canary_invalid_batch_size(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=1, batch_size=0, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=1, batch_size=0, device="cpu")
         with pytest.raises(ValueError):
             run_neural_canary(cfg)
 
@@ -422,16 +402,12 @@ class TestRunNeuralCanary:
             run_neural_canary(cfg)
 
     def test_canary_gpu_status_present(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=1, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=1, device="cpu")
         result = run_neural_canary(cfg)
         assert isinstance(result.gpu_status, GPUStatus)
 
     def test_canary_memory_snapshots_typed(self) -> None:
-        cfg = NeuralCanaryConfig(
-            input_dim=4, hidden_dims=[8], epochs=2, device="cpu"
-        )
+        cfg = NeuralCanaryConfig(input_dim=4, hidden_dims=[8], epochs=2, device="cpu")
         result = run_neural_canary(cfg)
         for snap in result.memory_snapshots:
             assert isinstance(snap, GPUMemorySnapshot)
@@ -446,12 +422,8 @@ class TestArtifactPersistence:
     def test_save_load_roundtrip(self, tmp_path: Path) -> None:
         import torch
 
-        cfg = NeuralCanaryConfig(
-            input_dim=6, hidden_dims=[12], output_dim=2, device="cpu"
-        )
-        net = TinyTabularNet(
-            input_dim=6, hidden_dims=[12], output_dim=2
-        )
+        cfg = NeuralCanaryConfig(input_dim=6, hidden_dims=[12], output_dim=2, device="cpu")
+        net = TinyTabularNet(input_dim=6, hidden_dims=[12], output_dim=2)
         net.eval()
         save_neural_artifact(net, str(tmp_path / "m.pt"))
 

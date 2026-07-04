@@ -1,7 +1,9 @@
 """Fetch RunPod pod logs for the training endpoint."""
-import httpx
+
 import json
 import os
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = os.environ["RUNPOD_ENDPOINT_ID"]

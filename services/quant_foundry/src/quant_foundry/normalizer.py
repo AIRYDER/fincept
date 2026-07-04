@@ -48,14 +48,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -124,7 +123,7 @@ class ColumnNormalizerStats(BaseModel):
     n_missing: int
 
     @model_validator(mode="after")
-    def _validate_non_negative_counts(self) -> "ColumnNormalizerStats":
+    def _validate_non_negative_counts(self) -> ColumnNormalizerStats:
         """Ensure sample / missing counts are non-negative and missing <= samples."""
         if self.n_samples < 0:
             raise ValueError("n_samples must be non-negative")
@@ -154,7 +153,7 @@ class NormalizerArtifact(BaseModel):
     fold_id: int | None = None
 
     @model_validator(mode="after")
-    def _validate_no_duplicate_columns(self) -> "NormalizerArtifact":
+    def _validate_no_duplicate_columns(self) -> NormalizerArtifact:
         """Reject duplicate column names — each column must appear once."""
         names = [c.column_name for c in self.columns]
         seen: set[str] = set()
@@ -165,7 +164,7 @@ class NormalizerArtifact(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_hash_matches_content(self) -> "NormalizerArtifact":
+    def _validate_hash_matches_content(self) -> NormalizerArtifact:
         """Ensure ``normalizer_hash`` matches the recomputed content hash."""
         expected = compute_normalizer_hash(list(self.columns))
         if expected != self.normalizer_hash:
@@ -176,7 +175,7 @@ class NormalizerArtifact(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_artifact_id_nonempty(self) -> "NormalizerArtifact":
+    def _validate_artifact_id_nonempty(self) -> NormalizerArtifact:
         """Ensure ``artifact_id`` is a non-empty string."""
         if not self.artifact_id:
             raise ValueError("artifact_id must be a non-empty string")
@@ -294,26 +293,22 @@ def apply_normalization(values: Any, stats: ColumnNormalizerStats) -> Any:
     if stats.method == NormalizationMethod.STANDARD:
         if stats.mean is None or stats.std is None:
             raise ValueError(
-                f"STANDARD normalization requires mean and std for column "
-                f"{stats.column_name!r}"
+                f"STANDARD normalization requires mean and std for column {stats.column_name!r}"
             )
         if stats.std == 0:
             raise ValueError(
-                f"STANDARD normalization requires non-zero std for column "
-                f"{stats.column_name!r}"
+                f"STANDARD normalization requires non-zero std for column {stats.column_name!r}"
             )
         return (arr - stats.mean) / stats.std
 
     if stats.method == NormalizationMethod.ROBUST:
         if stats.median is None or stats.iqr is None:
             raise ValueError(
-                f"ROBUST normalization requires median and iqr for column "
-                f"{stats.column_name!r}"
+                f"ROBUST normalization requires median and iqr for column {stats.column_name!r}"
             )
         if stats.iqr == 0:
             raise ValueError(
-                f"ROBUST normalization requires non-zero iqr for column "
-                f"{stats.column_name!r}"
+                f"ROBUST normalization requires non-zero iqr for column {stats.column_name!r}"
             )
         return (arr - stats.median) / stats.iqr
 
@@ -326,8 +321,7 @@ def apply_normalization(values: Any, stats: ColumnNormalizerStats) -> Any:
         span = stats.max_val - stats.min_val
         if span == 0:
             raise ValueError(
-                f"MINMAX normalization requires non-zero range for column "
-                f"{stats.column_name!r}"
+                f"MINMAX normalization requires non-zero range for column {stats.column_name!r}"
             )
         return (arr - stats.min_val) / span
 
@@ -416,7 +410,7 @@ def merge_fold_normalizers(artifacts: list[NormalizerArtifact]) -> NormalizerArt
                 break
 
     merged_hash = compute_normalizer_hash(merged_columns)
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(UTC).isoformat()
     # Derive a merged artifact id from the first fold's id.
     merged_id = f"{base.artifact_id}::merged"
 
@@ -548,7 +542,7 @@ class Normalizer:
             col_stats.append(self._compute_column_stats(df[col], col))
 
         normalizer_hash = compute_normalizer_hash(col_stats)
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         artifact_id = f"normalizer::{normalizer_hash[:16]}"
 
         artifact = NormalizerArtifact(
@@ -591,9 +585,7 @@ class Normalizer:
         result = df.copy()
         for col in columns:
             if col not in stats_by_name:
-                raise ValueError(
-                    f"column {col!r} not found in normalizer artifact"
-                )
+                raise ValueError(f"column {col!r} not found in normalizer artifact")
             stats = stats_by_name[col]
             arr = self._to_array(df[col])
             arr = apply_missing_policy(arr, stats)
@@ -601,9 +593,7 @@ class Normalizer:
             result[col] = arr
         return result
 
-    def fit_transform(
-        self, df: Any, columns: list[str]
-    ) -> tuple[Any, NormalizerArtifact]:
+    def fit_transform(self, df: Any, columns: list[str]) -> tuple[Any, NormalizerArtifact]:
         """Fit the normalizer and transform the DataFrame in one call.
 
         Args:

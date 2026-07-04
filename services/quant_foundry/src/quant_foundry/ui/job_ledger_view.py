@@ -23,14 +23,14 @@ Design invariants
 from __future__ import annotations
 
 from collections import Counter
-from typing import Sequence
+from collections.abc import Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 __all__ = [
-    "JobLedgerViewConfig",
     "JobLedgerRow",
     "JobLedgerView",
+    "JobLedgerViewConfig",
     "format_bool",
     "format_cost",
     "format_status",
@@ -244,18 +244,14 @@ class JobLedgerViewConfig(BaseModel):
     @classmethod
     def _sort_by_in_set(cls, v: str) -> str:
         if v not in _SORT_KEYS:
-            raise ValueError(
-                f"sort_by must be one of {sorted(_SORT_KEYS)}, got {v!r}"
-            )
+            raise ValueError(f"sort_by must be one of {sorted(_SORT_KEYS)}, got {v!r}")
         return v
 
     @field_validator("sort_order")
     @classmethod
     def _sort_order_in_set(cls, v: str) -> str:
         if v not in _SORT_ORDERS:
-            raise ValueError(
-                f"sort_order must be one of {sorted(_SORT_ORDERS)}, got {v!r}"
-            )
+            raise ValueError(f"sort_order must be one of {sorted(_SORT_ORDERS)}, got {v!r}")
         return v
 
 
@@ -307,9 +303,7 @@ class JobLedgerRow(BaseModel):
     @classmethod
     def _status_known(cls, v: str) -> str:
         if v not in KNOWN_STATUSES:
-            raise ValueError(
-                f"status must be one of {sorted(KNOWN_STATUSES)}, got {v!r}"
-            )
+            raise ValueError(f"status must be one of {sorted(KNOWN_STATUSES)}, got {v!r}")
         return v
 
     @field_validator("cost_estimate")
@@ -403,7 +397,12 @@ class JobLedgerView:
             return "\n".join(lines)
 
         for row in sorted_rows:
-            cells: list[str] = [row.job_id, format_status(row.status), row.dataset_id, row.model_family]
+            cells: list[str] = [
+                row.job_id,
+                format_status(row.status),
+                row.dataset_id,
+                row.model_family,
+            ]
             if self.config.show_gpu_type:
                 cells.append(row.gpu_type if row.gpu_type else "—")
             if self.config.show_cost:
@@ -440,15 +439,9 @@ class JobLedgerView:
 
         total = len(rows)
         status_counts = Counter(row.status for row in rows)
-        total_cost = sum(
-            (r.cost_estimate or 0.0) for r in rows
-        )
-        verified_count = sum(
-            1 for r in rows if r.artifact_verified is True
-        )
-        promo_count = sum(
-            1 for r in rows if r.promotion_eligible is True
-        )
+        total_cost = sum((r.cost_estimate or 0.0) for r in rows)
+        verified_count = sum(1 for r in rows if r.artifact_verified is True)
+        promo_count = sum(1 for r in rows if r.promotion_eligible is True)
 
         lines: list[str] = []
         lines.append("=== Job Ledger Summary ===")
@@ -495,9 +488,7 @@ class JobLedgerView:
         lines.append(f"Created at:       {row.created_at}")
         return "\n".join(lines)
 
-    def filter_by_status(
-        self, rows: Sequence[JobLedgerRow], status: str
-    ) -> list[JobLedgerRow]:
+    def filter_by_status(self, rows: Sequence[JobLedgerRow], status: str) -> list[JobLedgerRow]:
         """Return only rows whose ``status`` equals ``status``.
 
         Args:
@@ -536,7 +527,7 @@ class JobLedgerView:
         if key == "cost":
             return sorted(
                 items,
-                key=lambda r: (r.cost_estimate if r.cost_estimate is not None else -1.0),
+                key=lambda r: r.cost_estimate if r.cost_estimate is not None else -1.0,
                 reverse=reverse,
             )
         # Unreachable: config validation restricts sort_by.

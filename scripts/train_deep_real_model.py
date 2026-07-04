@@ -14,6 +14,7 @@ Usage:
     uv run python scripts/train_deep_real_model.py
     uv run python scripts/train_deep_real_model.py --years 10 --symbols "AAPL,MSFT,..."
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +25,7 @@ import shutil
 import sys
 import time
 from collections.abc import Sequence
+from typing import Any
 
 # Bootstrap paths
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -36,6 +38,8 @@ if str(_SHARED) not in sys.path:
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from datetime import UTC
 
 from quant_foundry.feature_availability import FeatureAvailabilityReport  # noqa: E402
 from quant_foundry.feature_lake import (  # noqa: E402
@@ -63,20 +67,20 @@ FEATURE_NAMES: tuple[str, ...] = (
     # --- Volatility (4) ---
     "vol_20d",
     "vol_60d",
-    "vol_ratio",          # today's volume / 20-day mean volume
-    "vol_regime",         # vol_20d / vol_60d (short-term vs long-term vol)
+    "vol_ratio",  # today's volume / 20-day mean volume
+    "vol_regime",  # vol_20d / vol_60d (short-term vs long-term vol)
     # --- Technical indicators (5) ---
-    "rsi_14",             # Relative Strength Index (14-day)
-    "bb_position",        # Bollinger Band position (0 = lower band, 1 = upper band)
-    "price_vs_sma50",     # close / SMA(50) - 1
-    "price_vs_sma200",    # close / SMA(200) - 1
-    "atr_ratio",          # ATR(14) / close (normalized average true range)
+    "rsi_14",  # Relative Strength Index (14-day)
+    "bb_position",  # Bollinger Band position (0 = lower band, 1 = upper band)
+    "price_vs_sma50",  # close / SMA(50) - 1
+    "price_vs_sma200",  # close / SMA(200) - 1
+    "atr_ratio",  # ATR(14) / close (normalized average true range)
     # --- Cross-asset (2) ---
-    "spy_corr_20d",       # 20-day rolling correlation with SPY returns
-    "spy_beta_60d",       # 60-day rolling beta vs SPY
+    "spy_corr_20d",  # 20-day rolling correlation with SPY returns
+    "spy_beta_60d",  # 60-day rolling beta vs SPY
     # --- VIX / regime (2) ---
-    "vix_level",          # VIX level (volatility regime proxy)
-    "vix_change_5d",      # VIX 5-day change
+    "vix_level",  # VIX level (volatility regime proxy)
+    "vix_change_5d",  # VIX 5-day change
 )
 
 
@@ -85,11 +89,12 @@ def fetch_yfinance_bars(
     years: int,
 ) -> dict[str, list[dict[str, float]]]:
     """Fetch real daily OHLCV bars from Yahoo Finance."""
-    import yfinance as yf
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    end = datetime.now(timezone.utc)
-    start = datetime(end.year - years, end.month, end.day, tzinfo=timezone.utc)
+    import yfinance as yf
+
+    end = datetime.now(UTC)
+    start = datetime(end.year - years, end.month, end.day, tzinfo=UTC)
 
     bars_by_symbol: dict[str, list[dict[str, float]]] = {}
     for sym in symbols:
@@ -149,7 +154,9 @@ def compute_rsi(close: list[float], period: int = 14) -> list[float]:
     return rsi.tolist()
 
 
-def compute_atr(high: list[float], low: list[float], close: list[float], period: int = 14) -> list[float]:
+def compute_atr(
+    high: list[float], low: list[float], close: list[float], period: int = 14
+) -> list[float]:
     """Compute Average True Range."""
     import numpy as np
 
@@ -166,7 +173,7 @@ def compute_atr(high: list[float], low: list[float], close: list[float], period:
             abs(low[i] - close[i - 1]),
         )
 
-    atr[period] = np.mean(tr[1:period + 1])
+    atr[period] = np.mean(tr[1 : period + 1])
     for i in range(period + 1, n):
         atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
 
@@ -182,7 +189,7 @@ def compute_sma(values: list[float], period: int) -> list[float]:
     if n < period:
         return sma.tolist()
     cumsum = np.cumsum(values)
-    sma[period - 1:] = (cumsum[period - 1:] - np.concatenate([[0], cumsum[:-period]])) / period
+    sma[period - 1 :] = (cumsum[period - 1 :] - np.concatenate([[0], cumsum[:-period]])) / period
     return sma.tolist()
 
 
@@ -197,8 +204,8 @@ def compute_rolling_corr(ret_a: list[float], ret_b: list[float], window: int) ->
     a = np.array(ret_a)
     b = np.array(ret_b)
     for i in range(window - 1, n):
-        a_w = a[i - window + 1: i + 1]
-        b_w = b[i - window + 1: i + 1]
+        a_w = a[i - window + 1 : i + 1]
+        b_w = b[i - window + 1 : i + 1]
         if np.std(a_w) > 0 and np.std(b_w) > 0:
             corr[i] = float(np.corrcoef(a_w, b_w)[0, 1])
     return corr.tolist()
@@ -215,8 +222,8 @@ def compute_rolling_beta(ret_a: list[float], ret_b: list[float], window: int) ->
     a = np.array(ret_a)
     b = np.array(ret_b)
     for i in range(window - 1, n):
-        a_w = a[i - window + 1: i + 1]
-        b_w = b[i - window + 1: i + 1]
+        a_w = a[i - window + 1 : i + 1]
+        b_w = b[i - window + 1 : i + 1]
         var_b = np.var(b_w)
         if var_b > 0:
             beta[i] = float(np.cov(a_w, b_w)[0, 1] / var_b)
@@ -270,14 +277,14 @@ def compute_rich_features(
     vol_60d = np.zeros(n)
     for i in range(n):
         if i >= 19:
-            vol_20d[i] = float(np.std(log_ret[i - 19: i + 1], ddof=0))
+            vol_20d[i] = float(np.std(log_ret[i - 19 : i + 1], ddof=0))
         if i >= 59:
-            vol_60d[i] = float(np.std(log_ret[i - 59: i + 1], ddof=0))
+            vol_60d[i] = float(np.std(log_ret[i - 59 : i + 1], ddof=0))
 
     vol_mean_20 = np.zeros(n)
     for i in range(n):
         if i >= 19:
-            vol_mean_20[i] = float(np.mean(volume[i - 19: i + 1]))
+            vol_mean_20[i] = float(np.mean(volume[i - 19 : i + 1]))
     vol_ratio = np.where(vol_mean_20 > 0, volume / np.where(vol_mean_20 > 0, vol_mean_20, 1.0), 1.0)
     vol_regime = np.where(vol_60d > 0, vol_20d / np.where(vol_60d > 0, vol_60d, 1.0), 1.0)
 
@@ -288,11 +295,13 @@ def compute_rich_features(
     sma20 = np.array(compute_sma(close.tolist(), 20))
     std20 = np.zeros(n)
     for i in range(19, n):
-        std20[i] = float(np.std(close[i - 19: i + 1], ddof=0))
+        std20[i] = float(np.std(close[i - 19 : i + 1], ddof=0))
     upper = sma20 + 2 * std20
     lower = sma20 - 2 * std20
     bb_width = upper - lower
-    bb_position = np.where(bb_width > 0, (close - lower) / np.where(bb_width > 0, bb_width, 1.0), 0.5)
+    bb_position = np.where(
+        bb_width > 0, (close - lower) / np.where(bb_width > 0, bb_width, 1.0), 0.5
+    )
 
     sma50 = np.array(compute_sma(close.tolist(), 50))
     sma200 = np.array(compute_sma(close.tolist(), 200))
@@ -372,11 +381,13 @@ def compute_rich_features(
 
 def feature_schema_hash() -> str:
     import hashlib
+
     return hashlib.sha256(":".join(FEATURE_NAMES).encode()).hexdigest()
 
 
 def label_schema_hash(horizon_days: int) -> str:
     import hashlib
+
     return hashlib.sha256(f"binary:forward_return:{horizon_days}d".encode()).hexdigest()
 
 
@@ -391,7 +402,6 @@ def build_manifest(
     source_refs: list[str],
 ) -> tuple[Any, FeatureAvailabilityReport, list[dict]]:
     """Build FeatureLakeManifest from rich features."""
-    from typing import Any
 
     symbols = sorted(bars_by_symbol.keys())
     universe = tuple(UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in symbols)
@@ -412,8 +422,7 @@ def build_manifest(
     for r in all_data_rows:
         dt = int(r["decision_time"])
         features = tuple(
-            FeatureValue(name=name, value=float(r[name]), observed_at=dt)
-            for name in FEATURE_NAMES
+            FeatureValue(name=name, value=float(r[name]), observed_at=dt) for name in FEATURE_NAMES
         )
         feature_rows.append(
             FeatureRow(
@@ -477,10 +486,26 @@ def write_manifest_json(manifest, availability, out_path: pathlib.Path) -> None:
 
 # Default universe — 20 liquid large-caps across sectors
 DEFAULT_SYMBOLS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",   # tech
-    "META", "TSLA", "JPM", "V", "JNJ",          # mixed
-    "WMT", "PG", "UNH", "HD", "MA",             # consumer/health
-    "DIS", "BAC", "XOM", "KO", "PEP",           # diversified
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",  # tech
+    "META",
+    "TSLA",
+    "JPM",
+    "V",
+    "JNJ",  # mixed
+    "WMT",
+    "PG",
+    "UNH",
+    "HD",
+    "MA",  # consumer/health
+    "DIS",
+    "BAC",
+    "XOM",
+    "KO",
+    "PEP",  # diversified
 ]
 
 
@@ -541,7 +566,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ]
 
     manifest, availability, data_rows = build_manifest(
-        bars_by_symbol, spy_bars, vix_bars,
+        bars_by_symbol,
+        spy_bars,
+        vix_bars,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,
         dataset_id=dataset_id,
@@ -570,7 +597,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     labels = [r["label"] for r in data_rows]
     n_up = sum(1 for l in labels if l == 1.0)
-    print(f"  label balance:       {n_up} up / {len(labels) - n_up} down ({n_up / len(labels) * 100:.1f}% up)")
+    print(
+        f"  label balance:       {n_up} up / {len(labels) - n_up} down ({n_up / len(labels) * 100:.1f}% up)"
+    )
 
     # --- 3. Set up gateway ---
     print(f"\n{'=' * 70}")
@@ -625,12 +654,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     req = RunPodTrainingRequest.model_validate(request_payload)
 
     print(f"  job_id:       {req.job_id}")
-    print(f"  model:        LightGBM")
+    print("  model:        LightGBM")
     print(f"  search_space: {search_space}")
     print(f"  folds:        {args.n_folds}")
     print(f"  dataset:      {n_written} rows, {len(FEATURE_NAMES)} features")
-
-    from quant_foundry.outbox import JobStatus
 
     gateway.outbox.enqueue(
         job_id=job_id,
@@ -649,6 +676,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         from worker_status import write_status
+
         write_status(job_id, "started")
     except ImportError:
         pass
@@ -671,6 +699,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         from worker_status import write_status
+
         write_status(job_id, "completed", artifact_id=result.artifact_id)
     except ImportError:
         pass
@@ -688,14 +717,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("STEP 5: DEEP TRAINING RESULTS")
     print("=" * 70)
 
-    print(f"\n  Artifact:")
+    print("\n  Artifact:")
     print(f"    artifact_id:       {artifact_data['artifact_id']}")
     print(f"    sha256:            {artifact_data['sha256'][:16]}...")
     print(f"    size_bytes:        {artifact_data['size_bytes']:,}")
     print(f"    feature_schema:    {artifact_data['feature_schema_hash'][:16]}...")
     print(f"    label_schema:      {artifact_data['label_schema_hash'][:16]}...")
 
-    print(f"\n  Dossier:")
+    print("\n  Dossier:")
     print(f"    model_id:          {dossier_data['model_id']}")
     print(f"    authority:         {dossier_data['authority']}")
 
@@ -710,7 +739,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"    deflated_sharpe:   {dossier_data['deflated_sharpe']}")
 
     # Interpretation
-    print(f"\n  Interpretation:")
+    print("\n  Interpretation:")
     acc = metrics.get("accuracy", 0.5)
     pbo = dossier_data["pbo"]
     dsr = dossier_data["deflated_sharpe"]
@@ -793,7 +822,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\n{'=' * 70}")
     print(f"DEEP REAL MODEL TRAINING COMPLETE ({elapsed_s:.1f}s)")
     print(f"{'=' * 70}")
-    print(f"  Data:       {n_written} rows, {len(FEATURE_NAMES)} features, {len(bars_by_symbol)} symbols")
+    print(
+        f"  Data:       {n_written} rows, {len(FEATURE_NAMES)} features, {len(bars_by_symbol)} symbols"
+    )
     print(f"  Folds:      {args.n_folds} walk-forward + purge gap")
     print(f"  Artifact:   {result.artifact_id}")
     print(f"  Dossier:    {result.dossier_id}")

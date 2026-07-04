@@ -23,7 +23,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 # --------------------------------------------------------------------------- #
 # Module config hash                                                           #
 # --------------------------------------------------------------------------- #
@@ -364,11 +363,11 @@ def now_ns() -> int:
 
 
 __all__ = [
-    "DatasetVersion",
     "DatasetLineage",
+    "DatasetVersion",
     "DatasetVersionRegistry",
-    "compute_module_config_hash",
     "compute_content_hash",
+    "compute_module_config_hash",
     "make_version_id",
     "now_ns",
 ]

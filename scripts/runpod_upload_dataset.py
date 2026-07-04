@@ -8,6 +8,7 @@ read from /workspace/dataset.csv without needing inline data.
 This bypasses the 10MB inline CSV limit by sending the dataset in chunks
 across multiple jobs, each appending to the file.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,6 +17,7 @@ import os
 import pathlib
 import sys
 import time
+
 import requests
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -213,7 +215,7 @@ def main() -> int:
             metrics = dossier.get("training_metrics", {})
             meta = dossier.get("metadata", {})
 
-            print(f"\nSTEP 5: Training Results")
+            print("\nSTEP 5: Training Results")
             print(f"  artifact_id: {output.get('artifact_id')}")
             print(f"  trainer:     {meta.get('trainer')}")
             print(f"  n_rows:      {meta.get('n_rows')}")
@@ -256,7 +258,7 @@ def main() -> int:
             print(f"  Results saved: {results_dir}")
 
             print(f"\n{'=' * 70}")
-            print(f"RUNPOD FULL DATASET TRAINING COMPLETE")
+            print("RUNPOD FULL DATASET TRAINING COMPLETE")
             print(f"{'=' * 70}")
             return 0
 

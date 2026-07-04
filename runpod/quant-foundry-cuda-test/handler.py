@@ -9,6 +9,7 @@ If this image also gets "Exited by Runpod", the issue is the base image /
 CUDA runtime / RunPod GPU runtime interaction.  If it works, the issue is
 the heavy imports (xgboost, catboost, lightgbm, quant_foundry).
 """
+
 from __future__ import annotations
 
 import json

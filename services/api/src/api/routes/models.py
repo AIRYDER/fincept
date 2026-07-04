@@ -573,7 +573,13 @@ async def get_runs(
         raise HTTPException(status_code=400, detail="limit must be in [1, 200]")
     runs = get_store().list_runs()
     if status is not None:
-        if status not in ("queued", "running", "completed", "failed", "resumable_failed"):
+        if status not in (
+            "queued",
+            "running",
+            "completed",
+            "failed",
+            "resumable_failed",
+        ):
             raise HTTPException(status_code=400, detail=f"invalid status: {status}")
         runs = [r for r in runs if r.status == status]
     runs = runs[:limit]

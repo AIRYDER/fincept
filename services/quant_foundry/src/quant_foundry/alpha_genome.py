@@ -230,9 +230,7 @@ class ModelFamilySpec(BaseModel):
     runpod_image: str | None = None
     requires_gpu: bool = False
     max_budget_cents: int = 0
-    promotion_eligibility_class: PromotionEligibilityClass = (
-        PromotionEligibilityClass.CHALLENGER
-    )
+    promotion_eligibility_class: PromotionEligibilityClass = PromotionEligibilityClass.CHALLENGER
     is_baseline_exception: bool = False
     created_at_ns: int = 0
 
@@ -318,8 +316,7 @@ class ModelFamilyRegistry:
         """
         if family_id not in self._specs:
             raise KeyError(
-                f"model family {family_id!r} is not registered; "
-                f"known: {sorted(self._specs)}"
+                f"model family {family_id!r} is not registered; known: {sorted(self._specs)}"
             )
         return self._specs[family_id]
 
@@ -363,10 +360,7 @@ class ModelFamilyRegistry:
 
         # 1. Known family?
         if not self.is_registered(family_id):
-            errors.append(
-                f"model family {family_id!r} is not registered; "
-                f"known: {self.list()}"
-            )
+            errors.append(f"model family {family_id!r} is not registered; known: {self.list()}")
             return FamilyValidationResult(
                 passed=False,
                 family_id=family_id,

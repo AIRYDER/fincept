@@ -22,17 +22,15 @@ import pathlib
 import time
 
 import pytest
-
 from quant_foundry.callback_dlq import (
     CallbackDLQ,
-    DLQRejectionReason,
     DLQRecord,
+    DLQRejectionReason,
 )
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outbox import JobStatus
 from quant_foundry.schemas import Authority, RunPodCallbackEnvelope, ShadowPrediction
 from quant_foundry.signatures import sign_callback
-
 
 # --- enum / model -----------------------------------------------------------
 
@@ -595,7 +593,8 @@ def test_payload_tamper_lands_in_dlq(tmp_path: pathlib.Path) -> None:
     assert receipt["ok"] is False
     assert receipt["error_code"] == "payload_hash_mismatch"
     tamper_entries = [
-        e for e in gateway.dlq.list(limit=0)
+        e
+        for e in gateway.dlq.list(limit=0)
         if e.rejection_reason == DLQRejectionReason.PAYLOAD_TAMPER
     ]
     assert len(tamper_entries) == 1
@@ -637,7 +636,8 @@ def test_duplicate_callback_does_not_double_process(tmp_path: pathlib.Path) -> N
     assert len(gateway.shadow_ledger.list()) == shadow_count_after_first
     # DLQ has a duplicate_callback entry.
     dup_entries = [
-        e for e in gateway.dlq.list(limit=0)
+        e
+        for e in gateway.dlq.list(limit=0)
         if e.rejection_reason == DLQRejectionReason.DUPLICATE_CALLBACK
     ]
     assert len(dup_entries) == 1
@@ -659,7 +659,8 @@ def test_unknown_job_lands_in_dlq(tmp_path: pathlib.Path) -> None:
     assert receipt["ok"] is False
     assert receipt["error_code"] == "unknown_job"
     entries = [
-        e for e in gateway.dlq.list(limit=0)
+        e
+        for e in gateway.dlq.list(limit=0)
         if e.rejection_reason == DLQRejectionReason.JOB_ID_MISMATCH
     ]
     assert len(entries) == 1

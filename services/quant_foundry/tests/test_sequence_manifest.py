@@ -17,10 +17,7 @@ Tests verify:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
-
 from quant_foundry.dataset_manifest import (
     FoldSpec,
     FoldWindow,
@@ -36,7 +33,6 @@ from quant_foundry.sequence_manifest import (
     validate_fold_assignment,
     validate_no_future_leakage,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -250,9 +246,7 @@ class TestSequenceDatasetManifest:
     def test_duplicate_channels_rejected(self) -> None:
         """Duplicate channel names are rejected (fail-closed)."""
         with pytest.raises(ValueError, match="duplicate"):
-            _make_manifest(
-                channels=[_make_channel("close"), _make_channel("close")]
-            )
+            _make_manifest(channels=[_make_channel("close"), _make_channel("close")])
 
     def test_window_length_must_be_positive(self) -> None:
         """window_length must be >= 1."""
@@ -594,6 +588,7 @@ class TestComputeSequenceDataHash:
     def test_deterministic_same_array(self) -> None:
         """The same array produces the same hash."""
         import numpy as np
+
         arr = np.array([1.0, 2.0, 3.0], dtype="float32")
         h1 = compute_sequence_data_hash(arr)
         h2 = compute_sequence_data_hash(arr.copy())
@@ -602,6 +597,7 @@ class TestComputeSequenceDataHash:
     def test_different_values_different_hash(self) -> None:
         """Different values produce different hashes."""
         import numpy as np
+
         arr1 = np.array([1.0, 2.0, 3.0], dtype="float32")
         arr2 = np.array([1.0, 2.0, 4.0], dtype="float32")
         assert compute_sequence_data_hash(arr1) != compute_sequence_data_hash(arr2)
@@ -609,6 +605,7 @@ class TestComputeSequenceDataHash:
     def test_different_dtype_different_hash(self) -> None:
         """Different dtypes produce different hashes."""
         import numpy as np
+
         arr32 = np.array([1.0, 2.0, 3.0], dtype="float32")
         arr64 = np.array([1.0, 2.0, 3.0], dtype="float64")
         assert compute_sequence_data_hash(arr32) != compute_sequence_data_hash(arr64)
@@ -616,6 +613,7 @@ class TestComputeSequenceDataHash:
     def test_different_shape_different_hash(self) -> None:
         """Different shapes produce different hashes."""
         import numpy as np
+
         arr1 = np.array([1.0, 2.0, 3.0], dtype="float32")
         arr2 = np.array([[1.0, 2.0, 3.0]], dtype="float32")
         assert compute_sequence_data_hash(arr1) != compute_sequence_data_hash(arr2)
@@ -623,6 +621,7 @@ class TestComputeSequenceDataHash:
     def test_hash_is_64_char_hex(self) -> None:
         """The hash is a 64-character lowercase hex string."""
         import numpy as np
+
         arr = np.array([1.0], dtype="float32")
         h = compute_sequence_data_hash(arr)
         assert len(h) == 64
@@ -656,8 +655,12 @@ class TestCreateWindows:
         """Windows are generated for each symbol and horizon."""
         manifest = _make_manifest(window_length=3, stride=2, horizons=[1])
         timestamps = [
-            "2024-01-01", "2024-01-02", "2024-01-03",
-            "2024-01-04", "2024-01-05", "2024-01-06",
+            "2024-01-01",
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-06",
         ]
         windows = create_windows(manifest, timestamps, ["AAPL"])
         # i=0: start=01-01, end=01-03, label=01-04
@@ -673,7 +676,10 @@ class TestCreateWindows:
         """Windows are generated for each symbol."""
         manifest = _make_manifest(window_length=2, stride=1, horizons=[1])
         timestamps = [
-            "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
+            "2024-01-01",
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
         ]
         windows = create_windows(manifest, timestamps, ["AAPL", "MSFT"])
         # i=0: start=01-01, end=01-02, label=01-03 ✓
@@ -688,7 +694,10 @@ class TestCreateWindows:
         """Windows are generated for each horizon."""
         manifest = _make_manifest(window_length=2, stride=1, horizons=[1, 2])
         timestamps = [
-            "2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
+            "2024-01-01",
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
         ]
         windows = create_windows(manifest, timestamps, ["AAPL"])
         # i=0: end=01-02, h=1 -> label=01-03; h=2 -> label=01-04
@@ -701,8 +710,12 @@ class TestCreateWindows:
         """Stride controls the step between window starts."""
         manifest = _make_manifest(window_length=2, stride=3, horizons=[1])
         timestamps = [
-            "2024-01-01", "2024-01-02", "2024-01-03",
-            "2024-01-04", "2024-01-05", "2024-01-06",
+            "2024-01-01",
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-06",
         ]
         windows = create_windows(manifest, timestamps, ["AAPL"])
         # i=0: start=01-01, end=01-02, label=01-03
@@ -724,13 +737,15 @@ class TestCreateWindows:
         manifest = _make_manifest(window_length=2, stride=1, horizons=[1])
         # Jan timestamps fall in fold 0 train; Apr timestamps in fold 1 train.
         timestamps = [
-            "2024-01-10", "2024-01-11", "2024-01-12",
-            "2024-04-10", "2024-04-11", "2024-04-12",
+            "2024-01-10",
+            "2024-01-11",
+            "2024-01-12",
+            "2024-04-10",
+            "2024-04-11",
+            "2024-04-12",
         ]
         fs = _make_fold_spec(2)
-        windows = create_windows(
-            manifest, timestamps, ["AAPL"], fold_spec=fs
-        )
+        windows = create_windows(manifest, timestamps, ["AAPL"], fold_spec=fs)
         # First windows (Jan) should be fold 0, later (Apr) fold 1.
         fold_ids = [w.fold_id for w in windows]
         assert 0 in fold_ids
@@ -790,6 +805,7 @@ class TestSequenceManifestBuilder:
     def test_full_build(self) -> None:
         """A fully-specified builder produces a valid manifest."""
         import numpy as np
+
         arr = np.zeros((10, 5), dtype="float32")
         data_hash = compute_sequence_data_hash(arr)
         manifest = (
@@ -819,9 +835,7 @@ class TestSequenceManifestBuilder:
         assert b.with_channels([_make_channel()]) is b
         assert b.with_window(length=10, stride=1) is b
         assert b.with_horizons([1]) is b
-        assert b.with_time_range(
-            "2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02"
-        ) is b
+        assert b.with_time_range("2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02") is b
         assert b.with_data("uri", "a" * 64) is b
 
     def test_builder_default_created_at(self) -> None:
@@ -832,9 +846,7 @@ class TestSequenceManifestBuilder:
             .with_channels([_make_channel()])
             .with_window(length=10, stride=1)
             .with_horizons([1])
-            .with_time_range(
-                "2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02"
-            )
+            .with_time_range("2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02")
             .with_data("uri", "a" * 64)
             .build()
         )
@@ -849,9 +861,7 @@ class TestSequenceManifestBuilder:
             .with_channels([_make_channel()])
             .with_window(length=10, stride=1)
             .with_horizons([1])
-            .with_time_range(
-                "2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02"
-            )
+            .with_time_range("2024-01-01", "2024-06-01", "2024-06-02", "2024-06-02")
             .with_data("uri", "a" * 64)
             .with_folds("s3://bucket/folds.json", "b" * 64)
             .with_created_at("2024-01-01T00:00:00Z")
@@ -884,6 +894,7 @@ class TestSequenceManifestBuilder:
 def _parse_temporal_check(value: str) -> None:
     """Assert that a string is a parseable ISO datetime."""
     from quant_foundry.dataset_manifest import _parse_temporal
+
     _parse_temporal(value)
 
 

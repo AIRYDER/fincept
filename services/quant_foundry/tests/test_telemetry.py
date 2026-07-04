@@ -27,11 +27,10 @@ import time
 import types
 
 import pytest
-
 from quant_foundry.telemetry import (
+    GPU_PRICING,
     BatchCostReport,
     CostTelemetry,
-    GPU_PRICING,
     GPUType,
     JobTelemetryRecord,
     PhaseTiming,
@@ -40,7 +39,6 @@ from quant_foundry.telemetry import (
     TimingPhase,
     infer_gpu_type,
 )
-
 
 # --- GPUType enum ---------------------------------------------------------- #
 
@@ -582,9 +580,7 @@ def test_queue_metrics_frozen_and_extra_forbid() -> None:
         (None, GPUType.UNKNOWN.value),
     ],
 )
-def test_infer_gpu_type_matches_known_and_unknown(
-    endpoint_id: str | None, expected: str
-) -> None:
+def test_infer_gpu_type_matches_known_and_unknown(endpoint_id: str | None, expected: str) -> None:
     assert infer_gpu_type(endpoint_id) == expected
 
 
@@ -644,8 +640,12 @@ def test_compute_queue_metrics_depth_and_waits(tmp_path: pathlib.Path) -> None:
     )
     base = time.time_ns()
     # q1 + q2 dispatched after 30s and 60s waits; q3 stays queued.
-    _advance_history(outbox, "q1", [JobStatus.DISPATCHING, JobStatus.DISPATCHED], base, 30_000_000_000)
-    _advance_history(outbox, "q2", [JobStatus.DISPATCHING, JobStatus.DISPATCHED], base, 60_000_000_000)
+    _advance_history(
+        outbox, "q1", [JobStatus.DISPATCHING, JobStatus.DISPATCHED], base, 30_000_000_000
+    )
+    _advance_history(
+        outbox, "q2", [JobStatus.DISPATCHING, JobStatus.DISPATCHED], base, 60_000_000_000
+    )
     qt = QueueTelemetry()
     metrics = qt.compute_queue_metrics(outbox)
     assert isinstance(metrics, QueueMetrics)
@@ -719,9 +719,7 @@ def test_dispatcher_with_telemetry_records_cost_and_timing(
         idempotency_key="idem-tel",
         request_payload={"job_id": "qf:train:tel:1"},
     )
-    dispatcher.dispatch(
-        "qf:train:tel:1", request_payload={"job_id": "qf:train:tel:1"}
-    )
+    dispatcher.dispatch("qf:train:tel:1", request_payload={"job_id": "qf:train:tel:1"})
     rec = telemetry.get_job_cost("qf:train:tel:1")
     assert rec is not None
     # GPU inferred from endpoint id "a100-training".
@@ -765,9 +763,7 @@ def test_dispatcher_with_telemetry_unknown_gpu_marks_cost_unknown(
         idempotency_key="idem-telu",
         request_payload={"job_id": "qf:train:telu:1"},
     )
-    dispatcher.dispatch(
-        "qf:train:telu:1", request_payload={"job_id": "qf:train:telu:1"}
-    )
+    dispatcher.dispatch("qf:train:telu:1", request_payload={"job_id": "qf:train:telu:1"})
     rec = telemetry.get_job_cost("qf:train:telu:1")
     assert rec is not None
     assert rec.gpu_type == GPUType.UNKNOWN.value
@@ -804,8 +800,6 @@ def test_dispatcher_without_telemetry_is_backward_compatible(
         idempotency_key="idem-notel",
         request_payload={"job_id": "qf:train:notel:1"},
     )
-    result = dispatcher.dispatch(
-        "qf:train:notel:1", request_payload={"job_id": "qf:train:notel:1"}
-    )
+    result = dispatcher.dispatch("qf:train:notel:1", request_payload={"job_id": "qf:train:notel:1"})
     assert result.status == DispatchStatus.DISPATCHED
     assert not (tmp_path / "telemetry" / "cost_telemetry.jsonl").is_file()

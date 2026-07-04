@@ -85,18 +85,12 @@ def load_real_model(model_dir: pathlib.Path) -> dict[str, Any]:
     meta_path = model_dir / "meta.json"
     artifact_manifest_path = model_dir / "artifact_manifest.json"
 
-    missing = [
-        p for p in (model_path, meta_path, artifact_manifest_path) if not p.is_file()
-    ]
+    missing = [p for p in (model_path, meta_path, artifact_manifest_path) if not p.is_file()]
     if missing:
         names = ", ".join(p.name for p in missing)
-        raise SystemExit(
-            f"model dir {model_dir} is missing required file(s): {names}"
-        )
+        raise SystemExit(f"model dir {model_dir} is missing required file(s): {names}")
 
-    artifact = ArtifactManifest.model_validate(
-        json.loads(artifact_manifest_path.read_text())
-    )
+    artifact = ArtifactManifest.model_validate(json.loads(artifact_manifest_path.read_text()))
     meta = json.loads(meta_path.read_text())
 
     return {
@@ -272,9 +266,7 @@ def generate_settlement_history(
     # pyarrow/pandas if needed).
     feature_names: list[str] = list(model_info["meta"].get("features", []))
     if not feature_names:
-        raise SystemExit(
-            "meta.json has no 'features' list — cannot predict without feature names"
-        )
+        raise SystemExit("meta.json has no 'features' list — cannot predict without feature names")
 
     try:
         import polars as pl
@@ -295,21 +287,15 @@ def generate_settlement_history(
             data = table.to_pydict()
             timestamps = np.array(data[ts_col], dtype=np.int64)
             labels = np.array(data["label"], dtype=np.float64)
-            X = np.column_stack(
-                [np.array(data[c], dtype=np.float64) for c in feature_names]
-            )
+            X = np.column_stack([np.array(data[c], dtype=np.float64) for c in feature_names])
         except ImportError as exc:
-            raise RuntimeError(
-                "polars or pyarrow is required to load the dataset parquet"
-            ) from exc
+            raise RuntimeError("polars or pyarrow is required to load the dataset parquet") from exc
 
     # Load the real LightGBM model + predict.
     try:
         import lightgbm as lgb
     except ImportError as exc:
-        raise RuntimeError(
-            "lightgbm is required to load the real model for prediction"
-        ) from exc
+        raise RuntimeError("lightgbm is required to load the real model for prediction") from exc
 
     booster = lgb.Booster(model_file=str(model_info["model_path"]))
     p_up = booster.predict(X)
@@ -404,9 +390,7 @@ def generate_settlement_history(
     # Live edge from the settled predictions (correct rate - 0.5).
     live_edge = (correct / settled_count - 0.5) if settled_count > 0 else 0.0
     in_sample_brier = 0.18  # conservative IS Brier estimate
-    live_brier = (
-        sum(brier_scores) / len(brier_scores) if brier_scores else 0.25
-    )
+    live_brier = sum(brier_scores) / len(brier_scores) if brier_scores else 0.25
 
     train_live_gap = TrainLiveGapInput(
         model_id=model_id,
@@ -436,9 +420,7 @@ def generate_settlement_history(
         "live_edge": live_edge,
         "in_sample_edge": in_sample_edge,
         "mean_brier": (sum(brier_scores) / len(brier_scores)) if brier_scores else None,
-        "mean_return_net": (
-            sum(returns_net) / len(returns_net) if returns_net else None
-        ),
+        "mean_return_net": (sum(returns_net) / len(returns_net) if returns_net else None),
         "sentinel": {
             "passed": sentinel_receipt.passed,
             "checks_run": list(sentinel_receipt.checks_run),
@@ -517,9 +499,7 @@ def submit_to_gate(
     return {
         "decision": receipt.decision.value,
         "target_level": receipt.request.target_level.value,
-        "rejection_reason": (
-            receipt.rejection_reason.value if receipt.rejection_reason else None
-        ),
+        "rejection_reason": (receipt.rejection_reason.value if receipt.rejection_reason else None),
         "review_note": receipt.review_note,
         "decided_at_ns": receipt.decided_at_ns,
     }

@@ -58,7 +58,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Docker image spec
 # ---------------------------------------------------------------------------
@@ -93,9 +92,9 @@ class EventTextImageSpec(BaseModel):
     )
     gpu_required: bool = True
     healthcheck_cmd: str = (
-        "python -c \"from quant_foundry.event_text_runtime import "
+        'python -c "from quant_foundry.event_text_runtime import '
         "EventTextHealthcheck; import sys; "
-        "sys.exit(0 if EventTextHealthcheck().is_healthy() else 1)\""
+        'sys.exit(0 if EventTextHealthcheck().is_healthy() else 1)"'
     )
     offline_mode: bool = True
     embedding_cache_dir: str = "/opt/embedding_cache"
@@ -273,7 +272,7 @@ class EventTextEncoder:
         are honored literally (cuda on a CPU-only host falls back to
         CPU).
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.config.device == "cpu":
             return torch.device("cpu")
@@ -329,15 +328,14 @@ class EventTextEncoder:
             raise FileNotFoundError(f"weight path not found: {self.weight_path}")
 
         try:
-            from sentence_transformers import SentenceTransformer  # noqa: WPS433
+            from sentence_transformers import SentenceTransformer
 
             self._model = SentenceTransformer(str(p), device=str(device))
         except Exception:
             # Fall back to a transformers AutoModel + AutoTokenizer if
             # sentence-transformers cannot load the path directly.
             try:
-                import torch  # noqa: WPS433
-                from transformers import (  # noqa: WPS433
+                from transformers import (
                     AutoModel,
                     AutoTokenizer,
                 )
@@ -348,16 +346,14 @@ class EventTextEncoder:
                 model.eval()
                 self._model = {"tokenizer": tokenizer, "model": model}
             except Exception as exc:  # pragma: no cover - defensive
-                raise RuntimeError(
-                    f"failed to load model from {self.weight_path}: {exc}"
-                ) from exc
+                raise RuntimeError(f"failed to load model from {self.weight_path}: {exc}") from exc
         return self._model
 
     def _encode_with_sentence_transformers(
         self, model: Any, texts: list[str], device: Any
     ) -> list[list[float]]:
         """Encode texts using a SentenceTransformer model."""
-        import numpy as np  # noqa: WPS433
+        import numpy as np
 
         embs = model.encode(
             texts,
@@ -371,7 +367,7 @@ class EventTextEncoder:
         self, model_bundle: dict[str, Any], texts: list[str], device: Any
     ) -> list[list[float]]:
         """Encode texts using a transformers AutoModel + tokenizer bundle."""
-        import torch  # noqa: WPS433
+        import torch
 
         tokenizer = model_bundle["tokenizer"]
         model = model_bundle["model"]
@@ -439,9 +435,7 @@ class EventTextEncoder:
             duration_seconds=duration,
         )
 
-    def encode_batch(
-        self, texts: list[str], event_ids: list[str]
-    ) -> list[EmbeddingResult]:
+    def encode_batch(self, texts: list[str], event_ids: list[str]) -> list[EmbeddingResult]:
         """Encode a batch of texts and return a list of :class:`EmbeddingResult`.
 
         Args:
@@ -457,8 +451,7 @@ class EventTextEncoder:
         """
         if len(texts) != len(event_ids):
             raise ValueError(
-                "texts and event_ids must have the same length: "
-                f"{len(texts)} != {len(event_ids)}"
+                f"texts and event_ids must have the same length: {len(texts)} != {len(event_ids)}"
             )
 
         start = time.perf_counter()
@@ -692,9 +685,7 @@ class EventTextHealthcheck:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self.timeout_seconds = timeout_seconds
-        self.embedding_cache_dir = (
-            embedding_cache_dir or "/opt/embedding_cache"
-        )
+        self.embedding_cache_dir = embedding_cache_dir or "/opt/embedding_cache"
 
     def run(self) -> dict[str, Any]:
         """Run the healthcheck and return a status dict.
@@ -732,9 +723,7 @@ class EventTextHealthcheck:
         # Embedding cache check.
         try:
             cache_path = Path(self.embedding_cache_dir)
-            result["embedding_cache"] = (
-                cache_path.exists() and cache_path.is_dir()
-            )
+            result["embedding_cache"] = cache_path.exists() and cache_path.is_dir()
         except Exception as exc:  # pragma: no cover - defensive
             result["error"] = f"embedding cache check failed: {exc}"
             result["duration_seconds"] = time.perf_counter() - start
@@ -752,9 +741,7 @@ class EventTextHealthcheck:
                 embedding_dim=4,
                 device="cpu",
             )
-            encoder = EventTextEncoder(
-                config=config, weight_path="healthcheck/model"
-            )
+            encoder = EventTextEncoder(config=config, weight_path="healthcheck/model")
             # validate_offline should be True for the sentinel path
             # (it has a parent component).
             offline_ok = encoder.validate_offline()
@@ -767,10 +754,7 @@ class EventTextHealthcheck:
 
         gpu_ok = bool(result["gpu"].get("available")) if result["gpu"] else False
         result["healthy"] = bool(
-            gpu_ok
-            and result["embedding_cache"]
-            and result["encoding"]
-            and result["error"] is None
+            gpu_ok and result["embedding_cache"] and result["encoding"] and result["error"] is None
         )
         result["duration_seconds"] = time.perf_counter() - start
         return result
@@ -787,11 +771,11 @@ class EventTextHealthcheck:
 
 
 __all__ = [
-    "EventTextImageSpec",
+    "EmbeddingCache",
     "EmbeddingConfig",
     "EmbeddingResult",
-    "EventTextEncoder",
-    "EmbeddingCache",
     "EventSymbolResolver",
+    "EventTextEncoder",
     "EventTextHealthcheck",
+    "EventTextImageSpec",
 ]

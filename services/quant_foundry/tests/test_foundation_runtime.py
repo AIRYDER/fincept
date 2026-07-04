@@ -30,7 +30,6 @@ from quant_foundry.foundation_runtime import (
 )
 from quant_foundry.tabular_neural_runtime import GPUStatus
 
-
 # ---------------------------------------------------------------------------
 # FoundationImageSpec
 # ---------------------------------------------------------------------------
@@ -40,10 +39,7 @@ class TestFoundationImageSpec:
     def test_defaults(self) -> None:
         spec = FoundationImageSpec()
         assert spec.image_name == "trainer-gpu-foundation-ts"
-        assert (
-            spec.base_image
-            == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
-        )
+        assert spec.base_image == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
         assert spec.python_version == "3.12"
         assert spec.gpu_required is True
         assert spec.offline_mode is True
@@ -338,9 +334,7 @@ class TestFoundationForecastAdapter:
     def test_validate_offline_local_path(self, tmp_path: Path) -> None:
         path, _ = self._make_weight_file(tmp_path)
         cfg = BatchForecastConfig(model_id="m")
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash="x"
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash="x")
         assert adapter.validate_offline() is True
 
     def test_validate_offline_nonexistent_with_suffix(self, tmp_path: Path) -> None:
@@ -371,9 +365,7 @@ class TestFoundationForecastAdapter:
             num_samples=1,
             device="cpu",
         )
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         import torch
 
         ctx = torch.randn(4, 8)
@@ -397,12 +389,8 @@ class TestFoundationForecastAdapter:
             seed=123,
             device="cpu",
         )
-        adapter1 = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
-        adapter2 = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter1 = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
+        adapter2 = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         import torch
 
         ctx = torch.randn(2, 4)
@@ -420,9 +408,7 @@ class TestFoundationForecastAdapter:
             num_samples=1,
             device="cpu",
         )
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         import torch
 
         # Only 2 rows of context, but batch_size=4 — should tile.
@@ -440,9 +426,7 @@ class TestFoundationForecastAdapter:
             num_samples=1,
             device="cpu",
         )
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         import torch
 
         # 8 rows of context, but batch_size=2 — should slice.
@@ -460,18 +444,14 @@ class TestFoundationForecastAdapter:
             num_samples=1,
             device="cpu",
         )
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         ctx = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
         result = adapter.forecast(ctx)
         assert len(result.predictions) == 2
         assert all(len(row) == 2 for row in result.predictions)
 
     def test_forecast_missing_weight_raises(self, tmp_path: Path) -> None:
-        cfg = BatchForecastConfig(
-            model_id="m", batch_size=2, context_length=4, device="cpu"
-        )
+        cfg = BatchForecastConfig(model_id="m", batch_size=2, context_length=4, device="cpu")
         adapter = FoundationForecastAdapter(
             config=cfg,
             weight_path=str(tmp_path / "nonexistent.pt"),
@@ -494,18 +474,14 @@ class TestFoundationForecastAdapter:
             seed=42,
             device="cpu",
         )
-        adapter = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         import torch
 
         ctx = torch.randn(2, 4)
         result = adapter.forecast(ctx)
         assert len(result.predictions) == 2
         # With noise, predictions should still be deterministic (seeded).
-        adapter2 = FoundationForecastAdapter(
-            config=cfg, weight_path=path, weight_hash=whash
-        )
+        adapter2 = FoundationForecastAdapter(config=cfg, weight_path=path, weight_hash=whash)
         result2 = adapter2.forecast(ctx)
         assert result.predictions == result2.predictions
 
@@ -522,9 +498,7 @@ class TestFoundationHealthcheck:
         assert hc.weight_cache_dir == "/opt/foundation_weights"
 
     def test_init_custom(self, tmp_path: Path) -> None:
-        hc = FoundationHealthcheck(
-            timeout_seconds=30, weight_cache_dir=str(tmp_path)
-        )
+        hc = FoundationHealthcheck(timeout_seconds=30, weight_cache_dir=str(tmp_path))
         assert hc.timeout_seconds == 30
         assert hc.weight_cache_dir == str(tmp_path)
 

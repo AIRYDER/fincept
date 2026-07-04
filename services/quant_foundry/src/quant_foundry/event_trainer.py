@@ -69,7 +69,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from quant_foundry.oof_artifacts import OOFWriter
 from quant_foundry.tabular_neural_runtime import GPUStatus, check_gpu
 
-
 # ---------------------------------------------------------------------------
 # Config + result models
 # ---------------------------------------------------------------------------
@@ -154,33 +153,27 @@ class EventTrainerConfig(BaseModel):
     def _device_allowed(cls, v: str) -> str:
         allowed = {"auto", "cpu", "cuda"}
         if v not in allowed:
-            raise ValueError(
-                f"device must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"device must be one of {sorted(allowed)}; got {v!r}")
         return v
 
     @model_validator(mode="after")
-    def _hidden_dims_nonempty(self) -> "EventTrainerConfig":
+    def _hidden_dims_nonempty(self) -> EventTrainerConfig:
         """hidden_dims must be a non-empty list of positive ints."""
         if not self.hidden_dims:
             raise ValueError("hidden_dims must be non-empty")
         for i, h in enumerate(self.hidden_dims):
             if h < 1:
-                raise ValueError(
-                    f"hidden_dims[{i}] must be >= 1; got {h}"
-                )
+                raise ValueError(f"hidden_dims[{i}] must be >= 1; got {h}")
         return self
 
     @model_validator(mode="after")
-    def _horizons_valid(self) -> "EventTrainerConfig":
+    def _horizons_valid(self) -> EventTrainerConfig:
         """horizons must be non-empty with each horizon >= 1."""
         if not self.horizons:
             raise ValueError("horizons must be non-empty")
         for i, hz in enumerate(self.horizons):
             if hz < 1:
-                raise ValueError(
-                    f"horizons[{i}] must be >= 1; got {hz}"
-                )
+                raise ValueError(f"horizons[{i}] must be >= 1; got {hz}")
         return self
 
 
@@ -228,9 +221,7 @@ class EventTrainingResult(BaseModel):
     is_shadow: bool
     promotion_eligible: bool
     metrics: dict[str, float] = Field(default_factory=dict)
-    event_type_metrics: dict[str, dict[str, float]] = Field(
-        default_factory=dict
-    )
+    event_type_metrics: dict[str, dict[str, float]] = Field(default_factory=dict)
     duration_seconds: float
 
     @field_validator("source_hash")
@@ -300,8 +291,7 @@ class EventAbnormalReturnModel:
         if self._module is not None:
             return self._module
 
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
+        import torch.nn as nn
 
         # Shared backbone: embedding_dim -> hidden_dims[-1].
         backbone_layers: list[Any] = []
@@ -349,17 +339,17 @@ class EventAbnormalReturnModel:
         """Load a state_dict into the underlying module."""
         self.module.load_state_dict(state_dict)
 
-    def to(self, device: Any) -> "EventAbnormalReturnModel":
+    def to(self, device: Any) -> EventAbnormalReturnModel:
         """Move the underlying module to ``device`` and return self."""
         self._module = self.module.to(device)
         return self
 
-    def train(self, mode: bool = True) -> "EventAbnormalReturnModel":
+    def train(self, mode: bool = True) -> EventAbnormalReturnModel:
         """Set the underlying module's train/eval mode and return self."""
         self.module.train(mode)
         return self
 
-    def eval(self) -> "EventAbnormalReturnModel":
+    def eval(self) -> EventAbnormalReturnModel:
         """Set the underlying module to eval mode and return self."""
         return self.train(False)
 
@@ -372,8 +362,8 @@ def _make_event_module_class() -> Any:
     is built (the class is cheap to construct and keeps the torch import
     boundary local to the build call).
     """
-    import torch  # noqa: WPS433 lazy import
-    import torch.nn as nn  # noqa: WPS433 lazy import
+    import torch
+    import torch.nn as nn
 
     class _EventAbnormalReturnNet(nn.Module):
         """Inner nn.Module implementing the multi-horizon forward pass."""
@@ -407,7 +397,7 @@ def _resolve_device(config: EventTrainerConfig, gpu_status: GPUStatus) -> Any:
     ``auto`` picks CUDA when available, else CPU. ``cpu`` / ``cuda`` are
     honored literally (``cuda`` on a CPU-only host falls back to CPU).
     """
-    import torch  # noqa: WPS433 lazy import
+    import torch
 
     if config.device == "cpu":
         return torch.device("cpu")
@@ -449,14 +439,11 @@ def compute_event_type_metrics(
         A nested dict ``{event_type: {metric_name: value}}`` where
         ``metric_name`` is ``h<horizon>_mse`` or ``h<horizon>_mae``.
     """
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
 
     n = len(predictions)
     if not (len(actuals) == n and len(event_types) == n):
-        raise ValueError(
-            "predictions, actuals, and event_types must have the same "
-            "length"
-        )
+        raise ValueError("predictions, actuals, and event_types must have the same length")
     n_horizons = len(horizons)
     if n_horizons == 0:
         raise ValueError("horizons must be non-empty")
@@ -483,7 +470,7 @@ def compute_event_type_metrics(
                 metrics[f"h{hz}_mae"] = float("nan")
             else:
                 diff = preds_h - acts_h
-                metrics[f"h{hz}_mse"] = float(np.mean(diff ** 2))
+                metrics[f"h{hz}_mse"] = float(np.mean(diff**2))
                 metrics[f"h{hz}_mae"] = float(np.mean(np.abs(diff)))
         result[et] = metrics
     return result
@@ -515,14 +502,11 @@ def compute_confidence_bucket_metrics(
         ``metric_name`` is one of ``mse``, ``mae``, ``mean_confidence``,
         ``count``.
     """
-    import numpy as np  # noqa: WPS433 lazy import
+    import numpy as np
 
     n = len(predictions)
     if not (len(actuals) == n and len(confidences) == n):
-        raise ValueError(
-            "predictions, actuals, and confidences must have the same "
-            "length"
-        )
+        raise ValueError("predictions, actuals, and confidences must have the same length")
     if n_buckets < 1:
         raise ValueError("n_buckets must be >= 1")
 
@@ -570,7 +554,7 @@ def compute_confidence_bucket_metrics(
                 dtype=float,
             )
             diff = preds_b - acts_b
-            metrics["mse"] = float(np.mean(diff ** 2))
+            metrics["mse"] = float(np.mean(diff**2))
             metrics["mae"] = float(np.mean(np.abs(diff)))
         result[f"bucket_{b}"] = metrics
     return result
@@ -645,9 +629,9 @@ class EventTrainer:
             status, per-horizon and per-event-type metrics, and
             promotion eligibility (``False`` when ``shadow_only``).
         """
-        import torch  # noqa: WPS433 lazy import
-        import torch.nn as nn  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
+        import torch.nn as nn
 
         # Fail-closed source hash validation.
         self.validate_source_hash()
@@ -663,8 +647,7 @@ class EventTrainer:
         emb_arr = np.array(embeddings, dtype=float)
         if emb_arr.ndim != 2:
             raise ValueError(
-                f"embeddings must be 2-D (n_events, embedding_dim); "
-                f"got shape {emb_arr.shape}"
+                f"embeddings must be 2-D (n_events, embedding_dim); got shape {emb_arr.shape}"
             )
         if emb_arr.shape[1] != self.config.embedding_dim:
             raise ValueError(
@@ -676,8 +659,7 @@ class EventTrainer:
         label_arr = np.array(labels, dtype=float)
         if label_arr.ndim != 2:
             raise ValueError(
-                f"labels must be 2-D (n_events, n_horizons); got shape "
-                f"{label_arr.shape}"
+                f"labels must be 2-D (n_events, n_horizons); got shape {label_arr.shape}"
             )
         if label_arr.shape[1] != n_horizons:
             raise ValueError(
@@ -693,8 +675,7 @@ class EventTrainer:
         n_samples = emb_arr.shape[0]
         if len(event_types) != n_samples:
             raise ValueError(
-                f"event_types must have length n_events={n_samples}; "
-                f"got {len(event_types)}"
+                f"event_types must have length n_events={n_samples}; got {len(event_types)}"
             )
 
         w_arr = (
@@ -703,10 +684,7 @@ class EventTrainer:
             else np.ones(n_samples, dtype=float)
         )
         if w_arr.shape[0] != n_samples:
-            raise ValueError(
-                f"weights must have length n_events={n_samples}; "
-                f"got {w_arr.shape[0]}"
-            )
+            raise ValueError(f"weights must have length n_events={n_samples}; got {w_arr.shape[0]}")
 
         x_tensor = torch.from_numpy(emb_arr).float()
         y_tensor = torch.from_numpy(label_arr).float()
@@ -776,7 +754,7 @@ class EventTrainer:
                 preds_np = preds.cpu().numpy()
             for h_idx, hz in enumerate(self.config.horizons):
                 diff = preds_np[:, h_idx] - label_arr[:, h_idx]
-                metrics[f"h{hz}_mse"] = float(np.mean(diff ** 2))
+                metrics[f"h{hz}_mse"] = float(np.mean(diff**2))
                 metrics[f"h{hz}_mae"] = float(np.mean(np.abs(diff)))
             metrics["final_loss"] = final_loss
 
@@ -824,20 +802,16 @@ class EventTrainer:
             A list of lists of floats — ``predictions[i]`` is a list of
             length ``len(horizons)``.
         """
-        import torch  # noqa: WPS433 lazy import
-        import numpy as np  # noqa: WPS433 lazy import
+        import numpy as np
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model available — call train() or "
-                "load_artifact() first"
-            )
+            raise ValueError("no trained model available — call train() or load_artifact() first")
 
         emb_arr = np.array(embeddings, dtype=float)
         if emb_arr.ndim != 2:
             raise ValueError(
-                f"embeddings must be 2-D (n_events, embedding_dim); "
-                f"got shape {emb_arr.shape}"
+                f"embeddings must be 2-D (n_events, embedding_dim); got shape {emb_arr.shape}"
             )
         if emb_arr.shape[1] != self.config.embedding_dim:
             raise ValueError(
@@ -870,12 +844,10 @@ class EventTrainer:
         Raises:
             ValueError: if no model has been trained.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         if self.model_ is None:
-            raise ValueError(
-                "no trained model to save — call train() first"
-            )
+            raise ValueError("no trained model to save — call train() first")
         p = Path(path)
         if p.parent and not p.parent.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -891,7 +863,7 @@ class EventTrainer:
         Returns:
             The loaded :class:`EventAbnormalReturnModel`.
         """
-        import torch  # noqa: WPS433 lazy import
+        import torch
 
         model = EventAbnormalReturnModel(
             embedding_dim=self.config.embedding_dim,
@@ -948,34 +920,22 @@ class EventTrainer:
         """
         n = len(fold_predictions)
         if not (
-            len(fold_ids) == n
-            and len(symbols) == n
-            and len(timestamps) == n
-            and len(labels) == n
+            len(fold_ids) == n and len(symbols) == n and len(timestamps) == n and len(labels) == n
         ):
             raise ValueError(
                 "fold_predictions, fold_ids, symbols, timestamps, "
                 "and labels must all have the same length"
             )
         if weights is not None and len(weights) != n:
-            raise ValueError(
-                "weights must have the same length as fold_predictions "
-                "or be None"
-            )
+            raise ValueError("weights must have the same length as fold_predictions or be None")
         n_horizons = len(horizons)
         if n_horizons == 0:
             raise ValueError("horizons must be non-empty")
         for i in range(n):
             if len(fold_predictions[i]) != n_horizons:
-                raise ValueError(
-                    f"fold_predictions[{i}] must have length "
-                    f"n_horizons={n_horizons}"
-                )
+                raise ValueError(f"fold_predictions[{i}] must have length n_horizons={n_horizons}")
             if len(labels[i]) != n_horizons:
-                raise ValueError(
-                    f"labels[{i}] must have length "
-                    f"n_horizons={n_horizons}"
-                )
+                raise ValueError(f"labels[{i}] must have length n_horizons={n_horizons}")
 
         output_dir = str(Path(output_path).parent)
         writer = OOFWriter(model_family="event", output_dir=output_dir)
@@ -1077,12 +1037,12 @@ def register_event_family() -> dict[str, Any]:
 
 
 __all__ = [
-    "EventTrainerConfig",
-    "EventTrainingResult",
     "EventAbnormalReturnModel",
     "EventTrainer",
-    "compute_event_type_metrics",
+    "EventTrainerConfig",
+    "EventTrainingResult",
     "compute_confidence_bucket_metrics",
-    "validate_promotion_eligibility",
+    "compute_event_type_metrics",
     "register_event_family",
+    "validate_promotion_eligibility",
 ]

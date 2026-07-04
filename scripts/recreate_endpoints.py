@@ -6,15 +6,17 @@ recreate the endpoints, which resets the version field and scheduler state.
 
 See: https://happyin.space/devops/runpod-serverless-stuck-queue-idle-workers/
 """
-import httpx
+
 import json
 import os
-import time
 import sys
+import time
+
+import httpx
 
 # Import shared RunPod resource IDs from the single source of truth.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import (  # noqa: E402
+from runpod_config import (
     GPU_TYPE,
     INFERENCE_NAME,
     INFERENCE_TEMPLATE_ID,
@@ -108,7 +110,7 @@ mutation($input: EndpointInput!) {
             print(f"  GraphQL ERROR: {exc}")
 
             # Try REST API as fallback with correct field names
-            print(f"  Trying REST API...")
+            print("  Trying REST API...")
             rest_input = {
                 "name": display_name,
                 "templateId": template_id,

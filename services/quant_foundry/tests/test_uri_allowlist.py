@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from quant_foundry.uri_allowlist import (
-    URIScheme,
     URIAllowlistConfig,
+    URIScheme,
     URIValidationResult,
     has_path_traversal,
     is_localhost,
@@ -195,12 +194,21 @@ class TestIsLocalhost:
 class TestIsPrivateIp:
     @pytest.mark.parametrize(
         "host",
-        ["10.0.0.1", "10.255.255.255", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.1.1"],
+        [
+            "10.0.0.1",
+            "10.255.255.255",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "169.254.1.1",
+        ],
     )
     def test_recognises_private(self, host: str) -> None:
         assert is_private_ip(host) is True
 
-    @pytest.mark.parametrize("host", ["8.8.8.8", "172.15.0.1", "172.32.0.1", "11.0.0.1", "example.com", ""])
+    @pytest.mark.parametrize(
+        "host", ["8.8.8.8", "172.15.0.1", "172.32.0.1", "11.0.0.1", "example.com", ""]
+    )
     def test_rejects_public(self, host: str) -> None:
         assert is_private_ip(host) is False
 
@@ -236,9 +244,7 @@ class TestIsUnderRoot:
 
     def test_multiple_roots(self) -> None:
         assert (
-            is_under_root(
-                "/workspace/artifacts/x", ["/workspace/data", "/workspace/artifacts"]
-            )
+            is_under_root("/workspace/artifacts/x", ["/workspace/data", "/workspace/artifacts"])
             is True
         )
 
@@ -301,9 +307,7 @@ class TestValidateFileUri:
         assert result.rejection_reason == "system_path"
 
     def test_path_traversal_rejected(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "file:///workspace/data/../../etc/passwd", prod_config
-        )
+        result = validate_uri("file:///workspace/data/../../etc/passwd", prod_config)
         assert result.is_valid is False
         assert result.rejection_reason == "path_traversal"
 
@@ -325,9 +329,7 @@ class TestValidateFileUri:
 
 class TestValidateHttpUri:
     def test_approved_https_host_accepted(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "https://s3.amazonaws.com/bucket/key", prod_config
-        )
+        result = validate_uri("https://s3.amazonaws.com/bucket/key", prod_config)
         assert result.is_valid is True
         assert result.host == "s3.amazonaws.com"
 
@@ -402,9 +404,7 @@ class TestValidateObjectUri:
         assert result.rejection_reason == "bucket_not_allowed"
 
     def test_gs_approved(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "gs://my-bucket.storage.googleapis.com/key", prod_config
-        )
+        result = validate_uri("gs://my-bucket.storage.googleapis.com/key", prod_config)
         assert result.is_valid is True
         assert result.scheme == URIScheme.GS
 
@@ -413,9 +413,7 @@ class TestValidateObjectUri:
         assert result.is_valid is False
 
     def test_azblob_approved(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "azblob://myaccount.blob.core.windows.net/container/key", prod_config
-        )
+        result = validate_uri("azblob://myaccount.blob.core.windows.net/container/key", prod_config)
         assert result.is_valid is True
         assert result.scheme == URIScheme.AZBLOB
 
@@ -424,9 +422,7 @@ class TestValidateObjectUri:
         assert result.is_valid is False
 
     def test_s3_with_credentials_still_validated(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "s3://AKIA:SECRET@my-bucket.s3.amazonaws.com/key", prod_config
-        )
+        result = validate_uri("s3://AKIA:SECRET@my-bucket.s3.amazonaws.com/key", prod_config)
         assert result.is_valid is True
 
 
@@ -437,9 +433,7 @@ class TestValidateObjectUri:
 
 class TestValidateRunpodVolumeUri:
     def test_approved_root(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "runpod_volume:///workspace/data/x.parquet", prod_config
-        )
+        result = validate_uri("runpod_volume:///workspace/data/x.parquet", prod_config)
         assert result.is_valid is True
         assert result.scheme == URIScheme.RUNPOD_VOLUME
 
@@ -449,9 +443,7 @@ class TestValidateRunpodVolumeUri:
         assert result.rejection_reason == "outside_volume_roots"
 
     def test_traversal_rejected(self, prod_config: URIAllowlistConfig) -> None:
-        result = validate_uri(
-            "runpod_volume:///workspace/data/../../etc", prod_config
-        )
+        result = validate_uri("runpod_volume:///workspace/data/../../etc", prod_config)
         assert result.is_valid is False
         assert result.rejection_reason == "path_traversal"
 

@@ -33,6 +33,7 @@ Additional profiles available but not in the primary test order:
   training_manifest     — import quant_foundry.training_manifest
   sklearn               — import sklearn only
 """
+
 from __future__ import annotations
 
 import json
@@ -68,46 +69,41 @@ def _import_profile() -> None:
     if _PROFILE == "compat_only":
         try:
             import _strenum_compat  # type: ignore[import-not-found]  # noqa: F401
+
             _record("_strenum_compat")
         except ImportError:
             pass  # Not present on Python 3.12 — that's fine.
         return
 
     if _PROFILE == "pandas_numpy":
-        import numpy
-        import pandas
         _record("numpy")
         _record("pandas")
         return
 
     if _PROFILE == "xgboost":
-        import xgboost
         _record("xgboost")
         return
 
     if _PROFILE == "catboost":
-        import catboost
         _record("catboost")
         return
 
     if _PROFILE == "lightgbm":
-        import lightgbm
         _record("lightgbm")
         return
 
     if _PROFILE == "torch":
-        import torch
         _record("torch")
         return
 
     if _PROFILE == "sklearn":
-        import sklearn
         _record("sklearn")
         return
 
     if _PROFILE == "signatures_schemas":
         from quant_foundry.schemas import RunPodTrainingRequest  # noqa: F401
         from quant_foundry.signatures import sign_callback  # noqa: F401
+
         _record("quant_foundry.schemas")
         _record("quant_foundry.signatures")
         return
@@ -119,6 +115,7 @@ def _import_profile() -> None:
             build_callback,
             build_failure_envelope,
         )
+
         _record("quant_foundry.runpod_training")
         return
 
@@ -127,16 +124,18 @@ def _import_profile() -> None:
             DatasetQualityReport,
             QualityPolicy,
         )
+
         _record("quant_foundry.data_ingestion.quality_report")
         return
 
     if _PROFILE == "dataset_manifest":
         from quant_foundry.dataset_manifest import (  # noqa: F401
             ColumnRoles,
-            FoldSpec,
             FeatureLakeManifest,
+            FoldSpec,
             TrainingMode,
         )
+
         _record("quant_foundry.dataset_manifest")
         return
 
@@ -146,16 +145,15 @@ def _import_profile() -> None:
             ModelTaskSpec,
             TrainingMode,
         )
+
         _record("quant_foundry.training_manifest")
         return
 
     if _PROFILE == "quant_foundry_package":
-        import quant_foundry
         _record("quant_foundry")
         return
 
     if _PROFILE == "fincept_core_package":
-        import fincept_core
         _record("fincept_core")
         return
 
@@ -163,7 +161,8 @@ def _import_profile() -> None:
         # Import the production handler module WITHOUT calling handler().
         # This tests whether the production handler's module-level imports
         # (pydantic + quant_foundry + fincept_core) poison the process.
-        import handler_full  # type: ignore[import-not-found]  # noqa: F401
+        import handler_full  # type: ignore[import-not-found]
+
         _record("handler_full (module-level imports only)")
         return
 
@@ -172,6 +171,7 @@ def _import_profile() -> None:
     # But we still import handler_full at module top so the module is loaded.
     if _PROFILE == "full_handler_call":
         import handler_full  # type: ignore[import-not-found]  # noqa: F401
+
         _record("handler_full (module imported, handler() will be called at dispatch)")
         return
 
@@ -210,7 +210,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     if _PROFILE == "full_handler_call":
         # Delegate to the production handler's canary path.
         # This tests whether handler(event) crashes at dispatch time.
-        import handler_full  # type: ignore[import-not-found]  # noqa: F811
+        import handler_full  # type: ignore[import-not-found]
+
         return handler_full.handler(event)
 
     return {

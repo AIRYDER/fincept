@@ -41,10 +41,7 @@ Public surface:
 
 from __future__ import annotations
 
-from typing import Iterable
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -134,9 +131,7 @@ class TournamentViewConfig(BaseModel):
     def _validate_sort_by(cls, v: str) -> str:
         """Validate that ``sort_by`` is a supported metric key."""
         if v not in _SORTABLE_METRICS:
-            raise ValueError(
-                f"sort_by must be one of {sorted(_SORTABLE_METRICS)}, got {v!r}"
-            )
+            raise ValueError(f"sort_by must be one of {sorted(_SORTABLE_METRICS)}, got {v!r}")
         return v
 
     @field_validator("sort_order")
@@ -144,9 +139,7 @@ class TournamentViewConfig(BaseModel):
     def _validate_sort_order(cls, v: str) -> str:
         """Validate that ``sort_order`` is ``asc`` or ``desc``."""
         if v not in _SORT_ORDERS:
-            raise ValueError(
-                f"sort_order must be one of {sorted(_SORT_ORDERS)}, got {v!r}"
-            )
+            raise ValueError(f"sort_order must be one of {sorted(_SORT_ORDERS)}, got {v!r}")
         return v
 
 
@@ -429,9 +422,7 @@ class TournamentView:
 
     # -- filtering -------------------------------------------------------
 
-    def filter_challengers(
-        self, rows: list[TournamentRow]
-    ) -> list[TournamentRow]:
+    def filter_challengers(self, rows: list[TournamentRow]) -> list[TournamentRow]:
         """Return only the non-baseline (challenger) rows.
 
         Args:
@@ -443,9 +434,7 @@ class TournamentView:
         """
         return [r for r in rows if not r.is_baseline]
 
-    def filter_promotion_eligible(
-        self, rows: list[TournamentRow]
-    ) -> list[TournamentRow]:
+    def filter_promotion_eligible(self, rows: list[TournamentRow]) -> list[TournamentRow]:
         """Return only the promotion-eligible rows.
 
         Args:
@@ -491,18 +480,18 @@ class TournamentView:
         if descending:
             return sorted(
                 rows,
-                key=lambda r: (r is None, 0.0)
-                if getattr(r, metric, None) is None
-                else (False, -float(getattr(r, metric))),
+                key=lambda r: (
+                    (r is None, 0.0)
+                    if getattr(r, metric, None) is None
+                    else (False, -float(getattr(r, metric)))
+                ),
             )
 
         return sorted(rows, key=_key)
 
     # -- best-metric map -------------------------------------------------
 
-    def _best_map(
-        self, rows: list[TournamentRow]
-    ) -> dict[str, str | None]:
+    def _best_map(self, rows: list[TournamentRow]) -> dict[str, str | None]:
         """Compute the best ``model_id`` for each rendered metric column."""
         best: dict[str, str | None] = {}
         if self.config.show_cost_adjusted_return:
@@ -510,31 +499,21 @@ class TournamentView:
                 rows, "cost_adjusted_return", higher_is_better=True
             )
         if self.config.show_drawdown:
-            best["max_drawdown"] = find_best_in_column(
-                rows, "max_drawdown", higher_is_better=False
-            )
+            best["max_drawdown"] = find_best_in_column(rows, "max_drawdown", higher_is_better=False)
         if self.config.show_calibration:
             best["calibration_ece"] = find_best_in_column(
                 rows, "calibration_ece", higher_is_better=False
             )
         if self.config.show_rank_metrics:
-            best["ndcg"] = find_best_in_column(
-                rows, "ndcg", higher_is_better=True
-            )
-            best["map_score"] = find_best_in_column(
-                rows, "map_score", higher_is_better=True
-            )
+            best["ndcg"] = find_best_in_column(rows, "ndcg", higher_is_better=True)
+            best["map_score"] = find_best_in_column(rows, "map_score", higher_is_better=True)
         if self.config.show_deflated_score:
             best["deflated_score"] = find_best_in_column(
                 rows, "deflated_score", higher_is_better=True
             )
         # mse and sharpe are always shown.
-        best["mse"] = find_best_in_column(
-            rows, "mse", higher_is_better=False
-        )
-        best["sharpe_ratio"] = find_best_in_column(
-            rows, "sharpe_ratio", higher_is_better=True
-        )
+        best["mse"] = find_best_in_column(rows, "mse", higher_is_better=False)
+        best["sharpe_ratio"] = find_best_in_column(rows, "sharpe_ratio", higher_is_better=True)
         return best
 
     # -- render ----------------------------------------------------------
@@ -595,17 +574,12 @@ class TournamentView:
             cells.append(mse_cell)
 
             sharpe_cell = format_metric(row.sharpe_ratio, higher_is_better=True)
-            if (
-                best.get("sharpe_ratio") == row.model_id
-                and row.sharpe_ratio is not None
-            ):
+            if best.get("sharpe_ratio") == row.model_id and row.sharpe_ratio is not None:
                 sharpe_cell += " [*]"
             cells.append(sharpe_cell)
 
             if self.config.show_cost_adjusted_return:
-                cell = format_metric(
-                    row.cost_adjusted_return, higher_is_better=True
-                )
+                cell = format_metric(row.cost_adjusted_return, higher_is_better=True)
                 if (
                     best.get("cost_adjusted_return") == row.model_id
                     and row.cost_adjusted_return is not None
@@ -614,41 +588,25 @@ class TournamentView:
                 cells.append(cell)
 
             if self.config.show_drawdown:
-                cell = format_metric(
-                    row.max_drawdown, higher_is_better=False
-                )
-                if (
-                    best.get("max_drawdown") == row.model_id
-                    and row.max_drawdown is not None
-                ):
+                cell = format_metric(row.max_drawdown, higher_is_better=False)
+                if best.get("max_drawdown") == row.model_id and row.max_drawdown is not None:
                     cell += " [*]"
                 cells.append(cell)
 
             if self.config.show_calibration:
-                cell = format_metric(
-                    row.calibration_ece, higher_is_better=False
-                )
-                if (
-                    best.get("calibration_ece") == row.model_id
-                    and row.calibration_ece is not None
-                ):
+                cell = format_metric(row.calibration_ece, higher_is_better=False)
+                if best.get("calibration_ece") == row.model_id and row.calibration_ece is not None:
                     cell += " [*]"
                 cells.append(cell)
 
             if self.config.show_rank_metrics:
                 cell = format_metric(row.ndcg, higher_is_better=True)
-                if (
-                    best.get("ndcg") == row.model_id
-                    and row.ndcg is not None
-                ):
+                if best.get("ndcg") == row.model_id and row.ndcg is not None:
                     cell += " [*]"
                 cells.append(cell)
 
                 cell = format_metric(row.map_score, higher_is_better=True)
-                if (
-                    best.get("map_score") == row.model_id
-                    and row.map_score is not None
-                ):
+                if best.get("map_score") == row.model_id and row.map_score is not None:
                     cell += " [*]"
                 cells.append(cell)
 
@@ -658,13 +616,8 @@ class TournamentView:
                 )
 
             if self.config.show_deflated_score:
-                cell = format_metric(
-                    row.deflated_score, higher_is_better=True
-                )
-                if (
-                    best.get("deflated_score") == row.model_id
-                    and row.deflated_score is not None
-                ):
+                cell = format_metric(row.deflated_score, higher_is_better=True)
+                if best.get("deflated_score") == row.model_id and row.deflated_score is not None:
                     cell += " [*]"
                 cells.append(cell)
 
@@ -742,32 +695,22 @@ class TournamentView:
         lines.append(f"Family: {row.model_family}")
         lines.append(f"Role: {role}")
         lines.append(f"MSE: {format_metric(row.mse, higher_is_better=False)}")
-        lines.append(
-            f"Sharpe: {format_metric(row.sharpe_ratio, higher_is_better=True)}"
-        )
+        lines.append(f"Sharpe: {format_metric(row.sharpe_ratio, higher_is_better=True)}")
         if self.config.show_cost_adjusted_return:
             lines.append(
                 f"Cost-Adjusted Return: {format_metric(row.cost_adjusted_return, higher_is_better=True)}"
             )
         if self.config.show_drawdown:
-            lines.append(
-                f"Max Drawdown: {format_metric(row.max_drawdown, higher_is_better=False)}"
-            )
+            lines.append(f"Max Drawdown: {format_metric(row.max_drawdown, higher_is_better=False)}")
         if self.config.show_calibration:
             lines.append(
                 f"Calibration ECE: {format_metric(row.calibration_ece, higher_is_better=False)}"
             )
         if self.config.show_rank_metrics:
-            lines.append(
-                f"NDCG: {format_metric(row.ndcg, higher_is_better=True)}"
-            )
-            lines.append(
-                f"mAP: {format_metric(row.map_score, higher_is_better=True)}"
-            )
+            lines.append(f"NDCG: {format_metric(row.ndcg, higher_is_better=True)}")
+            lines.append(f"mAP: {format_metric(row.map_score, higher_is_better=True)}")
         if self.config.show_trial_count:
-            trials = (
-                str(row.trial_count) if row.trial_count is not None else _NULL_SENTINEL
-            )
+            trials = str(row.trial_count) if row.trial_count is not None else _NULL_SENTINEL
             lines.append(f"Trials: {trials}")
         if self.config.show_deflated_score:
             lines.append(
@@ -781,9 +724,7 @@ class TournamentView:
 
     # -- render_comparison ----------------------------------------------
 
-    def render_comparison(
-        self, baseline: TournamentRow, challenger: TournamentRow
-    ) -> str:
+    def render_comparison(self, baseline: TournamentRow, challenger: TournamentRow) -> str:
         """Render a side-by-side comparison of a baseline vs a challenger.
 
         For each metric a delta is computed via :func:`format_delta` so the
@@ -800,12 +741,8 @@ class TournamentView:
             delta columns.
         """
         lines: list[str] = []
-        lines.append(
-            f"=== Comparison: {baseline.model_id} vs {challenger.model_id} ==="
-        )
-        lines.append(
-            f"{'Metric':<22} {'Baseline':>12} {'Challenger':>12} {'Delta':>14}"
-        )
+        lines.append(f"=== Comparison: {baseline.model_id} vs {challenger.model_id} ===")
+        lines.append(f"{'Metric':<22} {'Baseline':>12} {'Challenger':>12} {'Delta':>14}")
         lines.append("-" * 62)
 
         def _row_line(
@@ -819,9 +756,7 @@ class TournamentView:
             d_str = format_delta(b, c, higher_is_better=higher_is_better)
             return f"{label:<22} {b_str:>12} {c_str:>12} {d_str:>14}"
 
-        lines.append(
-            _row_line("MSE", baseline.mse, challenger.mse, higher_is_better=False)
-        )
+        lines.append(_row_line("MSE", baseline.mse, challenger.mse, higher_is_better=False))
         lines.append(
             _row_line(
                 "Sharpe",

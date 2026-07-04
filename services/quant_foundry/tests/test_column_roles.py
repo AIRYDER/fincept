@@ -322,7 +322,9 @@ def test_model_task_spec_ranking_with_group_ok():
     from quant_foundry.training_manifest import ModelTaskSpec
 
     spec = ModelTaskSpec(
-        task_type="ranking", label_column="label", group_column="group_id",
+        task_type="ranking",
+        label_column="label",
+        group_column="group_id",
     )
     assert spec.group_column == "group_id"
 
@@ -346,7 +348,9 @@ def test_model_task_spec_invalid_calibration_policy():
 
     with pytest.raises(Exception, match="calibration_policy"):
         ModelTaskSpec(
-            task_type="binary", label_column="label", calibration_policy="bad",
+            task_type="binary",
+            label_column="label",
+            calibration_policy="bad",
         )
 
 
@@ -355,7 +359,9 @@ def test_model_task_spec_valid_calibration_policies():
 
     for policy in ("none", "platt", "isotonic"):
         spec = ModelTaskSpec(
-            task_type="binary", label_column="label", calibration_policy=policy,
+            task_type="binary",
+            label_column="label",
+            calibration_policy=policy,
         )
         assert spec.calibration_policy == policy
 
@@ -423,7 +429,9 @@ def test_validate_task_spec_group_column_not_in_roles():
 
     roles = _basic_roles()
     spec = _basic_spec(
-        task_type="ranking", label_column="label", group_column="missing_group",
+        task_type="ranking",
+        label_column="label",
+        group_column="missing_group",
     )
     result = validate_task_spec(spec, roles)
     assert result.passed is False
@@ -438,7 +446,9 @@ def test_validate_task_spec_ranking_without_group_in_roles():
     # ModelTaskSpec requires group_column for ranking, so we set it on
     # the spec but NOT on the roles.
     spec = _basic_spec(
-        task_type="ranking", label_column="label", group_column="group_id",
+        task_type="ranking",
+        label_column="label",
+        group_column="group_id",
     )
     result = validate_task_spec(spec, roles)
     assert result.passed is False
@@ -455,7 +465,9 @@ def test_validate_task_spec_ranking_with_group_in_roles_pass():
         group_column="group_id",
     )
     spec = _basic_spec(
-        task_type="ranking", label_column="label", group_column="group_id",
+        task_type="ranking",
+        label_column="label",
+        group_column="group_id",
     )
     result = validate_task_spec(spec, roles)
     assert result.passed is True
@@ -757,6 +769,7 @@ def test_column_roles_importable_from_dataset_manifest():
         ColumnRolesValidationResult,
         validate_column_roles,
     )
+
     assert ColumnRoles is not None
     assert ColumnRolesValidationResult is not None
     assert callable(validate_column_roles)
@@ -767,5 +780,6 @@ def test_model_task_spec_importable_from_training_manifest():
         ModelTaskSpec,
         validate_task_spec,
     )
+
     assert ModelTaskSpec is not None
     assert callable(validate_task_spec)

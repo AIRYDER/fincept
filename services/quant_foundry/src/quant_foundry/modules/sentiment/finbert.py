@@ -19,7 +19,6 @@ This module is registered as ``sentiment:finbert:1.0.0``.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import pathlib
 from typing import Any
@@ -87,9 +86,7 @@ class FinBERTSentiment:
         self.device: str = self.config.get("device", "auto")
         self.language: str = self.config.get("language", "auto")
         self.cache_dir: pathlib.Path | None = (
-            pathlib.Path(self.config["cache_dir"])
-            if self.config.get("cache_dir")
-            else None
+            pathlib.Path(self.config["cache_dir"]) if self.config.get("cache_dir") else None
         )
         self._model = None  # lazy-loaded
         self._tokenizer = None  # lazy-loaded
@@ -117,7 +114,8 @@ class FinBERTSentiment:
         cache_file = self.cache_dir / "finbert_sentiment_cache.json"
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(
-            json.dumps(self._cache, sort_keys=True), encoding="utf-8",
+            json.dumps(self._cache, sort_keys=True),
+            encoding="utf-8",
         )
 
     def _load_model(self) -> None:
@@ -209,7 +207,9 @@ class FinBERTSentiment:
             scorer = self._get_fallback()
             fb_results = scorer.score([item for _, item in fallback_items])
             for (orig_idx, item), fb_result in zip(
-                fallback_items, fb_results, strict=True,
+                fallback_items,
+                fb_results,
+                strict=True,
             ):
                 # Re-tag the provider so callers know FinBERT routed it.
                 results[orig_idx] = SentimentResult(
@@ -274,4 +274,4 @@ class FinBERTSentiment:
         return results  # type: ignore[return-value]
 
 
-__all__ = ["FinBERTSentiment", "DEFAULT_MODEL"]
+__all__ = ["DEFAULT_MODEL", "FinBERTSentiment"]
