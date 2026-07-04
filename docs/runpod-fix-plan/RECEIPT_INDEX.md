@@ -1,10 +1,10 @@
 # RunPod Training-Worker Fix — Receipt Index
 
-Last consolidated: 2026-07-03 (hourly pass #4)
+Last consolidated: 2026-07-03 (hourly pass #5)
 Consolidator: autonomous receipt consolidation pass
 Branch: `fix/test-harness-optional-deps-guards`
-Newest commit reviewed: `6dbec436` (fix(runpod): parents[5] IndexError + restore production handler + probe fix)
-Live validation: **PRODUCTION CANARY PASSED 3/3** (receipt `reports/runpod-test-runs/6dbec436/`)
+Newest commit reviewed: `677c77ed` (evidence(runpod): live production canary 3/3 PASSED + run_live_canary.py tool)
+Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (receipts `reports/runpod-test-runs/6dbec436/` and `reports/runpod-test-runs/6dbec436/live-canary/`)
 
 This index is the single entry point for any agent resuming the RunPod
 training-worker instability investigation. Read this first, then follow the
@@ -52,10 +52,18 @@ success, completed 2026-07-03T21:38:03Z, 13m28s). Image published at
 throughout, same worker ID (`goi504hgln2q6x`) for all three jobs. Receipt:
 `reports/runpod-test-runs/6dbec436/` (committed).
 
-**CI status:** `ci` workflow failed on `6dbec436` (run 28683992505,
-pre-existing Ruff lint debt — 1334 errors, identical count to `c0f15fa7` and
-`main`; NOT a regression, does NOT block the RunPod fix path).
-`build-runpod-training` SUCCEEDED (run 28683991294).
+**LIVE VALIDATION PASSED AGAIN (pass #5):** A **second independent** live
+canary run against the same `6dbec436` image also PASSED 3/3 (endpoints
+`yyxwraovovy1un`/`yju9c75p80odby`/`rzw1aifoi2zhc7`, jobs `d3441295`/
+`8641a636`/`050c1034`, each COMPLETED in ~5s, worker `unhealthy=0`
+throughout). Receipt: `reports/runpod-test-runs/6dbec436/live-canary/`
+(committed in `677c77ed`). **Total: 6/6 live canaries PASSED.**
+
+**CI status (pass #5):** `ci` workflow failed on `677c77ed` (run 28686245962,
+pre-existing Ruff lint debt — 1334 errors, identical count to `6dbec436`,
+`c0f15fa7`, and `main`; NOT a regression, does NOT block the RunPod fix
+path). `build-runpod-training` SUCCEEDED on `677c77ed` (run 28686244617,
+per CI triage receipt 22:40 UTC).
 
 **The `parents[5]` IndexError is CONFIRMED as the root cause.** The only code
 change between the failing `c508103f` image and the passing `6dbec436` image
@@ -67,18 +75,24 @@ model training).
 
 ## What Changed (since last consolidation)
 
-No new commits since pass #3 (HEAD is still `6dbec436`). The change since
-pass #3 is **live validation evidence**, all currently uncommitted:
+Pass #4's live validation evidence is now **COMMITTED**. Two new commits
+landed since pass #4 reviewed `6dbec436`:
 
-| Item | Type | Status | Summary |
-|------|------|--------|---------|
-| `build-runpod-training` run 28683991294 | CI | **SUCCESS** (completed 21:38:03Z) | Image `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d` published. Resolves pass #3 open question #3. |
-| `reports/runpod-test-runs/6dbec436/` | **live receipt** | **uncommitted** | Production canary PASSED 3/3. Endpoint `4jc1opwj11zmai`, jobs `92f886af`/`d5115bcb`/`c82f4b0f` all COMPLETED, worker `goi504hgln2q6x` healthy throughout. Resolves pass #3 open question #2. |
-| `runpod/quant-foundry-training/run_live_canary.py` | tooling | **untracked** | Script that ran the live canary and wrote the receipt bundle. |
-| `.tmp_canary_payload{,2,3}.json` | scratch | **untracked** | Temporary canary payload files from the live run. Safe to delete. |
+| Commit | Type | Summary |
+|--------|------|---------|
+| `a4cacc64` | evidence | Committed the first live canary receipt bundle (`reports/runpod-test-runs/6dbec436/` — endpoint `4jc1opwj11zmai`, 3/3 COMPLETED), the pass #4 `RECEIPT_INDEX.md` edits, and `07-remaining-work.md` status updates. Raw evidence: `canary-probe.jsonl`, `health-before/after.json`, `cleanup.json`. |
+| `677c77ed` | evidence + tooling | Added a **second** independent live canary run (`reports/runpod-test-runs/6dbec436/live-canary/` — endpoints `yyxwraovovy1un`/`yju9c75p80odby`/`rzw1aifoi2zhc7`, 3/3 COMPLETED), the reusable `runpod/quant-foundry-training/run_live_canary.py` tool, `ruff.toml` per-file-ignores for it, task queue v2 (`08-swarm-task-queue-v2.md`), and index updates. |
 
-The pass #3 index edits to `RECEIPT_INDEX.md` and `07-remaining-work.md` are
-also still uncommitted (they were written by pass #3 but not committed).
+**Net result:** the production canary has now PASSED **6/6** across two
+independent live runs (two different endpoint sets, two different worker
+IDs). The `parents[5]` fix is confirmed live twice over.
+
+**Currently uncommitted (pass #5 worktree):**
+- `docs/runpod-fix-plan/09-swarm-task-queue-v3.md` (untracked) — task queue v3
+- `docs/runpod-fix-plan/10-swarm-task-queue-v4.md` (untracked) — task queue v4, **supersedes v3**, the current open-task source of truth
+- `reports/ci-triage/` (untracked) — 3 hourly CI triage receipts (20:05, 21:30, 22:40 UTC)
+- `infra/docker/api.Dockerfile` (modified) — pre-existing, unrelated to RunPod fix
+- `SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md` (untracked) — session artifacts, classify before ship
 
 The Test F receipt bundle (`reports/runpod-test-runs/c0f15fa7/import-bisection/`)
 was generated by running `run_import_bisection.py` against the `c0f15fa7`
@@ -87,7 +101,7 @@ image. All 12 profiles were run live. The receipt bundle's `summary.json` and
 conclusion (from a probe script bug) that was corrected by commit `61dca0a4`
 (pass #2 described the correction; `61dca0a4` committed it). The IndexError
 root cause from `06646f1c`'s commit message is confirmed by code inspection
-and is now FIXED and VALIDATED LIVE by `6dbec436`.
+and is now FIXED and VALIDATED LIVE by `6dbec436` (twice, 6/6 canaries).
 
 ---
 
@@ -143,8 +157,8 @@ and is now FIXED and VALIDATED LIVE by `6dbec436`.
      canary path locally. Does NOT prove live RunPod behavior.
 
 7. **The `parents[5]` fix makes the production handler work LIVE as the direct
-   RunPod entrypoint.** *(NEW in pass #4 — receipt uncommitted)*
-   - Receipt: `reports/runpod-test-runs/6dbec436/` (uncommitted).
+   RunPod entrypoint.** *(pass #4 — receipt committed in `a4cacc64`)*
+   - Receipt: `reports/runpod-test-runs/6dbec436/`.
    - Image: `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`
      (full 40-char SHA, built by `build-runpod-training` run 28683991294).
    - Endpoint `4jc1opwj11zmai`, three `callback_secret_canary` jobs:
@@ -158,6 +172,19 @@ and is now FIXED and VALIDATED LIVE by `6dbec436`.
      `health-before.json` (`ready=1, unhealthy=0`), `health-after.json`
      (`completed=3, failed=0, unhealthy=0`), `cleanup.json` (endpoint scaled
      to `workersMin=0`, broken short-SHA endpoint also cleaned up).
+
+8. **A SECOND independent live canary run also PASSED 3/3.** *(NEW in pass #5 — receipt committed in `677c77ed`)*
+   - Receipt: `reports/runpod-test-runs/6dbec436/live-canary/`.
+   - Same image SHA `6dbec436c92b57a788b84622338baacc3df8665d`, but three
+     DIFFERENT endpoints (`yyxwraovovy1un`, `yju9c75p80odby`, `rzw1aifoi2zhc7`)
+     and three different jobs (`d3441295`, `8641a636`, `050c1034`), each
+     COMPLETED in ~5s, worker `unhealthy=0` throughout.
+   - This is a fully independent confirmation of finding #7 — different
+     endpoints, different worker IDs, same image, same result. The fix is
+     not a fluke of a single endpoint/worker.
+   - Raw evidence: `live-canary/probe.jsonl`, `live-canary/status-final.json`,
+     `live-canary/health-before/after.json`, `live-canary/cleanup.json`,
+     `live-canary/interpretation.md`.
 
 ---
 
@@ -199,18 +226,26 @@ LIVE (3/3 canaries COMPLETED). The remaining open questions are:
 3. ~~Did `build-runpod-training` succeed for `6dbec436`?~~ **RESOLVED in pass
    #4: YES.** Run 28683991294, conclusion `success`, completed
    2026-07-03T21:38:03Z. Image published at full 40-char SHA tag.
-4. **Does a real `train_model` job complete live?** *(NEW in pass #4)* The
+4. **Does a real `train_model` job complete live?** *(open since pass #4)* The
    canary path exercises preflight + callback signing but does NOT run actual
    model training (dataset loading, trainer execution, model export). A
    `gpu_healthcheck` job should be dispatched next to verify GPU access
-   inside the container, followed by a minimal `train_model` job.
-5. **Are the uncommitted receipt bundle and tooling committed before ship?**
-   The `reports/runpod-test-runs/6dbec436/` receipt, `run_live_canary.py`,
-   and the pass #3/#4 index edits are all uncommitted. They should be
-   committed as an evidence commit before the fix branch is merged.
+   inside the container, followed by a minimal `train_model` job. This is
+   task **A6/A7** in the v4 task queue (`10-swarm-task-queue-v4.md`).
+5. ~~Are the uncommitted receipt bundle and tooling committed before ship?~~
+   **RESOLVED in pass #5: YES.** The `6dbec436` receipt bundle, the second
+   `live-canary/` receipt, `run_live_canary.py`, and the pass #4 index edits
+   are all committed in `a4cacc64` and `677c77ed`. Do NOT re-commit them.
+6. **Are the new task queues (v3/v4) and CI triage receipts committed?**
+   *(NEW in pass #5)* `09-swarm-task-queue-v3.md`, `10-swarm-task-queue-v4.md`,
+   and `reports/ci-triage/` (3 receipts) are uncommitted. v4 is the current
+   open-task source of truth and should be committed; v3 is superseded by v4
+   and can be dropped or kept for history. This is task **D4** in the v4
+   queue.
 
 **To resolve:** dispatch a `gpu_healthcheck` then a minimal `train_model` job
-against the `6dbec436` image, then commit the receipt bundle + index updates.
+against the `6dbec436` image (tasks A6/A7), and commit the v4 task queue +
+CI triage receipts (task D4).
 
 ---
 
@@ -240,8 +275,14 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
   `docker=None, unhealthy=1`. Always use the full 40-char SHA for the image
   tag. *(NEW in pass #4)*
 - **Re-running the production canary against `6dbec436`** — it already PASSED
-  3/3 live. The fix is validated. Move on to `train_model` / `gpu_healthcheck`
-  testing. *(NEW in pass #4)*
+  6/6 live across two independent runs (findings #7 and #8). The fix is
+  validated twice over. Move on to `train_model` / `gpu_healthcheck`
+  testing. *(updated in pass #5)*
+- **Re-committing the `6dbec436` receipt bundle, `run_live_canary.py`, or the
+  pass #4 index edits** — these are already committed in `a4cacc64` and
+  `677c77ed`. `git status` confirms only `infra/docker/api.Dockerfile` is
+  modified and the untracked items listed in "What Changed" remain. *(NEW in
+  pass #5)*
 
 ---
 
@@ -251,18 +292,27 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 
 | Dir | SHA | Result | Handler | Endpoint |
 |-----|-----|--------|---------|----------|
-| `reports/runpod-test-runs/6dbec436/` *(uncommitted)* | `6dbec436` | **PASS** (3/3 canaries COMPLETED) | production handler (direct entrypoint, post-fix) | `4jc1opwj11zmai` |
+| `reports/runpod-test-runs/6dbec436/live-canary/` | `6dbec436` | **PASS** (3/3 canaries COMPLETED, 2nd independent run) | production handler (direct entrypoint, post-fix) | `yyxwraovovy1un` / `yju9c75p80odby` / `rzw1aifoi2zhc7` |
+| `reports/runpod-test-runs/6dbec436/` | `6dbec436` | **PASS** (3/3 canaries COMPLETED, 1st run) | production handler (direct entrypoint, post-fix) | `4jc1opwj11zmai` |
 | `reports/runpod-test-runs/c0f15fa7/import-bisection/` | `c0f15fa7` | **PASS** (11/12 pass, 1 false negative) | bisect (all profiles) | 12 endpoints |
 | `reports/runpod-test-runs/d7ba5a2d/` | `d7ba5a2d` | **PASS** | sentinel (runpod + stdlib) | `fqa18kqj9exo62` |
 | `reports/runpod-test-runs/c508103f/swarm-scaffold/` | `c508103f` | **FAIL** (pre-fix baseline) | production handler (direct entrypoint, pre-fix) | `635ywogaldb3r2` |
 | `reports/runpod-test-runs/2026-07-02/` | `412080c6` (failed control) | **FAIL** | layered handler | `rjxyaov775q7nd` / `zbpy7m8s8dps7k` |
 
+### CI triage receipts (hourly watch, uncommitted)
+
+| Receipt | Window | Key finding |
+|---------|--------|-------------|
+| `reports/ci-triage/receipt-20260703T224000Z.md` | 21:30→22:40 UTC | F1–F4 unchanged; `build-runpod-training` green on `677c77ed` |
+| `reports/ci-triage/receipt-20260703T213000Z.md` | 20:05→21:30 UTC | F1–F4 unchanged; `build-runpod-training` green on `6dbec436` |
+| `reports/ci-triage/receipt-20260703T200535Z.md` | first pass | F1–F4 baseline; `build-runpod-training` green on `6dbec436` |
+
 ### CI workflow status at consolidation time
 
 | Workflow | Run id | SHA | Status |
 |----------|--------|-----|--------|
-| `build-runpod-training` | 28683991294 | `6dbec436` | **success** (completed 21:38:03Z, 13m28s) — image published |
-| `ci` | 28683992505 | `6dbec436` | failure (pre-existing Ruff debt, NOT a regression) |
+| `build-runpod-training` | 28686244617 | `677c77ed` | **success** (green on newest commit, per CI triage 22:40 UTC) |
+| `ci` | 28686245962 | `677c77ed` | failure (pre-existing Ruff debt, 1334 errors, identical to `main` — NOT a regression) |
 
 ### Regression guards (added in `6dbec436`)
 
@@ -271,7 +321,7 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 - `runpod/tests/test_dockerfile_no_healthcheck.py` — fails if a Docker
   `HEALTHCHECK` is reintroduced (pre-existing).
 
-### Key receipt files for `6dbec436` (production canary — PASS, uncommitted)
+### Key receipt files for `6dbec436` (production canary — PASS, committed in `a4cacc64`)
 
 - `interpretation.md` — full analysis: 3/3 COMPLETED, timeline, job outputs,
   operational note on full-SHA image tag, next-step prompt.
@@ -282,6 +332,15 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 - `cleanup.json` — endpoint `4jc1opwj11zmai` scaled to `workersMin=0`;
   broken short-SHA endpoint `jtr18cdh5lgov2` also cleaned up; no stuck jobs;
   no secrets printed.
+
+### Key receipt files for `6dbec436/live-canary/` (2nd canary — PASS, committed in `677c77ed`)
+
+- `interpretation.md` — full analysis: 3/3 COMPLETED, endpoint shape, what
+  was fixed, cleanup, acceptance checklist.
+- `probe.jsonl` — raw probe events across the 3 canary runs.
+- `status-final.json` — final job statuses (all COMPLETED).
+- `health-before.json` / `health-after.json` — worker health pre/post.
+- `cleanup.json` — all test endpoints/templates deleted; no warm endpoints.
 
 ### Key receipt files for Test F (`c0f15fa7`)
 
@@ -305,6 +364,13 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
   poisons" contradiction, but the summary has since been corrected to
   "lightgbm poisons" (which is also false). T1 should be marked done or
   updated to reflect that the receipt has been corrected by this pass.
+- `docs/runpod-fix-plan/08-swarm-task-queue-v2.md` — task queue v2 (committed
+  in `677c77ed`). Lane A (A1–A5) is now DONE/OBSOLETE per v3.
+- `docs/runpod-fix-plan/09-swarm-task-queue-v3.md` *(uncommitted)* — task
+  queue v3; supersedes v2. Accurate but untracked.
+- `docs/runpod-fix-plan/10-swarm-task-queue-v4.md` *(uncommitted)* — task
+  queue v4; **supersedes v3** and is the current open-task source of truth
+  (A6–A8, B1–B3, C1–C10, D1–D4). Read this for the full remaining-work list.
 
 ### Older root-cause docs (still valid background, but some conclusions are now superseded)
 
@@ -317,6 +383,23 @@ against the `6dbec436` image, then commit the receipt bundle + index updates.
 ---
 
 ## Receipt Corrections Made This Pass
+
+**Pass #5 corrected one stale instruction in this index (no raw receipts
+were modified):**
+
+- The "Next Agent Instruction" item 1 (written in pass #4) told the next
+  agent to commit the `6dbec436` receipt bundle, `run_live_canary.py`, and
+  the pass #4 index as an evidence commit. **That work was already done** in
+  commits `a4cacc64` and `677c77ed`. The instruction is now rewritten below
+  to reflect the post-`677c77ed` state. (This stale instruction was first
+  flagged by `10-swarm-task-queue-v4.md`.)
+
+**Pass #5 reviewed the new `live-canary/` receipt bundle**
+(`reports/runpod-test-runs/6dbec436/live-canary/`, committed in `677c77ed`)
+against its raw evidence (`probe.jsonl`, `status-final.json`,
+`health-before/after.json`, `cleanup.json`) and confirms it is internally
+consistent — all 3 canary runs show `COMPLETED` with `unhealthy=0`
+throughout. No corrections needed.
 
 **Pass #4 made no new receipt corrections.** The `6dbec436` receipt bundle
 (`reports/runpod-test-runs/6dbec436/`) was reviewed against its raw evidence
@@ -395,11 +478,12 @@ silently.
 ## Next Agent Instruction
 
 Continue driving the Fincept / Quant Foundry RunPod training-worker fix
-forward. **The code fix is DONE and VALIDATED LIVE (commit `6dbec436`).**
-Items 1, 2, 3, 5, 6, 9, 10, 11 from `07-remaining-work.md` are complete.
-The production canary PASSED 3/3 live (receipt
-`reports/runpod-test-runs/6dbec436/`). The `parents[5]` IndexError is
-confirmed as the root cause.
+forward. **The code fix is DONE and VALIDATED LIVE 6/6 (commit `6dbec436`,
+receipts committed in `a4cacc64`/`677c77ed`).** Items 1, 2, 3, 5, 6, 9, 10,
+11 from `07-remaining-work.md` are complete. The production canary PASSED
+6/6 live across two independent runs (receipts
+`reports/runpod-test-runs/6dbec436/` and `.../6dbec436/live-canary/`). The
+`parents[5]` IndexError is confirmed as the root cause.
 
 **IMPORTANT:** the `build-runpod-training.yml` workflow tags images with the
 FULL 40-char SHA (`github.sha`), NOT a short SHA. Always use
@@ -407,37 +491,41 @@ FULL 40-char SHA (`github.sha`), NOT a short SHA. Always use
 image tag. Using a short SHA produces a non-existent image tag and the
 container exits immediately with `docker=None, unhealthy=1`.
 
-The remaining work is:
+The full open-task list lives in `docs/runpod-fix-plan/10-swarm-task-queue-v4.md`
+(the current source of truth — read it). The remaining work, in priority
+order:
 
-1. **Commit the uncommitted receipt bundle and index updates.** The following
-   are uncommitted and should be committed as an evidence commit (separate
-   from any code changes):
-   - `reports/runpod-test-runs/6dbec436/` (live canary receipt — PASS 3/3)
-   - `runpod/quant-foundry-training/run_live_canary.py` (canary automation)
-   - `docs/runpod-fix-plan/RECEIPT_INDEX.md` (this index — pass #4)
-   - `docs/runpod-fix-plan/07-remaining-work.md` (pass #3 status updates)
-   - Delete `.tmp_canary_payload{,2,3}.json` (scratch files from the live run)
-   Suggested commit message: `evidence(runpod): commit 6dbec436 live canary receipt (3/3 PASS) + pass #4 index`
+1. **Live `gpu_healthcheck` / `train_model` job** (tasks A6/A7 in v4 queue) —
+   the canary path exercises preflight + callback signing but NOT actual
+   model training or GPU access. Dispatch a `gpu_healthcheck` job
+   (mode=canary) against the `6dbec436` image to verify the GPU is
+   accessible, then a minimal `train_model` job to verify the full training
+   pipeline (dataset loading, trainer execution, model export) works live.
+   Reuse endpoint `4jc1opwj11zmai` (scale back up to `workersMin=1`) or
+   create a fresh one. Use the FULL 40-char SHA image tag. This is
+   `needs senior agent` (live cloud, spend, secrets).
 
-2. **Live `gpu_healthcheck` / `train_model` job** — the canary path exercises
-   preflight + callback signing but NOT actual model training or GPU access.
-   Dispatch a `gpu_healthcheck` job (mode=canary) against the `6dbec436`
-   image to verify the GPU is accessible, then a minimal `train_model` job to
-   verify the full training pipeline (dataset loading, trainer execution,
-   model export) works live. Reuse endpoint `4jc1opwj11zmai` (scale back up
-   to `workersMin=1`) or create a fresh one. Use the FULL 40-char SHA image
-   tag.
+2. **Commit the v4 task queue + CI triage receipts** (task D4 in v4 queue) —
+   `docs/runpod-fix-plan/10-swarm-task-queue-v4.md` (supersedes v3, the
+   current open-task source of truth) and `reports/ci-triage/` (3 receipts)
+   are uncommitted. v3 (`09-swarm-task-queue-v3.md`) is superseded — drop it
+   or keep for history. This is `safe beginner` (doc-only).
 
-3. **Repo hygiene (item 12 in `07-remaining-work.md`):** the worktree has
-   uncommitted `infra/docker/api.Dockerfile` changes, `ruff.toml` +
-   `runpod/quant-foundry-training/run_live_canary.py` (canary automation
-   tooling from a prior session), and untracked `SESSION_HANDOFF.md`,
-   `handoffs/`, `kimiSuggestionFix.md`, and `reports/ci-triage/`. Do NOT
-   bundle these into the RunPod fix commit. Classify each before final ship.
+3. **Repo hygiene** (task B1 in v4 queue) — the worktree has uncommitted
+   `infra/docker/api.Dockerfile` changes and untracked `SESSION_HANDOFF.md`,
+   `handoffs/`, `kimiSuggestionFix.md`. Do NOT bundle these into the RunPod
+   fix commit. Classify each before final ship. This is `do not automate`
+   (requires operator decision).
 
-4. **CI lint debt:** the `ci` workflow fails on `6dbec436` with 1334 Ruff
-   errors (pre-existing, identical count to `main` — NOT a regression). This
-   does NOT block the RunPod fix path but should be addressed separately.
+4. **CI lint debt** (task C8 in v4 queue) — the `ci` workflow fails on
+   `677c77ed` with 1334 Ruff errors (pre-existing, identical count to `main`
+   — NOT a regression). This does NOT block the RunPod fix path but should
+   be addressed on a **separate branch off `main`** (auto-fix 613/1334 with
+   `uv run ruff check --fix libs services`, then triage the remaining 721).
+
+5. **Security-urgent** (tasks D1/D2 in v4 queue) — a Stripe secret-token is
+   leaked in the repo (Trivy CRITICAL, nightly on `main`). Locate & remove
+   it, rotate the key, then bump `next` to >=15.5.16 in `apps/dashboard`.
 
 Do NOT re-run experiments already disproved in the "What Failed" table above.
 Do NOT pursue the "lightgbm poisons the worker" hypothesis — it was disproven.
