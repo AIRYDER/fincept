@@ -1,106 +1,119 @@
-# Fincept Swarm Task Queue v5
+# Fincept Swarm Task Queue v8
 
-Last generated: 2026-07-03 (refresh of v4; no new commits since v4)
-Last updated: 2026-07-03 pass #7 (D4/D5 marked DONE — committed in `748eef6c`/`3940271b`)
+Last generated: 2026-07-04 (refresh of v7 after CI triage receipt #5 landed in worktree)
 Branch: `fix/test-harness-optional-deps-guards`
-HEAD: `3098f11f` (evidence(runpod): pass #6 receipt — D4 + D5 doc-only commits)
-Source of truth for prior state: `docs/runpod-fix-plan/RECEIPT_INDEX.md` (pass #7, **committed**)
-Supersedes: `docs/runpod-fix-plan/10-swarm-task-queue-v4.md`
+HEAD: `6e85f44c` (evidence(runpod): A6 live gpu_healthcheck PASSED — RTX 4090 visible)
+Source of truth for prior state: `docs/runpod-fix-plan/RECEIPT_INDEX.md` (pass #8, **uncommitted** in worktree)
+Supersedes: `docs/runpod-fix-plan/13-swarm-task-queue-v7.md`
 
-This queue **supersedes v4**. v4 was accurate but missed one uncommitted
-worktree item (the pass #5 `RECEIPT_INDEX.md` consolidation). v5 corrects
-that gap, re-issues the queue against the current worktree, and is
-self-contained so smaller agents do not cross-reference v4.
+This queue **supersedes v7**. v7 was accurate as of pass #8 (A6 done). Since v7 was
+generated, **no new commits have landed** (`git log 6e85f44c..HEAD` is empty) and
+**no task has been completed**. The only worktree delta is one new untracked file:
+CI triage receipt #5 (`reports/ci-triage/receipt-20260704T063000Z.md`, 06:30 UTC,
+UNCHANGED status — no new CI runs in a 2h28m window; re-verifies F2
+`api.Dockerfile` one-liner as correct). v8 therefore:
 
-**No code has landed since v4 was written** — HEAD is now `3098f11f`
-(pass #6 was doc-only: D4 + D5 + the pass #6 receipt). **Tasks D4 and D5
-are now DONE** (committed in `748eef6c` and `3940271b`). Every other v4
-task is still OPEN.
+- **Carries forward every v7 task card unchanged** (all still open, all still
+  accurate). v7's task cards are reproduced verbatim below so smaller agents do
+  not cross-reference v7.
+- **Expands D7** from 7 files to **8 files** (adds receipt #5 to the
+  consolidation commit set).
+- **Updates the worktree list, status rollup, dependency graph, blocked list, and
+  recommended next assignment** to reflect the receipt #5 delta.
+- v7 itself is now untracked and belongs in D7's commit set (v7 already listed
+  itself; v8 lists both v7 and v8).
+
+**What landed since v7:** nothing committed. One new untracked file (CI triage
+receipt #5). The production image SHA is unchanged at
+`6dbec436c92b57a788b84622338baacc3df8665d`.
 
 Read `RECEIPT_INDEX.md` first for what is already proven. Do NOT re-run
 experiments listed in its "What Should NOT Be Retried" table.
 
 ---
 
-## What changed since v4 (delta)
+## What changed since v7 (delta)
 
-- **Code:** nothing. HEAD is still `677c77ed`. No v4 task has been started.
-- **Worktree:** one item v4 missed —
-  `docs/runpod-fix-plan/RECEIPT_INDEX.md` is **modified** (the pass #5
-  consolidation: updates "3/3 PASSED" → "6/6 PASSED", adds the second
-  independent live-canary finding #8, the pass #5 CI status, and corrects
-  the stale "commit the receipts" instruction). This is durable evidence
-  currently uncommitted. The **committed** index still reads pass #4
-  ("3/3 PASSED"); an agent reading only committed state would not know
-  about the second 3/3 run. **v5 adds task D5 to commit it.**
-- **CI triage:** unchanged. Three receipts (20:05, 21:30, 22:40 UTC) still
-  untracked. v4's D4 commits them; v5 keeps D4 as-is.
-- **v4/v5 task queues:** `09-swarm-task-queue-v3.md`, `10-swarm-task-queue-v4.md`
-  are untracked. v5 is also untracked. D5 commits the index + the task
-  queues (v4 kept for history, v5 as current source of truth; v3 can be
-  dropped or kept).
+- **Code:** none. No new commits. HEAD is still `6e85f44c`.
+- **Commits:** none since v7.
+- **Tasks DONE:** none. All v7 tasks remain open.
+- **Tasks superseded:** none. v7's task set carries forward unchanged.
+- **Worktree (current `git status --short`, post-v7):**
+  - `docs/runpod-fix-plan/RECEIPT_INDEX.md` — **modified** (pass #7 + pass #8
+    consolidation). Durable evidence, uncommitted. **D7 commits it.**
+  - `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` — **modified** (pass #7
+    edits marking D4/D5 done). **D7 commits it.**
+  - `docs/runpod-fix-plan/12-swarm-task-queue-v6.md` — **untracked** (v6 task
+    queue; A6 section STALE; kept for history). **D7 commits it.**
+  - `docs/runpod-fix-plan/13-swarm-task-queue-v7.md` — **untracked** (v7 task
+    queue; superseded by v8 but kept for history). **D7 commits it.**
+  - `docs/runpod-fix-plan/14-swarm-task-queue-v8.md` — **untracked** (this file,
+    the new source of truth). **D7 commits it.**
+  - `reports/runpod-test-runs/3098f11f/RECEIPT.md` — **untracked** (pass #7
+    receipt). **D7 commits it.**
+  - `reports/runpod-test-runs/6e85f44c/RECEIPT.md` — **untracked** (pass #8
+    receipt — A6 done). **D7 commits it.**
+  - `reports/ci-triage/receipt-20260704T040200Z.md` — **untracked** (CI triage
+    #4, 04:02 UTC; UNCHANGED). **D7 commits it.**
+  - `reports/ci-triage/receipt-20260704T063000Z.md` — **untracked, NEW since v7**
+    (CI triage #5, 06:30 UTC; UNCHANGED — no new CI runs in 2h28m window;
+    re-verifies F2 `api.Dockerfile` one-liner as correct). **D7 commits it.**
+  - `infra/docker/api.Dockerfile` — **modified** (the C9 `COPY experiments`
+    fix). Still uncommitted. **C9 still OPEN.**
+  - `SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md` — **untracked**
+    (B1 items). Still present. **B1 still OPEN.**
+- **`.gitignore`:** still contains `/.tmp_*.py` (line 128) but NO `.tmp_*.json`
+  rule. **B2 unchanged.**
 
 ---
 
 ## One-paragraph state brief
 
 The RunPod training-worker dispatch failure was root-caused to an unguarded
-`parents[5]` index in `equities.py`/`news.py` (only 4 path parents exist in the
-container). Commit `6dbec436` fixed it (guarded index +
+`parents[5]` index in `equities.py`/`news.py` (only 4 path parents exist in
+the container). Commit `6dbec436` fixed it (guarded index +
 `ModuleNotFoundError` fallback), restored the production handler as the direct
 RunPod entrypoint, fixed the bisection probe false-negative logic, and added a
 receipt-integrity guard test. The `build-runpod-training` workflow SUCCEEDED;
 the image is published as
 `ghcr.io/airyder/fincept/quant-foundry-training:6dbec436c92b57a788b84622338baacc3df8665d`.
 **The live production-handler canary PASSED 6/6** across two independent runs
-(commits `a4cacc64` + `677c77ed`; receipts at `reports/runpod-test-runs/6dbec436/`
-and `reports/runpod-test-runs/6dbec436/live-canary/`). The canary path exercises
-preflight + callback signing but NOT actual model training or GPU access — so
-the single critical open live step is a `gpu_healthcheck` then a minimal
-`train_model` job. The pass #5 index consolidation recording the 6/6 result is
-**uncommitted** (task D5).
+(commits `a4cacc64` + `677c77ed`) **AND the live GPU healthcheck PASSED**
+(commit `6e85f44c` — RTX 4090, 24 GB VRAM, CUDA 550.144.03, xgboost/catboost
+GPU true, lightgbm GPU false). The canary + gpu_healthcheck paths exercise
+preflight + callback signing + GPU visibility but NOT actual model training —
+so the single critical open live step is **A7** (a minimal `train_model` job:
+dataset loading + trainer execution + model export). Pass #7 + pass #8
+consolidated the index and recorded A6 done; that consolidation (plus the v6/v7
+task queues, two receipts, and CI triage #4 + #5) is **uncommitted** (task D7,
+now 8 files). No new commits have landed since `6e85f44c`.
 
 ---
 
-## v4 Queue Status Rollup (all tasks)
+## v7 Queue Status Rollup (all tasks)
 
-| v4 Task | v5 Status | Note |
+| v7 Task | v8 Status | Note |
 |---------|-----------|------|
-| A6 live `gpu_healthcheck` | **OPEN** → A6 | unchanged; blocked on operator spend awareness |
-| A7 live minimal `train_model` | **OPEN** → A7 | unchanged; blocked by A6 |
-| A8 consolidate A6/A7 receipts | **OPEN** → A8 | unchanged; blocked by A6/A7 |
-| B1 classify dirty worktree | **OPEN** → B1 | **REVISED** — now includes the uncommitted `RECEIPT_INDEX.md` pass #5 edit |
-| B2 gitignore scratch | **OPEN** → B2 | unchanged |
-| B3 AGENTS.md | **OPEN** → B3 | unchanged |
-| C1 RUNPOD_INIT_TIMEOUT default | **OPEN** → C1 | unchanged |
-| C2 Dockerfile dead code | **OPEN** → C2 | unchanged; needs operator decision |
-| C3 callback secret default | **OPEN** → C3 | unchanged |
-| C4 README sync | **OPEN** → C4 | unchanged |
-| C5 dead diagnostic files | **OPEN** → C5 | unchanged |
-| C6 training endpoint script | **OPEN** → C6 | unchanged |
-| C7 cuda-test SHA pins | **OPEN** → C7 | unchanged |
-| C8 ruff lint debt | **OPEN** → C8 | unchanged; separate branch off main |
-| C9 commit api.Dockerfile fix | **OPEN** → C9 | unchanged; blocked by B1 |
-| C10 job timeout doc | **OPEN** → C10 | unchanged |
-| D1 Stripe secret removal | **OPEN** → D1 | unchanged; security-urgent |
-| D2 next CVE bump | **OPEN** → D2 | unchanged |
-| D3 pip-audit refresh | **OPEN** → D3 | unchanged |
-| D4 commit ci-triage receipts | **DONE** → D4 | committed in `748eef6c` (pass #6) |
-| — | **DONE** → D5 | committed in `3940271b` (pass #6): pass #5 `RECEIPT_INDEX.md` + v3/v4/v5 task queues |
-
-### Stale instruction in committed RECEIPT_INDEX.md (RESOLVED by D5 in pass #6)
-
-~~The **committed** `RECEIPT_INDEX.md` "Next Agent Instruction" item 1 says to
-commit the `6dbec436` receipt bundle, `run_live_canary.py`, and the pass #4
-index. **That is already done** in commits `a4cacc64` and `677c77ed`. The
-**worktree** (pass #5) version of the index corrects this instruction.
-Committing the pass #5 index (task D5) makes the correction durable. Do NOT
-re-commit the receipts themselves.~~
-
-**RESOLVED in pass #6:** D5 is DONE (commit `3940271b`). The committed
-`RECEIPT_INDEX.md` now reflects the 6/6 canary result and the corrected
-next-step list. Pass #7 further updated the index to mark D4/D5 done and
-point at v5 (not v4) as the source of truth. Do NOT re-commit.
+| A6 live `gpu_healthcheck` | **DONE** | PASSED live in `6e85f44c` — RTX 4090 visible. Do not re-run. |
+| A7 live minimal `train_model` | **OPEN** → A7 | Unchanged. Only operator spend awareness blocks it. |
+| A8 consolidate A6/A7 receipts | **OPEN** → A8 | A6 portion doable now; A7 portion conditional on A7. |
+| B1 classify dirty worktree | **OPEN** → B1 | **NARROWED** — D4/D5 done; remaining: `SESSION_HANDOFF.md`, `handoffs/`, `kimiSuggestionFix.md`, `api.Dockerfile`, pass #7+#8 consolidation set (now + receipt #5). |
+| B2 gitignore scratch | **OPEN** → B2 | **REVISED** — `.tmp_*.py` rule exists; only `.tmp_*.json` remains. |
+| B3 AGENTS.md | **OPEN** → B3 | unchanged (confirmed `AGENTS.md` still missing). |
+| C1 RUNPOD_INIT_TIMEOUT default | **OPEN** → C1 | unchanged. |
+| C2 Dockerfile dead code | **OPEN** → C2 | unchanged; needs operator decision. |
+| C3 callback secret default | **OPEN** → C3 | unchanged. |
+| C4 README sync | **OPEN** → C4 | unchanged. |
+| C5 dead diagnostic files | **OPEN** → C5 | unchanged. |
+| C6 training endpoint script | **OPEN** → C6 | unchanged. |
+| C7 cuda-test SHA pins | **OPEN** → C7 | unchanged. |
+| C8 ruff lint debt | **OPEN** → C8 | unchanged; separate branch off main. |
+| C9 commit api.Dockerfile fix | **OPEN** → C9 | unchanged; blocked by B1. |
+| C10 job timeout doc | **OPEN** → C10 | unchanged. |
+| D1 Stripe secret removal | **OPEN** → D1 | unchanged; security-urgent. |
+| D2 next CVE bump | **OPEN** → D2 | unchanged. |
+| D3 pip-audit refresh | **OPEN** → D3 | unchanged. |
+| D7 commit pass #7+#8 consolidation | **OPEN** → D7 | **EXPANDED** — now 8 files (adds CI triage receipt #5 + v8 itself). |
 
 ---
 
@@ -115,51 +128,76 @@ point at v5 (not v4) as the source of truth. Do NOT re-commit.
 
 ## Active Automations (do not duplicate)
 
-- **`build-runpod-training` workflow** — green for `677c77ed`/`6dbec436`. Do
-  not re-trigger the build unless a new commit lands on this branch.
+- **`build-runpod-training` workflow** — green for `677c77ed`/`6dbec436`. The
+  `6e85f44c` commit is evidence-only (no Dockerfile/handler/workflow change),
+  so no new build was triggered and the image SHA is unchanged at
+  `6dbec436`. Do not re-trigger the build unless a new code commit lands on
+  this branch.
 - **Receipt-integrity guard** (`runpod/tests/test_receipt_integrity.py`) and
   **no-healthcheck guard** (`runpod/tests/test_dockerfile_no_healthcheck.py`)
   are in place — do not re-add them.
 - **Import bisection** (`run_import_bisection.py` / `handler_import_bisect.py`)
   is complete (all 12 profiles ran). Do not spawn a parallel bisection.
-- **`run_live_canary.py`** reusable canary tool now exists
-  (`runpod/quant-foundry-training/run_live_canary.py`). Use it for live canary
-  work; do not write a competing ad-hoc script.
-- **Hourly CI triage** is producing receipts under `reports/ci-triage/` (now 3
-  receipts: 20:05, 21:30, 22:40 UTC). Do not start a competing triage; D-lane
-  tasks consume those receipts.
+- **`run_live_canary.py`** and **`run_gpu_healthcheck.py`** reusable tools now
+  exist (`runpod/quant-foundry-training/`). Use them for live canary / GPU
+  healthcheck work; do not write competing ad-hoc scripts.
+- **Hourly CI triage** is producing receipts under `reports/ci-triage/` (5
+  receipts now: 20:05, 21:30, 22:40 UTC on 2026-07-03, and 04:02 + 06:30 UTC on
+  2026-07-04; #1–#3 committed in `748eef6c`, #4 + #5 uncommitted → D7). Do not
+  start a competing triage; D-lane tasks consume those receipts.
 
 ---
 
 # Lane A — Live Validation (critical path)
 
-The canary path is proven (6/6). The remaining live unknown is the **full
-training pipeline** (GPU access + dataset loading + trainer execution + model
-export).
+The canary path is proven (6/6) and the GPU is proven accessible (A6 done).
+The remaining live unknown is the **full training pipeline** (dataset loading
++ trainer execution + model export) — task A7.
 
-## A6 — Live `gpu_healthcheck` job against `6dbec436`
+## A6 — Live `gpu_healthcheck` job against `6dbec436` — DONE
+
+**Status:** needs senior agent (was) → **DONE**
+**Outcome:** PASSED live in commit `6e85f44c`. GPU is accessible inside the
+production `6dbec436` container: `gpu_capable=true`,
+`gpu_model=NVIDIA GeForce RTX 4090`, `gpu_count=1`, `gpu_memory_mb=24564`
+(~24 GB VRAM), `nvidia_smi_available=true`, `cuda_version=550.144.03`,
+`driver_version=550.144.03`. Library GPU flags: `xgboost_gpu=true`,
+`catboost_gpu=true`, `lightgbm_gpu=false` (CPU-only lightgbm build — not a
+failure, just a dispatcher flag). Worker `dzy1mxoua2ojqb` stayed
+`unhealthy=0` throughout. Endpoint `6hl6v67nybijwy` created fresh, scaled
+down + deleted after. Receipt: `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`
+(committed in `6e85f44c`).
+
+**Do NOT re-run A6.** The GPU is proven accessible. The next live step is A7.
+
+---
+
+## A7 — Live minimal `train_model` job against `6dbec436`
 
 **Status:** needs senior agent
-**Objective:** Verify the GPU is accessible inside the production container by
-dispatching a `gpu_healthcheck` job (mode=canary) against the exact-SHA
-production image.
+**Objective:** Verify the full training pipeline (dataset loading, trainer
+execution, model export) works live by dispatching a minimal `train_model` job
+against the exact-SHA production image.
 
 **Context:**
-The canary path exercises preflight + callback signing but does NOT touch the
-GPU. A `gpu_healthcheck` job confirms CUDA/driver/runtime visibility inside the
-container before spending on a full `train_model` run. Reuse endpoint
-`4jc1opwj11zmai` (scale back up to `workersMin=1`) or create a fresh one. **Use
-the FULL 40-char SHA image tag** — the workflow tags with `github.sha`, not a
-short SHA; a short-SHA tag produces a non-existent image and the container
-exits immediately with `docker=None, unhealthy=1` (proven by the broken
-`jtr18cdh5lgov2` endpoint in the `6dbec436` receipt).
+A6 PASSED — the GPU is accessible (RTX 4090, 24 GB). A7 is no longer blocked
+by A6; it is blocked only by operator awareness of spend. Use a minimal
+dataset so the job completes within the handler's
+`QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS=1800` and RunPod's job timeout. Same
+endpoint/image/redaction discipline as A6. **The RunPod default serverless
+job timeout is 600s** — ensure the endpoint template sets a timeout ≥ 1860s,
+or the platform will kill the job with `TIMED_OUT` before the handler's signed
+failure envelope runs (see C10). **Use the FULL 40-char SHA image tag**
+(`6dbec436c92b57a788b84622338baacc3df8665d`); a short SHA produces a
+non-existent image and the container exits immediately (proven by the broken
+`jtr18cdh5lgov2` endpoint).
 
 This spends RunPod GPU time and uses secrets (`RUNPOD_API_KEY`,
 `QUANT_FOUNDRY_CALLBACK_SECRET`, registry auth id). Do NOT run without
 operator awareness of spend.
 
 **Files allowed:**
-- `reports/runpod-test-runs/6dbec436/gpu-healthcheck/` (new receipt bundle)
+- `reports/runpod-test-runs/6dbec436/train-model/` (new receipt bundle)
 
 **Files forbidden:**
 - `runpod/quant-foundry-training/Dockerfile` (production-shaped; do not change)
@@ -173,23 +211,24 @@ operator awareness of spend.
 ```powershell
 $sha = "6dbec436c92b57a788b84622338baacc3df8665d"
 $image = "ghcr.io/airyder/fincept/quant-foundry-training:$sha"
-# Reuse 4jc1opwj11zmai scaled back up, or create a fresh endpoint via
-# runpod/quant-foundry-training/run_live_canary.py or scripts/runpod_create_smoke_endpoint.py
-$endpoint = "4jc1opwj11zmai"  # or fresh id
-$payload = '{"input":{"task":"gpu_healthcheck","mode":"canary","job_id":"qf:gpu-hc:6dbec436:001"}}'
-uv run python scripts/runpod_smoke_probe.py --endpoint-id $endpoint --image-tag $image --interval 5 --timeout 240 --payload-json $payload
+# Create a fresh endpoint via runpod/quant-foundry-training/run_live_canary.py
+# or scripts/runpod_create_smoke_endpoint.py; ensure template timeout >= 1860s.
+$endpoint = "<fresh-id>"
+# Payload shape: minimal train_model task with a tiny dataset manifest.
+# Exact payload TBD by the senior agent from handler.py's train_model branch.
+$train_payload = '{"input":{"task":"train_model","mode":"canary","job_id":"qf:train:6dbec436:001",...}}'
+uv run python scripts/runpod_smoke_probe.py --endpoint-id $endpoint --image-tag $image --interval 5 --timeout 1900 --payload-json $train_payload
 ```
 Then capture `/health` after completion, scale the endpoint down, and record
 cleanup.
 
 **Acceptance criteria:**
-- Job reaches `COMPLETED` with a GPU-visible result (e.g. CUDA device count,
-  driver version, or equivalent) in the output.
-- Job does not stay `IN_QUEUE`.
+- Job reaches `COMPLETED` with a model artifact reference (or a signed
+  failure envelope if the handler fail-closed intentionally — record which).
 - Worker remains `unhealthy=0` after completion.
 - No secrets printed in the receipt.
 - Endpoint scaled down or deleted after the test.
-- Receipt bundle written under `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`.
+- Receipt bundle written under `reports/runpod-test-runs/6dbec436/train-model/`.
 
 **Rollback plan:**
 - No code rollback (probe-only on an already-built image).
@@ -197,81 +236,35 @@ cleanup.
 - If spend or rate limits are hit, stop and report; do not retry blindly.
 
 **Evidence required:**
-- `reports/runpod-test-runs/6dbec436/gpu-healthcheck/` receipt bundle
+- `reports/runpod-test-runs/6dbec436/train-model/` receipt bundle
   (endpoint id, redacted settings, health before, `/run` response, status
   probe JSONL, final status JSON, health after, cleanup, short interpretation).
-- One-line interpretation: PASS or FAIL with the GPU result.
-
-**Blocked by:** Operator awareness of spend (do not automate the spend
-decision). Not blocked by any code task.
-
----
-
-## A7 — Live minimal `train_model` job against `6dbec436` (conditional)
-
-**Status:** needs senior agent
-**Objective:** Verify the full training pipeline (dataset loading, trainer
-execution, model export) works live by dispatching a minimal `train_model` job.
-
-**Context:**
-Only runs if A6 PASSES (GPU is accessible). Use a minimal dataset so the job
-completes within the handler's `QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS=1800`
-and RunPod's job timeout. Same endpoint/image/redaction discipline as A6. The
-RunPod default serverless job timeout is 600s — ensure the endpoint template
-sets a timeout ≥ 1860s, or the platform will kill the job with `TIMED_OUT`
-before the handler's signed failure envelope runs (see C10).
-
-**Files allowed:**
-- `reports/runpod-test-runs/6dbec436/train-model/` (new receipt bundle)
-
-**Files forbidden:**
-- Same as A6.
-
-**Commands to run:**
-```powershell
-# After A6 PASS; reuse the same endpoint scaled back up.
-# Payload shape: minimal train_model task with a tiny dataset manifest.
-# Exact payload TBD by the senior agent from handler.py's train_model branch.
-uv run python scripts/runpod_smoke_probe.py --endpoint-id $endpoint --image-tag $image --interval 5 --timeout 1900 --payload-json $train_payload
-```
-
-**Acceptance criteria:**
-- Job reaches `COMPLETED` with a model artifact reference (or a signed
-  failure envelope if the handler fail-closed intentionally — record which).
-- Worker remains `unhealthy=0` after completion.
-- No secrets printed.
-- Endpoint scaled down or deleted after the test.
-- Receipt bundle written under `reports/runpod-test-runs/6dbec436/train-model/`.
-
-**Rollback plan:**
-- Scale down the endpoint on early exit. No code rollback.
-
-**Evidence required:**
-- `reports/runpod-test-runs/6dbec436/train-model/` receipt bundle.
 - One-line interpretation: PASS or FAIL with the terminal status and whether
   an artifact was produced.
 
-**Blocked by:** A6 (must PASS first) + operator awareness of spend.
+**Blocked by:** Operator awareness of spend (do not automate the spend
+decision). NOT blocked by A6 (A6 is DONE). Not blocked by any code task.
 
 ---
 
-## A8 — Consolidate A6/A7 receipts + update RECEIPT_INDEX (conditional)
+## A8 — Consolidate A7 receipts + update RECEIPT_INDEX (conditional)
 
 **Status:** safe beginner
-**Objective:** After A6 (and A7 if run), write the consolidated interpretation
-and update `RECEIPT_INDEX.md` so the next agent reads a single current index
-reflecting the live training-pipeline result.
+**Objective:** After A7, write the consolidated interpretation and update
+`RECEIPT_INDEX.md` so the next agent reads a single current index reflecting
+the live training-pipeline result. (The A6 portion is already consolidated in
+the pass #8 index edit — D7 commits that baseline.)
 
 **Context:**
-`RECEIPT_INDEX.md` currently lists the canary as PASS (6/6) but the
-training-pipeline row as NOT YET TESTED. This task flips it based strictly on
-the raw A6/A7 evidence. Coordinate with D5 (which commits the pass #5 index
-baseline) — A8 lands after D5 so the index history stays linear.
+`RECEIPT_INDEX.md` (pass #8, uncommitted) lists the canary as PASS (6/6) and
+the GPU healthcheck as PASS (A6 done), but the training-pipeline row as NOT
+YET TESTED. This task flips it based strictly on the raw A7 evidence.
+Coordinate with D7 (which commits the pass #7 + pass #8 baseline) — A8 lands
+after D7 so the index history stays linear.
 
 **Files allowed:**
 - `docs/runpod-fix-plan/RECEIPT_INDEX.md`
-- `reports/runpod-test-runs/6dbec436/gpu-healthcheck/interpretation.md` (new)
-- `reports/runpod-test-runs/6dbec436/train-model/interpretation.md` (new, if A7 ran)
+- `reports/runpod-test-runs/6dbec436/train-model/interpretation.md` (new)
 
 **Files forbidden:**
 - Raw probe/health/cleanup JSON files (immutable evidence — do not edit).
@@ -281,33 +274,33 @@ baseline) — A8 lands after D5 so the index history stays linear.
 **Commands to run:**
 ```powershell
 git status --short
-Get-Content reports/runpod-test-runs/6dbec436/gpu-healthcheck/status-final-*.json
-Get-Content reports/runpod-test-runs/6dbec436/gpu-healthcheck/probe-*.jsonl
+Get-Content reports/runpod-test-runs/6dbec436/train-model/status-final-*.json
+Get-Content reports/runpod-test-runs/6dbec436/train-model/probe-*.jsonl
 uv run pytest runpod/tests/test_receipt_integrity.py -q
 ```
 
 **Acceptance criteria:**
-- `RECEIPT_INDEX.md` Evidence Map rows for the gpu-healthcheck / train-model
-  results are updated with the endpoint id and PASS/FAIL.
+- `RECEIPT_INDEX.md` Evidence Map row for the train-model result is updated
+  with the endpoint id and PASS/FAIL.
 - No claims contradict the raw probe evidence.
 - `runpod/tests/test_receipt_integrity.py` still passes.
 
 **Rollback plan:**
 ```powershell
-git restore docs/runpod-fix-plan/RECEIPT_INDEX.md reports/runpod-test-runs/6dbec436/gpu-healthcheck/interpretation.md reports/runpod-test-runs/6dbec436/train-model/interpretation.md
+git restore docs/runpod-fix-plan/RECEIPT_INDEX.md reports/runpod-test-runs/6dbec436/train-model/interpretation.md
 ```
 
 **Evidence required:**
 - `git diff` of the index.
 - `pytest runpod/tests/test_receipt_integrity.py -q` output (pass).
 
-**Blocked by:** A6 (and A7 if run) + D5 (so the index baseline is committed first).
+**Blocked by:** A7 (must run first) + D7 (so the index baseline is committed first).
 
 ---
 
 # Lane B — Repo Hygiene
 
-## B1 — Classify dirty worktree items
+## B1 — Classify remaining dirty worktree items
 
 **Status:** do not automate
 **Objective:** With the operator, decide the disposition of every untracked
@@ -315,49 +308,76 @@ and unrelated-modified item in the worktree so the final commit set is
 reviewable and safe.
 
 **Context:**
-`git status` (post-`3098f11f`, pass #7) shows — **reduced after D4/D5 done
-in pass #6**:
-- `infra/docker/api.Dockerfile` — modified, adds `COPY experiments experiments`.
-  This is a fix for the F2 `build-images` / `build (api)` failure (the
-  `experiments/news-impact-model` workspace path dep can't resolve without the
-  dir in build context). **Likely a real fix — see C9.** Keep separate from
-  the RunPod fix.
-- `SESSION_HANDOFF.md` — untracked, STALE. Predates the `parents[5]` fix;
+`git status` (post-`6e85f44c`, post-v7) shows:
+- `docs/runpod-fix-plan/RECEIPT_INDEX.md` — **modified** (pass #7 + pass #8
+  consolidation: records D4/D5 done, A6 done, "Newest commit reviewed"
+  `6e85f44c`). **Durable evidence — candidate for committing (see D7).**
+- `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` — **modified** (pass #7
+  edits marking D4/D5 done). **Durable evidence — candidate for D7.**
+- `docs/runpod-fix-plan/12-swarm-task-queue-v6.md` — **untracked** (v6 task
+  queue; A6 section now STALE). **Durable evidence — candidate for D7**
+  (kept for history; v8 is the new source of truth).
+- `docs/runpod-fix-plan/13-swarm-task-queue-v7.md` — **untracked** (v7 task
+  queue; superseded by v8). **Durable evidence — candidate for D7**
+  (kept for history).
+- `docs/runpod-fix-plan/14-swarm-task-queue-v8.md` — **untracked** (v8 task
+  queue, the current source of truth). **Candidate for D7.**
+- `reports/runpod-test-runs/3098f11f/RECEIPT.md` — **untracked** (pass #7
+  receipt). **Candidate for D7.**
+- `reports/runpod-test-runs/6e85f44c/RECEIPT.md` — **untracked** (pass #8
+  receipt — A6 done). **Candidate for D7.**
+- `reports/ci-triage/receipt-20260704T040200Z.md` — **untracked** (CI triage
+  #4, 04:02 UTC; UNCHANGED status). **Candidate for D7.**
+- `reports/ci-triage/receipt-20260704T063000Z.md` — **untracked, NEW since
+  v7** (CI triage #5, 06:30 UTC; UNCHANGED status; re-verifies F2
+  `api.Dockerfile` one-liner as correct). **Candidate for D7.**
+- `infra/docker/api.Dockerfile` — **modified**, adds `COPY experiments
+  experiments`. This is a fix for the F2 `build-images` / `build (api)`
+  failure (the `experiments/news-impact-model` workspace path dep can't
+  resolve without the dir in build context). **Likely a real fix — see C9.**
+  Keep separate from the RunPod fix.
+- `SESSION_HANDOFF.md` — **untracked, STALE**. Predates the `parents[5]` fix;
   describes the superseded bisect-`handler()` approach and old commit
   `d15482ff`. Misleading if read as current.
-- `handoffs/2026-07-03_01-51_fix-runpod-training-crash/` — untracked, STALE.
-  Same superseded narrative as `SESSION_HANDOFF.md`.
-- `kimiSuggestionFix.md` — untracked. 15-item config/deployment hygiene
+- `handoffs/2026-07-03_01-51_fix-runpod-training-crash/` — **untracked,
+  STALE**. Same superseded narrative as `SESSION_HANDOFF.md`.
+- `kimiSuggestionFix.md` — **untracked**. 15-item config/deployment hygiene
   audit. Source material for Lane C tasks. Keep as a reference doc or move
   into `docs/`.
 
-**Already committed in pass #6 (do NOT re-commit):**
-- ~~`docs/runpod-fix-plan/RECEIPT_INDEX.md`~~ — committed in `3940271b` (D5);
-  further updated in pass #7 (this consolidation).
-- ~~`reports/ci-triage/`~~ — committed in `748eef6c` (D4).
-- ~~`docs/runpod-fix-plan/09-swarm-task-queue-v3.md`~~,
-  ~~`10-swarm-task-queue-v4.md`~~, ~~`11-swarm-task-queue-v5.md`~~ — committed
-  in `3940271b` (D5); v5 is current source of truth, v3/v4 kept for history.
+(Already committed and NOT in the worktree: D4's `reports/ci-triage/`
+receipts #1–#3, D5's pass #5 index + v3/v4/v5 task queues, A6's
+`gpu-healthcheck/` receipt bundle. Do NOT re-commit any of those.)
 
 Do NOT delete or commit anything without explicit operator approval per item.
 
 **Files allowed:**
 - Only after operator approval: `SESSION_HANDOFF.md`, `handoffs/`,
-  `kimiSuggestionFix.md`.
+  `kimiSuggestionFix.md`, and the D7 consolidation set
+  (`docs/runpod-fix-plan/RECEIPT_INDEX.md`,
+  `docs/runpod-fix-plan/11-swarm-task-queue-v5.md`,
+  `docs/runpod-fix-plan/12-swarm-task-queue-v6.md`,
+  `docs/runpod-fix-plan/13-swarm-task-queue-v7.md`,
+  `docs/runpod-fix-plan/14-swarm-task-queue-v8.md`,
+  `reports/runpod-test-runs/3098f11f/RECEIPT.md`,
+  `reports/runpod-test-runs/6e85f44c/RECEIPT.md`,
+  `reports/ci-triage/receipt-20260704T040200Z.md`,
+  `reports/ci-triage/receipt-20260704T063000Z.md`).
 
 **Files forbidden:**
 - `infra/docker/api.Dockerfile` (handled by C9, not here).
 - All tracked source code, Dockerfiles, workflows.
-- Any file under `reports/runpod-test-runs/` (immutable evidence).
+- Any file under `reports/runpod-test-runs/6dbec436/` (immutable live evidence).
 
 **Commands to run (triage only, no deletion/commit yet):**
 ```powershell
 git status --short
 Get-Content SESSION_HANDOFF.md -TotalCount 5
 Get-Content kimiSuggestionFix.md -TotalCount 5
-Get-Content reports/ci-triage/receipt-20260703T224000Z.md -TotalCount 5
-git diff --stat docs/runpod-fix-plan/RECEIPT_INDEX.md
+git diff --stat docs/runpod-fix-plan/RECEIPT_INDEX.md docs/runpod-fix-plan/11-swarm-task-queue-v5.md
 ls handoffs/
+ls reports/runpod-test-runs/3098f11f/ reports/runpod-test-runs/6e85f44c/
+ls reports/ci-triage/
 ```
 
 **Acceptance criteria:**
@@ -377,17 +397,16 @@ ls handoffs/
 
 ---
 
-## B2 — Add scratch patterns to `.gitignore`
+## B2 — Add `.tmp_*.json` scratch pattern to `.gitignore`
 
 **Status:** focused bugfix
-**Objective:** Prevent future `.tmp_*` scratch files and similar ad-hoc
-diagnostic artifacts from cluttering `git status` or being committed by
-accident.
+**Objective:** Prevent future `.tmp_*.json` scratch files (e.g. the
+`.tmp_canary_payload{,2,3}.json` files the `6dbec436` live run produced) from
+cluttering `git status` or being committed by accident.
 
 **Context:**
-The `.tmp_*.py` files that prompted v1 T9 are no longer in the worktree, but
-no `.gitignore` rule prevents them from returning. The `6dbec436` live run
-also produced `.tmp_canary_payload{,2,3}.json` scratch files. A narrow rule
+`.gitignore` already contains `/.tmp_*.py` (line 128) — the `.py` half of v5's
+B2 is effectively done. Only the `.tmp_*.json` rule remains. A narrow rule
 keeps future diagnostic work out of the tracked set without affecting any
 committed file.
 
@@ -402,14 +421,15 @@ committed file.
 **Commands to run:**
 ```powershell
 git diff -- .gitignore
-git check-ignore -v .tmp_check_health.py 2>$null  # may not exist; that's fine
+git check-ignore -v .tmp_canary_payload.json 2>$null  # may not exist; that's fine
 git status --short
 ```
 
 **Acceptance criteria:**
-- `.gitignore` gains rules matching `.tmp_*` and `.tmp_*.json`.
+- `.gitignore` gains a rule matching `.tmp_*.json` (and `.tmp_*` generally if
+  the operator prefers one broad rule — but it must not blanket-ignore
+  `reports/` or `handoffs/`).
 - No existing tracked file becomes ignored (`git status` shows no surprises).
-- The rule is narrow — does not blanket-ignore `reports/` or `handoffs/`.
 
 **Rollback plan:**
 ```powershell
@@ -430,10 +450,11 @@ selection, no Docker HEALTHCHECK, direct entrypoint, init timeout, full-SHA
 image tag) so future agents avoid re-running disproved experiments.
 
 **Context:**
-The repo has `PROJECT_OVERVIEW.md` but no `AGENTS.md`. Operational knowledge
-is scattered across commits, `RUNPOD_UNHEALTHY_ROOT_CAUSE.md`, the README, and
-`RECEIPT_INDEX.md`. An `AGENTS.md` consolidates the "do not re-do" rules in
-one place agents read first.
+The repo has `PROJECT_OVERVIEW.md` but no `AGENTS.md` (confirmed missing).
+Operational knowledge is scattered across commits,
+`RUNPOD_UNHEALTHY_ROOT_CAUSE.md`, the README, and `RECEIPT_INDEX.md`. An
+`AGENTS.md` consolidates the "do not re-do" rules in one place agents read
+first.
 
 **Files allowed:**
 - `AGENTS.md` (new, repo root)
@@ -465,6 +486,7 @@ Select-String -Path PROJECT_OVERVIEW.md -Pattern "HEALTHCHECK|base image|entrypo
     (disproved by Test F `full_handler_import`).
   - Do not re-apply the `parents[5]` fix or re-run import bisection — both
     done in `6dbec436`.
+  - Do not re-run A6 (GPU healthcheck) — PASSED live in `6e85f44c` (RTX 4090).
 - Rules are derived from `RECEIPT_INDEX.md` "What Should NOT Be Retried".
 
 **Rollback plan:**
@@ -698,7 +720,7 @@ Dockerfile.nvidia` is redundant (same base as the main Dockerfile).
 **Files forbidden:**
 - `handler.py`, `handler_import_bisect.py` (keep — the latter is the
   diagnostic referenced by `RECEIPT_INDEX.md` Test F; do not delete)
-- `run_live_canary.py` (keep — reusable live canary tool committed in `677c77ed`)
+- `run_live_canary.py`, `run_gpu_healthcheck.py` (keep — reusable live tools)
 - `Dockerfile` (production-shaped; do not change)
 - inference worker files
 
@@ -829,12 +851,12 @@ git restore .github/workflows/build-runpod-cuda-test.yml
 **Context:**
 `ci` workflow fails on `uv run ruff check libs services` with 1334 errors
 (613 auto-fixable). Identical count on `main` since 2026-06-28 — pre-existing
-debt, NOT a regression from this branch. Confirmed unchanged across all three
-CI triage receipts (20:05, 21:30, 22:40 UTC). Concentrated in
-`services/quant_foundry/`. Rule families: S112, I001, B905, UP037, RUF046,
-S301, F841, B017, UP035, B904, SIM108. This is large-scope and risks
-behavioral changes from `--unsafe-fixes`; needs judgment and review. Do NOT
-commit alongside the RunPod fix.
+debt, NOT a regression from this branch. Confirmed unchanged across all five
+CI triage receipts (20:05, 21:30, 22:40 UTC on 2026-07-03, and 04:02 + 06:30
+UTC on 2026-07-04). Concentrated in `services/quant_foundry/`. Rule families: S112,
+I001, B905, UP037, RUF046, S301, F841, B017, UP035, B904, SIM108. This is
+large-scope and risks behavioral changes from `--unsafe-fixes`; needs
+judgment and review. Do NOT commit alongside the RunPod fix.
 
 **Files allowed:**
 - `libs/**`, `services/**` (on a NEW branch off `main`, not this branch)
@@ -885,9 +907,10 @@ commit separate from the RunPod fix.
 `git status` shows `infra/docker/api.Dockerfile` modified: adds
 `COPY experiments experiments`. The F2 failure (`uv sync --frozen` cannot
 resolve the `experiments/news-impact-model` workspace path dep because the
-dir is absent from the build context) is fixed by this line. This is
-unrelated to the RunPod training-worker fix and must ship as its own commit
-so the RunPod fix review stays clean.
+dir is absent from the build context) is fixed by this line. Re-verified as
+correct by CI triage receipt #5 (06:30 UTC). This is unrelated to the RunPod
+training-worker fix and must ship as its own commit so the RunPod fix review
+stays clean.
 
 **Files allowed:**
 - `infra/docker/api.Dockerfile`
@@ -973,10 +996,11 @@ git restore runpod/quant-foundry-training/README.md
 # Lane D — CI / Security Debt (from `reports/ci-triage/`)
 
 Source: `reports/ci-triage/receipt-20260703T200535Z.md`,
-`receipt-20260703T213000Z.md`, and `receipt-20260703T224000Z.md`. These are
-pre-existing failures on `main`, independent of the RunPod fix branch, but
-the security item has real-world urgency. None block the RunPod fix path.
-All three receipts confirm F1–F4 unchanged.
+`receipt-20260703T213000Z.md`, `receipt-20260703T224000Z.md` (committed in
+`748eef6c`), and `receipt-20260704T040200Z.md` + `receipt-20260704T063000Z.md`
+(uncommitted → D7). These are pre-existing failures on `main`, independent of
+the RunPod fix branch, but the security item has real-world urgency. None
+block the RunPod fix path. All five receipts confirm F1–F4 unchanged.
 
 ## D1 — Locate and remove the leaked Stripe secret (CRITICAL, security)
 
@@ -1124,108 +1148,81 @@ git restore uv.lock pyproject.toml
 
 ---
 
-## D4 — Commit the CI triage receipts as durable evidence
+## D7 — Commit the pass #7 + pass #8 consolidation set (EXPANDED in v8)
 
 **Status:** safe beginner
-**Objective:** Commit the three CI triage receipts under `reports/ci-triage/`
-so the CI/security debt record is durable and tracked, once B1 approves their
-disposition.
+**Objective:** Commit the uncommitted pass #7 + pass #8 consolidation set so
+the investigation's single entry point and receipt history stop lagging behind
+the worktree and reflect that D4/D5 are done and A6 is done, once B1 approves
+its disposition.
 
 **Context:**
-`reports/ci-triage/receipt-20260703T200535Z.md`,
-`receipt-20260703T213000Z.md`, and `receipt-20260703T224000Z.md` are
-untracked. They document the pre-existing CI/security debt (F1–F4) and are
-the source for Lane D. The 22:40 receipt is the most recent and confirms
-F1–F4 unchanged with `build-runpod-training` green on `677c77ed`. They
-contain no secrets (operator should verify before commit). This is the
-"commit them" outcome of B1's disposition for these files.
+`git status` shows a consolidation set that has grown beyond v7's D7 scope.
+v7's D7 covered 7 files; v8 adds CI triage receipt #5 (06:30 UTC, new since
+v7) and v8 itself. The current uncommitted set is:
+- `docs/runpod-fix-plan/RECEIPT_INDEX.md` (modified) — pass #7 + pass #8
+  consolidation (records D4/D5 done, A6 done, "Newest commit reviewed"
+  `6e85f44c`).
+- `docs/runpod-fix-plan/11-swarm-task-queue-v5.md` (modified) — pass #7 edits
+  marking D4/D5 done.
+- `docs/runpod-fix-plan/12-swarm-task-queue-v6.md` (untracked) — v6 task
+  queue (A6 section now STALE; kept for history; v8 is the new source of
+  truth).
+- `docs/runpod-fix-plan/13-swarm-task-queue-v7.md` (untracked) — v7 task
+  queue (superseded by v8; kept for history).
+- `docs/runpod-fix-plan/14-swarm-task-queue-v8.md` (untracked) — v8 task
+  queue (this file — the current source of truth).
+- `reports/runpod-test-runs/3098f11f/RECEIPT.md` (untracked) — pass #7
+  receipt.
+- `reports/runpod-test-runs/6e85f44c/RECEIPT.md` (untracked) — pass #8
+  receipt (A6 done).
+- `reports/ci-triage/receipt-20260704T040200Z.md` (untracked) — CI triage
+  receipt #4 (04:02 UTC; UNCHANGED status).
+- `reports/ci-triage/receipt-20260704T063000Z.md` (untracked) — CI triage
+  receipt #5 (06:30 UTC; UNCHANGED status; NEW since v7).
 
-**Files allowed:**
-- `reports/ci-triage/receipt-20260703T200535Z.md`
-- `reports/ci-triage/receipt-20260703T213000Z.md`
-- `reports/ci-triage/receipt-20260703T224000Z.md`
-
-**Files forbidden:**
-- All other files. Do not `git add -A`.
-- Do not bundle with any RunPod-fix or code commit.
-
-**Commands to run:**
-```powershell
-git status --short
-# verify no secrets in the receipts:
-Select-String -Path reports/ci-triage/*.md -Pattern "RUNPOD_API_KEY|QUANT_FOUNDRY_CALLBACK_SECRET|sk_live|rk_live"
-git add reports/ci-triage/receipt-20260703T200535Z.md reports/ci-triage/receipt-20260703T213000Z.md reports/ci-triage/receipt-20260703T224000Z.md
-git commit -m "evidence(ci): commit triage receipts 20260703T200535Z + T213000Z + T224000Z (pre-existing CI/security debt)"
-git status --short
-```
-
-**Acceptance criteria:**
-- Commit contains exactly the three receipt files.
-- Secret-scan of the receipts returns no hits.
-- `git status` no longer lists `reports/ci-triage/` as untracked.
-
-**Rollback plan:**
-```powershell
-git revert HEAD
-```
-
-**Evidence required:**
-- `git show --stat HEAD` output.
-- Secret-scan output (clean).
-
-**Blocked by:** B1's disposition approval for `reports/ci-triage/`.
-
----
-
-## D5 — Commit the pass #5 `RECEIPT_INDEX.md` + task queues (NEW in v5)
-
-**Status:** safe beginner
-**Objective:** Commit the uncommitted pass #5 `RECEIPT_INDEX.md`
-consolidation (6/6 canary result) and the v4/v5 task queues so the
-investigation's single entry point and open-task source of truth are durable
-and tracked, once B1 approves their disposition.
-
-**Context:**
-`git status` shows `docs/runpod-fix-plan/RECEIPT_INDEX.md` modified (pass #5
-consolidation: 3/3 → 6/6 canary, second independent run finding #8, pass #5
-CI status, stale-instruction correction). The **committed** index still
-reads pass #4 ("3/3 PASSED"); an agent reading only committed state would not
-know about the second 3/3 run. This is durable evidence that should be
-committed, not discarded. Also untracked: `09-swarm-task-queue-v3.md`
-(superseded — drop or keep), `10-swarm-task-queue-v4.md` (superseded by v5,
-keep for history), `11-swarm-task-queue-v5.md` (this file, current source of
-truth). v4 missed this item; v5 adds it. Do NOT re-commit the receipts
-themselves (already in `a4cacc64`/`677c77ed`).
+The **committed** index still reads pass #5 ("Newest commit reviewed
+`677c77ed`"); an agent reading only committed state would not know D4/D5
+landed OR that A6 is done. This is durable evidence that should be committed,
+not discarded. Do NOT re-commit the CI triage receipts #1–#3, the pass #5
+index, the v3/v4/v5 task queues, or the `gpu-healthcheck/` receipt bundle
+(all already committed in `748eef6c`/`3940271b`/`6e85f44c`).
 
 **Files allowed:**
 - `docs/runpod-fix-plan/RECEIPT_INDEX.md`
-- `docs/runpod-fix-plan/10-swarm-task-queue-v4.md`
 - `docs/runpod-fix-plan/11-swarm-task-queue-v5.md`
-- `docs/runpod-fix-plan/09-swarm-task-queue-v3.md` (only if operator chooses to keep)
+- `docs/runpod-fix-plan/12-swarm-task-queue-v6.md`
+- `docs/runpod-fix-plan/13-swarm-task-queue-v7.md`
+- `docs/runpod-fix-plan/14-swarm-task-queue-v8.md` (this file — commit alongside so the source of truth is current)
+- `reports/runpod-test-runs/3098f11f/RECEIPT.md`
+- `reports/runpod-test-runs/6e85f44c/RECEIPT.md`
+- `reports/ci-triage/receipt-20260704T040200Z.md`
+- `reports/ci-triage/receipt-20260704T063000Z.md`
 
 **Files forbidden:**
 - All other files. Do not `git add -A`.
-- Do not bundle with any RunPod-fix code commit or with D4's receipts.
-- Do not re-commit `reports/runpod-test-runs/**` (already committed).
+- Do not bundle with any RunPod-fix code commit or with C9's `api.Dockerfile`.
+- Do not re-commit `reports/ci-triage/receipt-20260703T*` (already committed).
+- Do not re-commit `reports/runpod-test-runs/6dbec436/**` (already committed).
+- Do not re-commit `docs/runpod-fix-plan/09-swarm-task-queue-v3.md`,
+  `10-swarm-task-queue-v4.md` (already committed).
 
 **Commands to run:**
 ```powershell
 git status --short
-git diff --stat docs/runpod-fix-plan/RECEIPT_INDEX.md
-# verify no secrets in the index/queues:
-Select-String -Path docs/runpod-fix-plan/RECEIPT_INDEX.md,docs/runpod-fix-plan/10-swarm-task-queue-v4.md,docs/runpod-fix-plan/11-swarm-task-queue-v5.md -Pattern "RUNPOD_API_KEY|QUANT_FOUNDRY_CALLBACK_SECRET|sk_live|rk_live"
-git add docs/runpod-fix-plan/RECEIPT_INDEX.md docs/runpod-fix-plan/10-swarm-task-queue-v4.md docs/runpod-fix-plan/11-swarm-task-queue-v5.md
-git commit -m "evidence(runpod): commit pass #5 RECEIPT_INDEX (6/6 canary) + swarm task queues v4/v5"
+git diff --stat docs/runpod-fix-plan/RECEIPT_INDEX.md docs/runpod-fix-plan/11-swarm-task-queue-v5.md
+# verify no secrets in the consolidation set:
+Select-String -Path docs/runpod-fix-plan/RECEIPT_INDEX.md,docs/runpod-fix-plan/11-swarm-task-queue-v5.md,docs/runpod-fix-plan/12-swarm-task-queue-v6.md,docs/runpod-fix-plan/13-swarm-task-queue-v7.md,docs/runpod-fix-plan/14-swarm-task-queue-v8.md,reports/runpod-test-runs/3098f11f/RECEIPT.md,reports/runpod-test-runs/6e85f44c/RECEIPT.md,reports/ci-triage/receipt-20260704T040200Z.md,reports/ci-triage/receipt-20260704T063000Z.md -Pattern "RUNPOD_API_KEY|QUANT_FOUNDRY_CALLBACK_SECRET|sk_live|rk_live"
+git add docs/runpod-fix-plan/RECEIPT_INDEX.md docs/runpod-fix-plan/11-swarm-task-queue-v5.md docs/runpod-fix-plan/12-swarm-task-queue-v6.md docs/runpod-fix-plan/13-swarm-task-queue-v7.md docs/runpod-fix-plan/14-swarm-task-queue-v8.md reports/runpod-test-runs/3098f11f/RECEIPT.md reports/runpod-test-runs/6e85f44c/RECEIPT.md reports/ci-triage/receipt-20260704T040200Z.md reports/ci-triage/receipt-20260704T063000Z.md
+git commit -m "evidence(runpod): commit pass #7+#8 consolidation (D4/D5/A6 done) + v6/v7/v8 task queues + receipts"
 git status --short
 ```
 
 **Acceptance criteria:**
-- Commit contains the pass #5 `RECEIPT_INDEX.md` + v4 + v5 task queues (and
-  v3 only if the operator chose to keep it).
+- Commit contains exactly the nine consolidation files (no more, no less).
 - Secret-scan of the staged files returns no hits.
-- `git status` no longer lists `RECEIPT_INDEX.md` as modified or the task
-  queues as untracked.
-- The committed index now reads "6/6 PASSED" (pass #5), not "3/3 PASSED".
+- `git status` no longer lists any of the nine files as modified/untracked.
+- The committed index now reads "Newest commit reviewed `6e85f44c`" (pass #8).
 - `runpod/tests/test_receipt_integrity.py` still passes (the index edits do
   not contradict raw evidence).
 
@@ -1239,21 +1236,20 @@ git revert HEAD
 - Secret-scan output (clean).
 - `pytest runpod/tests/test_receipt_integrity.py -q` output (pass).
 
-**Blocked by:** B1's disposition approval for `RECEIPT_INDEX.md` and the
-task-queue docs.
+**Blocked by:** B1's disposition approval for the consolidation set.
 
 ---
 
 # Dependency Graph
 
 ```
-A6 (gpu_healthcheck live) ─┬─> A7 (train_model live, conditional) ─> A8 (consolidate A6/A7 receipts)
-                           └─> (failure → new task card, do not guess)
+A6 (gpu_healthcheck live) ── DONE (6e85f44c) ── do not re-run
+A7 (train_model live)      ──> A8 (consolidate A7 receipts)
+                               (A6 portion already consolidated in pass #8; D7 commits it)
 
-B1 (classify dirty work) ─┼─> C9 (commit api.Dockerfile fix, if operator approves)
-                          ┼─> D4 (commit ci-triage receipts, if operator approves)
-                          └─> D5 (commit pass #5 index + task queues, if operator approves)
-B2 (gitignore scratch)    # independent
+B1 (classify dirty work) ─┬─> C9 (commit api.Dockerfile fix, if operator approves)
+                          └─> D7 (commit pass #7+#8 consolidation set, if operator approves)
+B2 (gitignore .tmp_*.json) # independent
 B3 (AGENTS.md)            # independent
 
 C1 (RUNPOD_INIT_TIMEOUT)  # independent of A; coordinate with C6
@@ -1270,18 +1266,18 @@ C10 (job timeout doc)     # coordinate with C4
 D1 (Stripe secret removal) # security-urgent; needs operator awareness for rotation
 D2 (next CVE bump)        # independent
 D3 (pip-audit refresh)    # independent; needs judgment
-D4 (ci-triage receipts)   # blocked by B1 disposition
-D5 (pass #5 index + queues) # blocked by B1 disposition
+D7 (pass #7+#8 consolidation set) # blocked by B1 disposition
 ```
 
 ---
 
 # Blocked Tasks
 
-- **A6** — blocked on operator awareness of live GPU spend (do not automate
-  the spend decision). Not blocked by any code task.
-- **A7** — blocked by A6 (must PASS first) + operator spend awareness.
-- **A8** — blocked by A6 (and A7 if run) + D5 (so the index baseline is committed first).
+- **A7** — blocked on operator awareness of live GPU spend (do not automate
+  the spend decision). NOT blocked by A6 (A6 is DONE). Not blocked by any
+  code task.
+- **A8** — blocked by A7 (must run first) + D7 (so the index baseline is
+  committed first).
 - **B1** — blocked on operator decision (do not automate).
 - **C2** — blocked on operator entrypoint-strategy decision (do not automate
   the choice; implementation is senior agent).
@@ -1289,8 +1285,8 @@ D5 (pass #5 index + queues) # blocked by B1 disposition
   approve committing it).
 - **D1** — blocked on operator awareness (security incident); the removal can
   proceed once the location is confirmed, but key rotation is operator-only.
-- **D4** — blocked by B1's disposition of `reports/ci-triage/`.
-- **D5** — blocked by B1's disposition of `RECEIPT_INDEX.md` + task-queue docs.
+- **D7** — blocked by B1's disposition of the pass #7 + pass #8
+  consolidation set.
 - **C8** — not blocked, but must run on a separate branch off `main`, not
   this branch.
 
@@ -1303,18 +1299,23 @@ D5 (pass #5 index + queues) # blocked by B1 disposition
    is the only item with real-world urgency. Highest priority despite being
    senior-agent work. Not blocked by any code task — can start immediately
    once the operator is aware of the security incident.
-2. **B3** (safe beginner, ~15 min) — create `AGENTS.md` so future agents
-   stop re-running disproved experiments (including the full-SHA-image-tag
-   rule from the `677c77ed` lesson). Independent, high leverage, no risk.
-3. **A6** (needs senior agent, ~15–30 min live) — dispatch the
-   `gpu_healthcheck` job against `6dbec436` to verify GPU access inside the
-   container. The canary path is proven (6/6); this is the next live unknown
-   on the critical path. → A7 (train_model) if it passes.
+2. **A7** (needs senior agent, ~15–30 min live) — dispatch the minimal
+   `train_model` job against `6dbec436` to verify the full training pipeline
+   (dataset loading + trainer execution + model export). A6 is DONE (GPU
+   accessible, RTX 4090), so A7 is now the single critical live unknown on
+   the critical path. → A8 (consolidate) if it passes. Ensure the endpoint
+   template timeout ≥ 1860s (see C10).
+3. **D7** (safe beginner, ~10 min) — commit the 9-file pass #7 + pass #8
+   consolidation set (index, v5/v6/v7/v8 task queues, two receipts, CI triage
+   #4 + #5) so the investigation's committed entry point stops lagging behind
+   the worktree and reflects that A6 is done. Blocked only by B1's
+   disposition approval — the highest-leverage unblock available to the
+   operator right now.
 
 Run B3 (and B2, C7, C10 — all safe-beginner/focused, independent, no live
-cloud) in parallel as a swarm of small agents. Hand D1 and A6 to senior
+cloud) in parallel as a swarm of small agents. Hand D1 and A7 to senior
 agents with RunPod/security access. Lane C focused-bugfix tasks (C1, C3, C5,
 C6, C9) can be dispatched in parallel once B1 lands the dispositions they
-depend on. C8 and D3 run on separate branches off `main`. D5 (commit the
-pass #5 index + queues) should land early once B1 approves, so the
-investigation's committed entry point stops lagging behind the worktree.
+depend on. C8 and D3 run on separate branches off `main`. D7 should land
+early once B1 approves, so the investigation's committed entry point stops
+lagging behind the worktree and reflects that A6 is done.
