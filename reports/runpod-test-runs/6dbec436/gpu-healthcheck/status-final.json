@@ -1,0 +1,59 @@
+{
+  "delayTime": 6512,
+  "executionTime": 3474,
+  "id": "4f63ca8b-72ca-4a98-a489-ae4063b13519-u1",
+  "output": {
+    "callback_payload": "{\"job_id\": \"qf:gpu-hc:6dbec436:001\", \"payload\": {\"gpu_healthcheck\": {\"checked_at_ns\": 1783138678923342255, \"cuda_version\": \"550.144.03\", \"driver_version\": \"550.144.03\", \"gpu_capable\": true, \"gpu_count\": 1, \"gpu_memory_mb\": 24564, \"gpu_model\": \"NVIDIA GeForce RTX 4090\", \"library_gpu_flags\": {\"catboost_gpu\": true, \"lightgbm_gpu\": false, \"xgboost_gpu\": true}, \"mode\": \"canary\", \"nvidia_smi_available\": true, \"nvidia_smi_output\": \"NVIDIA GeForce RTX 4090, 24564 MiB, 550.144.03\", \"promotion_eligible\": false, \"runtime_fingerprint\": {\"code_git_sha\": \"6dbec436c92b57a788b84622338baacc3df8665d\", \"container_image_digest\": \"local-container-digest\", \"hostname\": \"27c1e6ff255a\", \"lockfile_hash\": \"local-lockfile-hash\"}}}, \"result_type\": \"gpu_healthcheck\", \"schema_version\": 1, \"worker_id\": \"runpod-gpu-healthcheck\"}",
+    "callback_signature": "c8d29abba99bc57fffb3aeafe67bdab57b961bcde745f8241606c4d5c8dada87",
+    "callback_ts": 1783138678,
+    "gpu_healthcheck": {
+      "checked_at_ns": 1783138678923342300,
+      "cuda_version": "550.144.03",
+      "driver_version": "550.144.03",
+      "gpu_capable": true,
+      "gpu_count": 1,
+      "gpu_memory_mb": 24564,
+      "gpu_model": "NVIDIA GeForce RTX 4090",
+      "library_gpu_flags": {
+        "catboost_gpu": true,
+        "lightgbm_gpu": false,
+        "xgboost_gpu": true
+      },
+      "mode": "canary",
+      "nvidia_smi_available": true,
+      "nvidia_smi_output": "NVIDIA GeForce RTX 4090, 24564 MiB, 550.144.03",
+      "promotion_eligible": false,
+      "runtime_fingerprint": {
+        "code_git_sha": "6dbec436c92b57a788b84622338baacc3df8665d",
+        "container_image_digest": "local-container-digest",
+        "hostname": "27c1e6ff255a",
+        "lockfile_hash": "local-lockfile-hash"
+      }
+    },
+    "job_id": "qf:gpu-hc:6dbec436:001",
+    "preflight_result": {
+      "callback_url_validated": false,
+      "checked_at_ns": 1783138675489832400,
+      "container_user": "root:0",
+      "forbidden_vars_found": [],
+      "mode": "canary",
+      "passed": true,
+      "preflight_error": null,
+      "redacted_config": {
+        "QUANT_FOUNDRY_CALLBACK_SECRET": "****",
+        "QUANT_FOUNDRY_GIT_SHA": "6dbec436c92b57a788b84622338baacc3df8665d",
+        "QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS": "1800",
+        "QUANT_FOUNDRY_TRAINING_MODE": "canary",
+        "QUANT_FOUNDRY_USE_REAL_TRAINER": "true",
+        "RUNPOD_WEBHOOK_GET_JOB": "****"
+      },
+      "uri_allowlists_validated": true,
+      "writable_dirs": [
+        "/tmp"
+      ]
+    },
+    "task": "gpu_healthcheck"
+  },
+  "status": "COMPLETED",
+  "workerId": "dzy1mxoua2ojqb"
+}

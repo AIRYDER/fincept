@@ -28,6 +28,7 @@ ignore = [
 "**/notebooks/**/*.py" = ["T20", "E402"]
 "runpod/quant-foundry-training/run_import_bisection.py" = ["T20", "S310", "S110", "E741"]
 "runpod/quant-foundry-training/run_live_canary.py" = ["T20", "S310", "S110"]
+"runpod/quant-foundry-training/run_gpu_healthcheck.py" = ["T20", "S310", "S110"]
 
 [lint.isort]
 known-first-party = [

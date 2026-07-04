@@ -1,0 +1,24 @@
+{
+  "checked_at_ns": 1783138678923342300,
+  "cuda_version": "550.144.03",
+  "driver_version": "550.144.03",
+  "gpu_capable": true,
+  "gpu_count": 1,
+  "gpu_memory_mb": 24564,
+  "gpu_model": "NVIDIA GeForce RTX 4090",
+  "library_gpu_flags": {
+    "catboost_gpu": true,
+    "lightgbm_gpu": false,
+    "xgboost_gpu": true
+  },
+  "mode": "canary",
+  "nvidia_smi_available": true,
+  "nvidia_smi_output": "NVIDIA GeForce RTX 4090, 24564 MiB, 550.144.03",
+  "promotion_eligible": false,
+  "runtime_fingerprint": {
+    "code_git_sha": "6dbec436c92b57a788b84622338baacc3df8665d",
+    "container_image_digest": "local-container-digest",
+    "hostname": "27c1e6ff255a",
+    "lockfile_hash": "local-lockfile-hash"
+  }
+}
