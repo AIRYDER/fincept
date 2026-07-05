@@ -116,6 +116,12 @@ class ArtifactManifest(BaseModel):
     code_git_sha: str | None = None
     lockfile_hash: str | None = None
     container_image_digest: str | None = None
+    # Tier 1.3: records whether training was deterministic (CPU) or
+    # non-deterministic (GPU). GPU floating-point summation order differs
+    # from CPU, so GPU backends (xgboost_gpu, catboost GPU) are flagged
+    # non_deterministic. CPU backends (lightgbm, xgboost) are deterministic.
+    # None = not set (backward compatible with pre-existing manifests).
+    determinism_status: str | None = None
 
 
 class DatasetManifest(BaseModel):

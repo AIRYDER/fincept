@@ -81,7 +81,23 @@ except ImportError:  # pragma: no cover - fincept-core always present in-workspa
 #: to :class:`quant_foundry.catboost_trainer.CatBoostTrainer` and
 #: ``"xgboost"`` delegates to
 #: :class:`quant_foundry.xgboost_trainer.XGBoostTrainer`.
-TRAINER_BACKENDS: tuple[str, ...] = ("lightgbm", "catboost", "xgboost")
+#:
+#: Tier 1.3: ``"xgboost_gpu"`` is a non-deterministic GPU backend that
+#: routes through the same :class:`XGBoostTrainer` code path as
+#: ``"xgboost"`` but sets ``device='cuda'`` in the XGBoost params (via
+#: ``req.model_family == 'xgboost_gpu'``). GPU floating-point summation
+#: order differs from CPU, so GPU training is flagged
+#: ``non_deterministic`` in the artifact manifest. The RunPod handler's
+#: ``_REAL_TRAINER_BACKEND_BY_FAMILY`` map also routes
+#: ``model_family='xgboost_gpu'`` to the ``xgboost`` backend, so both
+#: ``backend='xgboost_gpu'`` and ``backend='xgboost'`` (with
+#: ``model_family='xgboost_gpu'``) reach ``_train_xgboost``.
+TRAINER_BACKENDS: tuple[str, ...] = (
+    "lightgbm",
+    "catboost",
+    "xgboost",
+    "xgboost_gpu",
+)
 
 
 # --- typed artifact result (Phase 1 / T-1.1) --------------------------------
@@ -1671,7 +1687,10 @@ class RealLightGBMTrainer:
 
         if self.backend == "catboost":
             return self._train_catboost(req, deadline_ns=deadline_ns)
-        elif self.backend == "xgboost":
+        elif self.backend in ("xgboost", "xgboost_gpu"):
+            # Tier 1.3: ``xgboost_gpu`` reuses the XGBoostTrainer code path;
+            # the device (cuda vs cpu) is selected inside ``_build_xgboost_params``
+            # based on ``req.model_family``.
             return self._train_xgboost(req, deadline_ns=deadline_ns)
         else:
             raise TrainingFailure(
@@ -1807,6 +1826,10 @@ class RealLightGBMTrainer:
             loader_family="catboost",
             trainer_tag="real_catboost",
             rank_report=rank_report,
+            # Tier 1.3: CatBoost currently trains on CPU (task_type='CPU'),
+            # so it is the deterministic reference. GPU CatBoost would be
+            # non_deterministic — extend here when task_type='GPU' is added.
+            determinism_status="deterministic",
         )
 
     def _train_xgboost(
@@ -1924,6 +1947,14 @@ class RealLightGBMTrainer:
             loader_family="xgboost",
             trainer_tag="real_xgboost",
             rank_report=rank_report,
+            # Tier 1.3: xgboost_gpu trains on CUDA (non-deterministic GPU
+            # floating-point summation order); plain xgboost trains on CPU
+            # (deterministic reference baseline alongside LightGBM CPU).
+            determinism_status=(
+                "non_deterministic"
+                if req.model_family == "xgboost_gpu"
+                else "deterministic"
+            ),
         )
 
     # --- backend param builders -----------------------------------------
@@ -1955,11 +1986,22 @@ class RealLightGBMTrainer:
         req: RunPodTrainingRequest,
         seed: int,
     ) -> dict[str, Any]:
-        """Build XGBoost hyper-parameters from the request search space."""
+        """Build XGBoost hyper-parameters from the request search space.
+
+        Tier 1.3: When ``req.model_family == 'xgboost_gpu'`` the ``device``
+        is set to ``'cuda'`` to train on GPU; otherwise it stays ``'cpu'``.
+        GPU training is non-deterministic (floating-point summation order
+        differs from CPU) and is flagged as such in the artifact manifest
+        by :meth:`_build_backend_artifact_and_dossier`.
+        """
         ss = req.search_space
+        # Tier 1.3: select the XGBoost device from the model family. The
+        # ``xgboost_gpu`` family trains on CUDA; every other family (incl.
+        # plain ``xgboost``) trains on CPU (the deterministic reference).
+        is_gpu = req.model_family == "xgboost_gpu"
         params: dict[str, Any] = {
             "tree_method": "hist",
-            "device": "cpu",
+            "device": "cuda" if is_gpu else "cpu",
             "max_depth": int(ss.get("max_depth", [3])[0]),
             "learning_rate": float(ss.get("learning_rate", [0.1])[0]),
             "n_estimators": int(ss.get("n_estimators", [50])[0]),
@@ -2049,8 +2091,16 @@ class RealLightGBMTrainer:
         loader_family: str,
         trainer_tag: str,
         rank_report: Any = None,
+        determinism_status: str | None = None,
     ) -> tuple[ArtifactManifest, ModelDossier]:
-        """Build the artifact manifest + dossier for a backend training."""
+        """Build the artifact manifest + dossier for a backend training.
+
+        Tier 1.3: ``determinism_status`` records whether the training was
+        deterministic (``"deterministic"`` for CPU backends) or
+        non-deterministic (``"non_deterministic"`` for GPU backends whose
+        floating-point summation order differs from CPU). ``None`` keeps
+        the manifest backward compatible with pre-existing artifacts.
+        """
         sha256 = hashlib.sha256(model_bytes).hexdigest()
         size_bytes = len(model_bytes)
 
@@ -2075,6 +2125,7 @@ class RealLightGBMTrainer:
             code_git_sha=_git_sha_or_default(),
             lockfile_hash=_lockfile_hash_or_default(),
             container_image_digest=_container_digest_or_default(),
+            determinism_status=determinism_status,
         )
 
         try:
