@@ -3339,6 +3339,54 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         if resolved_ref != req.dataset_manifest_ref:
             req = req.model_copy(update={"dataset_manifest_ref": resolved_ref})
 
+    # Tier 1.5: PIT proof gate — fail-closed for production when the
+    # manifest's ``pit_proof_verified`` flag is not True. This is the
+    # handler-side enforcement of the dataset registry's point-in-time
+    # contract: no production training on a dataset whose PIT proof has
+    # not been verified. Canary/research modes log an advisory warning
+    # but continue (permissive by design).
+    if loaded_dataset is not None and loaded_dataset.manifest:
+        pit_flag = loaded_dataset.manifest.get("pit_proof_verified")
+        if pit_flag is not True:
+            raw_mode = req.extra_constraints.get("training_mode") or "research"
+            try:
+                pit_gate_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+            except ValueError:
+                pit_gate_mode = TrainingMode.PRODUCTION
+            if pit_gate_mode == TrainingMode.PRODUCTION:
+                write_status(
+                    req.job_id,
+                    "failed",
+                    error_code="pit_proof_not_verified",
+                    error_summary=(
+                        "dataset manifest pit_proof_verified is not True — "
+                        "production training requires point-in-time proof"
+                    ),
+                )
+                return _build_signed_failure(
+                    error_code="pit_proof_not_verified",
+                    error_message=(
+                        "dataset manifest pit_proof_verified is not True — "
+                        "production training requires point-in-time proof"
+                    ),
+                    mode=pit_gate_mode.value,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "pit_proof_gate",
+                        "pit_proof_verified": pit_flag,
+                    },
+                )
+            # Advisory for canary/research.
+            write_status(
+                req.job_id,
+                "started",
+                error_code="pit_proof_not_verified",
+                error_summary=(
+                    f"advisory: pit_proof_verified={pit_flag!r} "
+                    "(not True) — production training would be blocked"
+                ),
+            )
+
     # Phase 3 / T-3.3: worker-side quality gate runner (defense in depth).
     #
     # After the manifest-first load (T-2.2) and BEFORE training begins,
