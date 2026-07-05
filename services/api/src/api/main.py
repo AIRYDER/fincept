@@ -55,6 +55,7 @@ from fincept_core.config import assert_safe_for_runtime, get_settings
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 from quant_foundry.gateway import QuantFoundryGateway
+from quant_foundry.registry_db import ModelRegistryDB
 
 API_VERSION = "0.1.0"
 
@@ -233,6 +234,10 @@ def configure_quant_foundry_gateway(
             dossier_lookup=gateway._dossier_registry_lazy(),
         )
     app.state.quant_foundry_gateway = gateway
+    # Construct the DB-backed model registry (lazy-init engine from
+    # get_sync_engine when first accessed). Stashed on app.state so the
+    # /quant-foundry/registry/* routes can read from it directly.
+    app.state.quant_foundry_registry = ModelRegistryDB(engine=None)
     return gateway
 
 
