@@ -32,12 +32,13 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     UniqueConstraint,
 )
@@ -256,4 +257,78 @@ class ShadowEvaluationRow(Base):
             "settled_count >= 0", name="ck_shadow_evaluations_settled_count_nonneg"
         ),
         Index("ix_shadow_evaluations_version_id", "version_id"),
+    )
+
+
+class DatasetManifestRow(Base):
+    """ORM row for the ``dataset_manifests`` table (migration 0006).
+
+    Persists the point-in-time dataset manifest — the immutable record that a
+    training worker references instead of DB credentials. Each row mirrors the
+    ``FeatureLakeManifest`` fields that affect reproducibility:
+
+      - ``manifest_hash`` / ``manifest_uri``: the stable content hash + location
+        of the manifest JSON (the worker fetches + verifies this first).
+      - ``data_uri`` / ``data_sha256`` / ``data_format``: the actual tabular
+        data location, its SHA-256, and format (parquet/csv).
+      - ``row_count``: the declared row count (verified after loading).
+      - ``feature_schema_hash`` / ``label_schema_hash``: schema hashes verified
+        after loading so a column drift is detected.
+      - ``readiness_level``: the dataset readiness level (L1-L4) that gates
+        production dispatch (L3+ required).
+      - ``pit_proof_verified``: point-in-time proof flag — only True after the
+        builder has asserted every feature value's ``observed_at <= decision_time``.
+      - ``purged_fold_spec``: the leakage-safe purged-k-fold specification as
+        JSON (folds + embargo + max label horizon).
+      - ``embargo_length``: the embargo length in nanoseconds (extracted from
+        the fold spec for convenient querying).
+      - ``quality_report_uri`` / ``quality_report_sha256``: the quality report
+        location + hash (verified if present).
+
+    No column stores secrets, DB credentials, or raw payloads. The manifest
+    hash covers every field that affects a training run so two exports of the
+    same PIT dataset produce the same hash and a single changed row changes
+    the hash.
+    """
+
+    __tablename__ = "dataset_manifests"
+
+    manifest_id: Mapped[str] = mapped_column(String(128), primary_key=True, nullable=False)
+    dataset_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    data_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    data_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    feature_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    label_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    readiness_level: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="L1"
+    )
+    pit_proof_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    purged_fold_spec: Mapped[JSONDict] = mapped_column(JSON, nullable=False, default=dict)
+    embargo_length: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    quality_report_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    quality_report_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "readiness_level IN ('L1','L2','L3','L4')",
+            name="ck_dataset_manifests_readiness_level_domain",
+        ),
+        CheckConstraint(
+            "row_count >= 0", name="ck_dataset_manifests_row_count_nonneg"
+        ),
+        UniqueConstraint(
+            "dataset_id", "manifest_hash",
+            name="uq_dataset_manifests_dataset_id_manifest_hash",
+        ),
+        Index("ix_dataset_manifests_dataset_id", "dataset_id"),
+        Index("ix_dataset_manifests_readiness_level", "readiness_level"),
+        Index("ix_dataset_manifests_manifest_hash", "manifest_hash"),
     )
