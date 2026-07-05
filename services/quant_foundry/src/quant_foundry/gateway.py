@@ -32,16 +32,29 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import time
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.budget import from_env as budget_from_env
+from quant_foundry.callback_dlq import CallbackDLQ, DLQRecord
 from quant_foundry.callback_metrics import CallbackMetricsStore
 from quant_foundry.callbacks import (
     CallbackProcessor,
     DurableDossierStore,
     DurableShadowLedgerStore,
+)
+from quant_foundry.cost_tracker import CostTracker
+from quant_foundry.db_sinks import (
+    CallbackDlqDbStore,
+    CallbackMetricsDbStore,
+    CallbackReceiptDbStore,
+    DbDossierStore,
+    DbShadowLedgerStore,
 )
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.feature_lake import FeatureRow
@@ -136,6 +149,31 @@ _RUNPOD_BASE_URL_ENV = "RUNPOD_BASE_URL"
 _RUNPOD_TIMEOUT_ENV = "RUNPOD_TIMEOUT_SECONDS"
 _RUNPOD_COST_ENV = "RUNPOD_COST_PER_DISPATCH_CENTS"
 _CALLBACK_SECRET_ENV = "QUANT_FOUNDRY_CALLBACK_SECRET"
+_SINK_BACKEND_ENV = "QUANT_FOUNDRY_SINK_BACKEND"
+
+
+class _DbCallbackDLQ(CallbackDLQ):
+    """DB-backed callback DLQ adapter.
+
+    Subclasses :class:`CallbackDLQ` but overrides ``_store`` and ``__init__``
+    so records are written to the DB via :class:`CallbackDlqDbStore` instead
+    of to a JSONL file. The ``enqueue`` interface (used by
+    :class:`GatewayCallbackMixin`) is unchanged — only the persistence layer
+    is swapped.
+    """
+
+    def __init__(self, db_store: CallbackDlqDbStore) -> None:
+        # Skip CallbackDLQ.__init__ (which creates a JSONL file + reloads).
+        self._db_store = db_store
+        self._records: dict[str, DLQRecord] = {}
+        self._by_idempotency: dict[str, DLQRecord] = {}
+
+    def _store(self, rec: DLQRecord) -> DLQRecord:
+        """Persist a record to the DB and update in-memory indexes."""
+        self._db_store.write(rec)
+        self._records[rec.dlq_id] = rec
+        self._by_idempotency[rec.idempotency_key] = rec
+        return rec
 
 
 class QuantFoundryGateway(GatewayCallbackMixin):
@@ -160,6 +198,9 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         prediction_publisher: Any | None = None,
         worker_status_dir: pathlib.Path | str | None = None,
         stale_threshold_seconds: float = 60.0,
+        cost_tracker: CostTracker | None = None,
+        sink_backend: str = "jsonl",
+        db_engine: Engine | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -174,6 +215,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             pathlib.Path(worker_status_dir) if worker_status_dir is not None else None
         )
         self._stale_threshold_seconds = stale_threshold_seconds
+        # --- CostTracker + sink backend (Phase A integration) ---
+        self._cost_tracker: CostTracker | None = cost_tracker
+        self.sink_backend: str = sink_backend
+        self._db_engine: Engine | None = db_engine
+        self._callback_receipt_db_store: CallbackReceiptDbStore | None = None
+        self._callback_metrics_db_store: CallbackMetricsDbStore | None = None
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -193,8 +240,42 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # --- Shadow dispatch loop (Agent C) ---
         self._shadow_dispatch_count: int = 0
         self._last_shadow_dispatch_ns: int = 0
-        self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
-        self.dossier_store = DurableDossierStore(self.dossier_registry())
+        # --- Sink backend selection ---
+        # When sink_backend == "db", construct DB-backed sinks instead of the
+        # JSONL-backed DurableDossierStore / DurableShadowLedgerStore. The
+        # CallbackProcessor accepts any object implementing the sink protocols,
+        # so no change to the processor is needed — just pass the DB sinks.
+        if self.sink_backend == "db":
+            self.shadow_ledger = DbShadowLedgerStore(engine=self._db_engine)
+            self.dossier_store = DbDossierStore(engine=self._db_engine)
+            # DB-backed DLQ: wrap CallbackDlqDbStore in the _DbCallbackDLQ
+            # adapter so the mixin's enqueue() interface is preserved.
+            self._callback_receipt_db_store = CallbackReceiptDbStore(
+                engine=self._db_engine,
+            )
+            self._dlq_db_store = CallbackDlqDbStore(engine=self._db_engine)
+            self.dlq = _DbCallbackDLQ(self._dlq_db_store)
+            # DB-backed callback metrics store (replaces the JSONL store).
+            self._callback_metrics_db_store = CallbackMetricsDbStore(
+                engine=self._db_engine,
+            )
+        else:
+            self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
+            self.dossier_store = DurableDossierStore(self.dossier_registry())
+            # When a CostTracker is injected in jsonl mode, we still need a
+            # CallbackReceiptDbStore so callback receipts are mirrored to the
+            # DB — the training_jobs.callback_receipt_id FK references
+            # callback_receipts.callback_id, so the parent row must exist for
+            # CostTracker.link_callback() to succeed. Use the CostTracker's
+            # engine (which may be the same injected engine or a lazy-init
+            # production engine).
+            if self._cost_tracker is not None:
+                receipt_engine = self._db_engine
+                if receipt_engine is None:
+                    receipt_engine = self._cost_tracker.engine
+                self._callback_receipt_db_store = CallbackReceiptDbStore(
+                    engine=receipt_engine,
+                )
         self._runpod_client = runpod_client
         self._runpod_dispatcher: RunPodDispatcher | None = None
         self._runpod_clients: dict[str, Any] = {}
@@ -381,6 +462,17 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         except ValueError:
             stale_threshold = 60.0
 
+        # Sink backend selection: "jsonl" (default, backward compatible) or
+        # "db" (DB-backed sinks via db_sinks.py + CostTracker). When "db",
+        # the gateway constructs DbDossierStore, DbShadowLedgerStore,
+        # CallbackReceiptDbStore, CallbackDlqDbStore, and
+        # CallbackMetricsDbStore from db_sinks.py and passes them to the
+        # CallbackProcessor. The DB sinks lazy-init their engines from
+        # get_sync_engine() when no engine is injected.
+        sink_backend = os.environ.get(_SINK_BACKEND_ENV, "jsonl").lower()
+        if sink_backend not in ("jsonl", "db"):
+            sink_backend = "jsonl"
+
         return cls(
             enabled=enabled,
             mode=mode,
@@ -392,6 +484,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             paper_bridge=paper_bridge,
             worker_status_dir=worker_status_dir or None,
             stale_threshold_seconds=stale_threshold,
+            sink_backend=sink_backend,
         )
 
     # --- health / state ---
@@ -802,6 +895,9 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 )
             else:
                 dispatcher.dispatch(job_id, request_payload=dispatch_payload)
+        # CostTracker: record the dispatch (creates a training_jobs row).
+        # Best-effort — a tracking failure must not break the dispatch path.
+        self._record_job_dispatch_cost(job_id, job_type, dispatch_payload)
         rec = self.outbox.get(job_id)
         return {
             "enabled": True,
@@ -922,6 +1018,80 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             receipt["runpod_job_id"] = rec.runpod_job_id
             receipts.append(receipt)
         return receipts
+
+    # --- CostTracker callback wiring (Phase A integration) ------------------
+
+    def receive_callback(
+        self,
+        *,
+        job_id: str,
+        payload: bytes,
+        signature: str,
+        ts: int,
+        worker_id: str = "external",
+    ) -> dict[str, Any]:
+        """Override that wires CostTracker into the callback processing path.
+
+        Delegates to the mixin's ``receive_callback`` (HMAC verification,
+        inbox recording, processor.process()), then — when the callback
+        completes successfully — calls ``CostTracker.update_job_status()``
+        and ``CostTracker.link_callback()`` to update the training_jobs row.
+
+        The callback receipt id is read from the inbox record (the latest
+        record for this job_id). The status is derived from the outbox
+        status in the processing receipt (``completed`` / ``failed``).
+
+        Best-effort: CostTracker write failures are caught and logged via
+        ``contextlib.suppress`` so they do not break the callback path.
+        """
+        receipt = super().receive_callback(
+            job_id=job_id,
+            payload=payload,
+            signature=signature,
+            ts=ts,
+            worker_id=worker_id,
+        )
+        # Mirror the inbox record to the callback_receipts table via
+        # CallbackReceiptDbStore when the store is available. This is the
+        # DB-backed audit trail (the JSONL inbox remains the source of truth
+        # for the processor; the DB store is a durable mirror). The store is
+        # constructed when sink_backend == "db" OR when a CostTracker is
+        # injected (the training_jobs.callback_receipt_id FK references
+        # callback_receipts.callback_id, so the parent row must exist for
+        # CostTracker.link_callback() to succeed).
+        if self._callback_receipt_db_store is not None:
+            in_rec = self.inbox.get_by_job_id(job_id)
+            if in_rec is not None:
+                with contextlib.suppress(Exception):
+                    self._callback_receipt_db_store.write(in_rec)
+        # Only update the CostTracker when the callback was accepted (ok=True).
+        if not receipt.get("ok"):
+            return receipt
+        # Update job status from the outbox status in the receipt.
+        outbox_status = receipt.get("outbox_status")
+        now_ns = time.time_ns()
+        status_map = {
+            "completed": "completed",
+            "failed": "failed",
+            "validating": "running",
+        }
+        ct_status = status_map.get(outbox_status, outbox_status)
+        if ct_status is not None:
+            with contextlib.suppress(Exception):
+                self.cost_tracker().update_job_status(
+                    job_id,
+                    status=ct_status,
+                    completed_at_ns=now_ns if ct_status == "completed" else None,
+                )
+        # Link the callback receipt id from the inbox record.
+        in_rec = self.inbox.get_by_job_id(job_id)
+        if in_rec is not None:
+            with contextlib.suppress(Exception):
+                self.cost_tracker().link_callback(
+                    job_id,
+                    callback_receipt_id=in_rec.callback_id,
+                )
+        return receipt
 
     def _prepare_dispatch_payload(
         self,
@@ -1634,12 +1804,104 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         ``receive_callback`` / ``poll_runpod_results`` to record
         ``received`` / ``accepted`` / ``rejected`` events and by
         ``shadow_health`` to compute a rolling rejection rate.
+
+        When ``sink_backend == "db"``, returns the DB-backed
+        :class:`CallbackMetricsDbStore` instead (constructed in
+        ``__init__``), which writes metric events to the ``callback_metrics``
+        table.
         """
+        if self.sink_backend == "db" and self._callback_metrics_db_store is not None:
+            return self._callback_metrics_db_store  # type: ignore[return-value]
         if self._callback_metrics_store is None:
             self._callback_metrics_store = CallbackMetricsStore(
                 metrics_dir=self.base_dir / "callback_metrics",
             )
         return self._callback_metrics_store
+
+    # --- CostTracker (Phase A integration) ----------------------------------
+
+    def cost_tracker(self) -> CostTracker:
+        """Return the CostTracker, lazy-initializing if not injected.
+
+        When a ``CostTracker`` was passed to the constructor, it is returned
+        as-is. When ``None`` (the default), a new ``CostTracker`` is
+        constructed. If a ``db_engine`` was injected (e.g. a SQLite engine in
+        tests), it is passed to the ``CostTracker``; otherwise the tracker
+        lazy-inits its engine from ``get_sync_engine()`` in production.
+        """
+        if self._cost_tracker is None:
+            self._cost_tracker = CostTracker(engine=self._db_engine)
+        return self._cost_tracker
+
+    def _record_job_dispatch_cost(
+        self,
+        job_id: str,
+        job_type: str,
+        request_payload: Any,
+    ) -> None:
+        """Record a job dispatch in the CostTracker (training_jobs row).
+
+        Called from the dispatch path (``create_job``) right after a
+        successful dispatch. Extracts ``model_family``, ``gpu_type``,
+        ``gpu_count``, ``execution_timeout_ms``, and ``container_image``
+        from the request payload when present (with sensible defaults).
+        ``request_payload_ref`` is a file path to the persisted request
+        payload on disk (never the raw payload itself).
+
+        Best-effort: a CostTracker write failure is caught and logged via
+        ``contextlib.suppress`` so it does not break the dispatch path.
+        The training_jobs row is the source of truth for cost tracking;
+        a missed row means the job is untracked (not a dispatch failure).
+        """
+        payload = request_payload if isinstance(request_payload, dict) else {}
+        model_family = str(payload.get("model_family", job_type))
+        execution_timeout_ms = payload.get("execution_timeout_ms")
+        gpu_type = payload.get("gpu_type")
+        gpu_count = int(payload.get("gpu_count", 1))
+        container_image = payload.get("container_image")
+        # Map the gateway mode to a valid CostTracker mode domain value.
+        # The training_jobs table has a CHECK constraint forcing mode to be
+        # one of 'canary', 'research', 'production'. The gateway mode
+        # ('runpod', 'local_mock') is a transport mode, not a deployment
+        # tier — map it to 'canary' (the default tier for shadow-only
+        # dispatches) unless the payload overrides it.
+        ct_mode = str(payload.get("deployment_mode", "canary"))
+        # Persist the request payload to disk and use the path as the ref.
+        request_payload_ref = self._write_request_payload(job_id, payload)
+        with contextlib.suppress(Exception):
+            self.cost_tracker().record_job_dispatch(
+                job_id=job_id,
+                model_family=model_family,
+                mode=ct_mode,
+                execution_timeout_ms=(
+                    int(execution_timeout_ms) if execution_timeout_ms is not None else None
+                ),
+                gpu_type=str(gpu_type) if gpu_type is not None else None,
+                gpu_count=gpu_count,
+                container_image=(
+                    str(container_image) if container_image is not None else None
+                ),
+                request_payload_ref=request_payload_ref,
+            )
+
+    def _write_request_payload(self, job_id: str, payload: dict[str, Any]) -> str:
+        """Persist the request payload to disk and return the file path.
+
+        Stored under ``<base_dir>/request_payloads/<job_id>.json``. This is
+        a reference (file path), never the raw payload itself — the
+        CostTracker stores only the path in ``training_jobs.request_payload_ref``.
+        """
+        import json as _json
+
+        payload_dir = self.base_dir / "request_payloads"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = job_id.replace(":", "_").replace("/", "_").replace("\\", "_")
+        payload_path = payload_dir / f"{safe_name}.json"
+        try:
+            payload_path.write_text(_json.dumps(payload, default=str), encoding="utf-8")
+        except (OSError, TypeError):
+            return ""
+        return str(payload_path)
 
     def shadow_health(self) -> dict[str, Any]:
         """Aggregate read-only health for the shadow inference surface.
