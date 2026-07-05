@@ -289,6 +289,34 @@ def create_search_space() -> dict[str, Any]:
     }
 
 
+def convert_categorical_search_space(
+    choices: dict[str, list[Any]],
+) -> dict[str, Any]:
+    """Convert a categorical-choices dict to Optuna search-space format.
+
+    The :class:`RunPodTrainingRequest.search_space` field uses
+    ``dict[str, list[Any]]`` where each list holds the candidate values for
+    a parameter (the trainer reads ``value[0]`` as the selected value). This
+    helper converts that format into the Optuna distribution-spec format
+    (``{"type": "categorical", "choices": [...]}``) expected by
+    :func:`_sample_params` and :class:`OptunaTuner`.
+
+    This is a pure-Python helper (no optuna import) so it preserves the
+    lazy-import invariant of this module.
+
+    Args:
+        choices: a dict of parameter-name -> list of candidate values.
+
+    Returns:
+        A dict of parameter-name -> ``{"type": "categorical", "choices": [...]}``.
+    """
+    return {
+        name: {"type": "categorical", "choices": list(vals)}
+        for name, vals in choices.items()
+        if vals  # skip empty lists (no candidates to sample)
+    }
+
+
 class BudgetEnforcer:
     """Hard wall-clock budget enforcer for a tuning run.
 

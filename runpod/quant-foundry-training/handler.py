@@ -2122,6 +2122,165 @@ def _training_mode_is_production(req: RunPodTrainingRequest) -> bool:
         return True
 
 
+# ---------------------------------------------------------------------------
+# Tier 1.4: Optuna hyperparameter search integration
+# ---------------------------------------------------------------------------
+
+
+def _optuna_is_enabled(req: RunPodTrainingRequest) -> bool:
+    """Return ``True`` if Optuna tuning is enabled for this request.
+
+    Optuna is enabled when:
+    - ``req.search_space`` is non-empty (there is a space to search), AND
+    - ``req.extra_constraints["enable_optuna"]`` is a truthy value.
+
+    The ``extra_constraints`` dict is typed ``dict[str, str]`` per the
+    schema, so the value is parsed as a string (``"true"``, ``"1"``,
+    ``"yes"`` → enabled; anything else → disabled).
+    """
+    if not req.search_space:
+        return False
+    raw = req.extra_constraints.get("enable_optuna")
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in ("true", "1", "yes")
+
+
+def _run_optuna_tuning(
+    req: RunPodTrainingRequest,
+    *,
+    deadline_ns: int,
+    loaded_dataset: LoadedDataset | None,
+    n_folds: int = 3,
+) -> tuple[dict[str, Any], int, dict[str, Any]] | None:
+    """Run Optuna hyperparameter search before trainer construction.
+
+    When enabled (see :func:`_optuna_is_enabled`), this builds an
+    :class:`OptunaTuner` with a deadline-aware wall-clock budget (the
+    handler's remaining deadline minus a 60s buffer reserved for the final
+    training run), executes the search, and returns the best parameters +
+    trial count so the handler can:
+
+    1. Replace the static ``search_space`` with the best params for the
+       final training run.
+    2. Record ``optuna_trial_count`` and ``optuna_best_params`` in the
+       callback's ``metrics_summary`` (consumed by Tier 2's Deflated
+       Sharpe, which needs the *real* number of trials evaluated).
+
+    The objective function builds a lightweight single-fold trainer per
+    trial, trains with the sampled hyperparameters, and returns the
+    validation metric (e.g. ``logloss``). This is a full train+eval cycle
+    per trial — expensive but honest: every trial is a real evaluation,
+    so the trial count is a true count of evaluated configurations.
+
+    Args:
+        req: the training request (with ``search_space`` + ``enable_optuna``).
+        deadline_ns: the handler's absolute deadline in nanoseconds.
+        loaded_dataset: the loaded dataset (for column roles / task spec).
+        n_folds: the number of folds for the final training (trials use 1).
+
+    Returns:
+        ``(best_params, trial_count, best_params_search_space)`` where
+        ``best_params`` is ``dict[str, Any]`` (scalar values),
+        ``trial_count`` is the number of trials evaluated, and
+        ``best_params_search_space`` is the best params converted back to
+        the ``dict[str, list]`` format for the trainer. Returns ``None``
+        if Optuna cannot run (not enough time, no trials completed).
+    """
+    from quant_foundry.optuna_tuning import (
+        OptunaTuner,
+        TuningSpec,
+        convert_categorical_search_space,
+    )
+
+    # Deadline-aware budget: remaining time minus a 60s buffer for the
+    # final training run. TuningSpec requires max_wall_clock_seconds >= 60.
+    now_ns = time.time_ns()
+    remaining_seconds = max(0.0, (deadline_ns - now_ns) / 1_000_000_000)
+    optuna_budget = int(remaining_seconds - 60)
+    if optuna_budget < 60:
+        # Not enough time for a valid TuningSpec (min 60s) + 60s buffer.
+        return None
+
+    # Convert the request's categorical search_space (dict[str, list]) to
+    # the Optuna distribution-spec format (dict[str, {type, choices}]).
+    optuna_search_space = convert_categorical_search_space(req.search_space)
+    if not optuna_search_space:
+        return None
+
+    # Parse tuning controls from extra_constraints (all string-typed).
+    ec = req.extra_constraints
+    max_trials = int(ec.get("optuna_max_trials", "50"))
+    metric = ec.get("optuna_metric", "logloss")
+    direction = ec.get("optuna_direction", "minimize")
+
+    spec = TuningSpec(
+        max_trials=max_trials,
+        max_wall_clock_seconds=optuna_budget,
+        metric=metric,
+        direction=direction,
+    )
+
+    # Use a temporary directory for study artifacts (in-memory storage is
+    # used by default; the dir is only for optional JSON saves). Sanitize
+    # the job_id for use as a filesystem path component (job IDs contain
+    # colons which are invalid in Windows filenames).
+    import tempfile
+
+    safe_job_id = req.job_id.replace(":", "-").replace("/", "-")
+    study_dir = tempfile.mkdtemp(prefix=f"optuna_{safe_job_id}_")
+    tuner = OptunaTuner(
+        tuning_spec=spec,
+        search_space=optuna_search_space,
+        study_dir=study_dir,
+        study_name=f"qf_optuna_{req.job_id}",
+    )
+
+    # The objective function: train with the sampled params and return the
+    # validation metric. The OptunaTuner samples params via _sample_params
+    # before calling this, so trial.params has the selected values.
+    def _objective(trial: Any, search_space: dict[str, Any], tuning_spec: TuningSpec) -> float:
+        # Read the sampled params (set by _sample_params in the tuner).
+        sampled = dict(trial.params)
+        # Convert scalar params back to the dict[str, list] format the
+        # trainer expects (it reads value[0] as the selected value).
+        trial_search_space = {k: [v] for k, v in sampled.items()}
+        # Merge with the original search_space so non-tuned keys are
+        # preserved (e.g. early_stopping_rounds).
+        merged_ss = {**req.search_space, **trial_search_space}
+        trial_req = req.model_copy(update={"search_space": merged_ss})
+        # Build a single-fold trainer for a fast eval cycle.
+        trial_trainer = _build_trainer(
+            trial_req,
+            n_folds=1,
+            loaded_dataset=loaded_dataset,
+        )
+        # Train with a per-trial deadline (the overall deadline_ns; the
+        # tuner's BudgetEnforcer stops the study between trials).
+        _artifact, dossier = trial_trainer.train(trial_req, deadline_ns=deadline_ns)
+        # Extract the validation metric from the dossier.
+        val_metric = dossier.training_metrics.get(tuning_spec.metric)
+        if val_metric is None:
+            # Fallback: use accuracy if the requested metric is absent.
+            val_metric = dossier.training_metrics.get("accuracy", 0.5)
+        return float(val_metric)
+
+    try:
+        study_artifact = tuner.run(_objective)
+    except Exception:
+        # Optuna not installed or unexpected error — fail safe (skip Optuna).
+        return None
+
+    trial_count = len(study_artifact.trials)
+    if study_artifact.best_trial is None or trial_count == 0:
+        return None
+
+    best_params = dict(study_artifact.best_trial.params)
+    # Convert best params back to dict[str, list] for the trainer.
+    best_params_search_space = {k: [v] for k, v in best_params.items()}
+    return best_params, trial_count, best_params_search_space
+
+
 def _build_trainer(
     req: RunPodTrainingRequest,
     *,
@@ -3387,6 +3546,38 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # can detect crashed workers via stale heartbeat_at timestamps.
     write_status(req.job_id, "started")
 
+    # --- Tier 1.4: Optuna hyperparameter search -------------------------------
+    # When req.search_space is non-empty AND extra_constraints has
+    # enable_optuna=true, run OptunaTuner BEFORE constructing the final
+    # trainer. The best params replace the static search_space values for
+    # the final training run. The trial count and best params are recorded
+    # in the callback's metrics_summary (optuna_trial_count /
+    # optuna_best_params) so Tier 2's Deflated Sharpe can use the real
+    # number of trials evaluated.
+    #
+    # Deadline-aware: the Optuna budget is the handler's remaining deadline
+    # minus a 60s buffer reserved for the final training. If there is not
+    # enough time (budget < 60s), Optuna is skipped (backward compatible).
+    optuna_trial_count: int | None = None
+    optuna_best_params: dict[str, Any] | None = None
+    if _optuna_is_enabled(req):
+        _deadline_seconds = _get_deadline_seconds()
+        _deadline_ns = time.time_ns() + (_deadline_seconds * 1_000_000_000)
+        _optuna_result = _run_optuna_tuning(
+            req,
+            deadline_ns=_deadline_ns,
+            loaded_dataset=loaded_dataset,
+            n_folds=int(n_folds) if n_folds else 3,
+        )
+        if _optuna_result is not None:
+            _best_params, optuna_trial_count, _best_ss = _optuna_result
+            optuna_best_params = _best_params
+            # Replace the static search_space with the best params for the
+            # final training run (merge so non-tuned keys are preserved).
+            req = req.model_copy(
+                update={"search_space": {**req.search_space, **_best_ss}},
+            )
+
     # Build the trainer and keep a reference so we can read the typed
     # artifact result (Phase 1 / T-1.1) after handle() returns. The
     # trainer stashes ``last_artifact_result`` / ``last_model_bytes`` on
@@ -3730,6 +3921,15 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # inside the signed callback payload.
     metrics_summary = dict(dossier_data.get("training_metrics", {}))
 
+    # Tier 1.4: record Optuna trial count + best params in the metrics
+    # summary so Tier 2's Deflated Sharpe can use the *real* number of
+    # trials evaluated (not a guessed/assumed count). These fields are
+    # only present when Optuna tuning was enabled and completed at least
+    # one trial; absent otherwise (backward compatible).
+    if optuna_trial_count is not None:
+        metrics_summary["optuna_trial_count"] = optuna_trial_count
+        metrics_summary["optuna_best_params"] = optuna_best_params or {}
+
     # Quality gate passed flag (fail-closed when unknown).
     quality_gate_passed: bool | None = None
     if quality_gate_result_dict is not None:
@@ -3890,7 +4090,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
-        print(msg, flush=True)
+        print(msg, flush=True)  # noqa: T201 - CLI debug output
         for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
             try:
                 with open(path, "a") as f:
@@ -3931,7 +4131,7 @@ if __name__ == "__main__":  # pragma: no cover
         raw = sys.stdin.read()
         event = json.loads(raw) if raw else {}
         result = handler(event)
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())
