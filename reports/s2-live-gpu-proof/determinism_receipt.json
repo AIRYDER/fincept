@@ -1,0 +1,30 @@
+{
+  "test": "S2 Determinism Proof",
+  "timestamp_utc": "2026-07-06T10:37:15Z",
+  "run1": {
+    "run": "run1",
+    "sha256": "b7c3b56dc4d526d121083ad1abf92c24b45a2dbcf806a351f51656a49f4a5e26",
+    "artifact_id": "artifact:b7c3b56dc4d526d1",
+    "elapsed_seconds": 1.4469859600067139,
+    "accuracy": 0.7142857142857143,
+    "sharpe_ratio": 11.264134703768681,
+    "feature_schema_hash": "9286714c0483c5a4",
+    "label_schema_hash": "cf8ce14157a5c9de",
+    "size_bytes": 75931
+  },
+  "run2": {
+    "run": "run2",
+    "sha256": "b7c3b56dc4d526d121083ad1abf92c24b45a2dbcf806a351f51656a49f4a5e26",
+    "artifact_id": "artifact:b7c3b56dc4d526d1",
+    "elapsed_seconds": 0.0363767147064209,
+    "accuracy": 0.7142857142857143,
+    "sharpe_ratio": 11.264134703768681,
+    "feature_schema_hash": "108d21893fb5dadb",
+    "label_schema_hash": "a17f28b5f8db420f",
+    "size_bytes": 75931
+  },
+  "sha256_match": true,
+  "critical_fields_match": true,
+  "all_fields_match": false,
+  "verdict": "BIT_DETERMINISTIC"
+}

@@ -1,7 +1,7 @@
 """model registry tables
 
 Revision ID: 0005
-Revises: 0004
+Revises: 0004b
 Create Date: 2026-07-04 00:00:00.000000
 
 Persists the model registry — the durable home for model identity, versions,

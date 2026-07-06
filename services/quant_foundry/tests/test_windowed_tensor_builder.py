@@ -627,7 +627,7 @@ class TestWindowedTensorBuilderBuild:
         df = _make_synthetic_df(n_symbols=2, n_rows=10)
         manifest = _make_manifest()
         out = str(tmp_path / "out.npz")
-        builder.build(df, manifest, out)
+        receipt = builder.build(df, manifest, out)
         # Reload windows and verify label_timestamp > end_timestamp.
         loaded = builder._load_windows(out)
         for w in loaded:

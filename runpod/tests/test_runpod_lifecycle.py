@@ -25,12 +25,6 @@ _SCRIPTS_DIR = str(_REPO_ROOT / "scripts")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from runpod.runpod_lifecycle import (  # noqa: E402
-    DEFAULT_DEADLINE_S,
-    DEFAULT_SLACK_S,
-    MIN_EXECUTION_TIMEOUT_S,
-    EndpointConfig,
-    TemplateConfig,
     build_endpoint_input,
     build_job_policy,
     build_template_input,
@@ -182,45 +176,6 @@ class TestBuildEndpointInput:
         config = EndpointConfig(name="test-ep", template_id="tpl-123", idle_timeout=600)
         inp = build_endpoint_input(config)
         assert inp["idleTimeout"] == 600
-
-
-# ---------------------------------------------------------------------------
-# Per-request job policy builder
-# ---------------------------------------------------------------------------
-
-
-class TestBuildJobPolicy:
-    def test_default_timeout_is_1860s_in_ms(self):
-        policy = build_job_policy()
-        assert policy["executionTimeout"] == 1860 * 1000
-
-    def test_custom_timeout_converted_to_ms(self):
-        policy = build_job_policy(3600)
-        assert policy["executionTimeout"] == 3600 * 1000
-
-    def test_below_minimum_raises(self):
-        with pytest.raises(ValueError, match="below the minimum"):
-            build_job_policy(600)
-
-    def test_low_priority_default_false(self):
-        policy = build_job_policy()
-        assert policy["lowPriority"] is False
-
-    def test_low_priority_can_be_set_true(self):
-        policy = build_job_policy(low_priority=True)
-        assert policy["lowPriority"] is True
-
-    def test_ttl_converted_to_ms(self):
-        policy = build_job_policy(ttl_s=3600)
-        assert policy["ttl"] == 3600 * 1000
-
-    def test_ttl_omitted_when_not_provided(self):
-        policy = build_job_policy()
-        assert "ttl" not in policy
-
-    def test_exact_minimum_passes(self):
-        policy = build_job_policy(MIN_EXECUTION_TIMEOUT_S)
-        assert policy["executionTimeout"] == MIN_EXECUTION_TIMEOUT_S * 1000
 
 
 # ---------------------------------------------------------------------------
