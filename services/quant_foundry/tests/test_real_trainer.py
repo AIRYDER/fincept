@@ -406,6 +406,91 @@ def test_real_trainer_pbo_in_valid_range(tmp_path: Path) -> None:
     assert 0.0 <= dossier.pbo <= 1.0
 
 
+def test_real_trainer_uses_real_dsr(tmp_path: Path) -> None:
+    """Tier 2.2: trainer must use the real Bailey & López de Prado DSR,
+    not the placeholder ``sharpe * (1 - fold_overfit_ratio)``."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    data_path = _make_test_dataset(tmp_path)
+    req = _make_training_request(
+        "qf:train:dsr:1",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    trainer = RealLightGBMTrainer()
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # The method must be recorded as the real DSR, not the placeholder.
+    assert dossier.metadata.get("deflated_sharpe_method") == "bailey_lopez_de_prado_dsr"
+    # DSR detail fields must be present.
+    assert "deflated_sharpe_raw" in dossier.metadata
+    assert "deflated_sharpe_skew" in dossier.metadata
+    assert "deflated_sharpe_kurtosis" in dossier.metadata
+    assert "deflated_sharpe_multiple_trials_penalty" in dossier.metadata
+    # DSR <= raw Sharpe (deflation only discounts).
+    dsr = dossier.deflated_sharpe
+    raw = float(dossier.metadata["deflated_sharpe_raw"])
+    assert dsr is not None
+    assert raw is not None
+    assert dsr <= raw + 1e-9  # allow tiny float epsilon
+
+
+def test_real_trainer_cpcv_mode(tmp_path: Path) -> None:
+    """Tier 2.1: CPCV mode must produce C(N,P) folds and compute the
+    real CSCV PBO instead of the fold_overfit_ratio placeholder."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    data_path = _make_test_dataset(tmp_path, n=300, seed=42)
+    req = _make_training_request(
+        "qf:train:cpcv:1",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    trainer = RealLightGBMTrainer(
+        cv_mode="cpcv",
+        cpcv_n_groups=6,
+        cpcv_n_val_groups=2,
+    )
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # CV mode must be recorded as cpcv.
+    assert dossier.metadata.get("cv_mode") == "cpcv"
+    # PBO method must be the real CSCV, not the placeholder.
+    assert dossier.metadata.get("pbo_method") == "cscv_cpcv"
+    # PBO must be in valid range.
+    assert dossier.pbo is not None
+    assert 0.0 <= dossier.pbo <= 1.0
+    # CSCV PBO detail fields must be present.
+    assert dossier.metadata.get("pbo_logit") is not None
+    assert dossier.metadata.get("pbo_n_combinations") is not None
+    assert dossier.metadata.get("pbo_flagged") is not None
+
+
+def test_real_trainer_cpcv_default_walk_forward(tmp_path: Path) -> None:
+    """Default cv_mode must be walk_forward (backward compat)."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    data_path = _make_test_dataset(tmp_path)
+    req = _make_training_request(
+        "qf:train:wf:1",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    trainer = RealLightGBMTrainer()
+    assert trainer.cv_mode == "walk_forward"
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # Walk-forward mode should NOT set cv_mode in metadata (or set it
+    # to walk_forward). The PBO method should be the placeholder.
+    assert dossier.metadata.get("pbo_method") == "fold_overfit_ratio"
+
+
 # --- backward compat: LocalTrainer still works ------------------------------
 
 

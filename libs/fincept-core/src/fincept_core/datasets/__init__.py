@@ -78,17 +78,21 @@ from .settlement import (
 # operation the real symbols replace the ``None`` placeholders.
 try:
     from .cv import (
+    CPCVFold,
         Fold,
         WalkForwardWindow,
         derive_walk_forward_window,
         fold_iter_to_dicts,
+        make_cpcv_folds,
         make_folds,
     )
 except ImportError:  # pragma: no cover - safety net for cv.py import errors
+    CPCVFold = None  # type: ignore[assignment,misc]
     Fold = None  # type: ignore[assignment,misc]
     WalkForwardWindow = None  # type: ignore[assignment,misc]
     derive_walk_forward_window = None  # type: ignore[assignment]
     fold_iter_to_dicts = None  # type: ignore[assignment]
+    make_cpcv_folds = None  # type: ignore[assignment]
     make_folds = None  # type: ignore[assignment]
 
 
@@ -178,8 +182,10 @@ __all__ = [
     "build_dossier",
     "build_evidence_receipt",
     "check_feature_schema_compatibility",
+    "CPCVFold",
     "default_approved_roots",
     "derive_walk_forward_window",
     "fold_iter_to_dicts",
+    "make_cpcv_folds",
     "make_folds",
 ]

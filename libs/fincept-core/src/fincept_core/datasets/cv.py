@@ -27,13 +27,17 @@ Design notes:
 
 from __future__ import annotations
 
+from itertools import combinations
+
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
+    "CPCVFold",
     "Fold",
     "WalkForwardWindow",
     "derive_walk_forward_window",
     "fold_iter_to_dicts",
+    "make_cpcv_folds",
     "make_folds",
 ]
 
@@ -142,6 +146,153 @@ def fold_iter_to_dicts(folds: list[Fold]) -> list[dict[str, int]]:
     (e.g. for embedding in a training manifest or evidence receipt).
     """
     return [f.model_dump() for f in folds]
+
+
+# --------------------------------------------------------------------------- #
+# Combinatorial Purged Cross-Validation (CPCV)                                #
+# --------------------------------------------------------------------------- #
+#
+# CPCV (López de Prado, "Advances in Financial Machine Learning", ch. 12)
+# splits the data into N contiguous groups, then for every combination of
+# P groups chosen as validation, creates a fold where:
+#   - validation = the P groups (contiguous or scattered)
+#   - training   = the remaining N-P groups, with bars within
+#     ``purge_bars`` of any validation boundary removed
+#
+# This produces C(N, P) folds, each with a *non-contiguous* training set.
+# Unlike expanding-window walk-forward, every bar appears in validation
+# exactly once (across all folds that share a group), and the combinatorial
+# structure provides a much stronger overfitting signal: the PBO (CSCV)
+# estimator from Bailey, Borwein, López de Prado & Zhu (2017) can be
+# applied directly to the per-fold IS/OOS Sharpe ratios.
+
+
+class CPCVFold(BaseModel):
+    """A single CPCV fold with non-contiguous training ranges.
+
+    ``train_ranges`` and ``val_ranges`` are lists of ``[start, end)``
+    half-open index ranges into the canonical timestamp grid. Training
+    ranges are already purged (bars within ``purge_bars`` of any
+    validation boundary are excluded).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    index: int
+    val_groups: tuple[int, ...]
+    train_ranges: tuple[tuple[int, int], ...]
+    val_ranges: tuple[tuple[int, int], ...]
+
+    @property
+    def train_bars(self) -> int:
+        return sum(end - start for start, end in self.train_ranges)
+
+    @property
+    def val_bars(self) -> int:
+        return sum(end - start for start, end in self.val_ranges)
+
+
+def make_cpcv_folds(
+    n_bars: int,
+    *,
+    n_groups: int,
+    n_val_groups: int,
+    purge_bars: int = 0,
+) -> list[CPCVFold]:
+    """Build combinatorial purged cross-validation folds.
+
+    Splits ``n_bars`` into ``n_groups`` contiguous blocks of equal size
+    (the last block absorbs any remainder), then for every combination
+    of ``n_val_groups`` blocks chosen as validation, creates a
+    :class:`CPCVFold` where:
+
+      * validation = the chosen blocks
+      * training   = all other blocks, with ``purge_bars`` removed on
+        each side of every validation boundary
+
+    Args:
+        n_bars: total number of bars in the dataset.
+        n_groups: number of contiguous groups to split into (N ≥ 2).
+        n_val_groups: number of groups to hold out as validation per
+            fold (P, 1 ≤ P < N).
+        purge_bars: number of bars to remove from training on each side
+            of every validation block boundary (prevents label leakage
+            from forward-return labels that straddle the boundary).
+
+    Returns:
+        ``C(N, P)`` :class:`CPCVFold` objects, ordered by the
+        lexicographic order of the validation group tuples.
+
+    Raises:
+        ValueError: if any constraint is violated.
+    """
+    if n_groups < 2:
+        raise ValueError(f"n_groups must be >= 2, got {n_groups}")
+    if n_val_groups < 1 or n_val_groups >= n_groups:
+        raise ValueError(
+            f"n_val_groups must be in [1, {n_groups - 1}], got {n_val_groups}"
+        )
+    if purge_bars < 0:
+        raise ValueError(f"purge_bars must be >= 0, got {purge_bars}")
+    if n_bars < n_groups:
+        raise ValueError(
+            f"need at least {n_groups} bars for {n_groups} groups; got {n_bars}"
+        )
+
+    # Split into n_groups contiguous blocks. The last block absorbs the
+    # remainder so every bar is covered.
+    base = n_bars // n_groups
+    rem = n_bars % n_groups
+    boundaries: list[tuple[int, int]] = []
+    start = 0
+    for g in range(n_groups):
+        size = base + (1 if g < rem else 0)
+        boundaries.append((start, start + size))
+        start += size
+
+    folds: list[CPCVFold] = []
+    for idx, val_tuple in enumerate(
+        combinations(range(n_groups), n_val_groups)
+    ):
+        val_set = set(val_tuple)
+        val_ranges_raw = [boundaries[g] for g in val_tuple]
+
+        # Build training ranges from non-validation blocks, then purge
+        # bars within purge_bars of any validation boundary.
+        train_ranges: list[tuple[int, int]] = []
+        for g in range(n_groups):
+            if g in val_set:
+                continue
+            blk_start, blk_end = boundaries[g]
+
+            # Purge at the start of this training block if the previous
+            # group is a validation group.
+            if g > 0 and (g - 1) in val_set:
+                blk_start += purge_bars
+
+            # Purge at the end of this training block if the next group
+            # is a validation group.
+            if g < n_groups - 1 and (g + 1) in val_set:
+                blk_end -= purge_bars
+
+            if blk_end > blk_start:
+                # Merge with previous range if adjacent (no gap between
+                # consecutive training blocks).
+                if train_ranges and train_ranges[-1][1] == blk_start:
+                    train_ranges[-1] = (train_ranges[-1][0], blk_end)
+                else:
+                    train_ranges.append((blk_start, blk_end))
+
+        folds.append(
+            CPCVFold(
+                index=idx,
+                val_groups=val_tuple,
+                train_ranges=tuple(train_ranges),
+                val_ranges=tuple(val_ranges_raw),
+            )
+        )
+
+    return folds
 
 
 # --------------------------------------------------------------------------- #

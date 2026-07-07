@@ -17,10 +17,12 @@ import pytest
 from pydantic import ValidationError
 
 from fincept_core.datasets import (
+    CPCVFold,
     Fold,
     WalkForwardWindow,
     derive_walk_forward_window,
     fold_iter_to_dicts,
+    make_cpcv_folds,
     make_folds,
 )
 
@@ -375,3 +377,140 @@ class TestDeriveWalkForwardWindow:
                 label_horizon_ns=5,
                 extra="nope",  # type: ignore[call-arg]
             )
+
+
+# --------------------------------------------------------------------------- #
+# make_cpcv_folds (Combinatorial Purged Cross-Validation)                     #
+# --------------------------------------------------------------------------- #
+
+
+class TestMakeCPCVFolds:
+    """Tests for CPCV fold generation (Tier 2.1)."""
+
+    def test_count_is_combination(self) -> None:
+        """C(N, P) folds are generated."""
+        folds = make_cpcv_folds(120, n_groups=6, n_val_groups=2, purge_bars=0)
+        # C(6, 2) = 15
+        assert len(folds) == 15
+
+    def test_count_n_val_1(self) -> None:
+        """N folds when P=1 (leave-one-group-out)."""
+        folds = make_cpcv_folds(60, n_groups=6, n_val_groups=1, purge_bars=0)
+        assert len(folds) == 6
+
+    def test_val_groups_are_unique_combinations(self) -> None:
+        """Each fold has a distinct val_groups tuple."""
+        folds = make_cpcv_folds(120, n_groups=6, n_val_groups=2, purge_bars=0)
+        val_tuples = {f.val_groups for f in folds}
+        assert len(val_tuples) == len(folds)
+
+    def test_no_train_val_overlap(self) -> None:
+        """Training and validation ranges must never overlap."""
+        folds = make_cpcv_folds(100, n_groups=5, n_val_groups=2, purge_bars=3)
+        for f in folds:
+            train_bars = set()
+            for s, e in f.train_ranges:
+                train_bars.update(range(s, e))
+            val_bars = set()
+            for s, e in f.val_ranges:
+                val_bars.update(range(s, e))
+            assert not train_bars & val_bars, f"overlap in fold {f.index}"
+
+    def test_purge_removes_bars_at_boundary(self) -> None:
+        """Purge_bars removes bars from training adjacent to validation."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=1, purge_bars=5)
+        # With P=1, fold 0 has val_groups=(0,), training = groups 1,2,3
+        # Group 0 is [0, 15), group 1 starts at 15.
+        # Purge 5 bars from start of group 1 → training starts at 20.
+        f0 = folds[0]
+        assert f0.val_groups == (0,)
+        first_train_start = f0.train_ranges[0][0]
+        assert first_train_start == 20  # 15 + 5 purge
+
+    def test_purge_at_end_of_training_block(self) -> None:
+        """Purge removes bars at the end of a training block before val."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=1, purge_bars=5)
+        # Fold 3 has val_groups=(3,), training = groups 0,1,2
+        # Group 2 ends at 45, group 3 starts at 45.
+        # Purge 5 bars from end of group 2 → training ends at 40.
+        f3 = folds[3]
+        assert f3.val_groups == (3,)
+        last_train_end = f3.train_ranges[-1][1]
+        assert last_train_end == 40  # 45 - 5 purge
+
+    def test_scattered_val_groups(self) -> None:
+        """Non-adjacent val groups produce non-contiguous training."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=2, purge_bars=0)
+        # Find fold with val_groups=(0, 2) — training is groups 1 and 3
+        # (two separate ranges).
+        target = next(f for f in folds if f.val_groups == (0, 2))
+        assert len(target.train_ranges) == 2
+
+    def test_adjacent_training_ranges_merge(self) -> None:
+        """Adjacent training blocks merge into a single range."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=1, purge_bars=0)
+        # Fold 0: val=(0,), training = groups 1,2,3 (all contiguous)
+        f0 = folds[0]
+        assert len(f0.train_ranges) == 1
+        assert f0.train_ranges[0] == (15, 60)
+
+    def test_train_bars_property(self) -> None:
+        """train_bars sums all training range lengths."""
+        folds = make_cpcv_folds(100, n_groups=5, n_val_groups=2, purge_bars=3)
+        for f in folds:
+            expected = sum(e - s for s, e in f.train_ranges)
+            assert f.train_bars == expected
+
+    def test_val_bars_property(self) -> None:
+        """val_bars sums all validation range lengths."""
+        folds = make_cpcv_folds(100, n_groups=5, n_val_groups=2, purge_bars=3)
+        for f in folds:
+            expected = sum(e - s for s, e in f.val_ranges)
+            assert f.val_bars == expected
+
+    def test_every_bar_in_val_exactly_once_per_group(self) -> None:
+        """Each bar appears in validation in exactly C(N-1, P-1) folds."""
+        n_groups, n_val_groups = 5, 2
+        folds = make_cpcv_folds(100, n_groups=n_groups, n_val_groups=n_val_groups, purge_bars=0)
+        from math import comb
+        expected_count = comb(n_groups - 1, n_val_groups - 1)
+        bar_val_count: dict[int, int] = {}
+        for f in folds:
+            for s, e in f.val_ranges:
+                for b in range(s, e):
+                    bar_val_count[b] = bar_val_count.get(b, 0) + 1
+        # Every bar should appear in exactly expected_count folds
+        for b, count in bar_val_count.items():
+            assert count == expected_count, f"bar {b} in {count} folds, expected {expected_count}"
+
+    def test_invalid_n_groups(self) -> None:
+        with pytest.raises(ValueError, match="n_groups must be >= 2"):
+            make_cpcv_folds(100, n_groups=1, n_val_groups=1)
+
+    def test_invalid_n_val_groups_zero(self) -> None:
+        with pytest.raises(ValueError, match="n_val_groups must be in"):
+            make_cpcv_folds(100, n_groups=4, n_val_groups=0)
+
+    def test_invalid_n_val_groups_equal(self) -> None:
+        """n_val_groups must be < n_groups."""
+        with pytest.raises(ValueError, match="n_val_groups must be in"):
+            make_cpcv_folds(100, n_groups=4, n_val_groups=4)
+
+    def test_invalid_purge_negative(self) -> None:
+        with pytest.raises(ValueError, match="purge_bars must be >= 0"):
+            make_cpcv_folds(100, n_groups=4, n_val_groups=1, purge_bars=-1)
+
+    def test_too_few_bars(self) -> None:
+        with pytest.raises(ValueError, match="need at least"):
+            make_cpcv_folds(3, n_groups=4, n_val_groups=1)
+
+    def test_fold_is_frozen(self) -> None:
+        """CPCVFold is immutable."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=1, purge_bars=0)
+        with pytest.raises(Exception):
+            folds[0].index = 99  # type: ignore[misc]
+
+    def test_fold_index_sequential(self) -> None:
+        """Fold indices are 0, 1, 2, ... in combination order."""
+        folds = make_cpcv_folds(60, n_groups=4, n_val_groups=2, purge_bars=0)
+        assert [f.index for f in folds] == list(range(len(folds)))

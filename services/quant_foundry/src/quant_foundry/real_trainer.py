@@ -338,6 +338,13 @@ class RealLightGBMTrainer:
 
     should_fail: bool = False
     n_folds: int = 3
+    # Tier 2.1: CV mode — "walk_forward" (expanding-window, default) or
+    # "cpcv" (combinatorial purged cross-validation). When "cpcv", the
+    # trainer uses ``make_cpcv_folds`` with ``cpcv_n_groups`` and
+    # ``cpcv_n_val_groups`` and computes the real CSCV PBO.
+    cv_mode: str = "walk_forward"
+    cpcv_n_groups: int = 6
+    cpcv_n_val_groups: int = 2
     # Default annualization factor for backward compat with callers that
     # never set ``bar_seconds``. The Sharpe is now annualized from
     # ``bar_seconds`` (read from ``extra_constraints``) when available —
@@ -472,17 +479,33 @@ class RealLightGBMTrainer:
 
         seed = req.random_seed if req.random_seed is not None else 0
 
-        metrics = self._walk_forward_validate(
-            X,
-            y,
-            timestamps,
-            seed,
-            deadline_ns,
-            req,
-            weights=weights,
-            groups=groups,
-            fold_assignment=fold_assignment,
-        )
+        # Tier 2.1: dispatch to CPCV validation when cv_mode="cpcv".
+        # CPCV is not compatible with manifest fold_assignment (which
+        # specifies exact fold windows); in that case we fall back to
+        # walk-forward.
+        if self.cv_mode == "cpcv" and fold_assignment is None:
+            metrics = self._cpcv_validate(
+                X,
+                y,
+                timestamps,
+                seed,
+                deadline_ns,
+                req,
+                weights=weights,
+                groups=groups,
+            )
+        else:
+            metrics = self._walk_forward_validate(
+                X,
+                y,
+                timestamps,
+                seed,
+                deadline_ns,
+                req,
+                weights=weights,
+                groups=groups,
+                fold_assignment=fold_assignment,
+            )
 
         # T-8.2: rank metrics integration. When the task is ranking and
         # groups are available, compute the cross-sectional rank metrics
@@ -600,6 +623,24 @@ class RealLightGBMTrainer:
                 "fold_source": "manifest" if fold_assignment is not None else "heuristic",
                 # T-8.2: rank metrics (present only for ranking tasks).
                 "has_rank_report": str(rank_report is not None),
+                # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
+                "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
+                "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
+                "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
+                "deflated_sharpe_multiple_trials_penalty": str(
+                    metrics.get("deflated_sharpe_multiple_trials_penalty", "")
+                ),
+                "deflated_sharpe_non_normality_penalty": str(
+                    metrics.get("deflated_sharpe_non_normality_penalty", "")
+                ),
+                "pbo_logit": str(metrics.get("pbo_logit", "")),
+                "pbo_n_combinations": str(metrics.get("pbo_n_combinations", "")),
+                "pbo_flagged": str(metrics.get("pbo_flagged", "")),
+                # Tier 2.1: CPCV mode metadata.
+                "cv_mode": str(metrics.get("cv_mode", "walk_forward")),
+                "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
+                "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
+                "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
             },
         )
 
@@ -1494,6 +1535,222 @@ class RealLightGBMTrainer:
         self._last_avg_best_iteration = result["avg_best_iteration"]
         return result
 
+    # --- CPCV validation (Tier 2.1) ---------------------------------------
+
+    def _cpcv_validate(
+        self,
+        X: Any,
+        y: Any,
+        timestamps: Any,
+        seed: int,
+        deadline_ns: int,
+        req: RunPodTrainingRequest,
+        *,
+        weights: Any = None,
+        groups: Any = None,
+    ) -> dict[str, Any]:
+        """Combinatorial Purged Cross-Validation (CPCV).
+
+        Splits the sorted data into ``cpcv_n_groups`` contiguous blocks
+        and for every combination of ``cpcv_n_val_groups`` blocks as
+        validation, trains on the remaining blocks (minus purged bars at
+        validation boundaries) and validates on the held-out blocks.
+
+        Unlike expanding-window walk-forward, CPCV training data is
+        non-contiguous (a union of blocks). This produces C(N, P) folds
+        and enables the real CSCV PBO estimator (Bailey, Borwein,
+        López de Prado, Zhu 2017) — each fold's IS/OOS return series
+        becomes a "candidate" for the PBO computation.
+
+        See ``fincept_core.datasets.cv.make_cpcv_folds`` for the fold
+        generation logic and ``quant_foundry.pbo.probability_of_backtest_overfitting``
+        for the PBO estimator.
+        """
+        import lightgbm as lgb
+        import numpy as np
+
+        n = len(y)
+        if n < 10:
+            raise TrainingFailure(
+                error_code="insufficient_data",
+                error_summary=f"dataset too small for CPCV validation: {n} rows",
+            )
+
+        try:
+            from fincept_core.datasets import make_cpcv_folds as _make_cpcv_folds
+        except ImportError:
+            raise TrainingFailure(
+                error_code="missing_dependency",
+                error_summary="fincept_core.datasets.cv.make_cpcv_folds not available",
+            )
+
+        params = self._build_lgb_params(seed, req)
+        n_estimators = self._get_n_estimators(req)
+
+        early_stopping_rounds = None
+        es_val = req.search_space.get("early_stopping_rounds")
+        if es_val:
+            early_stopping_rounds = int(es_val[0])
+
+        # Sort by timestamp (CPCV requires temporal ordering within blocks)
+        order = np.argsort(timestamps, kind="stable")
+        X_s = X[order]
+        y_s = y[order]
+        weights_s = weights[order] if weights is not None else None
+        groups_s = groups[order] if groups is not None else None
+        timestamps_s = timestamps[order] if timestamps is not None else None
+
+        horizon_bars = self._resolve_horizon_bars(req.extra_constraints)
+        purge_bars = self._resolve_purge_bars(horizon_bars, req.extra_constraints)
+
+        try:
+            cpcv_folds = _make_cpcv_folds(
+                n,
+                n_groups=self.cpcv_n_groups,
+                n_val_groups=self.cpcv_n_val_groups,
+                purge_bars=purge_bars,
+            )
+        except ValueError as exc:
+            raise TrainingFailure(
+                error_code="insufficient_data",
+                error_summary=str(exc),
+            ) from exc
+
+        all_preds: list[float] = []
+        all_labels: list[float] = []
+        all_groups: list[Any] = []
+        all_timestamps: list[Any] = []
+        fold_train_acc: list[float] = []
+        fold_val_acc: list[float] = []
+        fold_best_iterations: list[int] = []
+        # Per-fold IS/OOS return series for CSCV PBO computation.
+        # Each fold is treated as a "candidate" — the CSCV method
+        # concatenates IS+OOS returns and checks if the IS-optimal
+        # fold underperforms the median OOS rank across combinations.
+        fold_is_returns: list[list[float]] = []
+        fold_oos_returns: list[list[float]] = []
+
+        for fold in cpcv_folds:
+            if time.time_ns() >= deadline_ns:
+                raise TrainingFailure(
+                    error_code="timeout",
+                    error_summary=f"training deadline breached during CPCV fold {fold.index}",
+                )
+
+            # Build non-contiguous training index from train_ranges
+            train_idx_list: list[int] = []
+            for s, e in fold.train_ranges:
+                train_idx_list.extend(range(s, e))
+            val_idx_list: list[int] = []
+            for s, e in fold.val_ranges:
+                val_idx_list.extend(range(s, e))
+
+            if not train_idx_list or not val_idx_list:
+                continue
+
+            train_idx = np.array(train_idx_list)
+            val_idx = np.array(val_idx_list)
+
+            X_train = X_s[train_idx]
+            y_train = y_s[train_idx]
+            X_val = X_s[val_idx]
+            y_val = y_s[val_idx]
+
+            if len(np.unique(y_train)) < 2:
+                continue
+
+            train_kwargs: dict[str, Any] = {}
+            if weights_s is not None:
+                train_kwargs["weight"] = weights_s[train_idx]
+            train_set = lgb.Dataset(X_train, label=y_train, **train_kwargs)
+
+            if early_stopping_rounds and len(X_val) > 0:
+                val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
+                callbacks = [
+                    lgb.early_stopping(
+                        stopping_rounds=early_stopping_rounds,
+                        verbose=False,
+                    ),
+                    lgb.log_evaluation(period=0),
+                ]
+                model = lgb.train(
+                    params,
+                    train_set,
+                    num_boost_round=n_estimators,
+                    valid_sets=[val_set],
+                    callbacks=callbacks,
+                )
+                fold_best_iterations.append(model.best_iteration)
+            else:
+                model = lgb.train(
+                    params,
+                    train_set,
+                    num_boost_round=n_estimators,
+                )
+                fold_best_iterations.append(n_estimators)
+
+            train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
+            train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
+            val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
+            val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+
+            fold_train_acc.append(train_acc)
+            fold_val_acc.append(val_acc)
+            all_preds.extend(val_pred.tolist())
+            all_labels.extend(y_val.tolist())
+            if groups_s is not None:
+                all_groups.extend(groups_s[val_idx].tolist())
+            if timestamps_s is not None:
+                all_timestamps.extend(timestamps_s[val_idx].tolist())
+
+            # Collect per-fold IS/OOS returns for CSCV PBO.
+            # Returns = positions * (2*labels - 1), where positions = 2*pred - 1.
+            is_positions = 2 * train_pred - 1
+            is_returns = (is_positions * (2 * y_train - 1)).tolist()
+            oos_positions = 2 * val_pred - 1
+            oos_returns = (oos_positions * (2 * y_val - 1)).tolist()
+            fold_is_returns.append([float(r) for r in is_returns])
+            fold_oos_returns.append([float(r) for r in oos_returns])
+
+        if not all_preds:
+            raise TrainingFailure(
+                error_code="no_validation_data",
+                error_summary=(
+                    "no CPCV folds produced predictions (dataset too small or single-class)"
+                ),
+            )
+
+        preds_arr = np.array(all_preds, dtype=np.float64)
+        labels_arr = np.array(all_labels, dtype=np.float64)
+
+        periods_per_year = self._resolve_periods_per_year(req.extra_constraints)
+
+        result = self._compute_metrics(
+            preds_arr,
+            labels_arr,
+            fold_train_acc,
+            fold_val_acc,
+            periods_per_year=periods_per_year,
+            fold_is_returns=fold_is_returns,
+            fold_oos_returns=fold_oos_returns,
+        )
+        result["fold_best_iterations"] = fold_best_iterations
+        result["avg_best_iteration"] = (
+            sum(fold_best_iterations) / len(fold_best_iterations)
+            if fold_best_iterations
+            else n_estimators
+        )
+        result["_oos_preds"] = preds_arr
+        result["_oos_labels"] = labels_arr
+        result["_oos_groups"] = np.array(all_groups) if all_groups else None
+        result["_oos_timestamps"] = np.array(all_timestamps) if all_timestamps else None
+        result["cv_mode"] = "cpcv"
+        result["cpcv_n_groups"] = self.cpcv_n_groups
+        result["cpcv_n_val_groups"] = self.cpcv_n_val_groups
+        result["cpcv_n_folds"] = len(cpcv_folds)
+        self._last_avg_best_iteration = result["avg_best_iteration"]
+        return result
+
     # --- metric computation ----------------------------------------------
 
     def _compute_metrics(
@@ -1504,6 +1761,8 @@ class RealLightGBMTrainer:
         fold_val_acc: list[float],
         *,
         periods_per_year: int | None = None,
+        fold_is_returns: list[list[float]] | None = None,
+        fold_oos_returns: list[list[float]] | None = None,
     ) -> dict[str, Any]:
         """Compute real evaluation metrics from out-of-sample predictions.
 
@@ -1592,7 +1851,58 @@ class RealLightGBMTrainer:
         else:
             fold_overfit_ratio = 0.5
 
-        deflated_sharpe = sharpe * (1.0 - fold_overfit_ratio)
+        # Tier 2.1: when per-fold IS/OOS return series are available
+        # (CPCV mode), compute the real CSCV PBO (Bailey, Borwein,
+        # López de Prado, Zhu 2017) from ``pbo.py``. Each fold is
+        # treated as a "candidate" — the CSCV method concatenates
+        # IS+OOS returns, partitions into blocks, and checks if the
+        # IS-optimal fold underperforms the median OOS rank across
+        # combinatorial splits. This is the academic PBO, not the
+        # fold_overfit_ratio placeholder.
+        pbo_value = fold_overfit_ratio
+        pbo_method = "fold_overfit_ratio"
+        pbo_logit: float | None = None
+        pbo_n_combinations: int | None = None
+        pbo_flagged: bool | None = None
+        if (
+            fold_is_returns is not None
+            and fold_oos_returns is not None
+            and len(fold_is_returns) >= 2
+        ):
+            try:
+                from quant_foundry.pbo import probability_of_backtest_overfitting as _pbo
+
+                pbo_result = _pbo(
+                    fold_is_returns,
+                    fold_oos_returns,
+                    n_partitions=min(16, len(fold_is_returns)),
+                    seed=0,
+                    threshold=0.1,
+                )
+                pbo_value = float(pbo_result.pbo)
+                pbo_method = "cscv_cpcv"
+                pbo_logit = float(pbo_result.logit)
+                pbo_n_combinations = pbo_result.n_combinations
+                pbo_flagged = pbo_result.flagged
+            except Exception:
+                # If CSCV PBO fails (e.g. degenerate returns), fall back
+                # to the fold_overfit_ratio and record the method.
+                pass
+
+        # Tier 2.2: use the real Bailey & López de Prado Deflated Sharpe
+        # Ratio from significance.py instead of the placeholder
+        # ``sharpe * (1 - fold_overfit_ratio)``. The real DSR applies a
+        # multiple-trials penalty (sqrt(2*ln(N))/sqrt(n)) and a
+        # non-normality penalty (skew/kurtosis adjustment). The trainer
+        # uses trial_count=1 (no hyperparameter search at this layer;
+        # the tournament applies the real trial count from the dossier).
+        # The DSR is computed on per-period returns, then annualized to
+        # match the raw Sharpe's annualization.
+        from quant_foundry.significance import deflated_sharpe_ratio as _dsr
+
+        oos_returns_list = [float(r) for r in returns]
+        dsr_result = _dsr(oos_returns_list, trial_count=1)
+        deflated_sharpe = float(dsr_result.deflated_sharpe * np.sqrt(ann_factor))
 
         return {
             "training_metrics": {
@@ -1603,16 +1913,27 @@ class RealLightGBMTrainer:
                 "max_drawdown": max_drawdown,
                 "win_rate": win_rate,
             },
-            "pbo": fold_overfit_ratio,
+            "pbo": pbo_value,
             "deflated_sharpe": deflated_sharpe,
-            "pbo_method": "fold_overfit_ratio",
-            "deflated_sharpe_method": "sharpe_times_1_minus_fold_overfit_ratio",
+            "pbo_method": pbo_method,
+            "deflated_sharpe_method": "bailey_lopez_de_prado_dsr",
+            "deflated_sharpe_raw": float(dsr_result.raw_sharpe * np.sqrt(ann_factor)),
+            "deflated_sharpe_trial_count": dsr_result.trial_count,
+            "deflated_sharpe_skew": dsr_result.skew,
+            "deflated_sharpe_kurtosis": dsr_result.kurtosis,
+            "deflated_sharpe_multiple_trials_penalty": float(
+                dsr_result.multiple_trials_penalty * np.sqrt(ann_factor)
+            ),
+            "deflated_sharpe_non_normality_penalty": dsr_result.non_normality_penalty,
             "brier_score": brier,
             "win_rate": win_rate,
             "max_drawdown": max_drawdown,
             "sharpe_ratio": sharpe,
             "calibration_bucket_probs": bucket_probs,
             "calibration_bucket_actuals": bucket_actuals,
+            "pbo_logit": pbo_logit,
+            "pbo_n_combinations": pbo_n_combinations,
+            "pbo_flagged": pbo_flagged,
         }
 
     # --- final model training --------------------------------------------
@@ -2219,6 +2540,23 @@ class RealLightGBMTrainer:
                 ),
                 "fold_source": "manifest" if self.fold_spec else "heuristic",
                 "has_rank_report": str(rank_report is not None),
+                # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
+                "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
+                "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
+                "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
+                "deflated_sharpe_multiple_trials_penalty": str(
+                    metrics.get("deflated_sharpe_multiple_trials_penalty", "")
+                ),
+                "deflated_sharpe_non_normality_penalty": str(
+                    metrics.get("deflated_sharpe_non_normality_penalty", "")
+                ),
+                "pbo_logit": str(metrics.get("pbo_logit", "")),
+                "pbo_n_combinations": str(metrics.get("pbo_n_combinations", "")),
+                "pbo_flagged": str(metrics.get("pbo_flagged", "")),
+                "cv_mode": str(metrics.get("cv_mode", "walk_forward")),
+                "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
+                "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
+                "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
             },
         )
         return artifact, dossier
