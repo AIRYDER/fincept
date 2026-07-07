@@ -78,6 +78,14 @@ class RunPodTrainingRequest(BaseModel):
     # feature definitions (the feature_schema_hash is the cryptographic
     # guarantee; this is the human-readable version string).
     feature_set_version: str | None = None
+    # Tier 2.7: checkpoint/resume configuration for spot-fleet training.
+    # When present, the training worker saves per-fold checkpoints to
+    # this directory (expected to be on a RunPod network volume). On
+    # resume (same job_id), the worker checks for existing checkpoints
+    # and skips already-completed folds. This turns spot-price GPUs
+    # into reliable capacity for longer jobs.
+    checkpoint_dir: str | None = None
+    resume_from_checkpoint: str | None = None
 
 
 class RunPodInferenceRequest(BaseModel):

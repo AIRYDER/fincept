@@ -3612,6 +3612,61 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # can detect crashed workers via stale heartbeat_at timestamps.
     write_status(req.job_id, "started")
 
+    # --- Tier 2.7: Checkpoint/resume for spot-fleet training ------------------
+    # If checkpoint_dir is set, check for existing checkpoints from a
+    # previous (preempted) run with the same job_id. If found, the
+    # trainer will skip already-completed folds and resume from the
+    # last checkpoint.
+    checkpoint_mgr = None
+    resume_fold_index = None
+    if req.checkpoint_dir:
+        from quant_foundry.training_checkpoint import (
+            TrainingCheckpointConfig,
+            TrainingCheckpointManager,
+        )
+
+        ckpt_config = TrainingCheckpointConfig(
+            checkpoint_dir=req.checkpoint_dir,
+            job_id=req.job_id,
+        )
+        checkpoint_mgr = TrainingCheckpointManager(ckpt_config)
+        if req.resume_from_checkpoint:
+            try:
+                ckpt_data = checkpoint_mgr.load(req.resume_from_checkpoint)
+                resume_fold_index = ckpt_data.fold_index
+                write_status(
+                    req.job_id,
+                    "resuming",
+                    error_code=None,
+                    error_summary=f"resuming from fold {resume_fold_index}",
+                )
+            except Exception as exc:
+                write_status(
+                    req.job_id,
+                    "checkpoint_load_failed",
+                    error_code="checkpoint_load_failed",
+                    error_summary=str(exc),
+                )
+        else:
+            latest = checkpoint_mgr.latest_checkpoint()
+            if latest is not None:
+                try:
+                    ckpt_data = checkpoint_mgr.load(latest)
+                    resume_fold_index = ckpt_data.fold_index
+                    write_status(
+                        req.job_id,
+                        "resuming",
+                        error_code=None,
+                        error_summary=f"resuming from fold {resume_fold_index}",
+                    )
+                except Exception as exc:
+                    write_status(
+                        req.job_id,
+                        "checkpoint_load_failed",
+                        error_code="checkpoint_load_failed",
+                        error_summary=str(exc),
+                    )
+
     # --- Tier 1.4: Optuna hyperparameter search -------------------------------
     # When req.search_space is non-empty AND extra_constraints has
     # enable_optuna=true, run OptunaTuner BEFORE constructing the final
@@ -3708,6 +3763,15 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         heartbeat_stop.set()
 
     write_status(req.job_id, "completed", artifact_id=result.artifact_id)
+
+    # Tier 2.7: clean up checkpoints after successful training.
+    # The final artifact is already written by the artifact writer;
+    # the per-fold checkpoints are no longer needed.
+    if checkpoint_mgr is not None:
+        try:
+            checkpoint_mgr.clear()
+        except Exception:
+            pass  # best-effort cleanup; don't fail the job
 
     # --- Phase 1 / T-1.1: resolve the typed artifact result -----------------
     # The real trainer stashes a TypedArtifactResult on itself; the local
