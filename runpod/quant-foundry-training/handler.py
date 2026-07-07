@@ -3263,6 +3263,24 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     inline_csv = input_data.pop("inline_dataset_csv", None)
     output_prefix = input_data.pop("output_prefix", None)
     n_folds = input_data.pop("n_folds", 3)
+    # Tier 1.5: inline_dataset_csv is test-only. Production mode must
+    # use dataset_load_spec (manifest-first loading with hash verification,
+    # PIT proof, and registry dispatch). Reject inline_csv in production
+    # with a signed failure receipt — do not rely on the caller to omit it.
+    if inline_csv is not None and preflight_mode == TrainingMode.PRODUCTION:
+        return _build_signed_failure(
+            error_code="inline_dataset_csv_in_production",
+            error_message=(
+                "inline_dataset_csv is test-only and rejected for "
+                "production mode; use dataset_load_spec with a verified "
+                "manifest instead"
+            ),
+            mode=preflight_mode.value,
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "stage": "dataset_load_guard",
+            },
+        )
     # Phase 1 / T-1.2: presigned object upload URL for the production
     # artifact writer. When present, the handler uses
     # ``PresignedUploadArtifactWriter`` to upload the model artifact via

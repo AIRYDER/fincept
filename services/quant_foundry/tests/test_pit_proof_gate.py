@@ -195,16 +195,32 @@ class TestPitProofGate:
     def test_no_load_spec_skips_pit_gate(
         self, handler_module, tmp_path: pathlib.Path
     ) -> None:
-        """No dataset_load_spec → gate skipped (inline CSV path)."""
-        # Use inline_dataset_csv to bypass the manifest-first load.
+        """No dataset_load_spec → gate skipped (inline CSV path, canary only)."""
+        # Use inline_dataset_csv with canary mode (production mode is
+        # rejected by the inline_dataset_csv production guard).
         inp = _make_training_input(
             "pit-no-spec-1",
             inline_dataset_csv="feature_1,feature_2,label\n1.0,2.0,0\n3.0,4.0,1\n",
-            extra_constraints={"training_mode": "production"},
+            extra_constraints={"training_mode": "canary"},
         )
         result = handler_module.handler(inp)
         # No manifest loaded → no pit_proof check → should not block.
         assert result.get("error_code") != "pit_proof_not_verified"
+
+    def test_inline_dataset_csv_rejected_in_production(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Tier 1.5: inline_dataset_csv is test-only — production rejects it."""
+        inp = _make_training_input(
+            "pit-inline-prod-1",
+            inline_dataset_csv="feature_1,feature_2,label\n1.0,2.0,0\n3.0,4.0,1\n",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Production mode must reject inline_dataset_csv with a signed
+        # failure receipt — it bypasses manifest hashes, PIT proof, and
+        # the dataset registry.
+        assert result.get("error_code") == "inline_dataset_csv_in_production"
 
     def test_production_mode_blocks_when_pit_proof_missing(
         self, handler_module, tmp_path: pathlib.Path
