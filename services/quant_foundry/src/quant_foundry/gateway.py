@@ -106,6 +106,7 @@ from quant_foundry.inbox import CallbackInbox
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
 from quant_foundry.market_data_adapter import BarDataAdapter, alpaca_reader_from_env
 from quant_foundry.mock_dispatcher import MockDispatcher
+from quant_foundry.dataset_manifest import DatasetRegistry
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.paper_bridge import PaperBridge
 from quant_foundry.promotion import PromotionReviewQueue
@@ -203,6 +204,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         sink_backend: str = "jsonl",
         db_engine: Engine | None = None,
         registry: ModelRegistryDB | None = None,
+        dataset_registry: DatasetRegistry | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -229,6 +231,11 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # callback_receipt_id) so the product loop is fully wired
         # without a manual register_version() call.
         self._registry: ModelRegistryDB | None = registry
+        # Tier 1.5: optional dataset registry. When provided, production
+        # training jobs must pass dispatch_training() — which enforces
+        # that the dataset is registered, L3+ readiness, not stale, and
+        # not deprecated/rejected. Canary/research are permissive.
+        self._dataset_registry: DatasetRegistry | None = dataset_registry
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -881,6 +888,31 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                     "monthly_budget_cents": decision.monthly_budget_cents,
                     "mode": self.mode,
                 }
+        # Tier 1.5: dataset registry dispatch gate. When a dataset
+        # registry is wired in and the training mode is production,
+        # enforce dispatch_training() before enqueueing the job. This
+        # rejects unregistered datasets, L1/L2 readiness, stale receipts,
+        # and deprecated/rejected entries. Canary/research are permissive.
+        if self._dataset_registry is not None and job_type == "training":
+            training_mode = self._extract_training_mode(dispatch_payload)
+            if training_mode == "production":
+                dataset_id = self._extract_dataset_id(dispatch_payload)
+                if dataset_id is not None:
+                    try:
+                        self._dataset_registry.dispatch_training(
+                            dataset_id, mode="production"
+                        )
+                    except ValueError as exc:
+                        return {
+                            "enabled": True,
+                            "ok": False,
+                            "job_id": job_id,
+                            "error_code": "dataset_dispatch_rejected",
+                            "detail": str(exc),
+                            "dataset_id": dataset_id,
+                            "training_mode": training_mode,
+                            "mode": self.mode,
+                        }
         self.outbox.enqueue(
             job_id=job_id,
             job_type=job_type,
@@ -1174,6 +1206,39 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             callback_receipt_id=callback_receipt_id,
             version_number=version_number,
         )
+
+    @staticmethod
+    def _extract_training_mode(payload: Any) -> str:
+        """Extract training_mode from a dispatch payload.
+
+        Checks (in order): top-level ``training_mode``/``mode`` field,
+        ``extra_constraints.training_mode``. Defaults to ``"canary"``.
+        """
+        if isinstance(payload, dict):
+            for key in ("training_mode", "mode"):
+                val = payload.get(key)
+                if isinstance(val, str) and val:
+                    return val
+            ec = payload.get("extra_constraints")
+            if isinstance(ec, dict):
+                val = ec.get("training_mode")
+                if isinstance(val, str) and val:
+                    return val
+        return "canary"
+
+    @staticmethod
+    def _extract_dataset_id(payload: Any) -> str | None:
+        """Extract the dataset id from a dispatch payload.
+
+        Returns ``dataset_manifest_ref`` if present and a string,
+        otherwise None. For production dispatch, this must be a
+        registered dataset id (not a raw file path).
+        """
+        if isinstance(payload, dict):
+            ref = payload.get("dataset_manifest_ref")
+            if isinstance(ref, str) and ref:
+                return ref
+        return None
 
     def _prepare_dispatch_payload(
         self,

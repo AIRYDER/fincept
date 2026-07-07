@@ -29,6 +29,7 @@ from typing import Any
 
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.cost_tracker import CostTracker
+from quant_foundry.dataset_manifest import DatasetRegistry
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outbox import JobStatus
 from quant_foundry.promotion import PromotionGate
@@ -361,3 +362,89 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
     assert listed_versions[0]["version_id"] == expected_version_id
 
     engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Tier 1.5: Dataset registry dispatch gate
+# ---------------------------------------------------------------------------
+
+
+def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> None:
+    """Production training with an unregistered dataset is rejected at dispatch.
+
+    The gateway calls DatasetRegistry.dispatch_training(dataset_id, mode="production")
+    before enqueueing a production training job. An unregistered dataset id
+    is rejected with error_code="dataset_dispatch_rejected". Canary mode
+    with the same dataset id is allowed (permissive).
+    """
+    engine = _make_engine()
+    secret = "dataset-gate-secret"
+    dataset_registry = DatasetRegistry()  # in-memory, empty
+
+    training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf-gate",
+        runpod_clients={"training": training_client},
+        cost_tracker=CostTracker(engine=engine),
+        sink_backend="db",
+        db_engine=engine,
+        dataset_registry=dataset_registry,
+        budget_guard=BudgetGuard(
+            base_dir=tmp_path / "qf-gate" / "budget",
+            monthly_budget_cents=1_000_000,
+        ),
+    )
+
+    dataset_id = "dataset:unregistered:production:test"
+    payload = {
+        "schema_version": 1,
+        "job_id": "qf:gate:prod:1",
+        "dataset_manifest_ref": dataset_id,
+        "model_family": "gbm",
+        "search_space": {"n_estimators": [64]},
+        "random_seed": 7,
+        "extra_constraints": {"training_mode": "production"},
+    }
+
+    # 1) Production dispatch with unregistered dataset → rejected.
+    receipt = gateway.create_job(
+        job_id="qf:gate:prod:1",
+        job_type="training",
+        idempotency_key="idem-gate-prod-1",
+        request_payload=payload,
+    )
+    assert receipt["ok"] is False, (
+        "production dispatch with unregistered dataset must be rejected"
+    )
+    assert receipt["error_code"] == "dataset_dispatch_rejected"
+    assert dataset_id in receipt["detail"], (
+        "error detail must mention the dataset id"
+    )
+    # The job must NOT be in the outbox (rejected before enqueue).
+    ob_rec = gateway.outbox.get("qf:gate:prod:1")
+    assert ob_rec is None, "rejected job must not be enqueued"
+
+    # 2) Canary dispatch with the same unregistered dataset → allowed.
+    canary_payload = dict(payload)
+    canary_payload["job_id"] = "qf:gate:canary:1"
+    canary_payload["extra_constraints"] = {"training_mode": "canary"}
+    canary_receipt = gateway.create_job(
+        job_id="qf:gate:canary:1",
+        job_type="training",
+        idempotency_key="idem-gate-canary-1",
+        request_payload=canary_payload,
+    )
+    assert canary_receipt.get("ok") is not False, (
+        "canary dispatch with unregistered dataset must be allowed"
+    )
+    assert canary_receipt["enabled"] is True
+    # The canary job must be in the outbox (enqueued + dispatched).
+    ob_rec = gateway.outbox.get("qf:gate:canary:1")
+    assert ob_rec is not None, "canary job must be enqueued"
+
+    engine.dispose()
+
