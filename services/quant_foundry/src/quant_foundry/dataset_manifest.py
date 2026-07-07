@@ -253,6 +253,11 @@ class FeatureLakeManifest(BaseModel):
     pit_proof_verified: bool
     source_vintage_refs: list[str] = Field(default_factory=list)
     quality_report_hash: str | None = None
+    # Tier 2.6: feature-set version pin. Human-readable version string
+    # that identifies the feature definitions used to build this dataset.
+    # The feature_schema_hash is the cryptographic guarantee; this is
+    # the human-readable version for audit and provenance.
+    feature_set_version: str | None = None
     # --- Phase 2: explicit manifest / data URI split -------------------
     # ``manifest_uri``: where to fetch THIS manifest (JSON). None for
     #   canary/research backward compat (the ref is passed inline).
@@ -365,6 +370,9 @@ class FeatureLakeManifest(BaseModel):
             "data_sha256": self.data_sha256,
             "quality_report_uri": self.quality_report_uri,
             "quality_report_sha256": self.quality_report_sha256,
+            # Tier 2.6: feature-set version in the hash so a changed
+            # feature set version alters the manifest hash.
+            "feature_set_version": self.feature_set_version,
         }
 
     def manifest_hash(self) -> str:

@@ -20,6 +20,13 @@ Public surface:
 """
 
 from features.computer import DEFAULT_BENCHMARK, FeatureComputer
+from features.definitions import (
+    FeatureDefinition,
+    FeatureRegistry,
+    FeatureSetVersion,
+    RegistryError,
+    compute_feature_set_hash,
+)
 from features.offline import backfill
 from features.online import OnlineRunner
 from features.pit import PITJoiner
@@ -32,11 +39,16 @@ __all__ = [
     "DEFAULT_BENCHMARK",
     "CrossFeatures",
     "FeatureComputer",
+    "FeatureDefinition",
+    "FeatureRegistry",
+    "FeatureSetVersion",
     "OfflineStore",
     "OnlineRunner",
     "OnlineStore",
     "PITJoiner",
     "PriceFeatures",
+    "RegistryError",
     "VolatilityFeatures",
     "backfill",
+    "compute_feature_set_hash",
 ]

@@ -71,6 +71,13 @@ class RunPodTrainingRequest(BaseModel):
     # satisfies the /tmp deny gate in handler.py which requires a durable
     # output_prefix or a presigned URL.
     presigned_artifact_url: str | None = None
+    # Tier 2.6: feature-set version pin. When present, the training
+    # worker verifies that the dataset manifest's feature_set_version
+    # matches this value before training. This ensures two training
+    # runs that reference the same feature_set_version use the same
+    # feature definitions (the feature_schema_hash is the cryptographic
+    # guarantee; this is the human-readable version string).
+    feature_set_version: str | None = None
 
 
 class RunPodInferenceRequest(BaseModel):
