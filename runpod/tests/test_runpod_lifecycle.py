@@ -25,6 +25,12 @@ _SCRIPTS_DIR = str(_REPO_ROOT / "scripts")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
+from runpod.runpod_lifecycle import (  # noqa: E402
+    DEFAULT_DEADLINE_S,
+    DEFAULT_SLACK_S,
+    MIN_EXECUTION_TIMEOUT_S,
+    EndpointConfig,
+    TemplateConfig,
     build_endpoint_input,
     build_job_policy,
     build_template_input,
@@ -130,13 +136,13 @@ class TestBuildEndpointInput:
     def test_includes_execution_timeout(self):
         config = EndpointConfig(name="test-ep", template_id="tpl-123")
         inp = build_endpoint_input(config)
-        assert "executionTimeout" in inp
-        assert inp["executionTimeout"] >= MIN_EXECUTION_TIMEOUT_S
+        assert "executionTimeoutMs" in inp
+        assert inp["executionTimeoutMs"] >= MIN_EXECUTION_TIMEOUT_S * 1000
 
     def test_default_execution_timeout_is_1860(self):
         config = EndpointConfig(name="test-ep", template_id="tpl-123")
         inp = build_endpoint_input(config)
-        assert inp["executionTimeout"] == 1860
+        assert inp["executionTimeoutMs"] == 1860 * 1000
 
     def test_custom_execution_timeout_accepted(self):
         config = EndpointConfig(
@@ -145,7 +151,7 @@ class TestBuildEndpointInput:
             execution_timeout=3600,
         )
         inp = build_endpoint_input(config)
-        assert inp["executionTimeout"] == 3600
+        assert inp["executionTimeoutMs"] == 3600 * 1000
 
     def test_below_minimum_execution_timeout_raises(self):
         config = EndpointConfig(
@@ -166,7 +172,7 @@ class TestBuildEndpointInput:
             "workersMin",
             "workersMax",
             "idleTimeout",
-            "executionTimeout",
+            "executionTimeoutMs",
             "scalerType",
             "scalerValue",
         }
@@ -365,7 +371,7 @@ class TestEndpointConfigIntegration:
         inp = build_endpoint_input(config)
         assert inp["name"] == "qf-canary-abc-123"
         assert inp["templateId"] == "tpl-xyz"
-        assert inp["executionTimeout"] == 1860
+        assert inp["executionTimeoutMs"] == 1860 * 1000
         assert inp["idleTimeout"] == 300
         assert inp["gpuIds"] == "ADA_24"
 
