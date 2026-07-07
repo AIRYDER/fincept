@@ -313,6 +313,23 @@ def main() -> int:
         "(default: train-model for lightgbm, train-model-<family> otherwise)",
     )
     parser.add_argument(
+        "--network-volume-id",
+        default=None,
+        help="RunPod network volume ID to mount at /runpod-volume/ on the "
+        "endpoint. When set, output_prefix defaults to "
+        "/runpod-volume/models/<job-id>/ so the artifact persists on the "
+        "volume after worker shutdown (Tier 0.2: durable artifacts).",
+    )
+    parser.add_argument(
+        "--output-prefix",
+        default=None,
+        help="Override the worker-side output_prefix for the artifact. "
+        "Defaults to /tmp/a7-train-artifacts (canary) or "
+        "/runpod-volume/models/<job-id>/ when --network-volume-id is set. "
+        "For non-canary jobs, must be a /runpod-volume/ or /workspace/ path "
+        "(the handler's deny gate rejects /tmp for real jobs).",
+    )
+    parser.add_argument(
         "--local",
         action="store_true",
         help="Run the payload through the handler in-process (no cloud spend)",
@@ -341,11 +358,26 @@ def main() -> int:
     receipt_dir = Path(f"reports/runpod-test-runs/{sha[:8]}/{receipt_subdir}")
     receipt_dir.mkdir(parents=True, exist_ok=True)
 
+    network_volume_id = args.network_volume_id
+    # Resolve output_prefix: explicit override > volume path > /tmp default.
+    job_id_for_prefix = f"qf:a7-train:{model_family}:{sha[:8]}:001"
+    if args.output_prefix:
+        resolved_output_prefix = args.output_prefix
+    elif network_volume_id:
+        resolved_output_prefix = f"/runpod-volume/models/{job_id_for_prefix}/"
+    else:
+        resolved_output_prefix = "/tmp/a7-train-artifacts"  # noqa: S108 - canary default
+
     print("Live Minimal train_model Job (A7)")
     print(f"  SHA: {sha}")
     print(f"  Image: {image_tag}")
     print(f"  GPU: {GPU_TYPE}")
     print(f"  Model family: {model_family}")
+    if network_volume_id:
+        print(f"  Network volume: {network_volume_id}")
+        print(f"  Output prefix: {resolved_output_prefix}")
+    else:
+        print(f"  Output prefix: {resolved_output_prefix} (canary — no volume)")
     print(f"  Receipts: {receipt_dir}")
     print()
 
@@ -376,7 +408,7 @@ def main() -> int:
 
     # Create endpoint
     endpoint_name = make_unique_name("qf-a7train", sha)
-    endpoint_id = create_endpoint(endpoint_name, template_id)
+    endpoint_id = create_endpoint(endpoint_name, template_id, network_volume_id=network_volume_id)
     print(f"  Endpoint created: {endpoint_id}")
 
     (receipt_dir / "endpoint-create-redacted.json").write_text(
@@ -394,6 +426,8 @@ def main() -> int:
                     "scaler_type": SCALER_TYPE,
                     "scaler_value": SCALER_VALUE,
                     "container_disk_gb": CONTAINER_DISK_GB,
+                    "network_volume_id": network_volume_id or "",
+                    "output_prefix": resolved_output_prefix,
                     "timeout_config": format_timeout_receipt(EXECUTION_TIMEOUT, IDLE_TIMEOUT),
                 }
             ),
@@ -447,8 +481,9 @@ def main() -> int:
 
         # Dispatch the implicit train_model job
         train_input = build_train_input(
-            f"qf:a7-train:{model_family}:{sha[:8]}:001",
+            job_id_for_prefix,
             model_family=model_family,
+            output_prefix=resolved_output_prefix,
         )
         job_id = run_job(endpoint_id, train_input)
         print(f"  Job dispatched: {job_id}")

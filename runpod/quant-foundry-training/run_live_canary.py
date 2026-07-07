@@ -120,7 +120,7 @@ def save_template(name: str, image_name: str, env_vars: list[dict], registry_aut
     return data["saveTemplate"]["id"]
 
 
-def create_endpoint(name: str, template_id: str) -> str:
+def create_endpoint(name: str, template_id: str, network_volume_id: str | None = None) -> str:
     config = EndpointConfig(
         name=name,
         template_id=template_id,
@@ -132,6 +132,7 @@ def create_endpoint(name: str, template_id: str) -> str:
         scaler_type=SCALER_TYPE,
         scaler_value=SCALER_VALUE,
         container_disk_gb=CONTAINER_DISK_GB,
+        network_volume_id=network_volume_id,
     )
     input_obj = build_endpoint_input(config)
     data = _gql(

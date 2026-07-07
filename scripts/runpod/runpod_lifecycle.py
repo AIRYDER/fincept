@@ -54,6 +54,10 @@ __all__ = [
     "retry_delete_endpoint",
     "safe_scale_to_zero",
     "validate_execution_timeout",
+    # Tier 0.2: network volume management (durable artifact storage)
+    "create_network_volume",
+    "list_network_volumes",
+    "delete_network_volume",
 ]
 
 # --- Timeout constants -------------------------------------------------------
@@ -149,6 +153,7 @@ class EndpointConfig:
         scaler_type: str = "QUEUE_DELAY",
         scaler_value: int = 4,
         container_disk_gb: int = 20,
+        network_volume_id: str | None = None,
     ) -> None:
         self.name = name
         self.template_id = template_id
@@ -163,6 +168,11 @@ class EndpointConfig:
         self.scaler_type = scaler_type
         self.scaler_value = scaler_value
         self.container_disk_gb = container_disk_gb
+        # Tier 0.2: optional network volume to mount at /runpod-volume/
+        # inside serverless workers. When set, the endpoint creation
+        # mutation includes ``networkVolumeId`` so artifacts written to
+        # /runpod-volume/ survive worker shutdown.
+        self.network_volume_id = network_volume_id
 
 
 # --- Input builders ----------------------------------------------------------
@@ -192,7 +202,7 @@ def build_endpoint_input(config: EndpointConfig) -> dict[str, Any]:
     remains the documented, reliable override path.
     """
     validated = validate_execution_timeout(config.execution_timeout)
-    return {
+    result: dict[str, Any] = {
         "name": config.name,
         "templateId": config.template_id,
         "gpuIds": config.gpu_ids,
@@ -203,6 +213,11 @@ def build_endpoint_input(config: EndpointConfig) -> dict[str, Any]:
         "scalerType": config.scaler_type,
         "scalerValue": config.scaler_value,
     }
+    # Tier 0.2: attach a network volume so artifacts written to
+    # /runpod-volume/ persist across worker shutdowns.
+    if config.network_volume_id:
+        result["networkVolumeId"] = config.network_volume_id
+    return result
 
 
 # --- Per-request job policy --------------------------------------------------
@@ -397,3 +412,134 @@ def format_timeout_receipt(
             "the job out."
         ),
     }
+
+
+# --- Tier 0.2: Network volume management (durable artifact storage) ----------
+#
+# Network volumes are persistent NVMe-backed storage that mounts at
+# /runpod-volume/ inside serverless workers. Data survives worker shutdown
+# and endpoint deletion. Used by VolumeArtifactWriter to persist trained
+# model artifacts so they don't die with the worker.
+#
+# API: https://docs.runpod.io/serverless/storage/network-volumes
+# REST: https://rest.runpod.io/v1/networkvolumes
+
+
+def create_network_volume(
+    name: str,
+    size_gb: int,
+    data_center_id: str,
+    *,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """Create a RunPod network volume via the REST API.
+
+    Args:
+        name: Human-readable volume name.
+        size_gb: Volume size in GB (cannot be decreased later).
+        data_center_id: Data center ID (e.g. ``"US-KS-2"``).
+        api_key: RunPod API key. Defaults to ``RUNPOD_API_KEY`` env var.
+
+    Returns:
+        The created volume dict from the API response (includes ``id``,
+        ``name``, ``size``, ``dataCenterId``).
+
+    Raises:
+        RuntimeError: if the API key is missing or the request fails.
+    """
+    import json
+    import os
+    import urllib.request
+
+    key = api_key or os.environ.get("RUNPOD_API_KEY", "")
+    if not key:
+        raise RuntimeError("RUNPOD_API_KEY not set — cannot create network volume")
+
+    payload = json.dumps({
+        "name": name,
+        "size": size_gb,
+        "dataCenterId": data_center_id,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://rest.runpod.io/v1/networkvolumes",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - RunPod REST API
+            return json.loads(resp.read())
+    except Exception as exc:
+        raise RuntimeError(f"Failed to create network volume: {exc}") from exc
+
+
+def list_network_volumes(
+    *,
+    api_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """List all network volumes in the account.
+
+    Args:
+        api_key: RunPod API key. Defaults to ``RUNPOD_API_KEY`` env var.
+
+    Returns:
+        List of volume dicts (each with ``id``, ``name``, ``size``,
+        ``dataCenterId``, ``mountPath``).
+
+    Raises:
+        RuntimeError: if the API key is missing or the request fails.
+    """
+    import os
+    import urllib.request
+
+    key = api_key or os.environ.get("RUNPOD_API_KEY", "")
+    if not key:
+        raise RuntimeError("RUNPOD_API_KEY not set — cannot list network volumes")
+
+    req = urllib.request.Request(
+        "https://rest.runpod.io/v1/networkvolumes",
+        headers={"Authorization": f"Bearer {key}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - RunPod REST API
+            import json
+            return json.loads(resp.read())
+    except Exception as exc:
+        raise RuntimeError(f"Failed to list network volumes: {exc}") from exc
+
+
+def delete_network_volume(
+    volume_id: str,
+    *,
+    api_key: str | None = None,
+) -> bool:
+    """Delete a network volume by ID.
+
+    Args:
+        volume_id: The network volume ID to delete.
+        api_key: RunPod API key. Defaults to ``RUNPOD_API_KEY`` env var.
+
+    Returns:
+        ``True`` if deleted, ``False`` on failure.
+    """
+    import os
+    import urllib.request
+
+    key = api_key or os.environ.get("RUNPOD_API_KEY", "")
+    if not key:
+        raise RuntimeError("RUNPOD_API_KEY not set — cannot delete network volume")
+
+    req = urllib.request.Request(
+        f"https://rest.runpod.io/v1/networkvolumes/{volume_id}",
+        headers={"Authorization": f"Bearer {key}"},
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - RunPod REST API
+            return True
+    except Exception:
+        return False
