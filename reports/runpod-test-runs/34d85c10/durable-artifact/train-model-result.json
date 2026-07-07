@@ -1,0 +1,51 @@
+{
+  "artifact_id": "artifact:ac0b69ba8b52f20e",
+  "artifact_result": {
+    "artifact_format": "pickle",
+    "artifact_id": "artifact:ac0b69ba8b52f20e",
+    "artifact_kind": "model",
+    "artifact_sha256": "ac0b69ba8b52f20e898ccde31fabc92f574129a3e9a741f7b769e2519921274f",
+    "artifact_size_bytes": 337368,
+    "artifact_uri": "file:///runpod-volume/models/qf%3Aa7-train%3Alightgbm%3A34d85c10%3A001/model.pkl",
+    "created_at": 1783384151466842600,
+    "dataset_manifest_hash": "74ee30172b82fa6870212deb8b5589e99994c1a3666fd6e208c593e2cd872b9d",
+    "loader_family": "lightgbm",
+    "model_family": "lightgbm",
+    "training_manifest_hash": null,
+    "write_receipt": "3a3417a0ef68fa8c068fe6a0f046142931a88ad8d56e174222acfb91f4677d21"
+  },
+  "artifact_write_receipt_present": true,
+  "callback_signature_present": true,
+  "dossier_id": "model:qf:a7-train:lightgbm:34d85c10:001",
+  "job_id": "qf:a7-train:lightgbm:34d85c10:001",
+  "metrics_summary": {
+    "accuracy": 0.8350515463917526,
+    "brier_score": 0.12201145626177778,
+    "logloss": 0.3863049387003034,
+    "max_drawdown": -1.3034772673566977,
+    "metric_sanity": {
+      "flagged_metrics": {
+        "max_drawdown": {
+          "raw_value": -1.3034772673566977,
+          "reason_code": "max_drawdown_implausible:-1.3034772673566977",
+          "status": "implausible"
+        },
+        "sharpe_ratio": {
+          "raw_value": 769.5358987417395,
+          "reason_code": "sharpe_ratio_implausible:769.5358987417395",
+          "status": "implausible"
+        }
+      },
+      "promotion_allowed": false,
+      "reason_codes": [
+        "sharpe_ratio_implausible:769.5358987417395",
+        "max_drawdown_implausible:-1.3034772673566977"
+      ],
+      "status": "implausible"
+    },
+    "sharpe_ratio": 769.5358987417395,
+    "win_rate": 0.8350515463917526
+  },
+  "output_prefix": "/runpod-volume/models/qf:a7-train:lightgbm:34d85c10:001/",
+  "preflight_passed": true
+}

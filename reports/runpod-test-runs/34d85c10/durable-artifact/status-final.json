@@ -1,0 +1,113 @@
+{
+  "delayTime": 5598,
+  "executionTime": 1675,
+  "id": "158f635f-fd71-4a35-9803-7b7f14843d81-u1",
+  "output": {
+    "artifact_id": "artifact:ac0b69ba8b52f20e",
+    "artifact_result": {
+      "artifact_format": "pickle",
+      "artifact_id": "artifact:ac0b69ba8b52f20e",
+      "artifact_kind": "model",
+      "artifact_sha256": "ac0b69ba8b52f20e898ccde31fabc92f574129a3e9a741f7b769e2519921274f",
+      "artifact_size_bytes": 337368,
+      "artifact_uri": "file:///runpod-volume/models/qf%3Aa7-train%3Alightgbm%3A34d85c10%3A001/model.pkl",
+      "created_at": 1783384151466842600,
+      "dataset_manifest_hash": "74ee30172b82fa6870212deb8b5589e99994c1a3666fd6e208c593e2cd872b9d",
+      "loader_family": "lightgbm",
+      "model_family": "lightgbm",
+      "training_manifest_hash": null,
+      "write_receipt": "3a3417a0ef68fa8c068fe6a0f046142931a88ad8d56e174222acfb91f4677d21"
+    },
+    "artifact_write_receipt": "3a3417a0ef68fa8c068fe6a0f046142931a88ad8d56e174222acfb91f4677d21",
+    "callback_payload": "{\"schema_version\":1,\"job_id\":\"qf:a7-train:lightgbm:34d85c10:001\",\"worker_id\":\"runpod-worker-1\",\"result_type\":\"training_complete\",\"payload\":{\"model_family\":\"lightgbm\",\"dossier\":{\"schema_version\":1,\"model_id\":\"model:qf:a7-train:lightgbm:34d85c10:001\",\"artifact_manifest_id\":\"artifact:ac0b69ba8b52f20e\",\"dataset_manifest_id\":\"/tmp/qf_dataset_a2dwbxyz/inline_dataset.csv\",\"code_git_sha\":\"34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e\",\"lockfile_hash\":\"local-lockfile-hash\",\"container_image_digest\":\"local-container-digest\",\"random_seed\":42,\"hardware_class\":null,\"training_metrics\":{\"accuracy\":0.8350515463917526,\"logloss\":0.3863049387003034,\"brier_score\":0.12201145626177778,\"sharpe_ratio\":769.5358987417395,\"max_drawdown\":-1.3034772673566977,\"win_rate\":0.8350515463917526},\"pbo\":1.0,\"deflated_sharpe\":0.0,\"authority\":\"shadow-only\",\"metadata\":{\"model_family\":\"lightgbm\",\"trainer\":\"real_lightgbm\",\"backend\":\"lightgbm\",\"n_features\":\"3\",\"n_rows\":\"300\",\"n_folds\":\"2\",\"brier_score\":\"0.12201145626177778\",\"win_rate\":\"0.8350515463917526\",\"max_drawdown\":\"-1.3034772673566977\",\"sharpe_ratio\":\"769.5358987417395\",\"avg_best_iteration\":\"100.0\",\"fold_best_iterations\":\"[100, 100]\",\"pbo_method\":\"fold_overfit_ratio\",\"deflated_sharpe_method\":\"sharpe_times_1_minus_fold_overfit_ratio\",\"fold_source\":\"heuristic\",\"has_rank_report\":\"False\"}},\"artifact_manifest\":{\"schema_version\":1,\"artifact_id\":\"artifact:ac0b69ba8b52f20e\",\"sha256\":\"ac0b69ba8b52f20e898ccde31fabc92f574129a3e9a741f7b769e2519921274f\",\"size_bytes\":337368,\"uri\":null,\"model_family\":\"lightgbm\",\"created_at_ns\":1783384151466842688,\"feature_schema_hash\":\"2335ab2b4c09974c\",\"label_schema_hash\":\"ebe4ad4d6037b34c\",\"code_git_sha\":\"34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e\",\"lockfile_hash\":\"local-lockfile-hash\",\"container_image_digest\":\"local-container-digest\",\"determinism_status\":null}},\"received_at_ns\":1783384151467566543}",
+    "callback_signature": "0b73b612079b81ce33a864ef8f2dd59abd23c96e53e2b2368c1e90d83d90ceed",
+    "callback_ts": 1783384151,
+    "dataset_load_receipt": null,
+    "dossier_id": "model:qf:a7-train:lightgbm:34d85c10:001",
+    "job_id": "qf:a7-train:lightgbm:34d85c10:001",
+    "output_prefix": "/runpod-volume/models/qf:a7-train:lightgbm:34d85c10:001/",
+    "preflight_result": {
+      "callback_url_validated": false,
+      "checked_at_ns": 1783384149874977800,
+      "container_user": "root:0",
+      "forbidden_vars_found": [],
+      "mode": "canary",
+      "passed": true,
+      "preflight_error": null,
+      "redacted_config": {
+        "QUANT_FOUNDRY_CALLBACK_SECRET": "****",
+        "QUANT_FOUNDRY_GIT_SHA": "34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e",
+        "QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS": "1800",
+        "QUANT_FOUNDRY_TRAINING_MODE": "canary",
+        "QUANT_FOUNDRY_USE_REAL_TRAINER": "true",
+        "RUNPOD_WEBHOOK_GET_JOB": "****"
+      },
+      "uri_allowlists_validated": true,
+      "writable_dirs": [
+        "/runpod-volume",
+        "/tmp"
+      ]
+    },
+    "quality_gate_advisory_failures": null,
+    "quality_gate_result": null,
+    "typed_callback": {
+      "auxiliary_artifacts": [],
+      "callback_signature": "2058c765771e04bff205673204073bbeeaadc138ee89a924b1606e1b775771a3",
+      "callback_timestamp_ns": 1783384151494932500,
+      "dataset_manifest_hash": "74ee30172b82fa6870212deb8b5589e99994c1a3666fd6e208c593e2cd872b9d",
+      "failure_code": null,
+      "failure_reason": null,
+      "gpu_healthcheck": null,
+      "job_id": "qf:a7-train:lightgbm:34d85c10:001",
+      "metrics_summary": {
+        "accuracy": 0.8350515463917526,
+        "brier_score": 0.12201145626177778,
+        "logloss": 0.3863049387003034,
+        "max_drawdown": -1.3034772673566977,
+        "metric_sanity": {
+          "flagged_metrics": {
+            "max_drawdown": {
+              "raw_value": -1.3034772673566977,
+              "reason_code": "max_drawdown_implausible:-1.3034772673566977",
+              "status": "implausible"
+            },
+            "sharpe_ratio": {
+              "raw_value": 769.5358987417395,
+              "reason_code": "sharpe_ratio_implausible:769.5358987417395",
+              "status": "implausible"
+            }
+          },
+          "promotion_allowed": false,
+          "reason_codes": [
+            "sharpe_ratio_implausible:769.5358987417395",
+            "max_drawdown_implausible:-1.3034772673566977"
+          ],
+          "status": "implausible"
+        },
+        "sharpe_ratio": 769.5358987417395,
+        "win_rate": 0.8350515463917526
+      },
+      "primary_artifact": {
+        "artifact_format": "pickle",
+        "artifact_id": "artifact:ac0b69ba8b52f20e",
+        "artifact_kind": "model",
+        "artifact_sha256": "ac0b69ba8b52f20e898ccde31fabc92f574129a3e9a741f7b769e2519921274f",
+        "artifact_size_bytes": 337368,
+        "artifact_uri": "file:///runpod-volume/models/qf%3Aa7-train%3Alightgbm%3A34d85c10%3A001/model.pkl",
+        "created_at": 1783384151466842600,
+        "dataset_manifest_hash": "74ee30172b82fa6870212deb8b5589e99994c1a3666fd6e208c593e2cd872b9d",
+        "loader_family": "lightgbm",
+        "model_family": "lightgbm",
+        "training_manifest_hash": null,
+        "write_receipt": "3a3417a0ef68fa8c068fe6a0f046142931a88ad8d56e174222acfb91f4677d21"
+      },
+      "promotion_eligible": false,
+      "quality_gate_result": null,
+      "runtime_fingerprint_hash": "854335c457b54e30050db529896f947ae6721664f3a2b09f184dec5bf82656f7",
+      "schema_version": "1.0",
+      "training_manifest_hash": "60701b7acefa9f05371e0b0b2afb2128fc7e19234a11062cb627a771a06e83e1"
+    }
+  },
+  "status": "COMPLETED",
+  "workerId": "nki45gn324uvin"
+}

@@ -1,0 +1,18 @@
+{
+  "job_id": "158f635f-fd71-4a35-9803-7b7f14843d81-u1",
+  "input": {
+    "job_id": "qf:a7-train:lightgbm:34d85c10:001",
+    "dataset_manifest_ref": "inline://a7-train-model-proof",
+    "model_family": "lightgbm",
+    "random_seed": 42,
+    "search_space": {},
+    "extra_constraints": {
+      "training_mode": "canary"
+    },
+    "n_folds": 2,
+    "output_prefix": "/runpod-volume/models/qf:a7-train:lightgbm:34d85c10:001/",
+    "inline_dataset_rows": 300,
+    "inline_dataset_bytes": 15182,
+    "inline_dataset_header": "timestamp,f1,f2,f3,label"
+  }
+}
