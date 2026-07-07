@@ -641,6 +641,15 @@ class RealLightGBMTrainer:
                 "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
+                # Tier 2.5: execution-aware (net-of-cost) metrics.
+                # The promotion gate should use sharpe_net, not
+                # sharpe_ratio (which is frictionless/gross).
+                "sharpe_net": str(metrics.get("sharpe_net", "")),
+                "max_drawdown_net": str(metrics.get("max_drawdown_net", "")),
+                "win_rate_net": str(metrics.get("win_rate_net", "")),
+                "turnover": str(metrics.get("turnover", "")),
+                "total_cost_bps": str(metrics.get("total_cost_bps", "")),
+                "cost_model_version": str(metrics.get("cost_model_version", "")),
             },
         )
 
@@ -1840,6 +1849,27 @@ class RealLightGBMTrainer:
         drawdowns = cumulative - running_max
         max_drawdown = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
 
+        # Tier 2.5: execution-aware backtesting — compute cost-aware
+        # (net-of-cost) training metrics alongside the frictionless
+        # (gross) metrics. The Sharpe-769 artifact demonstrated that
+        # frictionless metrics must never reach a promotion decision.
+        # The default cost model matches the settlement default (5 bps
+        # fee, 3 bps spread, 0 bps slippage) so training and settlement
+        # share the same baseline cost assumptions.
+        from quant_foundry.execution_costs import (
+            DEFAULT_TRAINING_COST_MODEL,
+            compute_cost_aware_metrics,
+        )
+
+        gross_returns_list = [float(r) for r in returns]
+        positions_list = [float(p) for p in positions]
+        cost_metrics = compute_cost_aware_metrics(
+            gross_returns_list,
+            positions_list,
+            DEFAULT_TRAINING_COST_MODEL,
+            ann_factor=float(np.sqrt(ann_factor)),
+        )
+
         # F3: this is a fold-level overfit ratio, NOT the academic PBO.
         # The schema field name ``pbo`` is kept for backward compat; the
         # method is recorded below as ``pbo_method``.
@@ -1913,6 +1943,28 @@ class RealLightGBMTrainer:
                 "max_drawdown": max_drawdown,
                 "win_rate": win_rate,
             },
+            # Tier 2.5: execution-aware (net-of-cost) training metrics.
+            # The gross metrics above are kept for the audit trail; the
+            # net metrics below are what the promotion gate should use.
+            "backtest_metrics": {
+                "sharpe_gross": cost_metrics.sharpe_gross,
+                "sharpe_net": cost_metrics.sharpe_net,
+                "max_drawdown_gross": cost_metrics.max_drawdown_gross,
+                "max_drawdown_net": cost_metrics.max_drawdown_net,
+                "win_rate_gross": cost_metrics.win_rate_gross,
+                "win_rate_net": cost_metrics.win_rate_net,
+                "mean_return_gross": cost_metrics.mean_return_gross,
+                "mean_return_net": cost_metrics.mean_return_net,
+                "turnover": cost_metrics.turnover,
+                "total_cost_bps": cost_metrics.total_cost_bps,
+                "cost_model_version": cost_metrics.cost_model_version,
+            },
+            "sharpe_net": cost_metrics.sharpe_net,
+            "max_drawdown_net": cost_metrics.max_drawdown_net,
+            "win_rate_net": cost_metrics.win_rate_net,
+            "turnover": cost_metrics.turnover,
+            "total_cost_bps": cost_metrics.total_cost_bps,
+            "cost_model_version": cost_metrics.cost_model_version,
             "pbo": pbo_value,
             "deflated_sharpe": deflated_sharpe,
             "pbo_method": pbo_method,
@@ -2557,6 +2609,13 @@ class RealLightGBMTrainer:
                 "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
+                # Tier 2.5: execution-aware (net-of-cost) metrics.
+                "sharpe_net": str(metrics.get("sharpe_net", "")),
+                "max_drawdown_net": str(metrics.get("max_drawdown_net", "")),
+                "win_rate_net": str(metrics.get("win_rate_net", "")),
+                "turnover": str(metrics.get("turnover", "")),
+                "total_cost_bps": str(metrics.get("total_cost_bps", "")),
+                "cost_model_version": str(metrics.get("cost_model_version", "")),
             },
         )
         return artifact, dossier
