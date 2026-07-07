@@ -136,6 +136,7 @@ def build_synthetic_csv(rows: int = DATASET_ROWS, seed: int = DATASET_SEED) -> s
 def build_train_input(
     job_id: str,
     *,
+    model_family: str = "lightgbm",
     output_prefix: str = "/tmp/a7-train-artifacts",  # noqa: S108 - worker-side tmp dir
 ) -> dict[str, Any]:
     """Build the minimal implicit train_model payload.
@@ -147,13 +148,40 @@ def build_train_input(
     schema validation. Mode goes in extra_constraints.training_mode
     (canary: permissive, no FoldSpec required, no production fail-closed
     gates — this is a pipeline proof, not a promotion candidate).
+
+    For non-lightgbm families (xgboost, xgboost_gpu, catboost), the handler
+    requires explicit ``column_roles`` and ``task_spec`` in
+    ``extra_constraints`` (passed as JSON strings since the schema types
+    ``extra_constraints`` as ``dict[str, str]``). The handler's
+    ``_json_mapping_from_extra`` parses them back to dicts.
     """
+    extra: dict[str, Any] = {"training_mode": "canary"}
+    search_space: dict[str, list[Any]] = {}
+    if model_family != "lightgbm":
+        # Non-lightgbm families require explicit column_roles + task_spec.
+        # The synthetic dataset has columns: timestamp, f1, f2, f3, label.
+        extra["column_roles"] = json.dumps({
+            "feature_columns": ["f1", "f2", "f3"],
+            "label_columns": ["label"],
+            "timestamp_column": "timestamp",
+        })
+        extra["task_spec"] = json.dumps({
+            "task_type": "binary",
+            "label_column": "label",
+        })
+    if model_family in ("xgboost", "xgboost_gpu"):
+        search_space = {
+            "max_depth": [3],
+            "learning_rate": [0.1],
+            "n_estimators": [50],
+        }
     return {
         "job_id": job_id,
         "dataset_manifest_ref": "inline://a7-train-model-proof",
-        "model_family": "lightgbm",
+        "model_family": model_family,
         "random_seed": DATASET_SEED,
-        "extra_constraints": {"training_mode": "canary"},
+        "search_space": search_space,
+        "extra_constraints": extra,
         # handler-level extensions (popped before schema validation):
         "inline_dataset_csv": build_synthetic_csv(),
         "n_folds": N_FOLDS,
@@ -225,7 +253,7 @@ def check_acceptance(evidence: dict[str, Any] | None) -> tuple[bool, list[str]]:
     return (not problems), problems
 
 
-def run_local_smoke() -> int:
+def run_local_smoke(model_family: str = "lightgbm") -> int:
     """Run the exact train_model payload through the handler in-process.
 
     No cloud spend. Requires lightgbm + numpy locally (uv workspace).
@@ -242,7 +270,11 @@ def run_local_smoke() -> int:
     import handler as handler_mod
 
     out_dir = tempfile.mkdtemp(prefix="a7_local_artifacts_")
-    payload = build_train_input("qf:a7-train:local:001", output_prefix=out_dir)
+    payload = build_train_input(
+        f"qf:a7-train:local:{model_family}:001",
+        model_family=model_family,
+        output_prefix=out_dir,
+    )
     started = time.monotonic()
     result = handler_mod.handler({"input": payload})
     elapsed = time.monotonic() - started
@@ -267,9 +299,18 @@ def main() -> int:
     parser.add_argument("--template-id", default=None, help="Existing template ID to reuse")
     parser.add_argument("--image-tag", default=None, help="Full image tag (overrides --sha)")
     parser.add_argument(
+        "--model-family",
+        default="lightgbm",
+        help="Model family for the training job (default: lightgbm). "
+        "Non-lightgbm families (xgboost, xgboost_gpu, catboost) require "
+        "explicit column_roles + task_spec, which this tool auto-includes "
+        "for the synthetic canary dataset.",
+    )
+    parser.add_argument(
         "--receipt-subdir",
-        default="train-model",
-        help="Receipt subdirectory under reports/runpod-test-runs/<sha8>/",
+        default=None,
+        help="Receipt subdirectory under reports/runpod-test-runs/<sha8>/ "
+        "(default: train-model for lightgbm, train-model-<family> otherwise)",
     )
     parser.add_argument(
         "--local",
@@ -278,8 +319,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    model_family = args.model_family
+    receipt_subdir = args.receipt_subdir or (
+        "train-model" if model_family == "lightgbm" else f"train-model-{model_family}"
+    )
+
     if args.local:
-        return run_local_smoke()
+        return run_local_smoke(model_family=model_family)
 
     if not args.sha:
         print("ERROR: --sha is required for live dispatch")
@@ -292,13 +338,14 @@ def main() -> int:
         print("ERROR: QUANT_FOUNDRY_CALLBACK_SECRET not set")
         return 1
 
-    receipt_dir = Path(f"reports/runpod-test-runs/{sha[:8]}/{args.receipt_subdir}")
+    receipt_dir = Path(f"reports/runpod-test-runs/{sha[:8]}/{receipt_subdir}")
     receipt_dir.mkdir(parents=True, exist_ok=True)
 
     print("Live Minimal train_model Job (A7)")
     print(f"  SHA: {sha}")
     print(f"  Image: {image_tag}")
     print(f"  GPU: {GPU_TYPE}")
+    print(f"  Model family: {model_family}")
     print(f"  Receipts: {receipt_dir}")
     print()
 
@@ -399,7 +446,10 @@ def main() -> int:
         )
 
         # Dispatch the implicit train_model job
-        train_input = build_train_input(f"qf:a7-train:{sha[:8]}:001")
+        train_input = build_train_input(
+            f"qf:a7-train:{model_family}:{sha[:8]}:001",
+            model_family=model_family,
+        )
         job_id = run_job(endpoint_id, train_input)
         print(f"  Job dispatched: {job_id}")
         run_receipt = dict(train_input)
