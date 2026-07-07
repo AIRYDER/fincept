@@ -206,6 +206,14 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
     engine = _make_engine()
     secret = "e2e-product-loop-secret"
 
+    # --- Registry: constructed before gateway, passed as registry param -------
+    # Tier 1.2: when a registry is wired into the gateway, successful
+    # training_complete callbacks auto-register a model version.
+    registry = ModelRegistryDB(
+        engine=engine,
+        gate=PromotionGate(min_settled_count=10),
+    )
+
     # --- Gateway: DB sinks + CostTracker, mock RunPod dispatch ---------------
     training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
     gateway = QuantFoundryGateway(
@@ -218,6 +226,7 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
         cost_tracker=CostTracker(engine=engine),
         sink_backend="db",
         db_engine=engine,
+        registry=registry,
         # Allow the 25c mock dispatch (default monthly cap is 0 = kill switch).
         budget_guard=BudgetGuard(
             base_dir=tmp_path / "qf" / "budget",
@@ -315,55 +324,40 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
             "training_jobs.callback_receipt_id must equal the inbox callback_id"
         )
 
-    # 7) Verify a model_versions row can be registered from the dossier.
-    registry = ModelRegistryDB(
-        engine=engine,
-        gate=PromotionGate(min_settled_count=10),
-    )
+    # 7) Verify the model version was AUTO-registered by the gateway
+    #    (Tier 1.2: no manual register_version call needed — the gateway
+    #    auto-registers when a registry is wired in).
+    expected_version_id = f"version:{_MODEL_ID}:{dossier_content_hash[:16]}"
 
-    model_result = registry.register_model(
-        model_id=_MODEL_ID,
-        name="E2E Product Loop GBM v1",
-        model_family="gbm",
-        description="Model registered from the E2E product loop proof test",
-    )
-    assert model_result is not None, "register_model must create a models row"
-    assert model_result["model_id"] == _MODEL_ID
-    assert model_result["current_status"] == "candidate"
-
-    version_id = "version:e2e:1"
-    version_result = registry.register_version(
-        model_id=_MODEL_ID,
-        version_id=version_id,
-        dossier_content_hash=dossier_content_hash,
-        artifact_id=_ARTIFACT_ID,
-        callback_receipt_id=callback_receipt_id,
-        version_number=1,
-    )
-    assert version_result is not None, "register_version must create a model_versions row"
-    assert version_result["version_id"] == version_id
-    assert version_result["model_id"] == _MODEL_ID
-    assert version_result["status"] == "candidate"
-    assert version_result["version_number"] == 1
-
-    # Confirm the rows are durable in the DB (not just returned dicts).
+    # Confirm the rows are durable in the DB.
     with Session(engine) as session:
         model_db_row = session.scalars(
             select(ModelRow).where(ModelRow.model_id == _MODEL_ID)
-        ).one()
-        assert model_db_row.name == "E2E Product Loop GBM v1"
+        ).first()
+        assert model_db_row is not None, (
+            "models row must be auto-registered by the gateway"
+        )
+        assert model_db_row.model_id == _MODEL_ID
+        assert model_db_row.current_status == "candidate"
 
         version_db_row = session.scalars(
-            select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
-        ).one()
+            select(ModelVersionRow).where(
+                ModelVersionRow.version_id == expected_version_id
+            )
+        ).first()
+        assert version_db_row is not None, (
+            "model_versions row must be auto-registered by the gateway"
+        )
         assert version_db_row.model_id == _MODEL_ID
         assert version_db_row.dossier_content_hash == dossier_content_hash
         assert version_db_row.artifact_id == _ARTIFACT_ID
         assert version_db_row.callback_receipt_id == callback_receipt_id
+        assert version_db_row.status == "candidate"
+        assert version_db_row.version_number == 1
 
     # Cross-check the registry read API sees the registered version.
     listed_versions = registry.list_versions(_MODEL_ID)
     assert len(listed_versions) == 1
-    assert listed_versions[0]["version_id"] == version_id
+    assert listed_versions[0]["version_id"] == expected_version_id
 
     engine.dispose()

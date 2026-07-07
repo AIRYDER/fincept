@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "ok": true,
+  "job_id": "qf:cbproof:34d85c10:1783388382",
+  "inbox_status": "processed",
+  "outbox_status": "completed",
+  "result": "processed",
+  "runpod_job_id": "8e5bcfa1-be14-4a72-9546-060ace3a8c5f-u2"
+}

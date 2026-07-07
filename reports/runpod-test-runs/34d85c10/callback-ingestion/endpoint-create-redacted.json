@@ -1,0 +1,7 @@
+{
+  "endpoint_id": "2e4exkin3mnkj6",
+  "name": "qf-cbproof-34d85c10-1783388356",
+  "template_id": "x9qy47srnd",
+  "gpu_type": "ADA_24",
+  "image": "ghcr.io/airyder/fincept/quant-foundry-training:34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e"
+}

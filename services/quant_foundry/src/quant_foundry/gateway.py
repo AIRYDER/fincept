@@ -110,6 +110,7 @@ from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.paper_bridge import PaperBridge
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
+from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import (
     BudgetGuard as DispatchBudgetGuard,
 )
@@ -201,6 +202,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         cost_tracker: CostTracker | None = None,
         sink_backend: str = "jsonl",
         db_engine: Engine | None = None,
+        registry: ModelRegistryDB | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -221,6 +223,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         self._db_engine: Engine | None = db_engine
         self._callback_receipt_db_store: CallbackReceiptDbStore | None = None
         self._callback_metrics_db_store: CallbackMetricsDbStore | None = None
+        # Tier 1.2: optional DB-backed model registry. When provided,
+        # successful training_complete callbacks auto-register a model
+        # version (model_id + dossier_content_hash + artifact_id +
+        # callback_receipt_id) so the product loop is fully wired
+        # without a manual register_version() call.
+        self._registry: ModelRegistryDB | None = registry
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -1091,7 +1099,81 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                     job_id,
                     callback_receipt_id=in_rec.callback_id,
                 )
+        # Tier 1.2: auto-register a model version when a registry is
+        # wired in and the callback was a successful training_complete.
+        # Best-effort: registration failures are caught and logged via
+        # contextlib.suppress so they do not break the callback path.
+        if self._registry is not None and in_rec is not None:
+            with contextlib.suppress(Exception):
+                self._maybe_register_version(job_id, payload, in_rec.callback_id)
         return receipt
+
+    def _maybe_register_version(
+        self,
+        job_id: str,
+        payload: bytes,
+        callback_receipt_id: str,
+    ) -> None:
+        """Auto-register a model version from a training_complete callback.
+
+        Parses the callback envelope to extract model_id + artifact_id,
+        queries the model_dossiers table for the content_hash (written by
+        DbDossierStore), and calls register_model + register_version.
+        Idempotent: both methods use ON CONFLICT DO NOTHING.
+        """
+        import json as _json
+
+        from quant_foundry.schemas import RunPodCallbackEnvelope
+
+        envelope = RunPodCallbackEnvelope.model_validate(_json.loads(payload))
+        if envelope.result_type != "training_complete":
+            return
+        dossier_payload = envelope.payload.get("dossier")
+        artifact_payload = envelope.payload.get("artifact_manifest")
+        if not isinstance(dossier_payload, dict) or not isinstance(artifact_payload, dict):
+            return
+        model_id = dossier_payload.get("model_id")
+        artifact_id = artifact_payload.get("artifact_id")
+        if not model_id or not artifact_id:
+            return
+        # Query the model_dossiers table for the content_hash (written by
+        # DbDossierStore during callback processing).
+        from sqlalchemy.orm import Session as _Session
+        from sqlalchemy import select as _select
+
+        from fincept_db.callback_tables import ModelDossierRow
+
+        with _Session(self._db_engine) as session:
+            dossier_row = session.scalars(
+                _select(ModelDossierRow).where(ModelDossierRow.model_id == model_id)
+            ).first()
+            if dossier_row is None:
+                return
+            content_hash = dossier_row.content_hash
+            model_family = artifact_payload.get("model_family", "unknown")
+        # Generate a deterministic version_id from the model_id + content_hash.
+        version_id = f"version:{model_id}:{content_hash[:16]}"
+        # Determine the version number (count existing versions for this model).
+        from fincept_db.registry_tables import ModelVersionRow
+
+        with _Session(self._db_engine) as session:
+            existing = session.scalars(
+                _select(ModelVersionRow).where(ModelVersionRow.model_id == model_id)
+            ).all()
+            version_number = len(existing) + 1
+        self._registry.register_model(
+            model_id=model_id,
+            name=model_id,
+            model_family=model_family,
+        )
+        self._registry.register_version(
+            model_id=model_id,
+            version_id=version_id,
+            dossier_content_hash=content_hash,
+            artifact_id=artifact_id,
+            callback_receipt_id=callback_receipt_id,
+            version_number=version_number,
+        )
 
     def _prepare_dispatch_payload(
         self,

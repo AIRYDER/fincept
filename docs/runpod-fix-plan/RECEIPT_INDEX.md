@@ -6,6 +6,16 @@ Branch: `fix/test-harness-optional-deps-guards`
 Newest commit reviewed: `f656ccaf` (docs(runpod): D7 consolidation — pass #7-#11 index edits, task queues v6-v10, pass receipts, CI triage receipts #4-#8) — HEAD is AT this commit. Two new commits landed since pass #11: `6963cde7` (A7 live train_model PASSED) and `f656ccaf` (D7 consolidation committed). **Tasks A7 and D7 are now DONE.**
 Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (receipts `reports/runpod-test-runs/6dbec436/` and `reports/runpod-test-runs/6dbec436/live-canary/`) **AND GPU HEALTHCHECK PASSED** (receipt `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`, commit `6e85f44c`) **AND A7 TRAIN_MODEL PASSED** (receipt `reports/runpod-test-runs/6dbec436/train-model/`, commit `6963cde7` — full training pipeline proven live: dataset load → trainer.fit → model export). **All critical live unknowns are RESOLVED.**
 
+> **Pass #14 (2026-07-06) — Live callback ingestion proof PASSED (Tier 1.1).**
+> The full product loop was proven live: a real RunPod LightGBM training job
+> was dispatched, the gateway polled RunPod, verified the signed HMAC callback,
+> and ingested it into an in-memory SQLite database. All 5 DB tables were
+> populated: `callback_receipts` (status=processed), `model_dossiers`
+> (status=candidate), `artifact_manifests` (sha256 verified), `training_jobs`
+> (status=completed, callback_receipt_id linked), and `model_versions`
+> (status=candidate, registered from dossier). Receipt:
+> `reports/runpod-test-runs/34d85c10/callback-ingestion/`.
+
 > **Pass #13 (2026-07-06) — A7 train_model PASSED on the new HEAD image
 > `34d85c10`.** First live training run against an image containing the Tier 1
 > work (xgboost_gpu, dataset_manifests, Optuna, PIT proof gate). LightGBM
