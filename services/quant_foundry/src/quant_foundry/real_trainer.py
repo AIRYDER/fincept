@@ -72,6 +72,35 @@ except ImportError:  # pragma: no cover - fincept-core always present in-workspa
     get_storage_backend = None  # type: ignore[assignment]
 
 
+def _probe_gpu_model() -> str | None:
+    """Probe the GPU model name via ``nvidia-smi``.
+
+    Returns the first GPU's model name (e.g. ``"NVIDIA GeForce RTX 4090"``)
+    or ``None`` if ``nvidia-smi`` is not available or no GPU is detected.
+    This is the ground-truth GPU model for the artifact manifest's
+    ``gpu_model`` field (Tier 1.3).
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode != 0:
+            return None
+        name = proc.stdout.strip().splitlines()[0].strip() if proc.stdout.strip() else None
+        return name or None
+    except (FileNotFoundError, subprocess.TimeoutExpired, IndexError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Multi-backend dispatch (T-7.2 / T-7.3 integration)
 # ---------------------------------------------------------------------------
@@ -1955,6 +1984,9 @@ class RealLightGBMTrainer:
                 if req.model_family == "xgboost_gpu"
                 else "deterministic"
             ),
+            # Tier 1.3: record the GPU model when training on CUDA so
+            # the registry/gate can group same-GPU-family runs.
+            gpu_model=_probe_gpu_model() if req.model_family == "xgboost_gpu" else None,
         )
 
     # --- backend param builders -----------------------------------------
@@ -2092,6 +2124,7 @@ class RealLightGBMTrainer:
         trainer_tag: str,
         rank_report: Any = None,
         determinism_status: str | None = None,
+        gpu_model: str | None = None,
     ) -> tuple[ArtifactManifest, ModelDossier]:
         """Build the artifact manifest + dossier for a backend training.
 
@@ -2100,6 +2133,10 @@ class RealLightGBMTrainer:
         non-deterministic (``"non_deterministic"`` for GPU backends whose
         floating-point summation order differs from CPU). ``None`` keeps
         the manifest backward compatible with pre-existing artifacts.
+        ``gpu_model`` records the GPU model used (from ``nvidia-smi``),
+        or ``None`` for CPU training. The registry/gate uses this to
+        group "deterministic within this GPU family" vs "non-deterministic
+        across GPU families" for XGBoost GPU.
         """
         sha256 = hashlib.sha256(model_bytes).hexdigest()
         size_bytes = len(model_bytes)
@@ -2126,6 +2163,7 @@ class RealLightGBMTrainer:
             lockfile_hash=_lockfile_hash_or_default(),
             container_image_digest=_container_digest_or_default(),
             determinism_status=determinism_status,
+            gpu_model=gpu_model,
         )
 
         try:

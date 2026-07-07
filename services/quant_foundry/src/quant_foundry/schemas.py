@@ -122,6 +122,13 @@ class ArtifactManifest(BaseModel):
     # non_deterministic. CPU backends (lightgbm, xgboost) are deterministic.
     # None = not set (backward compatible with pre-existing manifests).
     determinism_status: str | None = None
+    # Tier 1.3: the GPU model used for training (e.g. "NVIDIA GeForce RTX
+    # 4090"), from nvidia-smi. None for CPU training. The registry/gate
+    # uses this to group "deterministic within this GPU family" vs
+    # "non-deterministic across GPU families" for XGBoost GPU, and to
+    # distinguish "ran on CPU because no GPU was requested" from "ran on
+    # CPU because the GPU was requested but unavailable".
+    gpu_model: str | None = None
 
 
 class DatasetManifest(BaseModel):
