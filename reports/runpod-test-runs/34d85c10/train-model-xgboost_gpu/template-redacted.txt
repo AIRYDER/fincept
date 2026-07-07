@@ -1,0 +1,3 @@
+Template ID: 6qhftrsfww
+Image: ghcr.io/airyder/fincept/quant-foundry-training:34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e
+GPU: ADA_24

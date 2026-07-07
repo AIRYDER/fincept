@@ -1,0 +1,106 @@
+{
+  "delayTime": 2958,
+  "executionTime": 1873,
+  "id": "f84654b1-2887-46dd-b49b-c394c0a4e903-u1",
+  "output": {
+    "artifact_id": "artifact:be7516421fe40de4",
+    "artifact_result": {
+      "artifact_format": "xgboost-ubj",
+      "artifact_id": "artifact:be7516421fe40de4",
+      "artifact_kind": "model",
+      "artifact_sha256": "be7516421fe40de4e1d3c534d89ed351f06c581a0c52b88bac95d3ccd8fb0d07",
+      "artifact_size_bytes": 55212,
+      "artifact_uri": "file:///tmp/a7-train-artifacts/model.pkl",
+      "created_at": 1783383205888816000,
+      "dataset_manifest_hash": "99b23c99ac74cbd846a2873c02846803a7bb75c3fecc8880e9c9adbdbe029c56",
+      "loader_family": "xgboost",
+      "model_family": "xgboost_gpu",
+      "training_manifest_hash": null,
+      "write_receipt": "2a459b0cfc8502c7100e7119fd8f49c481ec76858a58d75b4ea7df97b49d79d9"
+    },
+    "artifact_write_receipt": "2a459b0cfc8502c7100e7119fd8f49c481ec76858a58d75b4ea7df97b49d79d9",
+    "callback_payload": "{\"schema_version\":1,\"job_id\":\"qf:a7-train:xgboost_gpu:34d85c10:001\",\"worker_id\":\"runpod-worker-1\",\"result_type\":\"training_complete\",\"payload\":{\"model_family\":\"xgboost_gpu\",\"dossier\":{\"schema_version\":1,\"model_id\":\"model:qf:a7-train:xgboost_gpu:34d85c10:001\",\"artifact_manifest_id\":\"artifact:be7516421fe40de4\",\"dataset_manifest_id\":\"/tmp/qf_dataset_jpp8qax5/inline_dataset.csv\",\"code_git_sha\":\"34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e\",\"lockfile_hash\":\"local-lockfile-hash\",\"container_image_digest\":\"local-container-digest\",\"random_seed\":42,\"hardware_class\":null,\"training_metrics\":{\"accuracy\":0.9533333333333334,\"logloss\":0.15542546145760094,\"brier_score\":0.03984064435174524,\"sharpe_ratio\":1735.3283076836303,\"max_drawdown\":-0.6746852397918701,\"win_rate\":0.9533333333333334},\"pbo\":0.5,\"deflated_sharpe\":867.6641538418152,\"authority\":\"shadow-only\",\"metadata\":{\"model_family\":\"xgboost_gpu\",\"trainer\":\"real_xgboost\",\"backend\":\"xgboost\",\"n_features\":\"3\",\"n_rows\":\"300\",\"n_folds\":\"2\",\"brier_score\":\"0.03984064435174524\",\"win_rate\":\"0.9533333333333334\",\"max_drawdown\":\"-0.6746852397918701\",\"sharpe_ratio\":\"1735.3283076836303\",\"pbo_method\":\"fold_overfit_ratio\",\"deflated_sharpe_method\":\"sharpe_times_1_minus_fold_overfit_ratio\",\"fold_source\":\"heuristic\",\"has_rank_report\":\"False\"}},\"artifact_manifest\":{\"schema_version\":1,\"artifact_id\":\"artifact:be7516421fe40de4\",\"sha256\":\"be7516421fe40de4e1d3c534d89ed351f06c581a0c52b88bac95d3ccd8fb0d07\",\"size_bytes\":55212,\"uri\":null,\"model_family\":\"xgboost_gpu\",\"created_at_ns\":1783383205888816249,\"feature_schema_hash\":\"1f87374ecfa11798\",\"label_schema_hash\":\"d9dfceacb8d15db7\",\"code_git_sha\":\"34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e\",\"lockfile_hash\":\"local-lockfile-hash\",\"container_image_digest\":\"local-container-digest\",\"determinism_status\":\"non_deterministic\"}},\"received_at_ns\":1783383205889951116}",
+    "callback_signature": "40fbfb0955d171ec3e6eafa98402b4f83ebd9ef90cdb5a4de702cb08240f8a98",
+    "callback_ts": 1783383205,
+    "dataset_load_receipt": null,
+    "dossier_id": "model:qf:a7-train:xgboost_gpu:34d85c10:001",
+    "job_id": "qf:a7-train:xgboost_gpu:34d85c10:001",
+    "output_prefix": "/tmp/a7-train-artifacts",
+    "preflight_result": {
+      "callback_url_validated": false,
+      "checked_at_ns": 1783383204079565800,
+      "container_user": "root:0",
+      "forbidden_vars_found": [],
+      "mode": "canary",
+      "passed": true,
+      "preflight_error": null,
+      "redacted_config": {
+        "QUANT_FOUNDRY_CALLBACK_SECRET": "****",
+        "QUANT_FOUNDRY_GIT_SHA": "34d85c10a52cf59f8bd30d4d8ab7474b2cc53f9e",
+        "QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS": "1800",
+        "QUANT_FOUNDRY_TRAINING_MODE": "canary",
+        "QUANT_FOUNDRY_USE_REAL_TRAINER": "true",
+        "RUNPOD_WEBHOOK_GET_JOB": "****"
+      },
+      "uri_allowlists_validated": true,
+      "writable_dirs": [
+        "/tmp"
+      ]
+    },
+    "quality_gate_advisory_failures": null,
+    "quality_gate_result": null,
+    "typed_callback": {
+      "auxiliary_artifacts": [],
+      "callback_signature": "5c25e9a13fc904a6e77d03ebc1b709eedb1ac09894f0e5cb53c91252f4cb133d",
+      "callback_timestamp_ns": 1783383205894882300,
+      "dataset_manifest_hash": "99b23c99ac74cbd846a2873c02846803a7bb75c3fecc8880e9c9adbdbe029c56",
+      "failure_code": null,
+      "failure_reason": null,
+      "gpu_healthcheck": null,
+      "job_id": "qf:a7-train:xgboost_gpu:34d85c10:001",
+      "metrics_summary": {
+        "accuracy": 0.9533333333333334,
+        "brier_score": 0.03984064435174524,
+        "logloss": 0.15542546145760094,
+        "max_drawdown": -0.6746852397918701,
+        "metric_sanity": {
+          "flagged_metrics": {
+            "sharpe_ratio": {
+              "raw_value": 1735.3283076836303,
+              "reason_code": "sharpe_ratio_implausible:1735.3283076836303",
+              "status": "implausible"
+            }
+          },
+          "promotion_allowed": false,
+          "reason_codes": [
+            "sharpe_ratio_implausible:1735.3283076836303"
+          ],
+          "status": "implausible"
+        },
+        "sharpe_ratio": 1735.3283076836303,
+        "win_rate": 0.9533333333333334
+      },
+      "primary_artifact": {
+        "artifact_format": "xgboost-ubj",
+        "artifact_id": "artifact:be7516421fe40de4",
+        "artifact_kind": "model",
+        "artifact_sha256": "be7516421fe40de4e1d3c534d89ed351f06c581a0c52b88bac95d3ccd8fb0d07",
+        "artifact_size_bytes": 55212,
+        "artifact_uri": "file:///tmp/a7-train-artifacts/model.pkl",
+        "created_at": 1783383205888816000,
+        "dataset_manifest_hash": "99b23c99ac74cbd846a2873c02846803a7bb75c3fecc8880e9c9adbdbe029c56",
+        "loader_family": "xgboost",
+        "model_family": "xgboost_gpu",
+        "training_manifest_hash": null,
+        "write_receipt": "2a459b0cfc8502c7100e7119fd8f49c481ec76858a58d75b4ea7df97b49d79d9"
+      },
+      "promotion_eligible": false,
+      "quality_gate_result": null,
+      "runtime_fingerprint_hash": "4fed7a9b65bfae01dad9fd9e878e957835a058cf5b2ab0cbd8e43ec332b7e0d4",
+      "schema_version": "1.0",
+      "training_manifest_hash": "022484aa10d78a4b1921295c303da96818de9d269400439efedc3e032995da14"
+    }
+  },
+  "status": "COMPLETED",
+  "workerId": "2je86dabjy7w6g"
+}
