@@ -97,6 +97,27 @@ except ImportError:  # pragma: no cover - safety net for cv.py import errors
 
 
 # --------------------------------------------------------------------------- #
+# Labeling (triple-barrier + meta-labeling, Tier 2.3)                         #
+# --------------------------------------------------------------------------- #
+try:
+    from .labels import (
+        BarrierConfig,
+        MetaLabelConfig,
+        TripleBarrierLabel,
+        meta_labels,
+        triple_barrier_labels,
+        volatility_scaled_widths,
+    )
+except ImportError:  # pragma: no cover - safety net
+    BarrierConfig = None  # type: ignore[assignment,misc]
+    MetaLabelConfig = None  # type: ignore[assignment,misc]
+    TripleBarrierLabel = None  # type: ignore[assignment,misc]
+    meta_labels = None  # type: ignore[assignment]
+    triple_barrier_labels = None  # type: ignore[assignment]
+    volatility_scaled_widths = None  # type: ignore[assignment]
+
+
+# --------------------------------------------------------------------------- #
 # Evidence-receipt helper                                                     #
 # --------------------------------------------------------------------------- #
 
@@ -178,6 +199,7 @@ __all__ = [
     "SettlementStore",
     "WalkForwardWindow",
     "assert_feature_schema_compatible",
+    "BarrierConfig",
     "build_calibration_sidecar",
     "build_dossier",
     "build_evidence_receipt",
@@ -188,4 +210,9 @@ __all__ = [
     "fold_iter_to_dicts",
     "make_cpcv_folds",
     "make_folds",
+    "MetaLabelConfig",
+    "TripleBarrierLabel",
+    "meta_labels",
+    "triple_barrier_labels",
+    "volatility_scaled_widths",
 ]
