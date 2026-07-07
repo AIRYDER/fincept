@@ -307,6 +307,63 @@ class ModelRegistryDB:
             session.commit()
             return evaluation_id
 
+    def run_shadow_comparison(
+        self,
+        champion_version_id: str,
+        challenger_version_id: str,
+        champion_input: Any,
+        challenger_input: Any,
+        config: Any,
+    ) -> tuple[str, Any]:
+        """Run a champion/challenger shadow comparison and record it.
+
+        Tier 2.4: compares a challenger model's settled shadow
+        performance against the champion's, records the result in the
+        ``shadow_evaluations`` table, and returns the decision.
+
+        Args:
+            champion_version_id: the champion's model version ID.
+            challenger_version_id: the challenger's model version ID.
+            champion_input: ``ComparisonInput`` for the champion.
+            challenger_input: ``ComparisonInput`` for the challenger.
+            config: ``ChampionChallengerConfig`` for the comparison.
+
+        Returns:
+            ``(evaluation_id, promotion_decision)`` where
+            ``promotion_decision`` is a ``PromotionDecision``.
+        """
+        from quant_foundry.champion_challenger import compare_champion_challenger
+
+        decision = compare_champion_challenger(
+            champion_input, challenger_input, config,
+        )
+
+        # Record the shadow evaluation for the challenger
+        evaluation_metrics: dict[str, Any] = {
+            "decision": decision.decision,
+            "reason": decision.reason,
+            "champion_model_id": decision.result.champion_model_id,
+            "challenger_model_id": decision.result.challenger_model_id,
+            "champion_settled_count": decision.result.champion_settled_count,
+            "challenger_settled_count": decision.result.challenger_settled_count,
+            "champion_net_edge_bps": decision.result.champion_net_edge_bps,
+            "challenger_net_edge_bps": decision.result.challenger_net_edge_bps,
+            "net_edge_delta_bps": decision.result.net_edge_delta_bps,
+            "champion_dsr": decision.result.champion_dsr,
+            "challenger_dsr": decision.result.challenger_dsr,
+            "dsr_delta": decision.result.dsr_delta,
+            "bootstrap_p_value": decision.result.bootstrap_p_value,
+            "brier_delta": decision.result.brier_delta,
+        }
+
+        evaluation_id = self.record_shadow_evaluation(
+            version_id=challenger_version_id,
+            settled_count=challenger_input.settled_count,
+            evaluation_metrics=evaluation_metrics,
+        )
+
+        return evaluation_id, decision
+
     # ------------------------------------------------------------------
     # Promotion workflow
     # ------------------------------------------------------------------

@@ -455,6 +455,74 @@ class TestRecordShadowEvaluation:
                 evaluation_metrics={},
             )
 
+    def test_run_shadow_comparison_promote(self, registry, engine) -> None:
+        """Tier 2.4: run_shadow_comparison records eval + returns decision."""
+        import random
+
+        from quant_foundry.champion_challenger import (
+            ChampionChallengerConfig,
+            ComparisonInput,
+        )
+
+        _seed_parents(engine)
+        registry.register_model(model_id="model-001", name="Champion", model_family="lightgbm")
+        registry.register_version(
+            model_id="model-001",
+            version_id="ver-champ",
+            dossier_content_hash="h" * 64,
+            artifact_id="art-001",
+            callback_receipt_id="cb-001",
+            version_number=1,
+        )
+        registry.register_model(model_id="model-002", name="Challenger", model_family="lightgbm")
+        registry.register_version(
+            model_id="model-002",
+            version_id="ver-chal",
+            dossier_content_hash="h" * 64,
+            artifact_id="art-001",
+            callback_receipt_id="cb-001",
+            version_number=1,
+        )
+
+        rng = random.Random(42)
+        champ_input = ComparisonInput(
+            model_id="model-001",
+            oos_returns_net=[rng.gauss(0.0001, 0.001) for _ in range(50)],
+            settled_count=50,
+        )
+        chal_input = ComparisonInput(
+            model_id="model-002",
+            oos_returns_net=[rng.gauss(0.001, 0.001) for _ in range(50)],
+            settled_count=50,
+        )
+        cfg = ChampionChallengerConfig(
+            min_settled_count=30,
+            net_edge_threshold=1.0,
+        )
+
+        eval_id, decision = registry.run_shadow_comparison(
+            champion_version_id="ver-champ",
+            challenger_version_id="ver-chal",
+            champion_input=champ_input,
+            challenger_input=chal_input,
+            config=cfg,
+        )
+
+        assert eval_id is not None
+        assert decision.decision == "promote"
+
+        # Verify the shadow evaluation was recorded
+        with Session(engine) as session:
+            row = session.scalars(
+                select(ShadowEvaluationRow).where(
+                    ShadowEvaluationRow.evaluation_id == eval_id
+                )
+            ).one()
+            assert row.settled_count == 50
+            assert row.evaluation_metrics["decision"] == "promote"
+            assert "net_edge_delta_bps" in row.evaluation_metrics
+            assert "bootstrap_p_value" in row.evaluation_metrics
+
 
 # ---------------------------------------------------------------------------
 # Promotion workflow
