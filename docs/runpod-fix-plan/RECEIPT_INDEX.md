@@ -6,6 +6,23 @@ Branch: `fix/test-harness-optional-deps-guards`
 Newest commit reviewed: `f656ccaf` (docs(runpod): D7 consolidation — pass #7-#11 index edits, task queues v6-v10, pass receipts, CI triage receipts #4-#8) — HEAD is AT this commit. Two new commits landed since pass #11: `6963cde7` (A7 live train_model PASSED) and `f656ccaf` (D7 consolidation committed). **Tasks A7 and D7 are now DONE.**
 Live validation: **PRODUCTION CANARY PASSED 6/6** across two independent runs (receipts `reports/runpod-test-runs/6dbec436/` and `reports/runpod-test-runs/6dbec436/live-canary/`) **AND GPU HEALTHCHECK PASSED** (receipt `reports/runpod-test-runs/6dbec436/gpu-healthcheck/`, commit `6e85f44c`) **AND A7 TRAIN_MODEL PASSED** (receipt `reports/runpod-test-runs/6dbec436/train-model/`, commit `6963cde7` — full training pipeline proven live: dataset load → trainer.fit → model export). **All critical live unknowns are RESOLVED.**
 
+> **Pass #13 (2026-07-06) — A7 train_model PASSED on the new HEAD image
+> `34d85c10`.** First live training run against an image containing the Tier 1
+> work (xgboost_gpu, dataset_manifests, Optuna, PIT proof gate). LightGBM
+> canary (`training_mode=canary`) COMPLETED in ~10s on ADA_24, worker
+> `unhealthy=0` throughout, model exported (337,368 bytes, sha256
+> `ac0b69ba…`, HMAC write receipt present), callback signed, preflight passed,
+> metric-sanity correctly non-promotable. Receipt:
+> `reports/runpod-test-runs/34d85c10/train-model/`. Two probe-toolchain
+> regressions were fixed to unblock the dispatch (the image was unaffected):
+> (1) `build_job_policy` body deleted by ruff burn-down `f0c7c4a9` — restored
+> from `5700e51c`, plus the stripped `import` line in
+> `runpod/tests/test_runpod_lifecycle.py`; (2) RunPod GraphQL schema renamed
+> `executionTimeout` -> `executionTimeoutMs` — `build_endpoint_input` now
+> emits ms. 49 lifecycle/receipt/healthcheck tests pass. The `34d85c10` image
+> was built by the `build-runpod-training` workflow (runs 28827274986 +
+> 28827271770, both `success`).
+
 > **Pass #7 was a doc-only consolidation** (uncommitted in the worktree). It
 > recorded that D4/D5 are DONE and updated this index to "Newest commit
 > reviewed `3098f11f`". The pass #7 edit to this index, the v6 task queue
