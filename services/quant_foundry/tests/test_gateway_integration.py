@@ -292,6 +292,129 @@ def test_dispatch_creates_training_jobs_row(tmp_path, engine, cost_tracker) -> N
         assert "request_payloads" in row.request_payload_ref
 
 
+def test_dispatch_injects_default_output_prefix(tmp_path) -> None:
+    """Tier 0.2: gateway injects default output_prefix for training jobs.
+
+    When ``output_prefix`` is configured on the gateway and the caller's
+    payload doesn't include one, the gateway injects it so artifacts go
+    to the network volume (durable) instead of /tmp (ephemeral).
+    """
+    secret = "prefix-secret"
+    training_client = RecordingRunPodClient(endpoint_id="train-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": training_client},
+        output_prefix="/runpod-volume/models/",
+    )
+
+    job_id = "qf:train:prefix:1"
+    payload = _training_payload(job_id)
+    assert "output_prefix" not in payload  # caller didn't set it
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=payload,
+    )
+
+    # The dispatched payload must have output_prefix injected.
+    assert len(training_client.dispatches) == 1
+    dispatched = training_client.dispatches[0]
+    assert dispatched["request_payload"]["output_prefix"] == "/runpod-volume/models/"
+
+
+def test_dispatch_does_not_override_caller_output_prefix(tmp_path) -> None:
+    """Tier 0.2: gateway respects caller-supplied output_prefix.
+
+    When the caller already set ``output_prefix``, the gateway does NOT
+    override it — even if a default is configured.
+    """
+    secret = "caller-prefix-secret"
+    training_client = RecordingRunPodClient(endpoint_id="train-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": training_client},
+        output_prefix="/runpod-volume/models/",
+    )
+
+    job_id = "qf:train:caller:1"
+    payload = _training_payload(job_id)
+    payload["output_prefix"] = "/runpod-volume/custom/path/"
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=payload,
+    )
+
+    assert len(training_client.dispatches) == 1
+    dispatched = training_client.dispatches[0]
+    assert dispatched["request_payload"]["output_prefix"] == "/runpod-volume/custom/path/"
+
+
+def test_dispatch_no_output_prefix_when_not_configured(tmp_path) -> None:
+    """Tier 0.2: no output_prefix injected when gateway has none configured."""
+    secret = "no-prefix-secret"
+    training_client = RecordingRunPodClient(endpoint_id="train-endpoint")
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": training_client},
+        # no output_prefix configured
+    )
+
+    job_id = "qf:train:noprefix:1"
+    payload = _training_payload(job_id)
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=payload,
+    )
+
+    assert len(training_client.dispatches) == 1
+    dispatched = training_client.dispatches[0]
+    assert "output_prefix" not in dispatched["request_payload"]
+
+
+def test_health_reports_output_prefix_configured(tmp_path) -> None:
+    """Tier 0.2: health endpoint reports whether output_prefix is configured."""
+    secret = "health-prefix-secret"
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="train-endpoint")},
+        output_prefix="/runpod-volume/models/",
+    )
+    health = gateway.health()
+    assert health["output_prefix_configured"] is True
+
+    gateway_no_prefix = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf2",
+        runpod_clients={"training": RecordingRunPodClient(endpoint_id="train-endpoint")},
+    )
+    health_no_prefix = gateway_no_prefix.health()
+    assert health_no_prefix["output_prefix_configured"] is False
+
+
 def test_dispatch_without_cost_tracker_does_not_crash(tmp_path) -> None:
     """When no CostTracker is injected, dispatch still works (best-effort)."""
     secret = "no-tracker-secret"

@@ -152,6 +152,11 @@ _RUNPOD_TIMEOUT_ENV = "RUNPOD_TIMEOUT_SECONDS"
 _RUNPOD_COST_ENV = "RUNPOD_COST_PER_DISPATCH_CENTS"
 _CALLBACK_SECRET_ENV = "QUANT_FOUNDRY_CALLBACK_SECRET"
 _SINK_BACKEND_ENV = "QUANT_FOUNDRY_SINK_BACKEND"
+# Tier 0.2: default output_prefix for training dispatch. When set, the
+# gateway injects this into every training job payload that doesn't
+# already specify one. Should be a /runpod-volume/ or /workspace/ path
+# so artifacts survive worker shutdown (durable artifacts).
+_OUTPUT_PREFIX_ENV = "QUANT_FOUNDRY_OUTPUT_PREFIX"
 
 
 class _DbCallbackDLQ(CallbackDLQ):
@@ -205,6 +210,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         db_engine: Engine | None = None,
         registry: ModelRegistryDB | None = None,
         dataset_registry: DatasetRegistry | None = None,
+        output_prefix: str | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -236,6 +242,10 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # that the dataset is registered, L3+ readiness, not stale, and
         # not deprecated/rejected. Canary/research are permissive.
         self._dataset_registry: DatasetRegistry | None = dataset_registry
+        # Tier 0.2: default output_prefix for training jobs. When set,
+        # injected into every training dispatch payload that doesn't
+        # already specify one. Should be a /runpod-volume/ path.
+        self._default_output_prefix: str | None = output_prefix
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -488,6 +498,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         if sink_backend not in ("jsonl", "db"):
             sink_backend = "jsonl"
 
+        # Tier 0.2: default output_prefix for training jobs. When set,
+        # the gateway injects this into every training dispatch payload
+        # that doesn't already specify one. Should be a /runpod-volume/
+        # path so artifacts survive worker shutdown.
+        output_prefix = os.environ.get(_OUTPUT_PREFIX_ENV) or None
+
         return cls(
             enabled=enabled,
             mode=mode,
@@ -500,6 +516,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             worker_status_dir=worker_status_dir or None,
             stale_threshold_seconds=stale_threshold,
             sink_backend=sink_backend,
+            output_prefix=output_prefix,
         )
 
     # --- health / state ---
@@ -519,6 +536,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 job_type: _client_endpoint_id(client)
                 for job_type, client in self._runpod_clients.items()
             },
+            "output_prefix_configured": self._default_output_prefix is not None,
             "paper_bridge": {
                 "configured": self._paper_bridge is not None,
                 "status": self._paper_bridge.status.value if self._paper_bridge else "disabled",
@@ -1246,7 +1264,18 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         job_type: str,
         request_payload: Any,
     ) -> Any:
-        if not self._is_runpod_mode() or _normalize_job_type(job_type) != "inference":
+        if not self._is_runpod_mode():
+            return request_payload
+        # Tier 0.2: inject default output_prefix for training jobs when
+        # the caller hasn't set one. This ensures artifacts go to the
+        # network volume (durable) instead of /tmp (ephemeral).
+        if _normalize_job_type(job_type) == "training":
+            if isinstance(request_payload, dict) and self._default_output_prefix:
+                if not request_payload.get("output_prefix"):
+                    request_payload = dict(request_payload)
+                    request_payload["output_prefix"] = self._default_output_prefix
+            return request_payload
+        if _normalize_job_type(job_type) != "inference":
             return request_payload
         if not isinstance(request_payload, dict):
             raise TypeError("RunPod inference payload must be a JSON object")
