@@ -98,3 +98,37 @@ jobs:
         run: |
           uv run pip install pip-audit
           uv run pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph
+
+  determinism-gate:
+    name: Determinism proof (Tier 3.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      # pin: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
+        with:
+          enable-cache: true
+          version: "latest"
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-packages --all-groups
+      - name: Run determinism proof (train twice, compare SHA-256s)
+        env:
+          QUANT_FOUNDRY_CALLBACK_SECRET: determinism-ci-gate-secret
+          QUANT_FOUNDRY_USE_REAL_TRAINER: "true"
+        run: |
+          uv run python -c "
+          from quant_foundry.determinism_proof import run_determinism_gate
+          import sys
+          rc = run_determinism_gate()
+          sys.exit(rc)
+          "
+      - name: Upload determinism receipt
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac0ea254df3be9c58d503a3d6f0d6
+        with:
+          name: determinism-receipt
+          path: reports/determinism-proof/receipt.json
+          if-no-files-found: warn
+
