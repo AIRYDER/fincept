@@ -1195,7 +1195,10 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         with _Session(self._db_engine) as session:
             dossier_row = session.scalars(
-                _select(ModelDossierRow).where(ModelDossierRow.model_id == model_id)
+                _select(ModelDossierRow).where(
+                    ModelDossierRow.model_id == model_id,
+                    ModelDossierRow.artifact_manifest_id == artifact_id,
+                )
             ).first()
             if dossier_row is None:
                 return
