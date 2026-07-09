@@ -73,9 +73,14 @@ class _Scorer(Protocol):
 
 
 class ModelLoader:
-    """Default model loader supporting ONNX and LightGBM artifacts.
+    """Default model loader supporting ONNX, LightGBM, and C1 bundles.
 
-    Loads a model artifact from a URI based on its file extension:
+    Loads a model artifact from a URI based on its content (magic number for
+    ModelBundle v1 zip archives) or file extension:
+    - ModelBundle v1 (zip, PK magic) → ``BundleScorer`` (C1) — exposes both
+      ``.predict()`` (raw primary outputs) and ``.score()`` (full ``Decision``
+      objects with ``bundle_sha256``, ``abstained``, ``meta_p``,
+      ``policy_version``).
     - ``.onnx`` → ``onnxruntime.InferenceSession``
     - ``.pkl`` or ``.txt`` → ``lightgbm.Booster``
 
@@ -421,3 +426,27 @@ def run_real_inference(
         storage_backend=storage_backend,
     )
     return engine.run(request=request, snapshot=snapshot, model_id=model_id)
+
+
+# ---------------------------------------------------------------------------
+# C2: Bundle-scoring convenience (for RealShadowScorer / shadow use)
+# ===========================================================================
+
+
+def load_bundle_scorer(
+    uri: str,
+    storage_backend: Any = None,
+) -> Any:
+    """Load a C1 bundle from ``uri`` and return a ``BundleScorer``.
+
+    This is the explicit bundle-loading path for shadow scoring (C2). It
+    uses ``ModelLoader.load()`` which detects ModelBundle v1 by the PK zip
+    magic number and returns a ``BundleScorer``. The returned scorer
+    exposes both ``.predict()`` (raw primary outputs) and ``.score()``
+    (full ``Decision`` objects with ``bundle_sha256``, ``abstained``,
+    ``meta_p``, ``policy_version``).
+
+    Raises on any load failure (fail closed — no stub fallback).
+    """
+    loader = ModelLoader(storage_backend=storage_backend)
+    return loader.load(uri)
