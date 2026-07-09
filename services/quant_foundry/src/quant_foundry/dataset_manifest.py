@@ -269,6 +269,15 @@ class FeatureLakeManifest(BaseModel):
     data_sha256: str | None = None
     quality_report_uri: str | None = None
     quality_report_sha256: str | None = None
+    # C3: signed PIT evidence v1. A tamper-evident record that proves the
+    # dataset export was leakage-safe. Carried as a plain dict (the
+    # serialized :class:`~quant_foundry.pit_evidence.PITEvidence`) so the
+    # manifest remains JSON-serializable and the evidence can be verified
+    # independently by the training worker. Deliberately EXCLUDED from
+    # the manifest hash (the evidence is a derived artifact that
+    # references the manifest hash — including it would create a circular
+    # hash dependency).
+    pit_evidence: dict[str, Any] | None = None
 
     # --- validators -----------------------------------------------------
 

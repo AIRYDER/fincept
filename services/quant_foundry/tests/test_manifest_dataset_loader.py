@@ -575,4 +575,64 @@ class TestDuckTypedSpec:
         loader = ManifestDatasetLoader(spec=spec)
         loaded = loader.load()
         assert loaded.row_count == 3
+
+
+# ---------------------------------------------------------------------------
+# C3: PIT evidence passthrough through the manifest loader
+# ---------------------------------------------------------------------------
+
+
+class TestPitEvidencePassthrough:
+    """The manifest loader passes pit_evidence through to LoadedDataset."""
+
+    def test_pit_evidence_carried_in_loaded_manifest(self, tmp_path: pathlib.Path) -> None:
+        """A manifest with pit_evidence is available on LoadedDataset.manifest."""
+        pytest.importorskip("pandas")
+        _csv_path, csv_uri, csv_sha = _write_csv(tmp_path, rows=2)
+
+        # Build a valid PIT evidence dict.
+        from quant_foundry.pit_evidence import PITEvidence
+
+        ev = PITEvidence(
+            manifest_hash="a" * 64,
+            feature_schema_hash="a" * 64,
+            feature_set_version="v1.0.0",
+            max_observed_at_margin=1000,
+            violation_count=0,
+            sampled_row_count=2,
+            label_window_check_status="passed",
+            evidence_sha256="0" * 64,
+        )
+        correct_sha = ev.compute_evidence_sha256()
+        ev = ev.model_copy(update={"evidence_sha256": correct_sha})
+
+        manifest_path, manifest_uri, manifest_sha = _write_manifest(
+            tmp_path,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
+        )
+        # Inject pit_evidence into the manifest JSON.
+        import json
+
+        manifest_data = json.loads(manifest_path.read_text())
+        manifest_data["pit_evidence"] = ev.to_dict()
+        manifest_path.write_text(json.dumps(manifest_data))
+        # Recompute the manifest sha after injection.
+        manifest_sha = _sha256_bytes(manifest_path.read_bytes())
+
+        loader = ManifestDatasetLoader(
+            manifest_uri=manifest_uri,
+            manifest_sha256=manifest_sha,
+            data_uri=csv_uri,
+            data_sha256=csv_sha,
+            data_format="csv",
+            row_count=2,
+        )
+        loaded = loader.load()
+        assert loaded.manifest is not None
+        pit_ev = loaded.manifest.get("pit_evidence")
+        assert pit_ev is not None
+        assert pit_ev["evidence_sha256"] == correct_sha
         assert loaded.load_receipt.manifest_sha256_verified is True

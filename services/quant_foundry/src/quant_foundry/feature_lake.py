@@ -54,6 +54,7 @@ from quant_foundry.dataset_manifest import (
     SourceReceipt,
 )
 from quant_foundry.feature_availability import FeatureAvailabilityReport
+from quant_foundry.pit_evidence import PITEvidence, build_pit_evidence
 
 
 class LeakyFeatureError(ValueError):
@@ -117,6 +118,8 @@ class ExportReceipt:
     row_count: int
     pit_proof_verified: bool
     receipt_path: Path
+    # C3: signed PIT evidence v1 (None if not computed).
+    pit_evidence: dict[str, Any] | None = None
 
 
 @dataclass
@@ -306,6 +309,7 @@ class FeatureLakeBuilder:
         quality_report_uri: str | None = None,
         quality_report_sha256: str | None = None,
         readiness_level: ReadinessLevel | str = ReadinessLevel.L1_RAW,
+        feature_set_version: str | None = None,
     ) -> FeatureLakeManifest:
         """Validate PIT correctness and emit the dataset manifest.
 
@@ -361,7 +365,19 @@ class FeatureLakeBuilder:
             data_sha256=data_sha256,
             quality_report_uri=quality_report_uri,
             quality_report_sha256=quality_report_sha256,
+            feature_set_version=feature_set_version,
         )
+        # C3: build signed PIT evidence v1 and attach it to the manifest.
+        # The evidence is computed from the manifest + feature rows and
+        # carries its own tamper seal (evidence_sha256). It is excluded
+        # from the manifest hash to avoid a circular dependency.
+        pit_evidence = build_pit_evidence(
+            manifest,
+            self.rows,
+            max_label_horizon_ns=self.max_label_horizon_ns,
+            embargo_ns=folds.embargo_ns,
+        )
+        manifest = manifest.model_copy(update={"pit_evidence": pit_evidence.to_dict()})
         if registry is not None:
             register_manifest(
                 registry,
@@ -401,6 +417,7 @@ def export_receipt(
         "label_schema_hash": manifest.label_schema_hash,
         "availability": json.loads(availability.to_json()),
         "training_reference": manifest.training_reference(),
+        "pit_evidence": manifest.pit_evidence,
     }
     receipt_path.write_text(json.dumps(body, sort_keys=True, indent=2))
     return ExportReceipt(
@@ -409,6 +426,7 @@ def export_receipt(
         row_count=manifest.row_count,
         pit_proof_verified=manifest.pit_proof_verified,
         receipt_path=receipt_path,
+        pit_evidence=manifest.pit_evidence,
     )
 
 

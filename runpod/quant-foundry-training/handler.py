@@ -105,6 +105,8 @@ from quant_foundry.dataset_manifest import (  # noqa: E402
 from quant_foundry.dataset_manifest import (
     FoldSpec as QFFoldSpec,
 )
+# C3: PIT evidence tamper detection.
+from quant_foundry.pit_evidence import PitEvidenceTamperedError, verify_pit_evidence
 
 # Phase 1 / T-1.1: typed artifact result contract. Imported at module
 # level — ``quant_foundry.real_trainer`` is importable without ML deps
@@ -3534,6 +3536,139 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
                     "(not True) — production training would be blocked"
                 ),
             )
+
+    # --- C3: Feature-set version pin enforcement ----------------------------
+    # The request may carry a ``feature_set_version`` pin (Tier 2.6). When
+    # present, the worker verifies that the dataset manifest's
+    # ``feature_set_version`` matches the request's pin. This ensures two
+    # training runs that reference the same feature_set_version use the
+    # same feature definitions (the feature_schema_hash is the
+    # cryptographic guarantee; this is the human-readable version string).
+    #
+    # Mode-aware enforcement:
+    # - ``production``: hard gate. A mismatch (or a request pin with a
+    #   manifest that has no feature_set_version) fails closed with
+    #   ``error_code="feature_set_version_mismatch"``.
+    # - ``canary`` / ``research``: advisory. A mismatch is logged as a
+    #   warning and the job continues (permissive by design).
+    if loaded_dataset is not None and loaded_dataset.manifest:
+        manifest_fsv = loaded_dataset.manifest.get("feature_set_version")
+        request_fsv = req.feature_set_version
+        if request_fsv is not None:
+            raw_mode = req.extra_constraints.get("training_mode") or "research"
+            try:
+                fsv_gate_mode = (
+                    TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+                )
+            except ValueError:
+                fsv_gate_mode = TrainingMode.PRODUCTION
+            if manifest_fsv != request_fsv:
+                if fsv_gate_mode == TrainingMode.PRODUCTION:
+                    write_status(
+                        req.job_id,
+                        "failed",
+                        error_code="feature_set_version_mismatch",
+                        error_summary=(
+                            f"feature_set_version mismatch: request pin="
+                            f"{request_fsv!r} but manifest has "
+                            f"{manifest_fsv!r} — production training "
+                            "requires an exact feature-set version match"
+                        ),
+                    )
+                    return _build_signed_failure(
+                        error_code="feature_set_version_mismatch",
+                        error_message=(
+                            f"feature_set_version mismatch: request pin="
+                            f"{request_fsv!r} but manifest has "
+                            f"{manifest_fsv!r} — production training "
+                            "requires an exact feature-set version match"
+                        ),
+                        mode=fsv_gate_mode.value,
+                        context={
+                            "job_id": req.job_id,
+                            "stage": "feature_set_version_pin_gate",
+                            "request_feature_set_version": str(request_fsv),
+                            "manifest_feature_set_version": str(manifest_fsv),
+                        },
+                    )
+                # Advisory for canary/research.
+                write_status(
+                    req.job_id,
+                    "started",
+                    error_code="feature_set_version_mismatch",
+                    error_summary=(
+                        f"advisory: feature_set_version mismatch: "
+                        f"request pin={request_fsv!r} but manifest has "
+                        f"{manifest_fsv!r} — production training would "
+                        "be blocked"
+                    ),
+                )
+
+    # --- C3: PIT evidence tamper detection ----------------------------------
+    # The manifest may carry a ``pit_evidence`` block (C3 / v1): a
+    # tamper-evident record that proves the dataset export was
+    # leakage-safe. The worker recomputes the evidence SHA-256 and
+    # compares it to the stored value. A mismatch means the evidence has
+    # been altered after signing — fail closed for ALL modes (tampering
+    # is a security violation, not a permissive advisory).
+    if loaded_dataset is not None and loaded_dataset.manifest:
+        pit_evidence_dict = loaded_dataset.manifest.get("pit_evidence")
+        if pit_evidence_dict and isinstance(pit_evidence_dict, dict):
+            raw_mode = req.extra_constraints.get("training_mode") or "research"
+            try:
+                pit_ev_mode = (
+                    TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+                )
+            except ValueError:
+                pit_ev_mode = TrainingMode.PRODUCTION
+            try:
+                verify_pit_evidence(pit_evidence_dict)
+            except PitEvidenceTamperedError as exc:
+                # Tampering is a hard failure for ALL modes — a tampered
+                # evidence record means the dataset's PIT proof cannot be
+                # trusted, regardless of the training mode.
+                write_status(
+                    req.job_id,
+                    "failed",
+                    error_code="pit_evidence_tampered",
+                    error_summary=str(exc),
+                )
+                return _build_signed_failure(
+                    error_code="pit_evidence_tampered",
+                    error_message=str(exc),
+                    mode=pit_ev_mode.value,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "pit_evidence_tamper_gate",
+                        "expected_sha256": exc.expected,
+                        "actual_sha256": exc.actual,
+                    },
+                )
+            except (ValueError, TypeError) as exc:
+                # Malformed evidence dict (missing fields, wrong types) —
+                # fail closed for production, advisory for canary/research.
+                if pit_ev_mode == TrainingMode.PRODUCTION:
+                    write_status(
+                        req.job_id,
+                        "failed",
+                        error_code="pit_evidence_invalid",
+                        error_summary=f"PIT evidence is invalid: {exc}",
+                    )
+                    return _build_signed_failure(
+                        error_code="pit_evidence_invalid",
+                        error_message=f"PIT evidence is invalid: {exc}",
+                        mode=pit_ev_mode.value,
+                        context={
+                            "job_id": req.job_id,
+                            "stage": "pit_evidence_tamper_gate",
+                        },
+                    )
+                write_status(
+                    req.job_id,
+                    "started",
+                    error_code="pit_evidence_invalid",
+                    error_summary=f"advisory: PIT evidence is invalid: {exc}",
+                )
 
     # --- Durable artifact deny gate (Tier 0.2) -------------------------------
     # Fail closed BEFORE training starts (and before the quality gate runs,

@@ -97,9 +97,11 @@ def _make_load_spec(
 def _make_valid_manifest(
     *,
     pit_proof_verified: bool = True,
+    feature_set_version: str | None = None,
+    pit_evidence: dict | None = None,
 ) -> dict:
     """Build a valid manifest dict with the given pit_proof_verified flag."""
-    return {
+    manifest = {
         "schema_version": 1,
         "dataset_id": "pit-test-dataset",
         "feature_schema_hash": "a" * 64,
@@ -120,6 +122,11 @@ def _make_valid_manifest(
         "quality_report_sha256": None,
         "feature_names": ["feature_1", "feature_2"],
     }
+    if feature_set_version is not None:
+        manifest["feature_set_version"] = feature_set_version
+    if pit_evidence is not None:
+        manifest["pit_evidence"] = pit_evidence
+    return manifest
 
 
 # --------------------------------------------------------------------------- #
@@ -472,3 +479,233 @@ class TestDatasetRegistryDispatchGate:
         )
         result = handler_module.handler(inp)
         assert result.get("error_code") == "dataset_registry_dispatch_rejected"
+
+
+# --------------------------------------------------------------------------- #
+# C3: Feature-set version pin enforcement                                      #
+# --------------------------------------------------------------------------- #
+
+
+class TestFeatureSetVersionPin:
+    """Tests for the feature_set_version mismatch gate (C3)."""
+
+    def test_production_feature_set_version_mismatch_fails_closed(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + feature_set_version mismatch → fail-closed."""
+        # No registry path → registry gate is advisory (skipped).
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.2.0",
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-prod-mismatch-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.3.0",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "feature_set_version_mismatch"
+
+    def test_production_feature_set_version_match_passes(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + feature_set_version match → training proceeds."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.2.0",
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-prod-match-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.2.0",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Should NOT be blocked by the feature_set_version gate.
+        assert result.get("error_code") != "feature_set_version_mismatch"
+
+    def test_missing_feature_set_version_in_production_fails_closed_if_request_requires_it(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + request pins fsv but manifest has none → fail-closed."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        # Manifest has NO feature_set_version (defaults to None).
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-prod-missing-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.2.0",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Request pins v1.2.0 but manifest has None → mismatch → fail-closed.
+        assert result.get("error_code") == "feature_set_version_mismatch"
+
+    def test_research_mode_feature_pin_mismatch_is_advisory_only(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Research mode + feature_set_version mismatch → advisory, continues."""
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.2.0",
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-research-advisory-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.3.0",
+            extra_constraints={"training_mode": "research"},
+        )
+        result = handler_module.handler(inp)
+        # Research mode should NOT block — training proceeds.
+        assert result.get("error_code") != "feature_set_version_mismatch"
+
+    def test_no_request_pin_skips_fsv_gate(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """No feature_set_version pin on request → gate skipped."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.2.0",
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-no-pin-1",
+            dataset_load_spec=load_spec,
+            # No feature_set_version on the request → gate is skipped.
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") != "feature_set_version_mismatch"
+
+
+# --------------------------------------------------------------------------- #
+# C3: PIT evidence tamper detection                                            #
+# --------------------------------------------------------------------------- #
+
+
+class TestPitEvidenceTamperGate:
+    """Tests for the PIT evidence tamper detection gate (C3)."""
+
+    def _make_valid_pit_evidence(self) -> dict:
+        """Build a valid PIT evidence dict with a correct evidence_sha256."""
+        from quant_foundry.pit_evidence import PITEvidence
+
+        ev = PITEvidence(
+            manifest_hash="a" * 64,
+            feature_schema_hash="a" * 64,
+            feature_set_version="v1.0.0",
+            max_observed_at_margin=86_400_000_000_000,
+            violation_count=0,
+            sampled_row_count=100,
+            label_window_check_status="passed",
+            evidence_sha256="0" * 64,  # placeholder, will be replaced
+        )
+        # Recompute the correct evidence_sha256.
+        correct_sha = ev.compute_evidence_sha256()
+        return ev.model_copy(update={"evidence_sha256": correct_sha}).to_dict()
+
+    def test_tampered_pit_evidence_hash_fails_closed(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + tampered PIT evidence hash → fail-closed."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        evidence = self._make_valid_pit_evidence()
+        # Tamper: change a field but keep the old evidence_sha256.
+        evidence["violation_count"] = 999  # tampered!
+        # The evidence_sha256 no longer matches the recomputed hash.
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.0.0",
+            pit_evidence=evidence,
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "pit-ev-tamper-prod-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.0.0",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "pit_evidence_tampered"
+
+    def test_valid_pit_evidence_passes(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + valid (untampered) PIT evidence → training proceeds."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        evidence = self._make_valid_pit_evidence()
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.0.0",
+            pit_evidence=evidence,
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "pit-ev-valid-prod-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.0.0",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Should NOT be blocked by the tamper gate.
+        assert result.get("error_code") != "pit_evidence_tampered"
+
+    def test_tampered_pit_evidence_fails_in_research_too(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Research mode + tampered PIT evidence → still fails closed.
+
+        Tampering is a security violation — it fails closed for ALL modes,
+        not just production.
+        """
+        evidence = self._make_valid_pit_evidence()
+        evidence["max_observed_at_margin"] = -1  # tampered!
+
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.0.0",
+            pit_evidence=evidence,
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "pit-ev-tamper-research-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.0.0",
+            extra_constraints={"training_mode": "research"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "pit_evidence_tampered"
+
+    def test_no_pit_evidence_in_manifest_skips_tamper_gate(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Manifest without pit_evidence block → tamper gate skipped."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        # No pit_evidence in the manifest.
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "pit-ev-none-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # No evidence to verify → gate skipped.
+        assert result.get("error_code") != "pit_evidence_tampered"
