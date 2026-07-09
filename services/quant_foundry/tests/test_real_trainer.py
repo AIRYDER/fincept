@@ -606,14 +606,17 @@ def test_real_trainer_meta_labeling(tmp_path: Path) -> None:
     assert "meta_label_config" in dossier.metadata
     assert "meta_label_column" in dossier.metadata["meta_label_config"]
 
-    # The artifact bytes must be a bundle (dict with "primary" + "meta").
+    # The artifact bytes must be a ModelBundle v1 (zip archive with
+    # bundle_manifest.json listing primary + meta members).
     model_bytes = trainer.last_model_bytes
     assert model_bytes is not None
-    bundle = pickle.loads(model_bytes)
-    assert isinstance(bundle, dict)
-    assert "primary" in bundle
-    assert "meta" in bundle
-    assert "label_map" in bundle
+    from quant_foundry.bundle_io import BundleKind, load_bundle
+
+    bundle = load_bundle(model_bytes)
+    assert bundle.bundle_kind == BundleKind.META_LABELED
+    assert bundle.primary_model is not None
+    assert bundle.meta_model is not None
+    assert bundle.manifest.label_map is not None
 
 
 def test_model_spec_meta_label_requires_barrier() -> None:

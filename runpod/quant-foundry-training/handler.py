@@ -114,6 +114,8 @@ from quant_foundry.real_trainer import (  # noqa: E402
     build_artifact_result,
 )
 from quant_foundry.real_trainer import _probe_gpu_model  # noqa: E402
+# C1: bundle round-trip contract — selfcheck before signing success.
+from quant_foundry.bundle_io import run_selfcheck, TrainingSelfCheck  # noqa: E402
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
@@ -4126,6 +4128,49 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
             model_bytes=typed_artifact.model_bytes,
         )
 
+    # --- C1: bundle selfcheck ------------------------------------------------
+    # A trained artifact that cannot be loaded and scored must never produce
+    # a signed success callback. The selfcheck loads the final serialized
+    # artifact bytes (whose sha256 is registered as artifact_sha256), scores
+    # a selfcheck sample, and verifies the bundle round-trips. A selfcheck
+    # crash is a selfcheck failure → signed failure with
+    # error_code="bundle_selfcheck_failed". Canary/local-stub runs skip the
+    # selfcheck (their bytes are not real bundles).
+    selfcheck_result: TrainingSelfCheck | None = None
+    if is_real_trainer and model_bytes:
+        selfcheck_features = getattr(trainer, "last_selfcheck_features", None)
+        if selfcheck_features is None:
+            # Fallback: synthesize a tiny sample from the artifact size
+            # (proves loadability even without training data).
+            import numpy as _np
+
+            n_feat = 4  # safe default for synthetic
+            selfcheck_features = _np.zeros((3, n_feat)).tolist()
+        selfcheck_result = run_selfcheck(model_bytes, selfcheck_features)
+        if not selfcheck_result.passed:
+            write_status(
+                req.job_id,
+                "failed",
+                error_code="bundle_selfcheck_failed",
+                error_summary=selfcheck_result.error_detail or "selfcheck failed",
+            )
+            raw_mode = req.extra_constraints.get("training_mode") or "production"
+            return _build_signed_failure(
+                error_code="bundle_selfcheck_failed",
+                error_message=(
+                    "bundle selfcheck failed — artifact cannot be loaded "
+                    f"and scored: {selfcheck_result.error_detail}"
+                ),
+                mode=raw_mode,
+                context={
+                    "job_id": req.job_id,
+                    "stage": "bundle_selfcheck",
+                    "selfcheck_passed": False,
+                    "selfcheck_bundle_sha256": selfcheck_result.bundle_sha256,
+                    "selfcheck_loader_version": selfcheck_result.loader_version,
+                },
+            )
+
     # --- Phase 1 / T-1.4: build the typed RunPodTrainingCallback -------------
     # Construct the typed, HMAC-signed callback contract that binds together
     # the artifact, manifest hashes, runtime fingerprint, metrics, quality
@@ -4198,6 +4243,17 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     if optuna_trial_count is not None:
         metrics_summary["optuna_trial_count"] = optuna_trial_count
         metrics_summary["optuna_best_params"] = optuna_best_params or {}
+
+    # C1: bundle selfcheck result. On success, records passed/n_rows_scored/
+    # output_sha256/bundle_sha256/loader_version/duration_ms. On failure,
+    # the handler already returned a signed failure above.
+    if selfcheck_result is not None and selfcheck_result.passed:
+        metrics_summary["selfcheck.passed"] = True
+        metrics_summary["selfcheck.n_rows_scored"] = selfcheck_result.n_rows_scored
+        metrics_summary["selfcheck.output_sha256"] = selfcheck_result.output_sha256
+        metrics_summary["selfcheck.bundle_sha256"] = selfcheck_result.bundle_sha256
+        metrics_summary["selfcheck.loader_version"] = selfcheck_result.loader_version
+        metrics_summary["selfcheck.duration_ms"] = selfcheck_result.duration_ms
 
     # Tier 1.6: Observability + cost accounting.
     # Emit per-job structured operational metrics in the callback so the

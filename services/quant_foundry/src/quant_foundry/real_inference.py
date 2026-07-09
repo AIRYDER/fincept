@@ -99,17 +99,50 @@ class ModelLoader:
     def load(self, uri: str) -> _Scorer:
         """Load a model artifact from a URI and return a scorer.
 
+        Supports:
+        - ModelBundle v1 (zip archive) → ``BundleScorer`` (C1).
+        - Legacy bare LightGBM pickle → ``_LgbScorer``.
+        - ONNX → ``_OnnxScorer``.
+        - LightGBM text model → ``_LgbScorer``.
+
         Raises ``RuntimeError`` if the URI scheme is unsupported or the
         extension is unknown. Raises ``ImportError`` if the required ML dep
         is not installed.
         """
         path = self._resolve_uri(uri)
+        # C1: detect ModelBundle v1 (zip archive) by magic number, not
+        # extension — the bundle is a zip containing bundle_manifest.json
+        # + member pickles. This handles .bundle, .pkl, and any extension
+        # the writer may have used.
+        if os.path.isfile(path):
+            with open(path, "rb") as fh:
+                magic = fh.read(4)
+            if magic == b"PK\x03\x04":
+                return self._load_bundle(path)
         ext = os.path.splitext(path)[1].lower()
         if ext == ".onnx":
             return self._load_onnx(path)
-        if ext in (".pkl", ".txt"):
+        if ext in (".pkl", ".txt", ".bundle"):
+            # .pkl may be a legacy bare pickle or a bundle (if the magic
+            # check above didn't catch it, e.g. empty file). Try bundle
+            # first for .bundle, fall back to legacy LightGBM for .pkl/.txt.
+            if ext == ".bundle":
+                return self._load_bundle(path)
             return self._load_lightgbm(path)
         raise RuntimeError(f"unsupported model artifact extension: {ext!r} (uri={uri!r})")
+
+    @staticmethod
+    def _load_bundle(path: str) -> _Scorer:
+        """Load a ModelBundle v1 from a file path and return a BundleScorer.
+
+        The BundleScorer implements the _Scorer protocol (.predict) and
+        also exposes .score() for full Decision objects with meta_p and
+        abstention.
+        """
+        from quant_foundry.bundle_io import BundleScorer, load_bundle
+
+        bundle = load_bundle(path)
+        return BundleScorer(bundle)
 
     def _resolve_uri(self, uri: str) -> str:
         """Resolve a URI to a local filesystem path.

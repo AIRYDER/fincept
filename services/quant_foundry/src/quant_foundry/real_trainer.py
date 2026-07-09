@@ -412,6 +412,8 @@ class RealLightGBMTrainer:
     # safe (no cross-job leakage).
     last_artifact_result: TypedArtifactResult | None = None
     last_model_bytes: bytes | None = None
+    # C1: selfcheck sample (feature rows) for the handler's bundle selfcheck.
+    last_selfcheck_features: list[list[float]] | None = None
 
     # --- public API ------------------------------------------------------
 
@@ -560,38 +562,66 @@ class RealLightGBMTrainer:
                 X, y, final_model, seed, req
             )
 
-        # Serialize the model(s). When meta-labeling is active, bundle
-        # both the primary and meta models in a dict so the artifact
-        # carries both. The loader path (not yet built) will check for
-        # the "meta_model" key to know this is a meta-labeling artifact.
-        if meta_model is not None:
-            model_bytes = pickle.dumps(
-                {
-                    "primary": final_model,
-                    "meta": meta_model,
-                    "label_map": self._label_map,
-                    "meta_label_config": self.task_spec.meta_label_config if self.task_spec else None,
-                },
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
-        else:
-            model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
-        sha256 = hashlib.sha256(model_bytes).hexdigest()
-        size_bytes = len(model_bytes)
+        # C1: Serialize the model(s) as a ModelBundle v1 archive (zip).
+        # New training writes only ModelBundle v1. The bundle carries
+        # bundle_manifest.json listing every member + sha256, the primary
+        # model, and (for meta-labeled) the meta model. load_bundle()
+        # verifies member hashes before scoring. Legacy bare LightGBM
+        # pickle is load-only compatibility (handled in bundle_io).
+        from quant_foundry.bundle_io import write_bundle as _write_bundle
 
         n_features = int(X.shape[1])
         n_rows = int(X.shape[0])
+        # C1: feature_schema_hash must be path-independent for reproducibility.
+        # Hash the feature count + label type, not the dataset path.
         feature_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:n_features={n_features}".encode(),
+            f"n_features={n_features}".encode(),
         ).hexdigest()[:16]
         label_type = "meta" if meta_model is not None else (
             "multiclass" if self._is_multiclass() else "binary"
         )
         label_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:label={label_type}".encode(),
+            f"label={label_type}".encode(),
         ).hexdigest()[:16]
-
         now_ns = time.time_ns()
+
+        # Resolve feature names: prefer column_roles, else generic.
+        if self.column_roles is not None and self.column_roles.feature_columns:
+            feature_names = list(self.column_roles.feature_columns)
+        else:
+            feature_names = [f"f{i}" for i in range(n_features)]
+
+        meta_label_config = None
+        if self.task_spec is not None:
+            meta_label_config = self.task_spec.meta_label_config
+
+        # C1: use a deterministic created_at_ns for the bundle manifest
+        # so the bundle bytes (and thus artifact sha256) are reproducible
+        # given the same seed + data. The wall-clock now_ns is still used
+        # for the ArtifactManifest.created_at_ns field (metadata only).
+        bundle_created_ns = int(req.random_seed) if req.random_seed is not None else 0
+
+        model_bytes = _write_bundle(
+            primary_model=final_model,
+            meta_model=meta_model,
+            feature_names=feature_names,
+            feature_schema_hash=feature_schema_hash,
+            label_schema_hash=label_schema_hash,
+            model_family=req.model_family,
+            label_map=self._label_map if self._label_map else None,
+            meta_label_config=meta_label_config,
+            created_at_ns=bundle_created_ns,
+        )
+        sha256 = hashlib.sha256(model_bytes).hexdigest()
+        size_bytes = len(model_bytes)
+
+        # Stash a selfcheck sample (a few feature rows) so the handler
+        # can run the bundle selfcheck against the final artifact bytes.
+        # Uses the first min(10, n_rows) rows of the training features.
+        import numpy as _np
+
+        self.last_selfcheck_features = _np.asarray(X[: min(10, n_rows)]).tolist()
+
         artifact_id = f"artifact:{sha256[:16]}"
         artifact = ArtifactManifest(
             artifact_id=artifact_id,
@@ -622,7 +652,7 @@ class RealLightGBMTrainer:
                 model_family=req.model_family,
                 req=req,
                 artifact_uri=None,
-                artifact_format="pickle",
+                artifact_format="bundle",
                 artifact_kind="model",
                 loader_family="lightgbm",
                 created_at=now_ns,

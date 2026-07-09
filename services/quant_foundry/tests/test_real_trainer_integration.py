@@ -1005,10 +1005,12 @@ def test_load_model_lightgbm(tmp_path: Path) -> None:
         if False
         else None
     )
-    # The last_model_bytes is a pickle of an lgb.Booster; unpickle + save.
-    import pickle
+    # The last_model_bytes is a ModelBundle v1 (zip archive); load via
+    # bundle_io.load_bundle and save the primary model in native format.
+    from quant_foundry.bundle_io import load_bundle
 
-    booster = pickle.loads(trainer.last_model_bytes)
+    bundle = load_bundle(trainer.last_model_bytes)
+    booster = bundle.primary_model
     booster.save_model(str(model_path))
 
     loaded = trainer.load_model(str(model_path), backend="lightgbm")
