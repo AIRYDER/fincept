@@ -2287,6 +2287,9 @@ def _build_trainer(
     *,
     n_folds: int = 3,
     loaded_dataset: LoadedDataset | None = None,
+    trial_count: int = 1,
+    checkpoint_manager: Any = None,
+    resume_from_fold: int | None = None,
 ) -> Any:
     use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_TRAINER", "").lower() == "true"
     if use_real:
@@ -2319,6 +2322,9 @@ def _build_trainer(
             task_spec=task_spec,
             fold_spec=fold_spec,
             is_production=_training_mode_is_production(req),
+            trial_count=trial_count,
+            checkpoint_manager=checkpoint_manager,
+            resume_from_fold=resume_from_fold,
         )
     return LocalTrainer()
 
@@ -3832,6 +3838,16 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
             req,
             n_folds=int(n_folds) if n_folds else 3,
             loaded_dataset=loaded_dataset,
+            # Tier 2.2: pass the real Optuna trial count so the trainer's
+            # Deflated Sharpe Ratio applies the honest multiple-trials
+            # penalty. When Optuna did not run, this defaults to 1
+            # (single-trial DSR, backward compatible).
+            trial_count=optuna_trial_count if optuna_trial_count else 1,
+            # Tier 2.7: pass the checkpoint manager + resume fold index
+            # so the trainer skips already-completed folds and saves
+            # per-fold checkpoints for spot-fleet preemption recovery.
+            checkpoint_manager=checkpoint_mgr,
+            resume_from_fold=resume_fold_index,
         )
     except TrainingFailure as exc:
         write_status(

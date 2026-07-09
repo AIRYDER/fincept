@@ -435,6 +435,120 @@ def test_real_trainer_uses_real_dsr(tmp_path: Path) -> None:
     assert dsr is not None
     assert raw is not None
     assert dsr <= raw + 1e-9  # allow tiny float epsilon
+    # Default trial_count=1 must be recorded.
+    assert dossier.metadata.get("deflated_sharpe_trial_count") == "1"
+
+
+def test_real_trainer_dsr_uses_real_trial_count(tmp_path: Path) -> None:
+    """Tier 2.2: the trainer must use the real Optuna trial_count for the
+    DSR multiple-trials penalty, not a hardcoded 1. A higher trial count
+    produces a larger penalty (lower DSR) for the same returns."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    data_path = _make_test_dataset(tmp_path)
+    req = _make_training_request(
+        "qf:train:dsr:trials",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+
+    # Single-trial baseline.
+    trainer1 = RealLightGBMTrainer(trial_count=1)
+    _a1, dossier1 = trainer1.train(req, deadline_ns=deadline_ns)
+    assert dossier1.metadata.get("deflated_sharpe_trial_count") == "1"
+
+    # 50-trial run: the multiple-trials penalty must be larger and the
+    # DSR must be <= the single-trial DSR (more trials => more deflation).
+    trainer50 = RealLightGBMTrainer(trial_count=50)
+    _a50, dossier50 = trainer50.train(req, deadline_ns=deadline_ns)
+    assert dossier50.metadata.get("deflated_sharpe_trial_count") == "50"
+
+    penalty1 = float(dossier1.metadata["deflated_sharpe_multiple_trials_penalty"])
+    penalty50 = float(dossier50.metadata["deflated_sharpe_multiple_trials_penalty"])
+    assert penalty50 > penalty1
+
+    dsr1 = dossier1.deflated_sharpe
+    dsr50 = dossier50.deflated_sharpe
+    assert dsr1 is not None and dsr50 is not None
+    assert dsr50 <= dsr1 + 1e-9
+
+
+def _make_triple_barrier_dataset(tmp_path: Path, n: int = 300, seed: int = 42) -> Path:
+    """Create a synthetic CSV with triple-barrier labels (-1, 0, +1).
+
+    Layout: timestamp, f1, f2, f3, f4 (noise), label.
+    The label is derived from the signal: strong positive → +1,
+    strong negative → -1, near-zero → 0 (vertical barrier).
+    """
+    import numpy as np
+
+    rng = np.random.RandomState(seed)
+    timestamps = np.arange(n, dtype=np.int64)
+    f1 = rng.randn(n)
+    f2 = rng.randn(n)
+    f3 = rng.randn(n)
+    f4 = rng.randn(n)
+    logit = 0.8 * f1 + 0.5 * f2 - 0.6 * f3 + 0.05 * rng.randn(n)
+    # Triple-barrier-style: +1 / 0 / -1
+    label = np.where(logit > 0.3, 1.0, np.where(logit < -0.3, -1.0, 0.0))
+    data = np.column_stack([timestamps, f1, f2, f3, f4, label])
+    path = tmp_path / "tb_data.csv"
+    np.savetxt(
+        str(path),
+        data,
+        delimiter=",",
+        header="timestamp,f1,f2,f3,f4,label",
+        comments="",
+    )
+    return path
+
+
+def test_real_trainer_multiclass_triple_barrier(tmp_path: Path) -> None:
+    """Tier 2.3: when task_type='multiclass' (triple-barrier labels),
+    the trainer must use the multiclass objective and compute accuracy
+    via argmax, not the binary threshold-at-0.5 pattern."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+    from quant_foundry.dataset_manifest import ColumnRoles
+    from quant_foundry.training_manifest import ModelTaskSpec
+
+    data_path = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+    req = _make_training_request(
+        "qf:train:tb:1",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    roles = ColumnRoles(
+        feature_columns=("f1", "f2", "f3", "f4"),
+        label_columns=("label",),
+        timestamp_column="timestamp",
+    )
+    task_spec = ModelTaskSpec(
+        task_type="multiclass",
+        label_column="label",
+        barrier_config={
+            "profit_take_width": 0.02,
+            "stop_loss_width": 0.01,
+            "horizon_bars": 10,
+        },
+    )
+
+    trainer = RealLightGBMTrainer(
+        n_folds=3,
+        column_roles=roles,
+        task_spec=task_spec,
+    )
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # The trainer must produce a valid dossier with metrics.
+    assert dossier.metadata.get("trainer") == "real_lightgbm"
+    assert dossier.training_metrics["accuracy"] is not None
+    # The barrier_config must be recorded in metadata for auditability.
+    assert "barrier_config" in dossier.metadata
+    assert "profit_take_width" in dossier.metadata["barrier_config"]
 
 
 def test_real_trainer_cpcv_mode(tmp_path: Path) -> None:
@@ -545,3 +659,98 @@ def test_local_trainer_default_when_no_trainer_specified() -> None:
 
     handler = RunPodTrainingHandler(callback_secret="s")
     assert isinstance(handler.trainer, LocalTrainer)
+
+
+def test_real_trainer_saves_fold_checkpoints(tmp_path: Path) -> None:
+    """Tier 2.7: the trainer must save a per-fold checkpoint after each
+    completed fold when a checkpoint_manager is wired."""
+    pytest.importorskip("lightgbm")
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+    from quant_foundry.training_checkpoint import (
+        TrainingCheckpointConfig,
+        TrainingCheckpointManager,
+    )
+
+    data_path = _make_test_dataset(tmp_path, n=300, seed=42)
+    req = _make_training_request(
+        "qf:train:ckpt:save",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    ckpt_dir = tmp_path / "checkpoints"
+    cfg = TrainingCheckpointConfig(
+        checkpoint_dir=str(ckpt_dir),
+        job_id="qf:train:ckpt:save",
+    )
+    mgr = TrainingCheckpointManager(cfg)
+
+    trainer = RealLightGBMTrainer(
+        n_folds=3,
+        checkpoint_manager=mgr,
+    )
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # Checkpoints must exist for each completed fold.
+    completed = mgr.completed_folds()
+    assert len(completed) >= 1
+    # The latest checkpoint fold index must be < n_folds.
+    latest = mgr.latest_fold_index()
+    assert latest is not None
+    assert latest < 3
+
+
+def test_real_trainer_resume_skips_checkponted_folds(tmp_path: Path) -> None:
+    """Tier 2.7: when resume_from_fold is set, the trainer must skip
+    folds 0..resume_from_fold and only train the remaining folds."""
+    pytest.importorskip("lightgbm")
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+    from quant_foundry.training_checkpoint import (
+        TrainingCheckpointConfig,
+        TrainingCheckpointManager,
+    )
+
+    data_path = _make_test_dataset(tmp_path, n=300, seed=42)
+    req = _make_training_request(
+        "qf:train:ckpt:resume",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    ckpt_dir = tmp_path / "checkpoints"
+    cfg = TrainingCheckpointConfig(
+        checkpoint_dir=str(ckpt_dir),
+        job_id="qf:train:ckpt:resume",
+    )
+    mgr = TrainingCheckpointManager(cfg)
+
+    # First run: save checkpoints for all 3 folds.
+    trainer1 = RealLightGBMTrainer(
+        n_folds=3,
+        checkpoint_manager=mgr,
+    )
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    _a1, _d1 = trainer1.train(req, deadline_ns=deadline_ns)
+    completed1 = mgr.completed_folds()
+    assert len(completed1) >= 2  # at least 2 folds completed
+
+    # Second run: resume from fold 1 (skip fold 0).
+    # Clear the manager's in-memory state but keep the files.
+    resume_fold = completed1[0]  # first completed fold index
+    cfg2 = TrainingCheckpointConfig(
+        checkpoint_dir=str(ckpt_dir),
+        job_id="qf:train:ckpt:resume",
+    )
+    mgr2 = TrainingCheckpointManager(cfg2)
+    trainer2 = RealLightGBMTrainer(
+        n_folds=3,
+        checkpoint_manager=mgr2,
+        resume_from_fold=resume_fold,
+    )
+    _a2, dossier2 = trainer2.train(req, deadline_ns=deadline_ns)
+
+    # The resumed run must still produce a valid dossier (the remaining
+    # folds produce predictions). The metadata must record the trainer.
+    assert dossier2.metadata.get("trainer") == "real_lightgbm"
+    assert dossier2.deflated_sharpe is not None

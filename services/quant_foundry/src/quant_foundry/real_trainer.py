@@ -381,6 +381,28 @@ class RealLightGBMTrainer:
     # ``is_production`` enables the fail-closed guard: a production
     # manifest MUST declare a FoldSpec (no fallback to heuristic folds).
     is_production: bool = False
+    # --- Tier 2.2: real Optuna trial count for honest Deflated Sharpe ---
+    # The number of hyperparameter trials evaluated by Optuna (Tier 1.4).
+    # The handler passes the real ``optuna_trial_count`` from the Optuna
+    # tuning phase so the DSR's multiple-trials penalty reflects the
+    # actual search breadth. Default 1 = no hyperparameter search at
+    # this layer (backward compatible: DSR == single-trial deflation).
+    trial_count: int = 1
+    # --- Tier 2.7: checkpoint/resume for spot-fleet training -------------
+    # When ``checkpoint_manager`` is set, the trainer saves a per-fold
+    # checkpoint after each completed fold. When ``resume_from_fold`` is
+    # set (0-based fold index), the trainer skips folds 0..resume_from_fold
+    # and resumes training from resume_from_fold + 1. Both are wired by
+    # the handler from ``req.checkpoint_dir`` / existing checkpoints.
+    checkpoint_manager: Any = None
+    resume_from_fold: int | None = None
+    # --- Tier 2.3: transient label map for multiclass metrics -----------
+    # Set by _walk_forward_validate / _cpcv_validate during the fold loop
+    # so _compute_multiclass_metrics can reverse-map class indices back
+    # to original label values (e.g. {0,1,2} → {-1,0,+1}) for position
+    # / returns computation. Per-job transient state (handler creates a
+    # fresh trainer per job).
+    _label_map: dict[int, int] | None = None
     # --- Phase 1 / T-1.1: typed artifact result -------------------------
     # After a successful ``train()`` call, the typed artifact result +
     # raw model bytes are stashed here so the RunPod handler can read
@@ -628,6 +650,9 @@ class RealLightGBMTrainer:
                 "has_rank_report": str(rank_report is not None),
                 # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
                 "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
+                "deflated_sharpe_trial_count": str(
+                    metrics.get("deflated_sharpe_trial_count", "")
+                ),
                 "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
                 "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
                 "deflated_sharpe_multiple_trials_penalty": str(
@@ -644,6 +669,10 @@ class RealLightGBMTrainer:
                 "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
+                # Tier 2.3: triple-barrier label config (when set).
+                "barrier_config": str(
+                    self.task_spec.barrier_config if self.task_spec else None
+                ),
                 # Tier 2.5: execution-aware (net-of-cost) metrics.
                 # The promotion gate should use sharpe_net, not
                 # sharpe_ratio (which is frictionless/gross).
@@ -1083,10 +1112,21 @@ class RealLightGBMTrainer:
     # --- LightGBM params -------------------------------------------------
 
     def _build_lgb_params(self, seed: int, req: RunPodTrainingRequest) -> dict[str, Any]:
-        """Build LightGBM parameters from request search space + defaults."""
+        """Build LightGBM parameters from request search space + defaults.
+
+        Tier 2.3: when ``task_spec.task_type == "multiclass"``, the
+        objective is set to ``"multiclass"`` with ``num_class`` from the
+        data (set by the caller after inspecting labels). This supports
+        triple-barrier labels (+1/-1/0 mapped to {0,1,2}).
+        """
+        # Tier 2.3: multiclass objective for triple-barrier labels.
+        is_multiclass = (
+            self.task_spec is not None
+            and self.task_spec.task_type == "multiclass"
+        )
         params: dict[str, Any] = {
-            "objective": "binary",
-            "metric": "binary_logloss",
+            "objective": "multiclass" if is_multiclass else "binary",
+            "metric": "multi_logloss" if is_multiclass else "binary_logloss",
             "verbosity": -1,
             "seed": seed,
             "deterministic": True,
@@ -1283,6 +1323,127 @@ class RealLightGBMTrainer:
             embargo_bars=0,
         )
 
+    # --- Tier 2.3: triple-barrier / multiclass label helpers ------------
+
+    def _is_multiclass(self) -> bool:
+        """Check if the task is multiclass (e.g. triple-barrier labels)."""
+        return (
+            self.task_spec is not None
+            and self.task_spec.task_type == "multiclass"
+        )
+
+    def _map_labels_for_lgb(self, y: Any) -> tuple[Any, dict[int, int]]:
+        """Map labels to LightGBM-compatible integer classes.
+
+        For multiclass (triple-barrier) tasks, labels like {-1, 0, +1}
+        are mapped to {0, 1, 2} (LightGBM requires non-negative integer
+        labels starting at 0). Returns the mapped labels and the
+        label_map {original: mapped}.
+
+        For binary/regression tasks, labels are returned unchanged.
+        """
+        import numpy as np
+
+        if not self._is_multiclass():
+            return y, {}
+        unique_labels = sorted(set(int(v) for v in np.unique(y)))
+        label_map = {orig: idx for idx, orig in enumerate(unique_labels)}
+        mapped = np.array([label_map[int(v)] for v in y], dtype=y.dtype)
+        return mapped, label_map
+
+    def _compute_fold_accuracy(
+        self,
+        train_pred: Any,
+        y_train: Any,
+        val_pred: Any,
+        y_val: Any,
+    ) -> tuple[float, float]:
+        """Compute train/val accuracy for the current fold.
+
+        For binary tasks: ``(pred > 0.5) == (y > 0.5)`` (existing).
+        For multiclass tasks: ``argmax(pred) == y`` (Tier 2.3).
+        """
+        import numpy as np
+
+        if self._is_multiclass():
+            train_pred_arr = np.asarray(train_pred)
+            val_pred_arr = np.asarray(val_pred)
+            # Multiclass: predictions are (n_samples, n_classes) probabilities.
+            if train_pred_arr.ndim == 2:
+                train_acc = float(
+                    np.mean(train_pred_arr.argmax(axis=1) == np.asarray(y_train))
+                )
+            else:
+                train_acc = float(
+                    np.mean(train_pred_arr == np.asarray(y_train))
+                )
+            if val_pred_arr.ndim == 2:
+                val_acc = float(
+                    np.mean(val_pred_arr.argmax(axis=1) == np.asarray(y_val))
+                )
+            else:
+                val_acc = float(
+                    np.mean(val_pred_arr == np.asarray(y_val))
+                )
+            return train_acc, val_acc
+
+        # Binary: existing threshold-at-0.5 pattern.
+        train_acc = float(np.mean((np.asarray(train_pred) > 0.5) == (np.asarray(y_train) > 0.5)))
+        val_acc = float(np.mean((np.asarray(val_pred) > 0.5) == (np.asarray(y_val) > 0.5)))
+        return train_acc, val_acc
+
+    # --- Tier 2.7: checkpoint/resume helpers -----------------------------
+
+    def _should_skip_fold(self, fold_position: int) -> bool:
+        """Check if a fold should be skipped (already checkpointed).
+
+        Returns True when ``resume_from_fold`` is set and the fold's
+        0-based position is <= resume_from_fold (i.e. the fold was
+        completed in a previous run and has a checkpoint).
+        """
+        return (
+            self.resume_from_fold is not None
+            and fold_position <= self.resume_from_fold
+        )
+
+    def _save_fold_checkpoint(
+        self,
+        fold_position: int,
+        model: Any,
+        train_acc: float,
+        val_acc: float,
+        total_folds: int,
+    ) -> None:
+        """Save a per-fold checkpoint (Tier 2.7).
+
+        Pickles the LightGBM/XGBoost model and fold metrics so a
+        preempted run can resume from the next fold. Best-effort: a
+        checkpoint write failure is logged but does NOT fail the
+        training job (the final artifact is what matters; checkpoints
+        are only for resume convenience).
+        """
+        if self.checkpoint_manager is None:
+            return
+        if not self.checkpoint_manager.should_save(fold_position):
+            return
+        import pickle
+
+        try:
+            fold_model_bytes = pickle.dumps(model, protocol=pickle.HIGHEST_PROTOCOL)
+            self.checkpoint_manager.save(
+                fold_index=fold_position,
+                fold_model=fold_model_bytes,
+                fold_metrics={
+                    "train_acc": float(train_acc),
+                    "val_acc": float(val_acc),
+                },
+                total_folds=total_folds,
+            )
+        except Exception:
+            # Best-effort: don't fail training because a checkpoint
+            # write failed (e.g. disk full on the network volume).
+            pass
+
     # --- walk-forward validation -----------------------------------------
 
     def _walk_forward_validate(
@@ -1338,6 +1499,14 @@ class RealLightGBMTrainer:
             )
 
         params = self._build_lgb_params(seed, req)
+
+        # Tier 2.3: map triple-barrier labels {-1,0,+1} → {0,1,2} for
+        # multiclass LightGBM and set num_class.
+        label_map: dict[int, int] = {}
+        if self._is_multiclass():
+            y, label_map = self._map_labels_for_lgb(y)
+            params["num_class"] = int(max(label_map.values())) + 1 if label_map else 3
+            self._label_map = label_map
         n_estimators = self._get_n_estimators(req)
 
         # Early stopping: if early_stopping_rounds is set in search_space,
@@ -1360,14 +1529,21 @@ class RealLightGBMTrainer:
             from quant_foundry.fold_consumer import get_fold_data
 
             fold_ids = sorted(fw.fold_id for fw in fold_assignment.fold_spec.folds)
+            fold_position = 0
+            total_folds = len(fold_ids)
             for fid in fold_ids:
                 if time.time_ns() >= deadline_ns:
                     raise TrainingFailure(
                         error_code="timeout",
                         error_summary=f"training deadline breached during manifest fold {fid}",
                     )
+                # Tier 2.7: skip already-checkpointed folds on resume.
+                if self._should_skip_fold(fold_position):
+                    fold_position += 1
+                    continue
                 train_idx, val_idx = get_fold_data(fold_assignment, fid)
                 if not train_idx or not val_idx:
+                    fold_position += 1
                     continue
                 X_train = X[train_idx]
                 y_train = y[train_idx]
@@ -1375,6 +1551,7 @@ class RealLightGBMTrainer:
                 y_val = y[val_idx]
 
                 if len(np.unique(y_train)) < 2:
+                    fold_position += 1
                     continue
 
                 train_kwargs: dict[str, Any] = {}
@@ -1408,9 +1585,10 @@ class RealLightGBMTrainer:
                     fold_best_iterations.append(n_estimators)
 
                 train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
-                train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
                 val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
-                val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+                train_acc, val_acc = self._compute_fold_accuracy(
+                    train_pred, y_train, val_pred, y_val
+                )
 
                 fold_train_acc.append(train_acc)
                 fold_val_acc.append(val_acc)
@@ -1420,6 +1598,11 @@ class RealLightGBMTrainer:
                     all_groups.extend(groups[val_idx].tolist())
                 if timestamps is not None:
                     all_timestamps.extend(timestamps[val_idx].tolist())
+                # Tier 2.7: save per-fold checkpoint.
+                self._save_fold_checkpoint(
+                    fold_position, model, train_acc, val_acc, total_folds
+                )
+                fold_position += 1
         else:
             # --- heuristic walk-forward fold path (existing) ------------
             order = np.argsort(timestamps, kind="stable")
@@ -1450,6 +1633,10 @@ class RealLightGBMTrainer:
                         error_code="timeout",
                         error_summary=f"training deadline breached during fold {fold.index}",
                     )
+
+                # Tier 2.7: skip already-checkpointed folds on resume.
+                if self._should_skip_fold(fold.index):
+                    continue
 
                 train_end = fold.train_end
                 val_start = fold.val_start
@@ -1498,9 +1685,10 @@ class RealLightGBMTrainer:
                     fold_best_iterations.append(n_estimators)
 
                 train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
-                train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
                 val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
-                val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+                train_acc, val_acc = self._compute_fold_accuracy(
+                    train_pred, y_train, val_pred, y_val
+                )
 
                 fold_train_acc.append(train_acc)
                 fold_val_acc.append(val_acc)
@@ -1510,6 +1698,10 @@ class RealLightGBMTrainer:
                     all_groups.extend(groups_s[val_start:val_end].tolist())
                 if timestamps_s is not None:
                     all_timestamps.extend(timestamps_s[val_start:val_end].tolist())
+                # Tier 2.7: save per-fold checkpoint.
+                self._save_fold_checkpoint(
+                    fold.index, model, train_acc, val_acc, len(folds)
+                )
 
         if not all_preds:
             raise TrainingFailure(
@@ -1599,6 +1791,12 @@ class RealLightGBMTrainer:
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
 
+        # Tier 2.3: map triple-barrier labels {-1,0,+1} → {0,1,2} for
+        # multiclass LightGBM and set num_class.
+        if self._is_multiclass():
+            y, _label_map = self._map_labels_for_lgb(y)
+            params["num_class"] = int(max(_label_map.values())) + 1 if _label_map else 3
+
         early_stopping_rounds = None
         es_val = req.search_space.get("early_stopping_rounds")
         if es_val:
@@ -1648,6 +1846,10 @@ class RealLightGBMTrainer:
                     error_code="timeout",
                     error_summary=f"training deadline breached during CPCV fold {fold.index}",
                 )
+
+            # Tier 2.7: skip already-checkpointed folds on resume.
+            if self._should_skip_fold(fold.index):
+                continue
 
             # Build non-contiguous training index from train_ranges
             train_idx_list: list[int] = []
@@ -1702,9 +1904,10 @@ class RealLightGBMTrainer:
                 fold_best_iterations.append(n_estimators)
 
             train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
-            train_acc = float(np.mean((train_pred > 0.5) == (y_train > 0.5)))
             val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
-            val_acc = float(np.mean((val_pred > 0.5) == (y_val > 0.5)))
+            train_acc, val_acc = self._compute_fold_accuracy(
+                train_pred, y_train, val_pred, y_val
+            )
 
             fold_train_acc.append(train_acc)
             fold_val_acc.append(val_acc)
@@ -1723,6 +1926,11 @@ class RealLightGBMTrainer:
             oos_returns = (oos_positions * (2 * y_val - 1)).tolist()
             fold_is_returns.append([float(r) for r in is_returns])
             fold_oos_returns.append([float(r) for r in oos_returns])
+
+            # Tier 2.7: save per-fold checkpoint.
+            self._save_fold_checkpoint(
+                fold.index, model, train_acc, val_acc, len(cpcv_folds)
+            )
 
         if not all_preds:
             raise TrainingFailure(
@@ -1803,6 +2011,22 @@ class RealLightGBMTrainer:
             crude heuristic.
         """
         import numpy as np
+
+        # Tier 2.3: multiclass (triple-barrier) metrics branch.
+        # Predictions are (n, n_classes) probabilities; labels are integer
+        # class indices. We compute argmax-based accuracy, multiclass
+        # logloss, and map the predicted class back to a position for
+        # Sharpe/returns computation.
+        if self._is_multiclass() and np.asarray(all_preds).ndim == 2:
+            return self._compute_multiclass_metrics(
+                all_preds,
+                all_labels,
+                fold_train_acc,
+                fold_val_acc,
+                periods_per_year=periods_per_year,
+                fold_is_returns=fold_is_returns,
+                fold_oos_returns=fold_oos_returns,
+            )
 
         pred_binary = (all_preds > 0.5).astype(np.float64)
         accuracy = float(np.mean(pred_binary == all_labels))
@@ -1926,15 +2150,16 @@ class RealLightGBMTrainer:
         # Ratio from significance.py instead of the placeholder
         # ``sharpe * (1 - fold_overfit_ratio)``. The real DSR applies a
         # multiple-trials penalty (sqrt(2*ln(N))/sqrt(n)) and a
-        # non-normality penalty (skew/kurtosis adjustment). The trainer
-        # uses trial_count=1 (no hyperparameter search at this layer;
-        # the tournament applies the real trial count from the dossier).
+        # non-normality penalty (skew/kurtosis adjustment). The trial
+        # count ``self.trial_count`` is the real number of Optuna trials
+        # evaluated (Tier 1.4), passed from the handler. When no Optuna
+        # search ran, ``trial_count`` defaults to 1 (single-trial DSR).
         # The DSR is computed on per-period returns, then annualized to
         # match the raw Sharpe's annualization.
         from quant_foundry.significance import deflated_sharpe_ratio as _dsr
 
         oos_returns_list = [float(r) for r in returns]
-        dsr_result = _dsr(oos_returns_list, trial_count=1)
+        dsr_result = _dsr(oos_returns_list, trial_count=self.trial_count)
         deflated_sharpe = float(dsr_result.deflated_sharpe * np.sqrt(ann_factor))
 
         return {
@@ -1991,6 +2216,198 @@ class RealLightGBMTrainer:
             "pbo_flagged": pbo_flagged,
         }
 
+    def _compute_multiclass_metrics(
+        self,
+        all_preds: Any,
+        all_labels: Any,
+        fold_train_acc: list[float],
+        fold_val_acc: list[float],
+        *,
+        periods_per_year: int | None = None,
+        fold_is_returns: list[list[float]] | None = None,
+        fold_oos_returns: list[list[float]] | None = None,
+    ) -> dict[str, Any]:
+        """Compute metrics for multiclass (triple-barrier) tasks (Tier 2.3).
+
+        Predictions are (n, n_classes) softmax probabilities. Labels are
+        integer class indices (mapped from original {-1, 0, +1}).
+
+        Accuracy is argmax-based. Logloss is multiclass cross-entropy.
+        Returns/Sharpe are computed by reverse-mapping the predicted class
+        to a position: class 0 → -1 (short), class 1 → 0 (flat), class 2
+        → +1 (long), using the stored ``_label_map``.
+        """
+        import numpy as np
+
+        preds_arr = np.asarray(all_preds, dtype=np.float64)
+        labels_arr = np.asarray(all_labels, dtype=np.float64)
+        n_samples, n_classes = preds_arr.shape
+
+        # argmax accuracy.
+        pred_classes = preds_arr.argmax(axis=1)
+        accuracy = float(np.mean(pred_classes == labels_arr))
+
+        # Multiclass logloss (cross-entropy).
+        eps = 1e-15
+        pred_clipped = np.clip(preds_arr, eps, 1.0)
+        # One-hot encode labels.
+        one_hot = np.zeros((n_samples, n_classes))
+        one_hot[np.arange(n_samples), labels_arr.astype(int)] = 1.0
+        logloss = float(-np.mean(np.sum(one_hot * np.log(pred_clipped), axis=1)))
+
+        # Brier score: sum of squared errors across class probabilities.
+        brier = float(np.mean(np.sum((preds_arr - one_hot) ** 2, axis=1)))
+
+        # Reverse-map predicted class to original label value for
+        # position/returns computation. The _label_map is
+        # {original: mapped}, so we invert it to {mapped: original}.
+        if self._label_map:
+            inv_map = {v: k for k, v in self._label_map.items()}
+            pred_positions = np.array(
+                [float(inv_map.get(int(c), 0.0)) for c in pred_classes],
+                dtype=np.float64,
+            )
+            label_positions = np.array(
+                [float(inv_map.get(int(c), 0.0)) for c in labels_arr.astype(int)],
+                dtype=np.float64,
+            )
+        else:
+            # Fallback: assume class 0 = -1, 1 = 0, 2 = +1.
+            class_to_pos = {0: -1.0, 1: 0.0, 2: 1.0}
+            pred_positions = np.array(
+                [class_to_pos.get(int(c), 0.0) for c in pred_classes],
+                dtype=np.float64,
+            )
+            label_positions = np.array(
+                [class_to_pos.get(int(c), 0.0) for c in labels_arr.astype(int)],
+                dtype=np.float64,
+            )
+
+        # Returns: position * label_return (where label encodes direction).
+        # For triple-barrier, the label IS the return direction.
+        returns = pred_positions * label_positions
+        win_rate = float(np.mean(returns > 0))
+
+        # Sharpe ratio (annualized).
+        ann_factor = (
+            periods_per_year if periods_per_year is not None else self.annualization_factor
+        )
+        if len(returns) > 1 and np.std(returns) > 1e-12:
+            sharpe = float(np.mean(returns) / np.std(returns) * np.sqrt(ann_factor))
+        else:
+            sharpe = 0.0
+
+        # Max drawdown from cumulative returns.
+        cum = np.cumsum(returns)
+        running_max = np.maximum.accumulate(cum)
+        drawdowns = cum - running_max
+        max_drawdown = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+
+        # Fold overfit ratio.
+        if fold_train_acc and fold_val_acc:
+            overfit_count = sum(
+                1 for t, v in zip(fold_train_acc, fold_val_acc, strict=False) if v < t
+            )
+            fold_overfit_ratio = float(overfit_count / len(fold_train_acc))
+        else:
+            fold_overfit_ratio = 0.5
+
+        pbo_value = fold_overfit_ratio
+        pbo_method = "fold_overfit_ratio"
+
+        # DSR (same as binary path).
+        from quant_foundry.significance import deflated_sharpe_ratio as _dsr
+
+        oos_returns_list = [float(r) for r in returns]
+        dsr_result = _dsr(oos_returns_list, trial_count=self.trial_count)
+        deflated_sharpe = float(dsr_result.deflated_sharpe * np.sqrt(ann_factor))
+
+        # Cost metrics (net-of-cost) — reuse the binary path's cost model.
+        # For multiclass, positions are {-1, 0, +1} so turnover is
+        # computed from position changes.
+        try:
+            from quant_foundry.execution_costs import (
+                DEFAULT_TRAINING_COST_MODEL,
+                compute_cost_aware_metrics,
+            )
+
+            gross_returns_list = [float(r) for r in returns]
+            positions_list = [float(p) for p in pred_positions]
+            cost_metrics = compute_cost_aware_metrics(
+                gross_returns_list,
+                positions_list,
+                DEFAULT_TRAINING_COST_MODEL,
+                ann_factor=float(np.sqrt(ann_factor)),
+            )
+        except Exception:
+            # Fallback: if cost model fails, use gross as net.
+            from quant_foundry.execution_costs import CostAwareMetrics
+
+            cost_metrics = CostAwareMetrics(
+                sharpe_gross=sharpe,
+                sharpe_net=sharpe,
+                max_drawdown_gross=max_drawdown,
+                max_drawdown_net=max_drawdown,
+                win_rate_gross=win_rate,
+                win_rate_net=win_rate,
+                mean_return_gross=float(np.mean(returns)),
+                mean_return_net=float(np.mean(returns)),
+                turnover=0.0,
+                total_cost_bps=0.0,
+                cost_model_version="fallback",
+            )
+
+        return {
+            "training_metrics": {
+                "accuracy": accuracy,
+                "logloss": logloss,
+                "brier_score": brier,
+                "sharpe_ratio": sharpe,
+                "max_drawdown": max_drawdown,
+                "win_rate": win_rate,
+            },
+            "backtest_metrics": {
+                "sharpe_gross": cost_metrics.sharpe_gross,
+                "sharpe_net": cost_metrics.sharpe_net,
+                "max_drawdown_gross": cost_metrics.max_drawdown_gross,
+                "max_drawdown_net": cost_metrics.max_drawdown_net,
+                "win_rate_gross": cost_metrics.win_rate_gross,
+                "win_rate_net": cost_metrics.win_rate_net,
+                "mean_return_gross": cost_metrics.mean_return_gross,
+                "mean_return_net": cost_metrics.mean_return_net,
+                "turnover": cost_metrics.turnover,
+                "total_cost_bps": cost_metrics.total_cost_bps,
+                "cost_model_version": cost_metrics.cost_model_version,
+            },
+            "sharpe_net": cost_metrics.sharpe_net,
+            "max_drawdown_net": cost_metrics.max_drawdown_net,
+            "win_rate_net": cost_metrics.win_rate_net,
+            "turnover": cost_metrics.turnover,
+            "total_cost_bps": cost_metrics.total_cost_bps,
+            "cost_model_version": cost_metrics.cost_model_version,
+            "pbo": pbo_value,
+            "deflated_sharpe": deflated_sharpe,
+            "pbo_method": pbo_method,
+            "deflated_sharpe_method": "bailey_lopez_de_prado_dsr",
+            "deflated_sharpe_raw": float(dsr_result.raw_sharpe * np.sqrt(ann_factor)),
+            "deflated_sharpe_trial_count": dsr_result.trial_count,
+            "deflated_sharpe_skew": dsr_result.skew,
+            "deflated_sharpe_kurtosis": dsr_result.kurtosis,
+            "deflated_sharpe_multiple_trials_penalty": float(
+                dsr_result.multiple_trials_penalty * np.sqrt(ann_factor)
+            ),
+            "deflated_sharpe_non_normality_penalty": dsr_result.non_normality_penalty,
+            "brier_score": brier,
+            "win_rate": win_rate,
+            "max_drawdown": max_drawdown,
+            "sharpe_ratio": sharpe,
+            "calibration_bucket_probs": [],
+            "calibration_bucket_actuals": [],
+            "pbo_logit": None,
+            "pbo_n_combinations": None,
+            "pbo_flagged": None,
+        }
+
     # --- final model training --------------------------------------------
 
     def _train_final_model(
@@ -2016,6 +2433,11 @@ class RealLightGBMTrainer:
 
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)
+
+        # Tier 2.3: map labels + set num_class for multiclass.
+        if self._is_multiclass():
+            y, _lm = self._map_labels_for_lgb(y)
+            params["num_class"] = int(max(_lm.values())) + 1 if _lm else 3
 
         # Use avg_best_iteration from walk-forward if early stopping was used
         es_val = req.search_space.get("early_stopping_rounds")
@@ -2614,6 +3036,9 @@ class RealLightGBMTrainer:
                 "has_rank_report": str(rank_report is not None),
                 # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
                 "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
+                "deflated_sharpe_trial_count": str(
+                    metrics.get("deflated_sharpe_trial_count", "")
+                ),
                 "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
                 "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
                 "deflated_sharpe_multiple_trials_penalty": str(
@@ -2629,6 +3054,10 @@ class RealLightGBMTrainer:
                 "cpcv_n_groups": str(metrics.get("cpcv_n_groups", "")),
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
+                # Tier 2.3: triple-barrier label config (when set).
+                "barrier_config": str(
+                    self.task_spec.barrier_config if self.task_spec else None
+                ),
                 # Tier 2.5: execution-aware (net-of-cost) metrics.
                 "sharpe_net": str(metrics.get("sharpe_net", "")),
                 "max_drawdown_net": str(metrics.get("max_drawdown_net", "")),

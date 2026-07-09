@@ -891,6 +891,13 @@ class ModelTaskSpec(BaseModel):
             types.
         calibration_policy: the post-training calibration policy. One of
             ``"none"``, ``"platt"``, ``"isotonic"``. Defaults to ``"none"``.
+        barrier_config: Tier 2.3 — triple-barrier labeling configuration.
+            When set, the trainer knows the labels were produced by
+            triple-barrier labeling (López de Prado Ch. 3) and records
+            the barrier widths in the dossier metadata for auditability.
+            The dict mirrors :class:`fincept_core.datasets.BarrierConfig`
+            (profit_take_width, stop_loss_width, horizon_bars,
+            min_volatility). Optional — absent for non-barrier tasks.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -902,6 +909,8 @@ class ModelTaskSpec(BaseModel):
     weight_column: str | None = None
     group_column: str | None = None
     calibration_policy: str = "none"
+    # Tier 2.3: triple-barrier label config (optional).
+    barrier_config: dict[str, Any] | None = None
 
     @field_validator("task_type")
     @classmethod
