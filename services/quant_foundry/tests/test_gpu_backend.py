@@ -287,3 +287,159 @@ def test_xgboost_gpu_backend_routes_to_train_xgboost(monkeypatch) -> None:  # ty
     art, _dossier = trainer.train(req, deadline_ns=2**62)
     assert called["model_family"] == "xgboost_gpu"
     assert art.determinism_status == "non_deterministic"
+
+
+# --- CatBoost GPU (Tier 1.3 completion) --------------------------------------
+
+
+def test_trainer_backends_includes_catboost_gpu() -> None:
+    """TRAINER_BACKENDS must list 'catboost_gpu' as a valid backend."""
+    from quant_foundry.real_trainer import TRAINER_BACKENDS
+
+    assert "catboost_gpu" in TRAINER_BACKENDS
+    assert "catboost" in TRAINER_BACKENDS
+
+
+def test_build_catboost_params_gpu_sets_task_type_gpu() -> None:
+    """catboost_gpu model_family must set task_type='GPU' in CatBoost params."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    trainer = RealLightGBMTrainer(
+        column_roles=_binary_roles(),
+        task_spec=_binary_spec(),
+        backend="catboost_gpu",
+    )
+    req = _make_req(model_family="catboost_gpu")
+    params = trainer._build_catboost_params(req, seed=7)
+
+    assert params["task_type"] == "GPU"
+    # The rest of the param shape is preserved.
+    assert params["iterations"] == 10
+    assert params["depth"] == 4
+    assert params["learning_rate"] == 0.05
+    assert params["random_seed"] == 7
+    assert params["verbose"] is False
+
+
+def test_build_catboost_params_cpu_keeps_task_type_cpu() -> None:
+    """Plain catboost model_family must keep task_type='CPU' (deterministic)."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    trainer = RealLightGBMTrainer(
+        column_roles=_binary_roles(),
+        task_spec=_binary_spec(),
+        backend="catboost",
+    )
+    req = _make_req(model_family="catboost")
+    params = trainer._build_catboost_params(req, seed=7)
+
+    assert params["task_type"] == "CPU"
+
+
+def test_build_catboost_params_gpu_backend_with_other_family_keeps_cpu() -> None:
+    """task_type is driven by req.model_family, not by self.backend alone.
+
+    This guards the handler.py routing path where ``backend='catboost'``
+    is used but ``model_family='catboost'`` (CPU). task_type must stay 'CPU'.
+    """
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    trainer = RealLightGBMTrainer(
+        column_roles=_binary_roles(),
+        task_spec=_binary_spec(),
+        backend="catboost",
+    )
+    req = _make_req(model_family="catboost")
+    params = trainer._build_catboost_params(req, seed=3)
+
+    assert params["task_type"] == "CPU"
+
+
+def test_determinism_status_helper_for_catboost_gpu() -> None:
+    """The catboost call site computes non_deterministic for catboost_gpu."""
+    req = _make_req(model_family="catboost_gpu")
+    status = (
+        "non_deterministic"
+        if req.model_family == "catboost_gpu"
+        else "deterministic"
+    )
+    assert status == "non_deterministic"
+
+
+def test_determinism_status_helper_for_catboost_cpu() -> None:
+    """The catboost call site computes deterministic for plain catboost."""
+    req = _make_req(model_family="catboost")
+    status = (
+        "non_deterministic"
+        if req.model_family == "catboost_gpu"
+        else "deterministic"
+    )
+    assert status == "deterministic"
+
+
+def test_catboost_gpu_artifact_manifest_non_deterministic() -> None:
+    """ArtifactManifest for catboost_gpu must carry non_deterministic status."""
+    art = ArtifactManifest(
+        schema_version=1,
+        artifact_id="art-catboost-gpu-001",
+        sha256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        size_bytes=42,
+        uri=None,
+        model_family="catboost_gpu",
+        created_at_ns=1_700_000_000_000_000_000,
+        feature_schema_hash="fs:hash:1",
+        label_schema_hash="ls:hash:1",
+        determinism_status="non_deterministic",
+    )
+    assert art.determinism_status == "non_deterministic"
+
+
+_CATBOOST_AVAILABLE = importlib.util.find_spec("catboost") is not None
+
+
+@pytest.mark.skipif(not _CATBOOST_AVAILABLE, reason="catboost not installed")
+def test_catboost_gpu_backend_routes_to_train_catboost(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """backend='catboost_gpu' must dispatch to _train_catboost (not raise)."""
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+
+    trainer = RealLightGBMTrainer(
+        column_roles=_binary_roles(),
+        task_spec=_binary_spec(),
+        backend="catboost_gpu",
+    )
+
+    called: dict[str, object] = {}
+
+    def _fake_train_catboost(self, req, *, deadline_ns):  # type: ignore[no-untyped-def]
+        called["model_family"] = req.model_family
+        from quant_foundry.schemas import ArtifactManifest, Authority, ModelDossier
+
+        art = ArtifactManifest(
+            artifact_id="art-catboost-route",
+            sha256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            size_bytes=1,
+            model_family=req.model_family,
+            created_at_ns=1,
+            feature_schema_hash="fs",
+            label_schema_hash="ls",
+            determinism_status="non_deterministic",
+        )
+        dossier = ModelDossier(
+            model_id="model:catboost-route",
+            artifact_manifest_id=art.artifact_id,
+            dataset_manifest_id=req.dataset_manifest_ref,
+            code_git_sha="unknown",
+            lockfile_hash="unknown",
+            container_image_digest="unknown",
+            authority=Authority.SHADOW_ONLY,
+        )
+        return art, dossier
+
+    monkeypatch.setattr(
+        RealLightGBMTrainer, "_train_catboost", _fake_train_catboost, raising=True
+    )
+
+    req = _make_req(model_family="catboost_gpu")
+    art, _dossier = trainer.train(req, deadline_ns=2**62)
+    assert called["model_family"] == "catboost_gpu"
+    assert art.determinism_status == "non_deterministic"

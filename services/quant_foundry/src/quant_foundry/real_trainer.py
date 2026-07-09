@@ -121,9 +121,12 @@ def _probe_gpu_model() -> str | None:
 #: ``model_family='xgboost_gpu'`` to the ``xgboost`` backend, so both
 #: ``backend='xgboost_gpu'`` and ``backend='xgboost'`` (with
 #: ``model_family='xgboost_gpu'``) reach ``_train_xgboost``.
+#: Similarly, ``catboost_gpu`` routes to the ``catboost`` backend with
+#: ``task_type='GPU'`` and ``determinism_status='non_deterministic'``.
 TRAINER_BACKENDS: tuple[str, ...] = (
     "lightgbm",
     "catboost",
+    "catboost_gpu",
     "xgboost",
     "xgboost_gpu",
 )
@@ -2087,7 +2090,10 @@ class RealLightGBMTrainer:
                 error_summary="training deadline breached before backend dispatch",
             )
 
-        if self.backend == "catboost":
+        if self.backend in ("catboost", "catboost_gpu"):
+            # Tier 1.3: ``catboost_gpu`` reuses the CatBoostTrainer code path;
+            # the task_type (GPU vs CPU) is selected inside
+            # ``_build_catboost_params`` based on ``req.model_family``.
             return self._train_catboost(req, deadline_ns=deadline_ns)
         elif self.backend in ("xgboost", "xgboost_gpu"):
             # Tier 1.3: ``xgboost_gpu`` reuses the XGBoostTrainer code path;
@@ -2228,10 +2234,16 @@ class RealLightGBMTrainer:
             loader_family="catboost",
             trainer_tag="real_catboost",
             rank_report=rank_report,
-            # Tier 1.3: CatBoost currently trains on CPU (task_type='CPU'),
-            # so it is the deterministic reference. GPU CatBoost would be
-            # non_deterministic — extend here when task_type='GPU' is added.
-            determinism_status="deterministic",
+            # Tier 1.3: catboost_gpu trains on GPU (non-deterministic
+            # floating-point summation order); plain catboost trains on
+            # CPU (deterministic reference baseline alongside LightGBM CPU).
+            determinism_status=(
+                "non_deterministic"
+                if req.model_family == "catboost_gpu"
+                else "deterministic"
+            ),
+            # Tier 1.3: record the GPU model when training on GPU.
+            gpu_model=_probe_gpu_model() if req.model_family == "catboost_gpu" else None,
         )
 
     def _train_xgboost(
@@ -2369,8 +2381,16 @@ class RealLightGBMTrainer:
         req: RunPodTrainingRequest,
         seed: int,
     ) -> dict[str, Any]:
-        """Build CatBoost hyper-parameters from the request search space."""
+        """Build CatBoost hyper-parameters from the request search space.
+
+        Tier 1.3: When ``req.model_family == 'catboost_gpu'`` the
+        ``task_type`` is set to ``'GPU'`` to train on GPU; otherwise
+        it stays ``'CPU'`` (the deterministic reference). GPU CatBoost
+        is non-deterministic (floating-point summation order differs
+        from CPU) and is flagged as such in the artifact manifest.
+        """
         ss = req.search_space
+        is_gpu = req.model_family == "catboost_gpu"
         params: dict[str, Any] = {
             "iterations": int(ss.get("n_estimators", [100])[0]),
             "depth": int(ss.get("max_depth", [6])[0]),
@@ -2378,7 +2398,7 @@ class RealLightGBMTrainer:
             "random_seed": seed,
             "verbose": False,
             "allow_writing_files": False,
-            "task_type": "CPU",
+            "task_type": "GPU" if is_gpu else "CPU",
         }
         if ss.get("num_leaves"):
             params["num_leaves"] = int(ss["num_leaves"][0])
