@@ -1661,8 +1661,47 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         return sweep.tournament.score(scoring_input)
 
     def _find_sentinel_receipt(self, model_id: str) -> Any:
-        """Find a sentinel receipt for a model (None if not available)."""
-        return None
+        """Find the most recent sentinel receipt for a model.
+
+        Looks up the latest version for the model_id, then queries
+        the model_metrics table for the most recent sentinel metrics
+        row. Builds a SentinelReceipt from the stored metrics dict.
+
+        Returns None if:
+          - No DB engine is wired (non-DB mode).
+          - No version exists for the model_id.
+          - No sentinel metrics have been recorded.
+        """
+        if self._db_engine is None:
+            return None
+
+        from sqlalchemy import select as _select
+        from sqlalchemy.orm import Session as _Session
+
+        from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
+        from quant_foundry.registry_db import _build_sentinel_receipt
+
+        with _Session(self._db_engine) as session:
+            # Find the latest version for this model_id.
+            version_row = session.scalars(
+                _select(ModelVersionRow)
+                .where(ModelVersionRow.model_id == model_id)
+                .order_by(ModelVersionRow.version_number.desc())
+            ).first()
+            if version_row is None:
+                return None
+
+            # Query the most recent sentinel metrics for that version.
+            sentinel_row = session.scalars(
+                _select(ModelMetricRow).where(
+                    ModelMetricRow.version_id == version_row.version_id,
+                    ModelMetricRow.metric_type == "sentinel",
+                ).order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if sentinel_row is None:
+                return None
+
+            return _build_sentinel_receipt(sentinel_row.metrics)
 
     def _build_blocking_issues(
         self, dossier: Any, tournament_result: Any, sentinel_receipt: Any
