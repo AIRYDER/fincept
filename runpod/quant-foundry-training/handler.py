@@ -3297,6 +3297,26 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # schema hash mismatch, unknown format, missing column role).
     dataset_load_spec = input_data.pop("dataset_load_spec", None)
 
+    # Tier 1.5: production mode MUST use dataset_load_spec (manifest-first
+    # loading with hash verification, PIT proof, and registry dispatch).
+    # Direct parquet/CSV paths and volume-path fallbacks are canary/research
+    # only. A production request without dataset_load_spec is rejected with
+    # a signed failure receipt — do not rely on the caller to send it.
+    if preflight_mode == TrainingMode.PRODUCTION and not dataset_load_spec:
+        return _build_signed_failure(
+            error_code="dataset_load_spec_required_for_production",
+            error_message=(
+                "production mode requires dataset_load_spec (manifest-first "
+                "loading with hash verification, PIT proof, and registry "
+                "dispatch); direct parquet/CSV paths are canary/research only"
+            ),
+            mode=preflight_mode.value,
+            context={
+                "job_id": str(input_data.get("job_id") or "unknown"),
+                "stage": "dataset_load_spec_guard",
+            },
+        )
+
     try:
         req = RunPodTrainingRequest.model_validate(input_data)
     except Exception as exc:
@@ -3357,6 +3377,105 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         if resolved_ref != req.dataset_manifest_ref:
             req = req.model_copy(update={"dataset_manifest_ref": resolved_ref})
 
+    # Tier 1.5: Dataset registry dispatch gate — fail-closed for
+    # production. The handler calls ``DatasetRegistry.dispatch_training``
+    # to enforce: the dataset is registered, readiness is L3+, the upload
+    # receipt is not stale, and the status is not deprecated/rejected.
+    # Canary/research modes skip the registry gate (permissive by design).
+    # The registry path is configured via the
+    # ``QUANT_FOUNDRY_DATASET_REGISTRY_PATH`` env var. If no registry path
+    # is configured, the gate is skipped with an advisory (useful for
+    # local tests and canary runs that have no registry file).
+    raw_mode = req.extra_constraints.get("training_mode") or "research"
+    try:
+        registry_gate_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
+    except ValueError:
+        registry_gate_mode = TrainingMode.PRODUCTION
+    if registry_gate_mode == TrainingMode.PRODUCTION:
+        registry_path = os.environ.get("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", "")
+        dataset_id = dataset_load_spec.get("dataset_id") if dataset_load_spec else None
+        if not dataset_id and loaded_dataset is not None and loaded_dataset.manifest:
+            dataset_id = loaded_dataset.manifest.get("dataset_id")
+        if registry_path and dataset_id:
+            try:
+                from quant_foundry.dataset_manifest import DatasetRegistry
+
+                registry = DatasetRegistry(path=registry_path)
+                registry.dispatch_training(dataset_id, mode=TrainingMode.PRODUCTION)
+            except ValueError as exc:
+                write_status(
+                    req.job_id,
+                    "failed",
+                    error_code="dataset_registry_dispatch_rejected",
+                    error_summary=str(exc),
+                )
+                return _build_signed_failure(
+                    error_code="dataset_registry_dispatch_rejected",
+                    error_message=str(exc),
+                    mode=registry_gate_mode.value,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "dataset_registry_dispatch_gate",
+                        "dataset_id": str(dataset_id),
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Registry load failure (corrupt JSONL, IO error) — fail
+                # closed for production rather than silently bypassing.
+                write_status(
+                    req.job_id,
+                    "failed",
+                    error_code="dataset_registry_error",
+                    error_summary=f"dataset registry error: {exc}",
+                )
+                return _build_signed_failure(
+                    error_code="dataset_registry_error",
+                    error_message=f"dataset registry error: {exc}",
+                    mode=registry_gate_mode.value,
+                    context={
+                        "job_id": req.job_id,
+                        "stage": "dataset_registry_dispatch_gate",
+                        "dataset_id": str(dataset_id),
+                        "registry_path": registry_path,
+                    },
+                )
+        elif not registry_path:
+            # Advisory: no registry path configured. Production runs in a
+            # real worker should set QUANT_FOUNDRY_DATASET_REGISTRY_PATH.
+            write_status(
+                req.job_id,
+                "started",
+                error_code="dataset_registry_not_configured",
+                error_summary=(
+                    "advisory: QUANT_FOUNDRY_DATASET_REGISTRY_PATH not set — "
+                    "dataset registry dispatch gate skipped (production "
+                    "runs should configure a registry path)"
+                ),
+            )
+        elif not dataset_id:
+            # No dataset_id available — fail closed for production.
+            write_status(
+                req.job_id,
+                "failed",
+                error_code="dataset_id_missing",
+                error_summary=(
+                    "production mode requires a dataset_id in the "
+                    "dataset_load_spec or manifest for registry dispatch"
+                ),
+            )
+            return _build_signed_failure(
+                error_code="dataset_id_missing",
+                error_message=(
+                    "production mode requires a dataset_id in the "
+                    "dataset_load_spec or manifest for registry dispatch"
+                ),
+                mode=registry_gate_mode.value,
+                context={
+                    "job_id": req.job_id,
+                    "stage": "dataset_registry_dispatch_gate",
+                },
+            )
+
     # Tier 1.5: PIT proof gate — fail-closed for production when the
     # manifest's ``pit_proof_verified`` flag is not True. This is the
     # handler-side enforcement of the dataset registry's point-in-time
@@ -3404,6 +3523,41 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
                     "(not True) — production training would be blocked"
                 ),
             )
+
+    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
+    # Fail closed BEFORE training starts (and before the quality gate runs,
+    # which is more expensive): for non-canary jobs, deny /tmp as a final
+    # destination and validate output_prefix resolves to a durable location
+    # (network volume or presigned URL). A real job that writes to /tmp
+    # produces a signed receipt pointing at nothing — worse than no job.
+    # Moving this gate before the quality gate avoids wasting compute on a
+    # job whose artifact will be rejected. Canary jobs may use /tmp
+    # (FakeArtifactWriter is canary-only by design).
+    raw_mode = req.extra_constraints.get("training_mode") or "canary"
+    _deny_error = _validate_output_prefix_durable(
+        output_prefix=output_prefix,
+        presigned_artifact_url=presigned_artifact_url,
+        training_mode=raw_mode,
+    )
+    if _deny_error is not None:
+        write_status(
+            req.job_id,
+            "failed",
+            error_code="artifact_destination_not_durable",
+            error_summary=_deny_error,
+        )
+        return _build_signed_failure(
+            error_code="artifact_destination_not_durable",
+            error_message=_deny_error,
+            mode=raw_mode,
+            context={
+                "job_id": req.job_id,
+                "stage": "artifact_destination_deny_gate_pre_training",
+                "output_prefix": output_prefix or "",
+                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
+                "training_mode": raw_mode,
+            },
+        )
 
     # Phase 3 / T-3.3: worker-side quality gate runner (defense in depth).
     #
@@ -3573,40 +3727,6 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # Resolve output_prefix if provided (handler-level extension)
     if output_prefix:
         output_prefix = resolve_volume_path(output_prefix)
-
-    # --- Durable artifact deny gate (Tier 0.2) -------------------------------
-    # Fail closed BEFORE training starts: for non-canary jobs, deny /tmp as
-    # a final destination and validate output_prefix resolves to a durable
-    # location (network volume or presigned URL). A real job that writes to
-    # /tmp produces a signed receipt pointing at nothing — worse than no
-    # job. Moving this gate before training avoids wasting GPU time on a
-    # job whose artifact will be rejected. Canary jobs may use /tmp
-    # (FakeArtifactWriter is canary-only by design).
-    raw_mode = req.extra_constraints.get("training_mode") or "canary"
-    _deny_error = _validate_output_prefix_durable(
-        output_prefix=output_prefix,
-        presigned_artifact_url=presigned_artifact_url,
-        training_mode=raw_mode,
-    )
-    if _deny_error is not None:
-        write_status(
-            req.job_id,
-            "failed",
-            error_code="artifact_destination_not_durable",
-            error_summary=_deny_error,
-        )
-        return _build_signed_failure(
-            error_code="artifact_destination_not_durable",
-            error_message=_deny_error,
-            mode=raw_mode,
-            context={
-                "job_id": req.job_id,
-                "stage": "artifact_destination_deny_gate_pre_training",
-                "output_prefix": output_prefix or "",
-                "presigned_artifact_url": "set" if presigned_artifact_url else "unset",
-                "training_mode": raw_mode,
-            },
-        )
 
     # Worker-side status file: mark the job as started so the gateway
     # can detect crashed workers via stale heartbeat_at timestamps.

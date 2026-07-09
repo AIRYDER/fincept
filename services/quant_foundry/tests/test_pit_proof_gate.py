@@ -237,3 +237,238 @@ class TestPitProofGate:
         result = handler_module.handler(inp)
         # Missing field → pit_flag is None → not True → fail-closed.
         assert result.get("error_code") == "pit_proof_not_verified"
+
+
+# --------------------------------------------------------------------------- #
+# Tier 1.5: dataset_load_spec required for production (Gap 4)                 #
+# --------------------------------------------------------------------------- #
+
+
+class TestDatasetLoadSpecRequiredForProduction:
+    """Production mode must use dataset_load_spec — no fallback paths."""
+
+    def test_production_without_dataset_load_spec_rejected(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Production mode + no dataset_load_spec → fail-closed."""
+        inp = _make_training_input(
+            "prod-no-spec-1",
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "dataset_load_spec_required_for_production"
+
+    def test_production_with_empty_dataset_load_spec_rejected(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Production mode + empty dataset_load_spec dict → fail-closed."""
+        inp = _make_training_input(
+            "prod-empty-spec-1",
+            dataset_load_spec={},
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # An empty dict is falsy in Python, so the guard fires.
+        assert result.get("error_code") == "dataset_load_spec_required_for_production"
+
+    def test_canary_without_dataset_load_spec_proceeds(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Canary mode + no dataset_load_spec → training proceeds (permissive)."""
+        inp = _make_training_input(
+            "canary-no-spec-1",
+            extra_constraints={"training_mode": "canary"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") != "dataset_load_spec_required_for_production"
+
+    def test_research_without_dataset_load_spec_proceeds(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Research mode + no dataset_load_spec → training proceeds."""
+        inp = _make_training_input(
+            "research-no-spec-1",
+            extra_constraints={"training_mode": "research"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") != "dataset_load_spec_required_for_production"
+
+
+# --------------------------------------------------------------------------- #
+# Tier 1.5: dataset registry dispatch gate (Gap 2)                            #
+# --------------------------------------------------------------------------- #
+
+
+class TestDatasetRegistryDispatchGate:
+    """Production mode must pass the dataset registry dispatch gate."""
+
+    def test_production_rejects_unregistered_dataset(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + unregistered dataset_id → fail-closed."""
+        # Create an empty registry file (no entries).
+        registry_path = tmp_path / "registry.jsonl"
+        registry_path.write_text("", encoding="utf-8")
+        monkeypatch.setenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", str(registry_path))
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        manifest["dataset_id"] = "unregistered-dataset-123"
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        load_spec["dataset_id"] = "unregistered-dataset-123"
+        inp = _make_training_input(
+            "prod-unregistered-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "dataset_registry_dispatch_rejected"
+
+    def test_production_rejects_low_readiness_dataset(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + L1 dataset → fail-closed (requires L3+)."""
+        from quant_foundry.dataset_manifest import DatasetRegistry, ReadinessLevel
+
+        registry_path = tmp_path / "registry.jsonl"
+        registry = DatasetRegistry(path=registry_path)
+        # Register a dataset at L1 (too low for production).
+        registry.register(
+            dataset_id="low-readiness-ds",
+            manifest_uri="file:///manifest.json",
+            data_uri="file:///data.parquet",
+            readiness_level=ReadinessLevel.L1_RAW,
+        )
+
+        monkeypatch.setenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", str(registry_path))
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        manifest["dataset_id"] = "low-readiness-ds"
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        load_spec["dataset_id"] = "low-readiness-ds"
+        inp = _make_training_input(
+            "prod-low-readiness-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "dataset_registry_dispatch_rejected"
+
+    def test_production_accepts_l3_registered_dataset(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + L3 registered dataset → registry gate passes."""
+        from quant_foundry.dataset_manifest import DatasetRegistry, ReadinessLevel
+
+        registry_path = tmp_path / "registry.jsonl"
+        registry = DatasetRegistry(path=registry_path)
+        # Register at L1, then promote to L2.
+        registry.register(
+            dataset_id="l3-prod-ds",
+            manifest_uri="file:///manifest.json",
+            data_uri="file:///data.parquet",
+            readiness_level=ReadinessLevel.L1_RAW,
+        )
+        registry.promote_readiness("l3-prod-ds", ReadinessLevel.L2_VALIDATED)
+        # L3+ requires a quality report URI + hash on the entry. Patch the
+        # entry to add them before promoting to L3.
+        entry = registry.inspect("l3-prod-ds")
+        updated = entry.model_copy(update={
+            "quality_report_uri": "file:///quality_report.json",
+            "quality_report_sha256": "e" * 64,
+        })
+        registry._entries["l3-prod-ds"][-1] = updated
+        if registry._path is not None:
+            registry._rewrite_ledger()
+        # Now promote to L3.
+        registry.promote_readiness(
+            "l3-prod-ds",
+            ReadinessLevel.L3_QUALITY_GATED,
+        )
+
+        monkeypatch.setenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", str(registry_path))
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        manifest["dataset_id"] = "l3-prod-ds"
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        load_spec["dataset_id"] = "l3-prod-ds"
+        inp = _make_training_input(
+            "prod-l3-ok-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Should NOT be rejected by the registry gate.
+        assert result.get("error_code") != "dataset_registry_dispatch_rejected"
+
+    def test_production_no_registry_path_advisory(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + no registry path configured → advisory, continues."""
+        monkeypatch.delenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", raising=False)
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "prod-no-registry-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        # Should NOT be rejected — advisory only.
+        assert result.get("error_code") != "dataset_registry_dispatch_rejected"
+
+    def test_canary_skips_registry_gate(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Canary mode → registry gate is skipped entirely."""
+        # Even with a registry path set, canary should not be rejected.
+        registry_path = tmp_path / "registry.jsonl"
+        registry_path.write_text("", encoding="utf-8")
+        monkeypatch.setenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", str(registry_path))
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "canary-registry-skip-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "canary"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") != "dataset_registry_dispatch_rejected"
+
+    def test_production_rejects_deprecated_dataset(
+        self, handler_module, tmp_path: pathlib.Path, monkeypatch
+    ) -> None:
+        """Production mode + deprecated dataset → fail-closed."""
+        from quant_foundry.dataset_manifest import DatasetRegistry, ReadinessLevel
+
+        registry_path = tmp_path / "registry.jsonl"
+        registry = DatasetRegistry(path=registry_path)
+        registry.register(
+            dataset_id="deprecated-ds",
+            manifest_uri="file:///manifest.json",
+            data_uri="file:///data.parquet",
+            readiness_level=ReadinessLevel.L1_RAW,
+        )
+        # Mark the entry as deprecated by patching its status.
+        entry = registry.inspect("deprecated-ds")
+        from quant_foundry.dataset_manifest import RegistryStatus
+
+        updated = entry.model_copy(update={"status": RegistryStatus.DEPRECATED})
+        registry._entries["deprecated-ds"][-1] = updated
+        if registry._path is not None:
+            registry._rewrite_ledger()
+
+        monkeypatch.setenv("QUANT_FOUNDRY_DATASET_REGISTRY_PATH", str(registry_path))
+
+        manifest = _make_valid_manifest(pit_proof_verified=True)
+        manifest["dataset_id"] = "deprecated-ds"
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        load_spec["dataset_id"] = "deprecated-ds"
+        inp = _make_training_input(
+            "prod-deprecated-1",
+            dataset_load_spec=load_spec,
+            extra_constraints={"training_mode": "production"},
+        )
+        result = handler_module.handler(inp)
+        assert result.get("error_code") == "dataset_registry_dispatch_rejected"

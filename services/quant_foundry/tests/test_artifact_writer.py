@@ -453,6 +453,65 @@ def _make_training_input(job_id: str, **extra) -> dict:
     }
 
 
+def _make_load_spec(
+    *,
+    manifest_dict: dict | None = None,
+    data_csv: str = "feature_1,feature_2,label\n1.0,2.0,0\n3.0,4.0,1\n",
+) -> dict:
+    """Build a dataset_load_spec with an inline manifest + inline data.
+
+    The manifest is written to a temp file and referenced via
+    ``manifest_uri``. The data is written to a temp CSV file and
+    referenced via ``data_uri``. Both use local file paths so the
+    ManifestDatasetLoader can fetch them locally.
+    """
+    import tempfile
+
+    if manifest_dict is None:
+        manifest_dict = {
+            "schema_version": 1,
+            "dataset_id": "test-dataset",
+            "feature_schema_hash": "a" * 64,
+            "label_schema_hash": "b" * 64,
+            "as_of_ts": 1700000000_000_000_000,
+            "universe_hash": "c" * 64,
+            "row_count": 2,
+            "checksum": "d" * 64,
+            "folds": {},
+            "pit_proof_verified": True,
+            "source_vintage_refs": [],
+            "quality_report_hash": None,
+            "manifest_uri": "",
+            "data_uri": "",
+            "data_format": "csv",
+            "data_sha256": "",
+            "quality_report_uri": None,
+            "quality_report_sha256": None,
+            "feature_names": ["feature_1", "feature_2"],
+        }
+    tmp_dir = pathlib.Path(tempfile.mkdtemp(prefix="qf_artifact_test_"))
+    manifest_path = tmp_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest_dict), encoding="utf-8")
+    data_path = tmp_dir / "data.csv"
+    data_path.write_text(data_csv, encoding="utf-8")
+
+    manifest_bytes = manifest_path.read_bytes()
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+    data_bytes = data_path.read_bytes()
+    data_sha = hashlib.sha256(data_bytes).hexdigest()
+
+    return {
+        "manifest_uri": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+        "data_uri": str(data_path),
+        "data_sha256": data_sha,
+        "data_format": "csv",
+        "row_count": 2,
+        "feature_schema_hash": manifest_dict.get("feature_schema_hash", ""),
+        "label_schema_hash": manifest_dict.get("label_schema_hash", ""),
+    }
+
+
 def test_handler_rejects_disallowed_presigned_uri_scheme(handler_module, monkeypatch):
     """Handler rejects http:// presigned URL with a signed failure envelope."""
     secret = "handler-integration-secret"
@@ -668,11 +727,15 @@ def test_handler_denies_tmp_for_real_jobs(handler_module, monkeypatch):
     """Handler rejects /tmp output_prefix for non-canary jobs (signed failure)."""
     secret = "deny-gate-secret"
     monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", secret)
+    # Tier 1.5: production mode requires dataset_load_spec. Provide one so
+    # the test reaches the artifact deny gate (not the dataset guard).
+    load_spec = _make_load_spec()
     # Use a canary request (local trainer) but set training_mode=production
     # so the deny gate fires. No GPU/ML deps needed (local trainer).
     event = _make_training_input(
         "qf:train:deny:tmp:1",
         output_prefix="/tmp/a7-train-artifacts",
+        dataset_load_spec=load_spec,
         extra_constraints={"training_mode": "production"},
     )
     result = handler_module.handler(event)
@@ -708,9 +771,11 @@ def test_handler_allows_tmp_for_canary_jobs(handler_module, monkeypatch, tmp_pat
 def test_handler_denies_invalid_prefix_for_real_jobs(handler_module, monkeypatch):
     """Handler rejects non-volume, non-URI output_prefix for real jobs."""
     monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "deny-invalid-secret")
+    load_spec = _make_load_spec()
     event = _make_training_input(
         "qf:train:deny:invalid:1",
         output_prefix="/var/tmp/artifacts",
+        dataset_load_spec=load_spec,
         extra_constraints={"training_mode": "production"},
     )
     result = handler_module.handler(event)
@@ -722,8 +787,10 @@ def test_handler_denies_invalid_prefix_for_real_jobs(handler_module, monkeypatch
 def test_handler_denies_no_destination_for_real_jobs(handler_module, monkeypatch):
     """Handler fails closed when no durable destination is supplied for real jobs."""
     monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "deny-nodest-secret")
+    load_spec = _make_load_spec()
     event = _make_training_input(
         "qf:train:deny:nodest:1",
+        dataset_load_spec=load_spec,
         extra_constraints={"training_mode": "production"},
     )
     result = handler_module.handler(event)
