@@ -898,6 +898,16 @@ class ModelTaskSpec(BaseModel):
             The dict mirrors :class:`fincept_core.datasets.BarrierConfig`
             (profit_take_width, stop_loss_width, horizon_bars,
             min_volatility). Optional — absent for non-barrier tasks.
+        meta_label_config: Tier 2.3b — meta-labeling configuration.
+            When set, the trainer trains a secondary binary classifier
+            (the "meta-model") that decides *whether to act* on the
+            primary model's signal. The dict mirrors
+            :class:`fincept_core.datasets.MetaLabelConfig`
+            (side_column, label_column, meta_label_column). The primary
+            model must be multiclass (triple-barrier). The meta-model
+            is trained on the out-of-fold primary predictions (as an
+            additional feature) → binary meta-label {0, 1}. Optional —
+            absent when meta-labeling is not used.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -911,6 +921,8 @@ class ModelTaskSpec(BaseModel):
     calibration_policy: str = "none"
     # Tier 2.3: triple-barrier label config (optional).
     barrier_config: dict[str, Any] | None = None
+    # Tier 2.3b: meta-labeling config (optional).
+    meta_label_config: dict[str, Any] | None = None
 
     @field_validator("task_type")
     @classmethod
@@ -962,6 +974,29 @@ class ModelTaskSpec(BaseModel):
                 "ranking task_type requires a non-empty group_column "
                 "(a ranking request without a group id fails — "
                 "LightGBM lambdarank needs a group array)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _meta_label_requires_barrier(self) -> ModelTaskSpec:
+        """Meta-labeling (Tier 2.3b) requires triple-barrier labels.
+
+        The meta-model learns *when to act* on the primary model's
+        directional signal. Without triple-barrier labels there is no
+        meaningful "was the primary signal correct?" target — the
+        barrier labels ARE the ground truth for the meta-label
+        computation. Fail closed at construction.
+        """
+        if self.meta_label_config is not None and self.barrier_config is None:
+            raise ValueError(
+                "meta_label_config requires barrier_config — the "
+                "meta-label is computed from the triple-barrier label "
+                "and the primary model's signal (AFML Ch. 3.6)"
+            )
+        if self.meta_label_config is not None and self.task_type != "multiclass":
+            raise ValueError(
+                "meta_label_config requires task_type='multiclass' — "
+                "the primary model must be a triple-barrier classifier"
             )
         return self
 

@@ -548,7 +548,34 @@ class RealLightGBMTrainer:
 
         final_model = self._train_final_model(X, y, seed, req, weights=weights)
 
-        model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
+        # Tier 2.3b: meta-labeling — train a secondary binary classifier
+        # that decides whether to act on the primary model's signal.
+        # The meta-model uses the primary model's predictions on the full
+        # dataset as an additional feature. The meta-model's own
+        # walk-forward validation provides the OOS estimate.
+        meta_model = None
+        meta_metrics: dict[str, Any] = {}
+        if self._is_meta_labeling():
+            meta_model, meta_metrics = self._train_meta_model(
+                X, y, final_model, seed, req
+            )
+
+        # Serialize the model(s). When meta-labeling is active, bundle
+        # both the primary and meta models in a dict so the artifact
+        # carries both. The loader path (not yet built) will check for
+        # the "meta_model" key to know this is a meta-labeling artifact.
+        if meta_model is not None:
+            model_bytes = pickle.dumps(
+                {
+                    "primary": final_model,
+                    "meta": meta_model,
+                    "label_map": self._label_map,
+                    "meta_label_config": self.task_spec.meta_label_config if self.task_spec else None,
+                },
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+        else:
+            model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
         sha256 = hashlib.sha256(model_bytes).hexdigest()
         size_bytes = len(model_bytes)
 
@@ -557,8 +584,11 @@ class RealLightGBMTrainer:
         feature_schema_hash = hashlib.sha256(
             f"{req.dataset_manifest_ref}:n_features={n_features}".encode(),
         ).hexdigest()[:16]
+        label_type = "meta" if meta_model is not None else (
+            "multiclass" if self._is_multiclass() else "binary"
+        )
         label_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:label=binary".encode(),
+            f"{req.dataset_manifest_ref}:label={label_type}".encode(),
         ).hexdigest()[:16]
 
         now_ns = time.time_ns()
@@ -673,6 +703,16 @@ class RealLightGBMTrainer:
                 "barrier_config": str(
                     self.task_spec.barrier_config if self.task_spec else None
                 ),
+                # Tier 2.3b: meta-labeling config + meta-model metrics.
+                "meta_label_config": str(
+                    self.task_spec.meta_label_config if self.task_spec else None
+                ),
+                "meta_accuracy": str(meta_metrics.get("meta_accuracy", "")),
+                "meta_logloss": str(meta_metrics.get("meta_logloss", "")),
+                "meta_brier_score": str(meta_metrics.get("meta_brier_score", "")),
+                "meta_n_folds": str(meta_metrics.get("meta_n_folds", "")),
+                "meta_positive_rate": str(meta_metrics.get("meta_positive_rate", "")),
+                "has_meta_model": str(meta_model is not None),
                 # Tier 2.5: execution-aware (net-of-cost) metrics.
                 # The promotion gate should use sharpe_net, not
                 # sharpe_ratio (which is frictionless/gross).
@@ -1391,6 +1431,241 @@ class RealLightGBMTrainer:
         train_acc = float(np.mean((np.asarray(train_pred) > 0.5) == (np.asarray(y_train) > 0.5)))
         val_acc = float(np.mean((np.asarray(val_pred) > 0.5) == (np.asarray(y_val) > 0.5)))
         return train_acc, val_acc
+
+    # --- Tier 2.3b: meta-labeling helpers --------------------------------
+
+    def _is_meta_labeling(self) -> bool:
+        """Check if this is a meta-labeling run (Tier 2.3b).
+
+        When True, the trainer trains a primary multiclass model on
+        triple-barrier labels, then trains a secondary binary
+        meta-model that decides whether to act on the primary signal.
+        """
+        return (
+            self.task_spec is not None
+            and self.task_spec.meta_label_config is not None
+        )
+
+    def _compute_meta_labels(
+        self,
+        oof_preds: Any,
+        oof_labels: Any,
+    ) -> tuple[Any, Any]:
+        """Compute meta-labels from out-of-fold primary predictions.
+
+        Takes the primary model's OOF predictions (n, n_classes)
+        and the original triple-barrier labels (n,), converts the
+        predictions to sides via argmax + reverse label-map, then
+        computes meta-labels: 1 if side == label, 0 otherwise.
+
+        Returns ``(meta_labels, sides)`` — meta_labels is a binary
+        {0, 1} array, sides is the primary model's directional signal
+        {-1, 0, +1} array (used as an additional feature for the
+        meta-model).
+        """
+        import numpy as np
+        from fincept_core.datasets.labels import meta_labels
+
+        preds_arr = np.asarray(oof_preds, dtype=np.float64)
+        labels_arr = np.asarray(oof_labels, dtype=np.float64)
+
+        # Convert OOF predictions to predicted class indices.
+        if preds_arr.ndim == 2:
+            pred_classes = preds_arr.argmax(axis=1)
+        else:
+            pred_classes = preds_arr.astype(int)
+
+        # Reverse-map predicted class indices to original label values.
+        if self._label_map:
+            inv_map = {v: k for k, v in self._label_map.items()}
+            sides = np.array(
+                [inv_map.get(int(c), 0) for c in pred_classes],
+                dtype=np.float64,
+            )
+        else:
+            sides = pred_classes.astype(np.float64)
+
+        # Original labels are already in the original space (before
+        # _map_labels_for_lgb was applied). But the OOF labels stored
+        # in the metrics dict are the MAPPED labels (0, 1, 2). We need
+        # to reverse-map them too for the meta_labels() comparison.
+        if self._label_map:
+            inv_map = {v: k for k, v in self._label_map.items()}
+            original_labels = np.array(
+                [inv_map.get(int(c), 0) for c in labels_arr.astype(int)],
+                dtype=np.float64,
+            )
+        else:
+            original_labels = labels_arr
+
+        meta = np.array(
+            meta_labels(
+                sides.astype(int).tolist(),
+                original_labels.astype(int).tolist(),
+            ),
+            dtype=np.float64,
+        )
+        return meta, sides
+
+    def _train_meta_model(
+        self,
+        X: Any,
+        y: Any,
+        primary_model: Any,
+        seed: int,
+        req: RunPodTrainingRequest,
+    ) -> tuple[Any, dict[str, Any]]:
+        """Train the secondary (meta) binary classifier.
+
+        The meta-model is a binary LightGBM classifier trained on
+        ``(features + primary_side) → meta_label`` where meta_label
+        is 1 if the primary signal was correct, 0 otherwise.
+
+        The primary model's predictions on the full dataset provide
+        the side signal. The meta-model's own walk-forward validation
+        provides the out-of-sample estimate.
+
+        Returns ``(meta_model, meta_metrics)``.
+        """
+        import lightgbm as lgb
+        import numpy as np
+        from fincept_core.datasets.labels import meta_labels
+
+        # Get the primary model's predictions on the full dataset.
+        primary_preds = primary_model.predict(X)
+        preds_arr = np.asarray(primary_preds, dtype=np.float64)
+
+        # Convert predictions to sides (directional signals).
+        if preds_arr.ndim == 2:
+            pred_classes = preds_arr.argmax(axis=1)
+        else:
+            pred_classes = preds_arr.astype(int)
+
+        # Reverse-map predicted class indices to original label values.
+        if self._label_map:
+            inv_map = {v: k for k, v in self._label_map.items()}
+            sides = np.array(
+                [inv_map.get(int(c), 0) for c in pred_classes],
+                dtype=np.float64,
+            )
+            # Also reverse-map the training labels to original space.
+            original_labels = np.array(
+                [inv_map.get(int(v), 0) for v in y.astype(int)],
+                dtype=np.float64,
+            )
+        else:
+            sides = pred_classes.astype(np.float64)
+            original_labels = np.asarray(y, dtype=np.float64)
+
+        # Compute meta-labels: 1 if side == label, 0 otherwise.
+        meta_labels_arr = np.array(
+            meta_labels(
+                sides.astype(int).tolist(),
+                original_labels.astype(int).tolist(),
+            ),
+            dtype=np.float64,
+        )
+
+        # Augment features with the primary model's side signal.
+        X_meta = np.column_stack([X, sides.reshape(-1, 1)])
+
+        # Build binary LightGBM params for the meta-model.
+        # We can't reuse _build_lgb_params because it will produce
+        # multiclass params (the task_spec is multiclass). Build from
+        # scratch with the same deterministic settings.
+        params: dict[str, Any] = {
+            "objective": "binary",
+            "metric": "binary_logloss",
+            "verbosity": -1,
+            "seed": seed,
+            "deterministic": True,
+            "num_threads": 1,
+            "num_leaves": 31,
+            "learning_rate": 0.1,
+        }
+        # Override from search_space (excluding multiclass-specific keys).
+        for key in ("num_leaves", "learning_rate", "max_depth", "min_data_in_leaf"):
+            if key in req.search_space:
+                vals = req.search_space[key]
+                if isinstance(vals, list) and vals:
+                    params[key] = vals[0]
+        n_estimators = self._get_n_estimators(req)
+
+        # Simple k-fold validation for the meta-model (same fold
+        # structure as the primary model — we use the same heuristic
+        # walk-forward split).
+        n = X_meta.shape[0]
+        n_folds = min(self.n_folds, max(2, n // 50))
+        fold_size = n // n_folds
+        all_meta_preds: list[float] = []
+        all_meta_labels: list[float] = []
+        fold_accs: list[float] = []
+
+        for i in range(n_folds):
+            val_start = i * fold_size
+            val_end = (i + 1) * fold_size if i < n_folds - 1 else n
+            val_idx = np.arange(val_start, val_end)
+            train_idx = np.concatenate([
+                np.arange(0, val_start),
+                np.arange(val_end, n),
+            ])
+
+            X_tr, X_va = X_meta[train_idx], X_meta[val_idx]
+            y_tr, y_va = meta_labels_arr[train_idx], meta_labels_arr[val_idx]
+
+            if len(np.unique(y_tr)) < 2:
+                # Skip degenerate folds (all one class).
+                continue
+
+            train_set = lgb.Dataset(X_tr, label=y_tr)
+            val_set = lgb.Dataset(X_va, label=y_va, reference=train_set)
+            es_val = req.search_space.get("early_stopping_rounds")
+            callbacks = []
+            if es_val:
+                callbacks.append(lgb.early_stopping(int(es_val[0]), verbose=False))
+
+            model = lgb.train(
+                params,
+                train_set,
+                num_boost_round=n_estimators,
+                valid_sets=[val_set],
+                callbacks=callbacks,
+            )
+            val_pred = model.predict(X_va)
+            all_meta_preds.extend(val_pred.tolist())
+            all_meta_labels.extend(y_va.tolist())
+            fold_accs.append(float(np.mean((val_pred > 0.5) == (y_va > 0.5))))
+
+        # Compute meta-model metrics.
+        preds_arr = np.array(all_meta_preds, dtype=np.float64)
+        labels_arr = np.array(all_meta_labels, dtype=np.float64)
+        meta_accuracy = float(np.mean((preds_arr > 0.5) == (labels_arr > 0.5)))
+        eps = 1e-15
+        pred_clipped = np.clip(preds_arr, eps, 1 - eps)
+        meta_logloss = float(
+            -np.mean(
+                labels_arr * np.log(pred_clipped)
+                + (1 - labels_arr) * np.log(1 - pred_clipped),
+            )
+        )
+        meta_brier = float(np.mean((preds_arr - labels_arr) ** 2))
+
+        # Train final meta-model on all data.
+        final_meta_model = lgb.train(
+            params,
+            lgb.Dataset(X_meta, label=meta_labels_arr),
+            num_boost_round=n_estimators,
+        )
+
+        meta_metrics = {
+            "meta_accuracy": meta_accuracy,
+            "meta_logloss": meta_logloss,
+            "meta_brier_score": meta_brier,
+            "meta_n_folds": len(fold_accs),
+            "meta_avg_fold_accuracy": float(np.mean(fold_accs)) if fold_accs else 0.0,
+            "meta_positive_rate": float(np.mean(meta_labels_arr)),
+        }
+        return final_meta_model, meta_metrics
 
     # --- Tier 2.7: checkpoint/resume helpers -----------------------------
 

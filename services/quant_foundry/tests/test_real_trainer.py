@@ -551,6 +551,101 @@ def test_real_trainer_multiclass_triple_barrier(tmp_path: Path) -> None:
     assert "profit_take_width" in dossier.metadata["barrier_config"]
 
 
+def test_real_trainer_meta_labeling(tmp_path: Path) -> None:
+    """Tier 2.3b: when meta_label_config is set, the trainer must train
+    a secondary binary meta-model that decides whether to act on the
+    primary signal. The artifact must bundle both models, and the
+    dossier must record meta-model metrics."""
+    import pickle
+
+    from quant_foundry.real_trainer import RealLightGBMTrainer
+    from quant_foundry.dataset_manifest import ColumnRoles
+    from quant_foundry.training_manifest import ModelTaskSpec
+
+    data_path = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+    req = _make_training_request(
+        "qf:train:meta:1",
+        data_path.as_uri(),
+        seed=42,
+    )
+
+    roles = ColumnRoles(
+        feature_columns=("f1", "f2", "f3", "f4"),
+        label_columns=("label",),
+        timestamp_column="timestamp",
+    )
+    task_spec = ModelTaskSpec(
+        task_type="multiclass",
+        label_column="label",
+        barrier_config={
+            "profit_take_width": 0.02,
+            "stop_loss_width": 0.01,
+            "horizon_bars": 10,
+        },
+        meta_label_config={
+            "side_column": "side",
+            "label_column": "label",
+            "meta_label_column": "meta_label",
+        },
+    )
+
+    trainer = RealLightGBMTrainer(
+        n_folds=3,
+        column_roles=roles,
+        task_spec=task_spec,
+    )
+    deadline_ns = time.time_ns() + 120 * 1_000_000_000
+    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+    # The dossier must record meta-model metrics.
+    assert dossier.metadata.get("has_meta_model") == "True"
+    assert dossier.metadata.get("meta_accuracy") not in ("", "None")
+    assert dossier.metadata.get("meta_logloss") not in ("", "None")
+    assert dossier.metadata.get("meta_positive_rate") not in ("", "None")
+    # The meta_label_config must be recorded for auditability.
+    assert "meta_label_config" in dossier.metadata
+    assert "meta_label_column" in dossier.metadata["meta_label_config"]
+
+    # The artifact bytes must be a bundle (dict with "primary" + "meta").
+    model_bytes = trainer.last_model_bytes
+    assert model_bytes is not None
+    bundle = pickle.loads(model_bytes)
+    assert isinstance(bundle, dict)
+    assert "primary" in bundle
+    assert "meta" in bundle
+    assert "label_map" in bundle
+
+
+def test_model_spec_meta_label_requires_barrier() -> None:
+    """Tier 2.3b: meta_label_config without barrier_config must fail."""
+    from pydantic import ValidationError
+
+    from quant_foundry.training_manifest import ModelTaskSpec
+
+    # Meta-labeling without barrier_config → must raise.
+    try:
+        ModelTaskSpec(
+            task_type="multiclass",
+            label_column="label",
+            meta_label_config={"side_column": "side"},
+        )
+        assert False, "should have raised"
+    except ValueError as exc:
+        assert "barrier_config" in str(exc)
+
+    # Meta-labeling with barrier_config but wrong task_type → must raise.
+    try:
+        ModelTaskSpec(
+            task_type="binary",
+            label_column="label",
+            barrier_config={"profit_take_width": 0.02, "stop_loss_width": 0.01, "horizon_bars": 10},
+            meta_label_config={"side_column": "side"},
+        )
+        assert False, "should have raised"
+    except ValueError as exc:
+        assert "multiclass" in str(exc)
+
+
 def test_real_trainer_cpcv_mode(tmp_path: Path) -> None:
     """Tier 2.1: CPCV mode must produce C(N,P) folds and compute the
     real CSCV PBO instead of the fold_overfit_ratio placeholder."""
