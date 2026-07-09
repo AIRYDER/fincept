@@ -448,3 +448,373 @@ def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> 
 
     engine.dispose()
 
+
+# ---------------------------------------------------------------------------
+# Tier 2a: Full product loop — dispatch → callback → model_versions →
+#          metrics → promotion gate → promotion receipt → shadow evaluation
+# ---------------------------------------------------------------------------
+
+
+def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
+    """Prove the FULL product loop: dispatch → callback → model_versions →
+    tournament metrics → sentinel metrics → promotion gate → promotion receipt
+    → shadow evaluation row.
+
+    Extends ``test_e2e_product_loop_dispatch_to_model_versions`` with:
+      8. Record tournament metrics (settled_count >= gate minimum).
+      9. Record sentinel metrics (passed=True).
+     10. Run the promotion gate via ``registry.promote()``.
+     11. Verify the promotion receipt is APPROVED.
+     12. Verify ``promotions`` + ``promotion_decisions`` rows are persisted.
+     13. Verify ``model_versions.status`` is updated to the target level.
+     14. Verify ``models.current_status`` is updated.
+     15. Record a shadow evaluation row.
+     16. Verify the ``shadow_evaluations`` row is persisted.
+
+    All DB operations use a single in-memory SQLite engine. No external
+    Postgres and no live RunPod API calls are required.
+    """
+    from quant_foundry.dossier import DossierStatus
+    from quant_foundry.promotion import (
+        PromotionReceipt,
+        ReviewDecision,
+    )
+
+    engine = _make_engine()
+    secret = "e2e-full-loop-secret"
+
+    # --- Registry + Gateway (same setup as Phase A test) -------------------
+    registry = ModelRegistryDB(
+        engine=engine,
+        gate=PromotionGate(min_settled_count=10),
+    )
+    training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf-full",
+        runpod_clients={"training": training_client},
+        cost_tracker=CostTracker(engine=engine),
+        sink_backend="db",
+        db_engine=engine,
+        registry=registry,
+        budget_guard=BudgetGuard(
+            base_dir=tmp_path / "qf-full" / "budget",
+            monthly_budget_cents=1_000_000,
+        ),
+    )
+
+    job_id = "qf:train:full:1"
+
+    # 1-2) Create + dispatch the job.
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=_training_payload(job_id),
+    )
+
+    # 3) Receive signed callback.
+    payload, signature, ts = _signed_training_callback(job_id, secret=secret)
+    cb_receipt = gateway.receive_callback(
+        job_id=job_id,
+        payload=payload,
+        signature=signature,
+        ts=ts,
+        worker_id="runpod-training-full",
+    )
+    assert cb_receipt["ok"] is True
+
+    # 4-7) model_versions auto-registered (same as Phase A).
+    in_rec = gateway.inbox.get_by_job_id(job_id)
+    assert in_rec is not None
+    callback_receipt_id = in_rec.callback_id
+
+    with Session(engine) as session:
+        dossier_row = session.scalars(
+            select(ModelDossierRow).where(ModelDossierRow.model_id == _MODEL_ID)
+        ).first()
+        assert dossier_row is not None
+        dossier_content_hash = dossier_row.content_hash
+
+        version_row = session.scalars(
+            select(ModelVersionRow).where(
+                ModelVersionRow.model_id == _MODEL_ID
+            )
+        ).first()
+        assert version_row is not None
+        version_id = version_row.version_id
+        assert version_row.status == "candidate"
+
+    # 8) Record tournament metrics — settled_count=50 (>= gate minimum of 10).
+    tournament_metrics = {
+        "model_id": _MODEL_ID,
+        "total_score": 0.72,
+        "score_components": [],
+        "p_value": 0.03,
+        "deflated_sharpe": 1.4,
+        "raw_sharpe": 1.8,
+        "blocking_issues": [],
+        "recommendation": "promote",
+        "status": "eligible",
+        "trial_count": 1,
+        "cost_model_version": "cm-v1",
+        "settled_count": 50,
+    }
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="tournament",
+        metrics_dict=tournament_metrics,
+    )
+
+    # 9) Record sentinel metrics — passed=True, no issues.
+    sentinel_metrics = {
+        "model_id": _MODEL_ID,
+        "issues": [],
+        "passed": True,
+        "checks_run": ["leakage", "overfit", "stability"],
+        "ts_ns": time.time_ns(),
+        "pbo": 0.12,
+        "pbo_flagged": False,
+    }
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="sentinel",
+        metrics_dict=sentinel_metrics,
+    )
+
+    # 10) Run the promotion gate: candidate → research_approved.
+    promotion_receipt = registry.promote(
+        version_id=version_id,
+        target_status=DossierStatus.RESEARCH_APPROVED,
+        review_note="E2E full loop proof — promotion to research_approved",
+        decided_by="e2e-proof-script",
+    )
+
+    # 11) Verify the promotion receipt is APPROVED.
+    assert isinstance(promotion_receipt, PromotionReceipt)
+    assert promotion_receipt.decision == ReviewDecision.APPROVED, (
+        f"promotion should be approved, got {promotion_receipt.decision} "
+        f"reason={promotion_receipt.rejection_reason}"
+    )
+    assert promotion_receipt.rejection_reason is None
+    assert promotion_receipt.review_note == (
+        "E2E full loop proof — promotion to research_approved"
+    )
+
+    # 12) Verify promotions + promotion_decisions rows are persisted.
+    with Session(engine) as session:
+        promo_rows = session.scalars(
+            select(PromotionRow).where(PromotionRow.version_id == version_id)
+        ).all()
+        assert len(promo_rows) == 1, "exactly one promotions row"
+        promo = promo_rows[0]
+        assert promo.decision == "approved"
+        assert promo.from_status == "candidate"
+        assert promo.to_status == "research_approved"
+        assert promo.decided_at_ns is not None
+
+        decision_rows = session.scalars(
+            select(PromotionDecisionRow).where(
+                PromotionDecisionRow.promotion_id == promo.promotion_id
+            )
+        ).all()
+        assert len(decision_rows) == 1, "exactly one promotion_decisions row"
+        decision = decision_rows[0]
+        assert decision.decision == "approved"
+        assert decision.rejection_reason is None
+        assert decision.decided_by == "e2e-proof-script"
+        assert decision.review_note == (
+            "E2E full loop proof — promotion to research_approved"
+        )
+
+    # 13) Verify model_versions.status is updated to research_approved.
+    with Session(engine) as session:
+        updated_version = session.scalars(
+            select(ModelVersionRow).where(
+                ModelVersionRow.version_id == version_id
+            )
+        ).first()
+        assert updated_version.status == "research_approved", (
+            f"version status should be 'research_approved', "
+            f"got {updated_version.status!r}"
+        )
+        assert updated_version.promoted_at_ns is not None
+
+    # 14) Verify models.current_status is updated.
+    with Session(engine) as session:
+        updated_model = session.scalars(
+            select(ModelRow).where(ModelRow.model_id == _MODEL_ID)
+        ).first()
+        assert updated_model.current_status == "research_approved"
+        assert updated_model.current_version_id == version_id
+
+    # 15) Record a shadow evaluation row.
+    shadow_eval_metrics = {
+        "champion_version_id": None,
+        "challenger_version_id": version_id,
+        "net_edge_delta_bps": 12.5,
+        "bootstrap_p_value": 0.04,
+        "dsr_delta": 0.3,
+        "brier_delta": -0.02,
+        "decision": "promote",
+    }
+    evaluation_id = registry.record_shadow_evaluation(
+        version_id=version_id,
+        settled_count=50,
+        evaluation_metrics=shadow_eval_metrics,
+    )
+
+    # 16) Verify the shadow_evaluations row is persisted.
+    with Session(engine) as session:
+        eval_rows = session.scalars(
+            select(ShadowEvaluationRow).where(
+                ShadowEvaluationRow.evaluation_id == evaluation_id
+            )
+        ).all()
+        assert len(eval_rows) == 1, "exactly one shadow_evaluations row"
+        eval_row = eval_rows[0]
+        assert eval_row.version_id == version_id
+        assert eval_row.settled_count == 50
+        assert eval_row.evaluation_metrics["decision"] == "promote"
+
+    # 17) Verify model_metrics rows: 1 tournament + 1 sentinel = 2 total.
+    with Session(engine) as session:
+        metric_rows = session.scalars(
+            select(ModelMetricRow).where(
+                ModelMetricRow.version_id == version_id
+            )
+        ).all()
+        assert len(metric_rows) == 2, "should have 2 metric rows (tournament + sentinel)"
+        metric_types = {r.metric_type for r in metric_rows}
+        assert metric_types == {"tournament", "sentinel"}
+
+    # 18) Summary: every table in the product loop has at least one row.
+    with Session(engine) as session:
+        assert session.scalars(select(TrainingJobRow)).first() is not None
+        assert session.scalars(select(CallbackReceiptRow)).first() is not None
+        assert session.scalars(select(ModelDossierRow)).first() is not None
+        assert session.scalars(select(ArtifactManifestRow)).first() is not None
+        assert session.scalars(select(ModelRow)).first() is not None
+        assert session.scalars(select(ModelVersionRow)).first() is not None
+        assert session.scalars(select(ModelMetricRow)).first() is not None
+        assert session.scalars(select(PromotionRow)).first() is not None
+        assert session.scalars(select(PromotionDecisionRow)).first() is not None
+        assert session.scalars(select(ShadowEvaluationRow)).first() is not None
+
+    engine.dispose()
+
+
+def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
+    """Prove the promotion gate fails closed when evidence is insufficient.
+
+    Dispatch → callback → model_versions → promote WITHOUT tournament or
+    sentinel metrics. The gate must reject with INSUFFICIENT_EVIDENCE
+    (settled_count=0 < min_settled_count=10). The rejection receipt must
+    be persisted, and the model version status must NOT change.
+    """
+    from quant_foundry.dossier import DossierStatus
+    from quant_foundry.promotion import (
+        PromotionReceipt,
+        PromotionRejectionReason,
+        ReviewDecision,
+    )
+
+    engine = _make_engine()
+    secret = "e2e-reject-secret"
+
+    registry = ModelRegistryDB(
+        engine=engine,
+        gate=PromotionGate(min_settled_count=10),
+    )
+    training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
+    gateway = QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf-reject",
+        runpod_clients={"training": training_client},
+        cost_tracker=CostTracker(engine=engine),
+        sink_backend="db",
+        db_engine=engine,
+        registry=registry,
+        budget_guard=BudgetGuard(
+            base_dir=tmp_path / "qf-reject" / "budget",
+            monthly_budget_cents=1_000_000,
+        ),
+    )
+
+    job_id = "qf:train:reject:1"
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=_training_payload(job_id),
+    )
+    payload, signature, ts = _signed_training_callback(job_id, secret=secret)
+    cb_receipt = gateway.receive_callback(
+        job_id=job_id,
+        payload=payload,
+        signature=signature,
+        ts=ts,
+        worker_id="runpod-training-reject",
+    )
+    assert cb_receipt["ok"] is True
+
+    # Get the auto-registered version_id.
+    with Session(engine) as session:
+        version_row = session.scalars(
+            select(ModelVersionRow).where(
+                ModelVersionRow.model_id == _MODEL_ID
+            )
+        ).first()
+        assert version_row is not None
+        version_id = version_row.version_id
+        assert version_row.status == "candidate"
+
+    # Attempt promotion WITHOUT recording any metrics (no tournament, no sentinel).
+    rejection_receipt = registry.promote(
+        version_id=version_id,
+        target_status=DossierStatus.RESEARCH_APPROVED,
+        review_note="Should be rejected — no evidence",
+        decided_by="e2e-reject-test",
+    )
+
+    # The gate must reject with INSUFFICIENT_EVIDENCE.
+    assert rejection_receipt.decision == ReviewDecision.REJECTED
+    assert rejection_receipt.rejection_reason == (
+        PromotionRejectionReason.INSUFFICIENT_EVIDENCE
+    )
+
+    # The rejection must be persisted in promotions + promotion_decisions.
+    with Session(engine) as session:
+        promo_rows = session.scalars(
+            select(PromotionRow).where(PromotionRow.version_id == version_id)
+        ).all()
+        assert len(promo_rows) == 1
+        assert promo_rows[0].decision == "rejected"
+
+        decision_rows = session.scalars(
+            select(PromotionDecisionRow).where(
+                PromotionDecisionRow.promotion_id == promo_rows[0].promotion_id
+            )
+        ).all()
+        assert len(decision_rows) == 1
+        assert decision_rows[0].decision == "rejected"
+        assert decision_rows[0].rejection_reason == "insufficient_evidence"
+
+    # The version status must NOT have changed (still candidate).
+    with Session(engine) as session:
+        unchanged_version = session.scalars(
+            select(ModelVersionRow).where(
+                ModelVersionRow.version_id == version_id
+            )
+        ).first()
+        assert unchanged_version.status == "candidate"
+        assert unchanged_version.promoted_at_ns is None
+
+    engine.dispose()
+
