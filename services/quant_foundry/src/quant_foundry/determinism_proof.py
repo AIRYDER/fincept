@@ -263,7 +263,9 @@ class DeterminismProofRunner:
         # Ensure handler and quant_foundry are importable.
         repo_root = pathlib.Path(__file__).resolve().parent
         # Go up from services/quant_foundry/src/quant_foundry/ to repo root.
-        for _ in range(5):
+        # Path: fincept-terminal/services/quant_foundry/src/quant_foundry/determinism_proof.py
+        # .parent → quant_foundry/ → src/ → quant_foundry/ → services/ → fincept-terminal/
+        for _ in range(4):
             repo_root = repo_root.parent
         handler_dir = str(repo_root / "runpod" / "quant-foundry-training")
         qf_src = str(repo_root / "services" / "quant_foundry" / "src")
@@ -400,7 +402,7 @@ def run_determinism_gate(recipe: DeterminismRecipe | None = None) -> int:
 
     # Save receipt
     repo_root = pathlib.Path(__file__).resolve().parent
-    for _ in range(5):
+    for _ in range(4):
         repo_root = repo_root.parent
     receipt_path = repo_root / "reports" / "determinism-proof" / "receipt.json"
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
