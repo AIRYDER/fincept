@@ -13,6 +13,7 @@ This is the local equivalent of S2 — it proves the code chain works
 end-to-end. The RunPod GPU proof requires a working endpoint (the
 existing endpoint's worker crashed — documented in the report).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -20,8 +21,8 @@ import json
 import os
 import pathlib
 import sys
-import time
 import tempfile
+import time
 
 # Set up environment
 os.environ.setdefault("QUANT_FOUNDRY_CALLBACK_SECRET", "s2-local-proof-secret")
@@ -40,8 +41,8 @@ print("=" * 70)
 print("S2 LOCAL: FULL TRAINING CHAIN PROOF")
 print("=" * 70)
 print(f"  Handler: {_HANDLER_DIR}/handler.py")
-print(f"  Trainer: RealLightGBMTrainer (CPU, deterministic)")
-print(f"  Mode:    canary (LocalTrainer) + real (if available)")
+print("  Trainer: RealLightGBMTrainer (CPU, deterministic)")
+print("  Mode:    canary (LocalTrainer) + real (if available)")
 print()
 
 # Import the handler
@@ -52,6 +53,7 @@ try:
 except Exception as exc:
     print(f"  FAILED to load handler: {exc}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)
 print()
@@ -59,6 +61,7 @@ print()
 # Prepare a small inline dataset
 print("=== STEP 2: PREPARE DATASET ===")
 import random
+
 random.seed(42)
 rows = ["feature_1,feature_2,feature_3,label\n"]
 for i in range(100):
@@ -69,7 +72,7 @@ for i in range(100):
     rows.append(f"{f1:.6f},{f2:.6f},{f3:.6f},{label}\n")
 
 inline_csv = "".join(rows)
-print(f"  Dataset: 100 rows, 3 features + binary label")
+print("  Dataset: 100 rows, 3 features + binary label")
 print(f"  CSV size: {len(inline_csv)} bytes")
 print()
 
@@ -107,7 +110,7 @@ job_input = {
 event = {"input": job_input}
 
 print(f"  job_id: {job_id}")
-print(f"  model_family: lightgbm")
+print("  model_family: lightgbm")
 print(f"  output_prefix: {output_prefix}")
 print()
 
@@ -119,6 +122,7 @@ try:
 except Exception as exc:
     print(f"  HANDLER CRASHED: {exc}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)
 
@@ -142,7 +146,11 @@ artifact_uri = result.get("artifact_uri", "unknown")
 print(f"  artifact_id:    {artifact_id}")
 print(f"  artifact_uri:   {artifact_uri}")
 print(f"  callback_ts:    {callback_ts}")
-print(f"  signature:      {callback_signature[:40]}..." if callback_signature else "  signature:      MISSING")
+print(
+    f"  signature:      {callback_signature[:40]}..."
+    if callback_signature
+    else "  signature:      MISSING"
+)
 print(f"  payload size:   {len(callback_payload_str)} bytes")
 print(f"  result keys:    {sorted(result.keys())}")
 print()
@@ -184,6 +192,7 @@ print()
 print("=== STEP 6: VERIFY HMAC SIGNATURE ===")
 if callback_signature:
     from quant_foundry.signatures import verify_callback
+
     try:
         sig_valid = verify_callback(
             callback_payload_str.encode("utf-8"),
@@ -205,13 +214,15 @@ print()
 print("=== STEP 7: CHECK ARTIFACT DURABILITY ===")
 if artifact_uri and artifact_uri != "unknown":
     is_tmp = "/tmp" in artifact_uri or "temp" in artifact_uri.lower()
-    is_local = tmp_dir.name in str(artifact_uri) or (output_prefix and output_prefix in str(artifact_uri))
+    is_local = tmp_dir.name in str(artifact_uri) or (
+        output_prefix and output_prefix in str(artifact_uri)
+    )
     print(f"  artifact_uri: {artifact_uri}")
     print(f"  is /tmp:      {is_tmp}")
     print(f"  is local out: {is_local}")
 else:
     print(f"  artifact_uri: {artifact_uri} (canary mode — FakeArtifactWriter, no persistence)")
-    print(f"  This is expected for canary mode. Research/production mode requires a volume path.")
+    print("  This is expected for canary mode. Research/production mode requires a volume path.")
 print()
 
 # Check if artifact file exists
@@ -222,10 +233,11 @@ if artifact_uri and artifact_uri != "unknown":
 if artifact_path and artifact_path.exists():
     file_size = artifact_path.stat().st_size
     print(f"  File exists: {artifact_path}")
-    print(f"  Size: {file_size} bytes ({file_size/1024:.1f} KB)")
+    print(f"  Size: {file_size} bytes ({file_size / 1024:.1f} KB)")
 
     # Compute sha256
     import hashlib
+
     h = hashlib.sha256()
     with open(artifact_path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
@@ -253,7 +265,11 @@ receipt = {
     "artifact_id": artifact_id,
     "artifact_uri": artifact_uri,
     "artifact_file_exists": bool(artifact_path and artifact_path.exists()),
-    "artifact_sha256_match": bool(artifact_path and artifact_path.exists() and actual_sha == declared_sha) if artifact_path else False,
+    "artifact_sha256_match": bool(
+        artifact_path and artifact_path.exists() and actual_sha == declared_sha
+    )
+    if artifact_path
+    else False,
     "hmac_valid": sig_valid,
     "training_metrics": metrics,
     "artifact_manifest": artifact,

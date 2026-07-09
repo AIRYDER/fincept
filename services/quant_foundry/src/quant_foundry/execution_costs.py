@@ -30,14 +30,15 @@ Design:
 from __future__ import annotations
 
 import math
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
-    "TrainingCostModel",
+    "DEFAULT_TRAINING_COST_MODEL",
     "CostAwareMetrics",
+    "TrainingCostModel",
     "apply_training_costs",
     "compute_cost_aware_metrics",
-    "DEFAULT_TRAINING_COST_MODEL",
 ]
 
 
@@ -243,7 +244,10 @@ def compute_cost_aware_metrics(
         raise ValueError("length mismatch between gross_returns and positions")
 
     net_returns = apply_training_costs(
-        gross_returns, positions, cost_model, holding_days=holding_days,
+        gross_returns,
+        positions,
+        cost_model,
+        holding_days=holding_days,
     )
 
     # --- gross metrics -------------------------------------------------
@@ -251,9 +255,7 @@ def compute_cost_aware_metrics(
     mean_gross = sum(gross_returns) / n
     var_gross = sum((r - mean_gross) ** 2 for r in gross_returns) / n
     std_gross = math.sqrt(var_gross) if var_gross > 0 else 0.0
-    sharpe_gross = (
-        (mean_gross / std_gross) * ann_factor if std_gross > 0 else 0.0
-    )
+    sharpe_gross = (mean_gross / std_gross) * ann_factor if std_gross > 0 else 0.0
 
     # Cumulative drawdown (gross)
     cum_g = 0.0
@@ -273,9 +275,7 @@ def compute_cost_aware_metrics(
     mean_net = sum(net_returns) / n
     var_net = sum((r - mean_net) ** 2 for r in net_returns) / n
     std_net = math.sqrt(var_net) if var_net > 0 else 0.0
-    sharpe_net = (
-        (mean_net / std_net) * ann_factor if std_net > 0 else 0.0
-    )
+    sharpe_net = (mean_net / std_net) * ann_factor if std_net > 0 else 0.0
 
     # Cumulative drawdown (net)
     cum_n = 0.0

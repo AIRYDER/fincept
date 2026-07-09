@@ -71,7 +71,8 @@ class TestFeatureDefinition:
     def test_extra_forbid(self) -> None:
         with pytest.raises(Exception):
             FeatureDefinition(  # type: ignore[call-arg]
-                feature_name="x", transform_type="price",
+                feature_name="x",
+                transform_type="price",
                 unknown_field=1,
             )
 

@@ -26,7 +26,6 @@ skips the comparison.
 from __future__ import annotations
 
 import statistics
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -98,16 +97,12 @@ class SettledComparisonInputProvider:
             return None
 
         oos_returns_net = [
-            r.realized_return_net
-            for r in settled
-            if r.realized_return_net is not None
+            r.realized_return_net for r in settled if r.realized_return_net is not None
         ]
         if len(oos_returns_net) < self.min_settled_count:
             return None
 
-        brier_values = [
-            r.brier for r in settled if r.brier is not None
-        ]
+        brier_values = [r.brier for r in settled if r.brier is not None]
         brier = statistics.mean(brier_values) if brier_values else None
 
         return ComparisonInput(
@@ -118,9 +113,7 @@ class SettledComparisonInputProvider:
             settled_count=len(oos_returns_net),
         )
 
-    def _lookup_version(
-        self, version_id: str
-    ) -> tuple[str | None, int]:
+    def _lookup_version(self, version_id: str) -> tuple[str | None, int]:
         """Look up model_id and trial_count for a version_id.
 
         Returns (model_id, trial_count). If the version is not
@@ -129,9 +122,7 @@ class SettledComparisonInputProvider:
         engine = self.registry.engine
         with Session(engine) as session:
             version_row = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == version_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
             ).first()
             if version_row is None:
                 return None, 0
@@ -149,9 +140,7 @@ class SettledComparisonInputProvider:
 
         return model_id, trial_count
 
-    def _read_settled_by_model(
-        self, model_id: str
-    ) -> list[SettlementRecord]:
+    def _read_settled_by_model(self, model_id: str) -> list[SettlementRecord]:
         """Read all SETTLED records for a given model_id.
 
         Filters the settlement ledger's ``read_all()`` by model_id
@@ -159,7 +148,7 @@ class SettledComparisonInputProvider:
         """
         all_records = self.settlement_ledger.read_all()
         return [
-            r for r in all_records
-            if r.model_id == model_id
-            and r.status == SettlementStatus.SETTLED
+            r
+            for r in all_records
+            if r.model_id == model_id and r.status == SettlementStatus.SETTLED
         ]

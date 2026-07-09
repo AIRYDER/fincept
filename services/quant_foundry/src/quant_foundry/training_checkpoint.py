@@ -38,19 +38,18 @@ Design:
 
 from __future__ import annotations
 
-import os
 import pickle
 import re
-import time
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
-    "TrainingCheckpointConfig",
-    "TrainingCheckpointManager",
     "CheckpointData",
     "CheckpointError",
+    "TrainingCheckpointConfig",
+    "TrainingCheckpointManager",
 ]
 
 
@@ -233,9 +232,7 @@ class TrainingCheckpointManager:
         with open(p, "rb") as f:
             payload = pickle.load(f)
         if not isinstance(payload, dict):
-            raise CheckpointError(
-                f"checkpoint payload is not a dict: {type(payload).__name__}"
-            )
+            raise CheckpointError(f"checkpoint payload is not a dict: {type(payload).__name__}")
         # Verify job_id to prevent cross-job checkpoint confusion.
         if payload.get("job_id") != self.config.job_id:
             raise CheckpointError(

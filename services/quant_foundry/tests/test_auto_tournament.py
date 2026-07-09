@@ -7,35 +7,31 @@ shadow predictions, runs the tournament scorer, and records metrics.
 from __future__ import annotations
 
 import time
-from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
 from quant_foundry.auto_tournament import (
     AutoTournamentConsumer,
-    AutoTournamentReceipt,
-    TournamentScoreResult,
 )
-from quant_foundry.cost_tracker import CostTracker
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
-from quant_foundry.outcomes import SettlementRecord, SettlementStatus
+from quant_foundry.outcomes import SettlementStatus
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
-from quant_foundry.runpod_client import MockRunPodClient
-from quant_foundry.sentinel import SentinelReceipt
-from quant_foundry.settlement import SettlementLedger
-from quant_foundry.tournament import Tournament, TournamentResult, TournamentStatus
+from quant_foundry.tournament import Tournament
 from quant_foundry.tournament_sweep import TournamentSweep
-from quant_foundry.budget import BudgetGuard
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
+from test_settlement_provider import _FakeSettlementLedger, _make_settlement_record
 
-from test_e2e_product_loop import _make_engine, _signed_training_callback, _training_payload, _MODEL_ID
-from test_auto_promotion import _dispatch_and_callback, _make_gateway, _signed_callback_with_artifact
-from test_settlement_provider import _make_settlement_record, _FakeSettlementLedger
-
+from fincept_db.registry_tables import ModelMetricRow
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -64,7 +60,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:tourn:1")
@@ -73,11 +70,13 @@ class TestAutoTournamentConsumer:
         # Create 50 settled records.
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                realized_return_net=0.001 + i * 0.0001,
-                brier=0.20,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    realized_return_net=0.001 + i * 0.0001,
+                    brier=0.20,
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,
@@ -108,7 +107,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         _dispatch_and_callback(gateway, engine, secret, "qf:tourn:2")
@@ -141,17 +141,20 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         sweep = _make_tournament_sweep(gateway)
 
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                model_id="model:unknown:1",
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    model_id="model:unknown:1",
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,
@@ -173,7 +176,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:tourn:3")
@@ -181,11 +185,13 @@ class TestAutoTournamentConsumer:
 
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                realized_return_net=0.002,
-                brier=0.20,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    realized_return_net=0.002,
+                    brier=0.20,
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,
@@ -217,7 +223,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         _dispatch_and_callback(gateway, engine, secret, "qf:tourn:4")
@@ -226,17 +233,21 @@ class TestAutoTournamentConsumer:
         ledger = _FakeSettlementLedger()
         # 50 SETTLED + 30 PENDING_TIME
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"settled-{i}",
-                status=SettlementStatus.SETTLED,
-                realized_return_net=0.001,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"settled-{i}",
+                    status=SettlementStatus.SETTLED,
+                    realized_return_net=0.001,
+                )
+            )
         for i in range(30):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pending-{i}",
-                status=SettlementStatus.PENDING_TIME,
-                realized_return_net=None,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pending-{i}",
+                    status=SettlementStatus.PENDING_TIME,
+                    realized_return_net=None,
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,
@@ -257,32 +268,45 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         # Create two versions under the same model.
         v1 = _dispatch_and_callback(
-            gateway, engine, secret, "qf:tourn:multi:1",
-            artifact_id="artifact:tourn:multi:1", sha256="f" * 64,
+            gateway,
+            engine,
+            secret,
+            "qf:tourn:multi:1",
+            artifact_id="artifact:tourn:multi:1",
+            sha256="f" * 64,
         )
         v2 = _dispatch_and_callback(
-            gateway, engine, secret, "qf:tourn:multi:2",
-            artifact_id="artifact:tourn:multi:2", sha256="g" * 64,
+            gateway,
+            engine,
+            secret,
+            "qf:tourn:multi:2",
+            artifact_id="artifact:tourn:multi:2",
+            sha256="g" * 64,
         )
         sweep = _make_tournament_sweep(gateway)
 
         ledger = _FakeSettlementLedger()
         # 50 records for our model + 50 for another model.
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"ours-{i}",
-                model_id=_MODEL_ID,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"ours-{i}",
+                    model_id=_MODEL_ID,
+                )
+            )
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"theirs-{i}",
-                model_id="model:other:1",
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"theirs-{i}",
+                    model_id="model:other:1",
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,
@@ -303,7 +327,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         sweep = _make_tournament_sweep(gateway)
@@ -329,7 +354,8 @@ class TestAutoTournamentConsumer:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         sweep = _make_tournament_sweep(gateway)
@@ -373,7 +399,8 @@ class TestAutoTournamentWithAutoPromotion:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:tourn:e2e:1")
@@ -381,11 +408,16 @@ class TestAutoTournamentWithAutoPromotion:
 
         # Record sentinel metrics (passed).
         registry.record_metrics(
-            version_id=version_id, metric_type="sentinel",
+            version_id=version_id,
+            metric_type="sentinel",
             metrics_dict={
-                "model_id": _MODEL_ID, "issues": [], "passed": True,
-                "checks_run": ["leakage"], "ts_ns": time.time_ns(),
-                "pbo": 0.12, "pbo_flagged": False,
+                "model_id": _MODEL_ID,
+                "issues": [],
+                "passed": True,
+                "checks_run": ["leakage"],
+                "ts_ns": time.time_ns(),
+                "pbo": 0.12,
+                "pbo_flagged": False,
             },
         )
 
@@ -393,13 +425,16 @@ class TestAutoTournamentWithAutoPromotion:
         # Use varied returns so the Sharpe ratio is meaningful.
         ledger = _FakeSettlementLedger()
         import random
+
         rng = random.Random(42)
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                realized_return_net=0.006 + rng.gauss(0, 0.002),
-                brier=0.20,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    realized_return_net=0.006 + rng.gauss(0, 0.002),
+                    brier=0.20,
+                )
+            )
 
         consumer = AutoTournamentConsumer(
             settlement_ledger=ledger,

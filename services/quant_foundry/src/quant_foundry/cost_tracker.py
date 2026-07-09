@@ -352,9 +352,9 @@ class CostTracker:
         """
         with Session(self.engine) as session:
             total = session.scalars(
-                select(func.coalesce(
-                    func.sum(JobCostEventRow.total_cost), Decimal("0")
-                )).where(JobCostEventRow.job_id == job_id)
+                select(func.coalesce(func.sum(JobCostEventRow.total_cost), Decimal("0"))).where(
+                    JobCostEventRow.job_id == job_id
+                )
             ).one()
             return total if isinstance(total, Decimal) else Decimal(str(total))
 
@@ -380,9 +380,7 @@ class CostTracker:
         with Session(self.engine) as session:
             # Total cost across all events for jobs in the period.
             total_cost = session.scalars(
-                select(func.coalesce(
-                    func.sum(JobCostEventRow.total_cost), Decimal("0")
-                ))
+                select(func.coalesce(func.sum(JobCostEventRow.total_cost), Decimal("0")))
                 .join(TrainingJobRow, JobCostEventRow.job_id == TrainingJobRow.job_id)
                 .where(TrainingJobRow.model_family == model_family)
                 .where(TrainingJobRow.dispatched_at_ns >= period_start_ns)
@@ -392,9 +390,7 @@ class CostTracker:
 
             # Total GPU-seconds cost (event_type='gpu_seconds').
             gpu_seconds_cost = session.scalars(
-                select(func.coalesce(
-                    func.sum(JobCostEventRow.total_cost), Decimal("0")
-                ))
+                select(func.coalesce(func.sum(JobCostEventRow.total_cost), Decimal("0")))
                 .join(TrainingJobRow, JobCostEventRow.job_id == TrainingJobRow.job_id)
                 .where(TrainingJobRow.model_family == model_family)
                 .where(TrainingJobRow.dispatched_at_ns >= period_start_ns)
@@ -402,7 +398,8 @@ class CostTracker:
                 .where(JobCostEventRow.event_type == "gpu_seconds")
             ).one()
             gpu_seconds_cost = (
-                gpu_seconds_cost if isinstance(gpu_seconds_cost, Decimal)
+                gpu_seconds_cost
+                if isinstance(gpu_seconds_cost, Decimal)
                 else Decimal(str(gpu_seconds_cost))
             )
 
@@ -416,9 +413,7 @@ class CostTracker:
             ).one()
             total_jobs = int(total_jobs) if total_jobs is not None else 0
 
-            sid = summary_id if summary_id is not None else (
-                f"cs-{model_family}-{period_start_ns}"
-            )
+            sid = summary_id if summary_id is not None else (f"cs-{model_family}-{period_start_ns}")
 
             # Upsert into cost_summary.
             engine = self.engine
@@ -461,9 +456,7 @@ class CostTracker:
         duration_seconds: float | int | Decimal,
     ) -> Decimal:
         """Estimate GPU cost using this tracker's rate table."""
-        return estimate_gpu_cost(
-            gpu_type, gpu_count, duration_seconds, rates=self._gpu_rates
-        )
+        return estimate_gpu_cost(gpu_type, gpu_count, duration_seconds, rates=self._gpu_rates)
 
     # ------------------------------------------------------------------
     # Read API

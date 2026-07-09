@@ -12,15 +12,14 @@ This script:
 
 Uses the existing endpoint rjxyaov775q7nd (v28-53bc image).
 """
+
 from __future__ import annotations
 
-import http.client
 import json
 import os
+import pathlib
 import sys
 import time
-import hashlib
-import pathlib
 
 # --- Config ---
 KEY = os.environ.get("RUNPOD_API_KEY", "")
@@ -55,7 +54,9 @@ print("=" * 70)
 
 import requests
 
-r = requests.get(f"{REST_BASE}/{ENDPOINT_ID}/health", headers={"Authorization": f"Bearer {KEY}"}, timeout=30)
+r = requests.get(
+    f"{REST_BASE}/{ENDPOINT_ID}/health", headers={"Authorization": f"Bearer {KEY}"}, timeout=30
+)
 print(f"  HTTP {r.status_code}: {r.text[:200]}")
 if r.status_code != 200:
     print("  Endpoint not healthy — trying anyway")
@@ -69,6 +70,7 @@ print("=" * 70)
 # A small synthetic dataset with 3 features and a binary label
 # 50 rows — enough for a quick training run
 import random
+
 random.seed(42)
 rows = []
 header = "feature_1,feature_2,feature_3,label\n"
@@ -81,7 +83,7 @@ for i in range(50):
     rows.append(f"{f1:.6f},{f2:.6f},{f3:.6f},{label}\n")
 
 inline_csv = "".join(rows)
-print(f"  Dataset: 50 rows, 3 features + binary label")
+print("  Dataset: 50 rows, 3 features + binary label")
 print(f"  CSV size: {len(inline_csv)} bytes")
 print()
 
@@ -113,9 +115,9 @@ job_input = {
 }
 
 print(f"  job_id:       {job_id}")
-print(f"  model_family: lightgbm")
+print("  model_family: lightgbm")
 print(f"  output:       {job_input['output_prefix']}")
-print(f"  dataset:      inline (50 rows)")
+print("  dataset:      inline (50 rows)")
 print()
 
 print("  Dispatching to RunPod...")
@@ -186,7 +188,7 @@ while time.time() - start_time < timeout:
         print(f"  Output: {json.dumps(output, indent=2, default=str)[:500]}")
         break
     elif status == "CANCELLED":
-        print(f"  CANCELLED")
+        print("  CANCELLED")
         break
 
     time.sleep(3)
@@ -211,7 +213,11 @@ artifact_uri = output.get("artifact_uri", "unknown")
 print(f"  artifact_id:    {artifact_id}")
 print(f"  artifact_uri:   {artifact_uri}")
 print(f"  callback_ts:    {callback_ts}")
-print(f"  signature:      {callback_signature[:40]}..." if callback_signature else "  signature:      MISSING")
+print(
+    f"  signature:      {callback_signature[:40]}..."
+    if callback_signature
+    else "  signature:      MISSING"
+)
 print(f"  payload size:   {len(callback_payload_str)} bytes")
 print()
 
@@ -253,6 +259,7 @@ print("=" * 70)
 
 if callback_signature and CALLBACK_SECRET:
     from quant_foundry.signatures import verify_callback
+
     try:
         sig_valid = verify_callback(
             callback_payload_str.encode("utf-8"),

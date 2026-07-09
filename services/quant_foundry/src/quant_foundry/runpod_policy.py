@@ -265,8 +265,7 @@ def build_training_job_input(
         data = dict(request)
     else:
         raise TypeError(
-            f"request must be a RunPodTrainingRequest or dict, got "
-            f"{type(request).__name__}"
+            f"request must be a RunPodTrainingRequest or dict, got {type(request).__name__}"
         )
     if extra_fields:
         data.update(extra_fields)

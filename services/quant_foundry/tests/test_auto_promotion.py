@@ -18,8 +18,6 @@ from typing import Any
 
 from quant_foundry.auto_promotion import (
     AutoPromotionOrchestrator,
-    AutoPromotionReceipt,
-    AutoPromotionResult,
     PromotionTarget,
 )
 from quant_foundry.budget import BudgetGuard
@@ -32,7 +30,6 @@ from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.promotion import (
     PromotionGate,
-    PromotionReceipt,
     ReviewDecision,
 )
 from quant_foundry.registry_db import ModelRegistryDB
@@ -101,43 +98,22 @@ def _signed_callback_with_artifact(
     ts = int(time.time())
     signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
     return payload, signature, ts
-from sqlalchemy import create_engine, select
-from sqlalchemy import event as sa_event
+
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from fincept_db.callback_tables import (
-    ArtifactManifestRow,
-    CallbackDlqRow,
-    CallbackMetricRow,
-    CallbackReceiptRow,
-    ModelDossierRow,
-)
-from fincept_db.models import Base
-from fincept_db.observability import (
-    CostSummaryRow,
-    JobCostEventRow,
-    JobMetricRow,
-    TrainingJobRow,
-)
-from fincept_db.registry_tables import (
-    ModelMetricRow,
-    ModelRow,
-    ModelVersionRow,
-    PromotionDecisionRow,
-    PromotionRow,
-    ShadowEvaluationRow,
-)
-
 # Re-use the engine + callback helpers from the e2e test module.
-from test_e2e_product_loop import _make_engine, _signed_training_callback, _training_payload
-
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
-
 # Use the same model_id as the e2e helpers (hardcoded in _signed_training_callback).
-from test_e2e_product_loop import _MODEL_ID, _ARTIFACT_ID
+from test_e2e_product_loop import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
+
+from fincept_db.registry_tables import (
+    ModelVersionRow,
+    ShadowEvaluationRow,
+)
 
 
 def _dispatch_and_callback(
@@ -161,7 +137,10 @@ def _dispatch_and_callback(
         request_payload=_training_payload(job_id),
     )
     payload, signature, ts = _signed_callback_with_artifact(
-        job_id, secret=secret, artifact_id=artifact_id, sha256=sha256,
+        job_id,
+        secret=secret,
+        artifact_id=artifact_id,
+        sha256=sha256,
     )
     gateway.receive_callback(
         job_id=job_id,
@@ -264,6 +243,7 @@ def _synthetic_comparison_provider(
     if oos_returns is None:
         # Generate deterministic returns centered around +1 bps per prediction.
         import random
+
         rng = random.Random(42)
         oos_returns = [rng.gauss(0.0001, 0.001) for _ in range(settled_count)]
     return ComparisonInput(
@@ -416,9 +396,7 @@ class TestAutoPromotionRun:
         # Verify the version status changed.
         with Session(engine) as session:
             version = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == version_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
             ).first()
             assert version.status == "research_approved"
 
@@ -532,7 +510,10 @@ class TestAutoPromotionWithChampion:
 
         # Version 1 (champion).
         v1_id = _dispatch_and_callback(
-            gateway, engine, secret, "qf:auto:champ:1",
+            gateway,
+            engine,
+            secret,
+            "qf:auto:champ:1",
             artifact_id="artifact:auto:champ:1",
             sha256="b" * 64,
         )
@@ -547,7 +528,10 @@ class TestAutoPromotionWithChampion:
 
         # Version 2 (challenger) — different artifact hash.
         v2_id = _dispatch_and_callback(
-            gateway, engine, secret, "qf:auto:chall:1",
+            gateway,
+            engine,
+            secret,
+            "qf:auto:chall:1",
             artifact_id="artifact:auto:chall:1",
             sha256="c" * 64,
         )
@@ -560,11 +544,15 @@ class TestAutoPromotionWithChampion:
         def provider(vid: str) -> ComparisonInput:
             if vid == v1_id:
                 return _synthetic_comparison_provider(
-                    vid, oos_returns=[0.0001] * 50, settled_count=50,
+                    vid,
+                    oos_returns=[0.0001] * 50,
+                    settled_count=50,
                 )
             else:
                 return _synthetic_comparison_provider(
-                    vid, oos_returns=[0.006] * 50, settled_count=50,
+                    vid,
+                    oos_returns=[0.006] * 50,
+                    settled_count=50,
                 )
 
         orchestrator = AutoPromotionOrchestrator(
@@ -582,10 +570,7 @@ class TestAutoPromotionWithChampion:
         # Should have found the challenger and promoted it.
         assert receipt.total >= 1
         # Find the result for the challenger.
-        chall_result = next(
-            r for r in receipt.results
-            if r.target.challenger_version_id == v2_id
-        )
+        chall_result = next(r for r in receipt.results if r.target.challenger_version_id == v2_id)
         assert chall_result.promoted is True
         assert chall_result.comparison_decision == "promote"
         assert chall_result.shadow_evaluation_id is not None
@@ -593,18 +578,14 @@ class TestAutoPromotionWithChampion:
         # Verify version 2 status changed.
         with Session(engine) as session:
             v2 = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == v2_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == v2_id)
             ).first()
             assert v2.status == "research_approved"
 
         # Verify shadow_evaluations row was created.
         with Session(engine) as session:
             eval_rows = session.scalars(
-                select(ShadowEvaluationRow).where(
-                    ShadowEvaluationRow.version_id == v2_id
-                )
+                select(ShadowEvaluationRow).where(ShadowEvaluationRow.version_id == v2_id)
             ).all()
             assert len(eval_rows) >= 1
 

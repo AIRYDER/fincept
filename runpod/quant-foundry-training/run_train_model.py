@@ -160,15 +160,19 @@ def build_train_input(
     if model_family != "lightgbm":
         # Non-lightgbm families require explicit column_roles + task_spec.
         # The synthetic dataset has columns: timestamp, f1, f2, f3, label.
-        extra["column_roles"] = json.dumps({
-            "feature_columns": ["f1", "f2", "f3"],
-            "label_columns": ["label"],
-            "timestamp_column": "timestamp",
-        })
-        extra["task_spec"] = json.dumps({
-            "task_type": "binary",
-            "label_column": "label",
-        })
+        extra["column_roles"] = json.dumps(
+            {
+                "feature_columns": ["f1", "f2", "f3"],
+                "label_columns": ["label"],
+                "timestamp_column": "timestamp",
+            }
+        )
+        extra["task_spec"] = json.dumps(
+            {
+                "task_type": "binary",
+                "label_column": "label",
+            }
+        )
     if model_family in ("xgboost", "xgboost_gpu"):
         search_space = {
             "max_depth": [3],

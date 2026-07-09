@@ -200,18 +200,14 @@ def test_determinism_status_helper_for_xgboost_gpu() -> None:
     """The xgboost call site computes non_deterministic for xgboost_gpu."""
     # The logic mirrored from _train_xgboost's call site.
     req = _make_req(model_family="xgboost_gpu")
-    status = (
-        "non_deterministic" if req.model_family == "xgboost_gpu" else "deterministic"
-    )
+    status = "non_deterministic" if req.model_family == "xgboost_gpu" else "deterministic"
     assert status == "non_deterministic"
 
 
 def test_determinism_status_helper_for_xgboost_cpu() -> None:
     """The xgboost call site computes deterministic for plain xgboost."""
     req = _make_req(model_family="xgboost")
-    status = (
-        "non_deterministic" if req.model_family == "xgboost_gpu" else "deterministic"
-    )
+    status = "non_deterministic" if req.model_family == "xgboost_gpu" else "deterministic"
     assert status == "deterministic"
 
 
@@ -279,9 +275,7 @@ def test_xgboost_gpu_backend_routes_to_train_xgboost(monkeypatch) -> None:  # ty
         )
         return art, dossier
 
-    monkeypatch.setattr(
-        RealLightGBMTrainer, "_train_xgboost", _fake_train_xgboost, raising=True
-    )
+    monkeypatch.setattr(RealLightGBMTrainer, "_train_xgboost", _fake_train_xgboost, raising=True)
 
     req = _make_req(model_family="xgboost_gpu")
     art, _dossier = trainer.train(req, deadline_ns=2**62)
@@ -358,22 +352,14 @@ def test_build_catboost_params_gpu_backend_with_other_family_keeps_cpu() -> None
 def test_determinism_status_helper_for_catboost_gpu() -> None:
     """The catboost call site computes non_deterministic for catboost_gpu."""
     req = _make_req(model_family="catboost_gpu")
-    status = (
-        "non_deterministic"
-        if req.model_family == "catboost_gpu"
-        else "deterministic"
-    )
+    status = "non_deterministic" if req.model_family == "catboost_gpu" else "deterministic"
     assert status == "non_deterministic"
 
 
 def test_determinism_status_helper_for_catboost_cpu() -> None:
     """The catboost call site computes deterministic for plain catboost."""
     req = _make_req(model_family="catboost")
-    status = (
-        "non_deterministic"
-        if req.model_family == "catboost_gpu"
-        else "deterministic"
-    )
+    status = "non_deterministic" if req.model_family == "catboost_gpu" else "deterministic"
     assert status == "deterministic"
 
 
@@ -435,9 +421,7 @@ def test_catboost_gpu_backend_routes_to_train_catboost(monkeypatch) -> None:  # 
         )
         return art, dossier
 
-    monkeypatch.setattr(
-        RealLightGBMTrainer, "_train_catboost", _fake_train_catboost, raising=True
-    )
+    monkeypatch.setattr(RealLightGBMTrainer, "_train_catboost", _fake_train_catboost, raising=True)
 
     req = _make_req(model_family="catboost_gpu")
     art, _dossier = trainer.train(req, deadline_ns=2**62)

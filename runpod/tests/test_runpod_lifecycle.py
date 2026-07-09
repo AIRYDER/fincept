@@ -32,7 +32,6 @@ from runpod.runpod_lifecycle import (  # noqa: E402
     EndpointConfig,
     TemplateConfig,
     build_endpoint_input,
-    build_job_policy,
     build_template_input,
     compute_execution_timeout,
     format_timeout_receipt,

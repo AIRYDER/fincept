@@ -90,9 +90,7 @@ def registry(engine):
 @pytest.fixture()
 def auth_token(monkeypatch: pytest.MonkeyPatch) -> str:
     """A valid JWT signed with the test secret."""
-    monkeypatch.setenv(
-        "FINCEPT_JWT_SECRET", "test-secret-needs-to-be-long-enough"
-    )
+    monkeypatch.setenv("FINCEPT_JWT_SECRET", "test-secret-needs-to-be-long-enough")
     from fincept_core.config import Settings
 
     Settings.clear_cache()
@@ -249,12 +247,8 @@ class TestRegistryListModels:
         auth_headers: dict[str, str],
     ) -> None:
         # Seed a model.
-        registry.register_model(
-            model_id="model-001", name="Momentum XGB", model_family="lightgbm"
-        )
-        response = client_with_registry.get(
-            "/quant-foundry/registry/models", headers=auth_headers
-        )
+        registry.register_model(model_id="model-001", name="Momentum XGB", model_family="lightgbm")
+        response = client_with_registry.get("/quant-foundry/registry/models", headers=auth_headers)
         assert response.status_code == 200
         body = response.json()
         assert isinstance(body, list)
@@ -267,9 +261,7 @@ class TestRegistryListModels:
         client_with_registry: TestClient,
         registry: ModelRegistryDB,
     ) -> None:
-        registry.register_model(
-            model_id="model-001", name="Momentum XGB", model_family="lightgbm"
-        )
+        registry.register_model(model_id="model-001", name="Momentum XGB", model_family="lightgbm")
         response = client_with_registry.get("/quant-foundry/registry/models")
         assert response.status_code == 401
 
@@ -278,9 +270,7 @@ class TestRegistryListModels:
         client_with_registry: TestClient,
         auth_headers: dict[str, str],
     ) -> None:
-        response = client_with_registry.get(
-            "/quant-foundry/registry/models", headers=auth_headers
-        )
+        response = client_with_registry.get("/quant-foundry/registry/models", headers=auth_headers)
         assert response.status_code == 200
         assert response.json() == []
 
@@ -292,9 +282,7 @@ class TestRegistryGetModel:
         registry: ModelRegistryDB,
         auth_headers: dict[str, str],
     ) -> None:
-        registry.register_model(
-            model_id="model-001", name="Test Model", model_family="xgboost_gpu"
-        )
+        registry.register_model(model_id="model-001", name="Test Model", model_family="xgboost_gpu")
         response = client_with_registry.get(
             "/quant-foundry/registry/models/model-001", headers=auth_headers
         )

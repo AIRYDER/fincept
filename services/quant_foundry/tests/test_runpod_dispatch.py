@@ -21,7 +21,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from quant_foundry.runpod_client import (
     DispatchStatus,
     HttpRunPodClient,
@@ -36,7 +35,6 @@ from quant_foundry.runpod_policy import (
     build_training_job_input,
 )
 from quant_foundry.schemas import RunPodTrainingRequest
-
 
 # --- RunPodTrainingRequest schema -------------------------------------------
 

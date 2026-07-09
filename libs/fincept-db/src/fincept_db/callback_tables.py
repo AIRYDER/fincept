@@ -22,17 +22,17 @@ Security invariants mirrored from the Pydantic layer:
 
 from __future__ import annotations
 
-from typing import Any
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
 )
@@ -59,9 +59,7 @@ class ArtifactManifestRow(Base):
     label_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     code_git_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lockfile_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    container_image_digest: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    container_image_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
         CheckConstraint("size_bytes >= 0", name="ck_artifact_manifests_size_nonneg"),
@@ -89,20 +87,14 @@ class ModelDossierRow(Base):
     label_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     code_git_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lockfile_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    container_image_digest: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    container_image_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
     random_seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hardware_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
     trial_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     training_metrics: Mapped[JSONDict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="candidate")
-    settlement_evidence_refs: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
-    shadow_prediction_refs: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
+    settlement_evidence_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    shadow_prediction_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     blocking_issues: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )
@@ -140,9 +132,7 @@ class CallbackReceiptRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    history: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
     __table_args__ = (
         CheckConstraint(
@@ -179,9 +169,7 @@ class CallbackDlqRow(Base):
     is_retryable: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    history: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
     __table_args__ = (
         CheckConstraint(
@@ -226,9 +214,7 @@ class ShadowPredictionRow(Base):
     __tablename__ = "shadow_predictions"
 
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    prediction_id: Mapped[str] = mapped_column(
-        String(128), primary_key=True, nullable=False
-    )
+    prediction_id: Mapped[str] = mapped_column(String(128), primary_key=True, nullable=False)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     ts_event: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -237,9 +223,7 @@ class ShadowPredictionRow(Base):
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
     authority: Mapped[str] = mapped_column(String(32), nullable=False)
     p_up: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
-    feature_availability: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, nullable=True
-    )
+    feature_availability: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     latency_ms: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     batch_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     received_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)

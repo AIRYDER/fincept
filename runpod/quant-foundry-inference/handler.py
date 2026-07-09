@@ -231,14 +231,10 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # honored: when set to ``true`` it forces RealInferenceEngine (raw
     # predict() path) for backward compatibility with pre-C2 deployments.
     engine_param = (
-        input_data.get("engine")
-        or os.environ.get("QUANT_FOUNDRY_INFERENCE_ENGINE", "")
-        or ""
+        input_data.get("engine") or os.environ.get("QUANT_FOUNDRY_INFERENCE_ENGINE", "") or ""
     ).lower()
 
-    legacy_use_real = (
-        os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
-    )
+    legacy_use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
 
     if engine_param == "stub":
         engine = ShadowInferenceEngine(enabled=enabled)

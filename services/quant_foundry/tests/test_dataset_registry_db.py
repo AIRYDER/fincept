@@ -198,9 +198,7 @@ class TestDatasetManifestRowORM:
             session.commit()
 
             queried = session.scalars(
-                select(DatasetManifestRow).where(
-                    DatasetManifestRow.manifest_id == "manifest-001"
-                )
+                select(DatasetManifestRow).where(DatasetManifestRow.manifest_id == "manifest-001")
             ).one()
 
         assert queried.manifest_id == "manifest-001"
@@ -243,9 +241,7 @@ class TestDatasetManifestRowORM:
             session.commit()
 
             queried = session.scalars(
-                select(DatasetManifestRow).where(
-                    DatasetManifestRow.manifest_id == "manifest-min"
-                )
+                select(DatasetManifestRow).where(DatasetManifestRow.manifest_id == "manifest-min")
             ).one()
 
         assert queried.manifest_uri is None
@@ -320,9 +316,7 @@ class TestMigration0006:
         """Migration 0006 has revision='0006' and down_revision='0005'."""
         import importlib
 
-        mod = importlib.import_module(
-            "fincept_db.migrations.versions.0006_dataset_manifests"
-        )
+        mod = importlib.import_module("fincept_db.migrations.versions.0006_dataset_manifests")
         assert mod.revision == "0006"
         assert mod.down_revision == "0005"
 
@@ -339,9 +333,7 @@ class TestMigration0006:
         from alembic.migration import MigrationContext
         from alembic.operations import Operations
 
-        mod = importlib.import_module(
-            "fincept_db.migrations.versions.0006_dataset_manifests"
-        )
+        mod = importlib.import_module("fincept_db.migrations.versions.0006_dataset_manifests")
 
         eng = create_engine("sqlite:///:memory:", future=True)
         with eng.begin() as conn:
@@ -409,9 +401,7 @@ class TestMigration0006:
         from alembic.migration import MigrationContext
         from alembic.operations import Operations
 
-        mod = importlib.import_module(
-            "fincept_db.migrations.versions.0006_dataset_manifests"
-        )
+        mod = importlib.import_module("fincept_db.migrations.versions.0006_dataset_manifests")
 
         eng = create_engine("sqlite:///:memory:", future=True)
         with eng.begin() as conn:
@@ -434,6 +424,7 @@ class TestMigration0006:
 # ---------------------------------------------------------------------------
 # verify_dataset_manifest.py script tests
 # ---------------------------------------------------------------------------
+
 
 class TestVerifyDatasetManifestScript:
     """Tests for the verify_dataset_manifest.py script.
@@ -596,13 +587,9 @@ class TestVerifyDatasetManifestScript:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     assert not alias.name.startswith("quant_foundry"), (
-                        f"verify_dataset_manifest.py imports {alias.name} "
-                        "— must be standalone"
+                        f"verify_dataset_manifest.py imports {alias.name} — must be standalone"
                     )
             elif isinstance(node, ast.ImportFrom):
-                assert node.module is None or not node.module.startswith(
-                    "quant_foundry"
-                ), (
-                    f"verify_dataset_manifest.py imports from {node.module} "
-                    "— must be standalone"
+                assert node.module is None or not node.module.startswith("quant_foundry"), (
+                    f"verify_dataset_manifest.py imports from {node.module} — must be standalone"
                 )

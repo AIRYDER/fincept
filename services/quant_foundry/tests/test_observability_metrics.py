@@ -28,7 +28,7 @@ import importlib
 import json
 import pathlib
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -120,8 +120,10 @@ class TestHandlerMetricsEmission:
 
     def test_gpu_model_absent_when_probe_fails(self, handler_module, monkeypatch):
         """metrics_summary must NOT include gpu_model when nvidia-smi fails."""
+
         def _raise():
             raise RuntimeError("nvidia-smi not available")
+
         monkeypatch.setattr(handler_module, "_probe_gpu_model", _raise)
         event = _make_training_input("qf:obs:no-nvidia:1")
         result = handler_module.handler(event)
@@ -273,12 +275,14 @@ class TestGatewayMetricsRecording:
         gateway, tracker = self._make_gateway_with_mock_tracker()
         from quant_foundry.gateway import QuantFoundryGateway
 
-        payload = json.dumps({
-            "metrics_summary": {
-                "execution_time_ms": 3000,
-                "cost_usd": 0.33,
-            },
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "metrics_summary": {
+                    "execution_time_ms": 3000,
+                    "cost_usd": 0.33,
+                },
+            }
+        ).encode("utf-8")
         QuantFoundryGateway._record_operational_metrics(gateway, "job-obs-8", payload)
         calls = tracker.record_metric.call_args_list
         metric_types = [c.kwargs.get("metric_type") or c.args[1] for c in calls]

@@ -38,13 +38,14 @@ Design:
 from __future__ import annotations
 
 import time
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
-    "DeterminismRecipe",
-    "DeterminismRunResult",
     "DeterminismProofReceipt",
     "DeterminismProofRunner",
+    "DeterminismRecipe",
+    "DeterminismRunResult",
     "DeterminismVerdict",
 ]
 
@@ -56,6 +57,7 @@ __all__ = [
 
 class DeterminismVerdict:
     """Verdict strings for a determinism proof."""
+
     BIT_DETERMINISTIC = "bit_deterministic"
     NON_DETERMINISTIC = "non_deterministic"
     FAILED = "failed"
@@ -216,10 +218,7 @@ class DeterminismProofRunner:
         r2 = self._run_training(recipe, "run2")
 
         sha256_match = (
-            r1.error is None
-            and r2.error is None
-            and r1.sha256 == r2.sha256
-            and r1.sha256 != ""
+            r1.error is None and r2.error is None and r1.sha256 == r2.sha256 and r1.sha256 != ""
         )
         critical_fields_match = (
             sha256_match
@@ -247,7 +246,9 @@ class DeterminismProofRunner:
         )
 
     def _run_training(
-        self, recipe: DeterminismRecipe, run_label: str,
+        self,
+        recipe: DeterminismRecipe,
+        run_label: str,
     ) -> DeterminismRunResult:
         """Run a single training job in-process.
 
@@ -303,6 +304,7 @@ class DeterminismProofRunner:
         start = time.time()
         try:
             import importlib
+
             handler_mod = importlib.import_module("handler")
             result = handler_mod.handler(event)
             elapsed = time.time() - start
@@ -364,6 +366,7 @@ def run_determinism_gate(recipe: DeterminismRecipe | None = None) -> int:
 
     if recipe is None:
         import random
+
         rng = random.Random(42)
         rows = ["feature_1,feature_2,feature_3,label\n"]
         for _ in range(100):

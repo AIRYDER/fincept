@@ -49,6 +49,7 @@ from quant_foundry.callbacks import (
     DurableShadowLedgerStore,
 )
 from quant_foundry.cost_tracker import CostTracker
+from quant_foundry.dataset_manifest import DatasetRegistry
 from quant_foundry.db_sinks import (
     CallbackDlqDbStore,
     CallbackMetricsDbStore,
@@ -106,7 +107,6 @@ from quant_foundry.inbox import CallbackInbox
 from quant_foundry.leaderboard_expanded import ExpandedLeaderboard
 from quant_foundry.market_data_adapter import BarDataAdapter, alpaca_reader_from_env
 from quant_foundry.mock_dispatcher import MockDispatcher
-from quant_foundry.dataset_manifest import DatasetRegistry
 from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.paper_bridge import PaperBridge
 from quant_foundry.promotion import PromotionReviewQueue
@@ -917,9 +917,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 dataset_id = self._extract_dataset_id(dispatch_payload)
                 if dataset_id is not None:
                     try:
-                        self._dataset_registry.dispatch_training(
-                            dataset_id, mode="production"
-                        )
+                        self._dataset_registry.dispatch_training(dataset_id, mode="production")
                     except ValueError as exc:
                         return {
                             "enabled": True,
@@ -1196,8 +1194,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             return
         # Query the model_dossiers table for the content_hash (written by
         # DbDossierStore during callback processing).
-        from sqlalchemy.orm import Session as _Session
         from sqlalchemy import select as _select
+        from sqlalchemy.orm import Session as _Session
 
         from fincept_db.callback_tables import ModelDossierRow
 
@@ -1798,10 +1796,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
             # Query the most recent sentinel metrics for that version.
             sentinel_row = session.scalars(
-                _select(ModelMetricRow).where(
+                _select(ModelMetricRow)
+                .where(
                     ModelMetricRow.version_id == version_row.version_id,
                     ModelMetricRow.metric_type == "sentinel",
-                ).order_by(ModelMetricRow.recorded_at_ns.desc())
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
             ).first()
             if sentinel_row is None:
                 return None
@@ -2201,9 +2201,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 ),
                 gpu_type=str(gpu_type) if gpu_type is not None else None,
                 gpu_count=gpu_count,
-                container_image=(
-                    str(container_image) if container_image is not None else None
-                ),
+                container_image=(str(container_image) if container_image is not None else None),
                 request_payload_ref=request_payload_ref,
             )
 

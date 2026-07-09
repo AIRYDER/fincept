@@ -114,9 +114,7 @@ def verify_manifest_hash(manifest: dict[str, Any]) -> tuple[bool, str]:
     actual = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
 
     if actual != declared:
-        return False, (
-            f"manifest_hash mismatch: declared={declared}, computed={actual}"
-        )
+        return False, (f"manifest_hash mismatch: declared={declared}, computed={actual}")
     return True, f"manifest_hash verified ({declared[:16]}…)"
 
 
@@ -163,9 +161,7 @@ def _count_rows(data_path: Path) -> int:
         try:
             import pandas as pd
         except ImportError as exc:
-            raise ImportError(
-                "cannot read parquet: install polars, pyarrow, or pandas"
-            ) from exc
+            raise ImportError("cannot read parquet: install polars, pyarrow, or pandas") from exc
         df = pd.read_parquet(str(data_path))
         return len(df)
 
@@ -180,15 +176,12 @@ def _count_rows(data_path: Path) -> int:
         try:
             import pandas as pd
         except ImportError as exc:
-            raise ImportError(
-                "cannot read csv: install polars or pandas"
-            ) from exc
+            raise ImportError("cannot read csv: install polars or pandas") from exc
         df = pd.read_csv(str(data_path))
         return len(df)
 
     raise ValueError(
-        f"unsupported data format: {suffix} "
-        "(expected .parquet, .parquet.gz, .csv, or .csv.gz)"
+        f"unsupported data format: {suffix} (expected .parquet, .parquet.gz, .csv, or .csv.gz)"
     )
 
 
@@ -227,9 +220,7 @@ def verify_feature_schema_hash(manifest: dict[str, Any]) -> tuple[bool, str]:
     if not declared or not isinstance(declared, str):
         return False, "feature_schema_hash field is missing or not a string"
     if not _HEX256_RE.match(declared):
-        return False, (
-            f"feature_schema_hash is not a valid 64-char hex SHA-256: {declared!r}"
-        )
+        return False, (f"feature_schema_hash is not a valid 64-char hex SHA-256: {declared!r}")
 
     feature_names = manifest.get("feature_names")
     if feature_names is not None:
@@ -238,10 +229,7 @@ def verify_feature_schema_hash(manifest: dict[str, Any]) -> tuple[bool, str]:
         payload = ":".join(sorted(str(n) for n in feature_names))
         actual = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         if actual != declared:
-            return False, (
-                f"feature_schema_hash mismatch: declared={declared}, "
-                f"computed={actual}"
-            )
+            return False, (f"feature_schema_hash mismatch: declared={declared}, computed={actual}")
         return True, f"feature_schema_hash verified from feature_names ({declared[:16]}…)"
 
     return True, f"feature_schema_hash present ({declared[:16]}…) — no feature_names to recompute"
@@ -254,8 +242,7 @@ def verify_pit_proof(manifest: dict[str, Any]) -> tuple[bool, str]:
         return False, "pit_proof_verified field is missing from manifest"
     if pit is not True:
         return False, (
-            f"pit_proof_verified is {pit!r} — must be True "
-            "(point-in-time proof is mandatory)"
+            f"pit_proof_verified is {pit!r} — must be True (point-in-time proof is mandatory)"
         )
     return True, "pit_proof_verified=True"
 

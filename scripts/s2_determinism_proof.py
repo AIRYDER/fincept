@@ -3,6 +3,7 @@
 This proves the bit-determinism property that is the foundation of
 the platform's unique value proposition (F1/F2 in the recommendations).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -34,6 +35,7 @@ handler_mod = importlib.import_module("handler")
 
 # Prepare a fixed dataset (same both runs)
 import random
+
 random.seed(42)
 rows = ["feature_1,feature_2,feature_3,label\n"]
 for i in range(100):
@@ -43,6 +45,7 @@ for i in range(100):
     label = 1 if (f1 + f2 + f3 + random.gauss(0, 0.5)) > 0 else 0
     rows.append(f"{f1:.6f},{f2:.6f},{f3:.6f},{label}\n")
 inline_csv = "".join(rows)
+
 
 def run_training(run_label: str) -> dict:
     """Run a single training job and return the result."""
@@ -76,7 +79,9 @@ def run_training(run_label: str) -> dict:
     elapsed = time.time() - start
 
     if "error_code" in result:
-        print(f"  Run {run_label}: FAILED — {result.get('error_code')}: {result.get('error_summary','')[:200]}")
+        print(
+            f"  Run {run_label}: FAILED — {result.get('error_code')}: {result.get('error_summary', '')[:200]}"
+        )
         return None
 
     callback_payload_str = result.get("callback_payload", "")
@@ -86,7 +91,9 @@ def run_training(run_label: str) -> dict:
 
     sha = artifact.get("sha256", "")
     artifact_id = artifact.get("artifact_id", "")
-    metrics = payload.get("dossier", {}).get("training_metrics", payload.get("training_metrics", {}))
+    metrics = payload.get("dossier", {}).get(
+        "training_metrics", payload.get("training_metrics", {})
+    )
 
     print(f"  Run {run_label}: completed in {elapsed:.2f}s")
     print(f"    sha256: {sha}")
@@ -105,6 +112,7 @@ def run_training(run_label: str) -> dict:
         "label_schema_hash": artifact.get("label_schema_hash"),
         "size_bytes": artifact.get("size_bytes"),
     }
+
 
 # Run 1
 print("=== RUN 1 ===")
@@ -135,7 +143,9 @@ if r1 and r2:
     print(f"    run2: {r2['sha256']}")
     print(f"  artifact_id match:      {artifact_id_match}")
     print(f"  accuracy match:         {accuracy_match}  ({r1['accuracy']} == {r2['accuracy']})")
-    print(f"  sharpe match:           {sharpe_match}  ({r1['sharpe_ratio']} == {r2['sharpe_ratio']})")
+    print(
+        f"  sharpe match:           {sharpe_match}  ({r1['sharpe_ratio']} == {r2['sharpe_ratio']})"
+    )
     print(f"  feature_schema_hash:    {feature_hash_match}")
     print(f"  label_schema_hash:      {label_hash_match}")
     print(f"  size_bytes match:       {size_match}  ({r1['size_bytes']} == {r2['size_bytes']})")
@@ -145,9 +155,21 @@ if r1 and r2:
     # feature_schema_hash / label_schema_hash may differ because they include
     # the temp file path (a known minor issue — they should be content-based)
     critical_match = all([sha_match, artifact_id_match, accuracy_match, sharpe_match, size_match])
-    all_match = all([sha_match, artifact_id_match, accuracy_match, sharpe_match, feature_hash_match, label_hash_match, size_match])
+    all_match = all(
+        [
+            sha_match,
+            artifact_id_match,
+            accuracy_match,
+            sharpe_match,
+            feature_hash_match,
+            label_hash_match,
+            size_match,
+        ]
+    )
     print(f"  ALL FIELDS MATCH: {all_match}")
-    print(f"  CRITICAL FIELDS MATCH (sha256, artifact_id, accuracy, sharpe, size): {critical_match}")
+    print(
+        f"  CRITICAL FIELDS MATCH (sha256, artifact_id, accuracy, sharpe, size): {critical_match}"
+    )
     print()
 
     if critical_match:
@@ -174,7 +196,9 @@ receipt = {
     "sha256_match": sha_match if r1 and r2 else False,
     "critical_fields_match": critical_match if r1 and r2 else False,
     "all_fields_match": all_match if r1 and r2 else False,
-    "verdict": "BIT_DETERMINISTIC" if (r1 and r2 and critical_match) else "NON_DETERMINISTIC_OR_FAILED",
+    "verdict": "BIT_DETERMINISTIC"
+    if (r1 and r2 and critical_match)
+    else "NON_DETERMINISTIC_OR_FAILED",
 }
 
 receipt_path = _REPO_ROOT / "reports" / "s2-live-gpu-proof" / "determinism_receipt.json"

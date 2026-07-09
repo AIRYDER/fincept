@@ -156,10 +156,10 @@ class TestSingleBundleRoundTrip:
     def test_lightgbm_single_bundle_round_trips(self) -> None:
         """A single LightGBM bundle: write → load → score → Decision."""
         from quant_foundry.bundle_io import (
+            LOADER_VERSION,
             BundleKind,
             BundleScorer,
             Decision,
-            LOADER_VERSION,
             load_bundle,
             write_bundle,
         )
@@ -209,7 +209,7 @@ class TestSingleBundleRoundTrip:
 
     def test_bundle_manifest_lists_every_member_and_sha256(self) -> None:
         """bundle_manifest.json lists every member and sha256."""
-        from quant_foundry.bundle_io import load_bundle, write_bundle
+        from quant_foundry.bundle_io import write_bundle
 
         model = _train_tiny_lightgbm(n_features=3, n_rows=50, seed=7)
         bundle_bytes = write_bundle(
@@ -266,6 +266,7 @@ class TestMetaBundleRoundTrip:
 
     def test_lightgbm_meta_bundle_round_trips(self) -> None:
         """A meta-labeled bundle: write → load → score → Decision with meta_p."""
+        import numpy as np
         from quant_foundry.bundle_io import (
             BundleKind,
             BundleScorer,
@@ -273,7 +274,6 @@ class TestMetaBundleRoundTrip:
             load_bundle,
             write_bundle,
         )
-        import numpy as np
 
         # Train a multiclass primary model.
         primary = _train_tiny_lightgbm(
@@ -327,9 +327,8 @@ class TestMetaBundleRoundTrip:
 
     def test_meta_bundle_manifest_has_both_members(self) -> None:
         """meta_labeled bundle manifest lists both primary and meta members."""
-        from quant_foundry.bundle_io import write_bundle
-
         import numpy as np
+        from quant_foundry.bundle_io import write_bundle
 
         primary = _train_tiny_lightgbm(
             n_features=4, n_rows=50, seed=42, objective="multiclass", n_classes=3
@@ -384,9 +383,8 @@ class TestLegacyBarePickle:
 
     def test_legacy_meta_dict_pickle_loads_read_only(self) -> None:
         """A legacy meta-labeled dict pickle (pre-C1) loads as meta_labeled."""
-        from quant_foundry.bundle_io import BundleKind, load_bundle
-
         import numpy as np
+        from quant_foundry.bundle_io import BundleKind, load_bundle
 
         primary = _train_tiny_lightgbm(
             n_features=4, n_rows=50, seed=42, objective="multiclass", n_classes=3
@@ -447,9 +445,8 @@ class TestFailClosed:
 
     def test_missing_meta_member_fails_closed(self) -> None:
         """meta_labeled bundle with missing meta member fails closed."""
-        from quant_foundry.bundle_io import BundleLoadError, load_bundle
-
         import numpy as np
+        from quant_foundry.bundle_io import BundleLoadError, load_bundle
 
         primary = _train_tiny_lightgbm(
             n_features=4, n_rows=50, seed=42, objective="multiclass", n_classes=3
@@ -562,13 +559,13 @@ class TestMetaAbstention:
 
     def test_meta_abstention_sets_act_false(self) -> None:
         """abstained=True ⇒ act=False for meta-labeled decisions."""
+        import numpy as np
         from quant_foundry.bundle_io import (
             BundleScorer,
             Decision,
             load_bundle,
             write_bundle,
         )
-        import numpy as np
 
         primary = _train_tiny_lightgbm(
             n_features=4, n_rows=100, seed=42, objective="multiclass", n_classes=3
@@ -613,8 +610,8 @@ class TestMetaAbstention:
 
     def test_meta_low_threshold_never_abstains(self) -> None:
         """With threshold 0.0, no decision abstains."""
-        from quant_foundry.bundle_io import BundleScorer, load_bundle, write_bundle
         import numpy as np
+        from quant_foundry.bundle_io import BundleScorer, load_bundle, write_bundle
 
         primary = _train_tiny_lightgbm(
             n_features=4, n_rows=100, seed=42, objective="multiclass", n_classes=3
@@ -835,9 +832,7 @@ class TestWorkerSelfCheck:
                 error_detail="forced failure for test",
             )
 
-        monkeypatch.setattr(
-            handler_module, "run_selfcheck", _failing_selfcheck
-        )
+        monkeypatch.setattr(handler_module, "run_selfcheck", _failing_selfcheck)
 
         csv_path = _make_synthetic_csv(tmp_path, n=200, seed=42)
         event = _make_training_input_for_real_trainer(
@@ -868,9 +863,7 @@ class TestWorkerSelfCheck:
                 error_detail="forced failure for test",
             )
 
-        monkeypatch.setattr(
-            handler_module, "run_selfcheck", _failing_selfcheck
-        )
+        monkeypatch.setattr(handler_module, "run_selfcheck", _failing_selfcheck)
 
         csv_path = _make_synthetic_csv(tmp_path, n=200, seed=42)
         event = _make_training_input_for_real_trainer(
@@ -901,7 +894,6 @@ class TestXGBoostBundle:
         pytest.importorskip("xgboost")
         import numpy as np
         import xgboost as xgb
-
         from quant_foundry.bundle_io import BundleKind, BundleScorer, load_bundle, write_bundle
 
         rng = np.random.RandomState(42)

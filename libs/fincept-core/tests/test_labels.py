@@ -15,12 +15,10 @@ import pytest
 from fincept_core.datasets import (
     BarrierConfig,
     MetaLabelConfig,
-    TripleBarrierLabel,
     meta_labels,
     triple_barrier_labels,
     volatility_scaled_widths,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Triple-barrier labeling                                                     #
@@ -35,9 +33,7 @@ class TestTripleBarrierLabels:
         highs = [100, 102, 104, 105]
         lows = [99, 99, 100, 101]
         closes = [100, 101, 103, 104]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert len(labels) == 1  # 4 bars - 3 horizon = 1 label
         assert labels[0].label == 1
@@ -50,9 +46,7 @@ class TestTripleBarrierLabels:
         highs = [100, 101, 102, 103]
         lows = [99, 97, 98, 99]
         closes = [100, 99, 100, 101]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert labels[0].label == -1
         assert labels[0].barrier_hit == "lower"
@@ -65,9 +59,7 @@ class TestTripleBarrierLabels:
         highs = [100, 101, 101, 101]
         lows = [99, 99, 99, 99]
         closes = [100, 100.5, 100.5, 101]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert labels[0].label == 1
         assert labels[0].barrier_hit == "vertical"
@@ -78,9 +70,7 @@ class TestTripleBarrierLabels:
         highs = [100, 101, 101, 101]
         lows = [99, 99, 99, 99]
         closes = [100, 99.5, 99.5, 99]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert labels[0].label == -1
         assert labels[0].barrier_hit == "vertical"
@@ -90,9 +80,7 @@ class TestTripleBarrierLabels:
         highs = [100, 100, 100, 100]
         lows = [100, 100, 100, 100]
         closes = [100, 100, 100, 100]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert labels[0].label == 0
         assert labels[0].barrier_hit == "vertical"
@@ -102,9 +90,7 @@ class TestTripleBarrierLabels:
         highs = [100, 105, 105, 105]
         lows = [99, 99, 99, 99]
         closes = [100, 103, 103, 103]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         # Upper barrier at 103, hit at bar 1. Return = 3%.
         assert labels[0].return_pct == pytest.approx(3.0, abs=0.01)
@@ -116,9 +102,7 @@ class TestTripleBarrierLabels:
         highs = [100 + i for i in range(n)]
         lows = [99 + i for i in range(n)]
         closes = [100 + i for i in range(n)]
-        cfg = BarrierConfig(
-            profit_take_width=0.10, stop_loss_width=0.10, horizon_bars=5
-        )
+        cfg = BarrierConfig(profit_take_width=0.10, stop_loss_width=0.10, horizon_bars=5)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         assert len(labels) == n - 5
 
@@ -127,9 +111,7 @@ class TestTripleBarrierLabels:
         highs = [100, 101, 102, 103, 104, 105]
         lows = [99, 99, 99, 99, 99, 99]
         closes = [100, 100, 101, 102, 103, 104]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         labels = triple_barrier_labels(highs, lows, closes, cfg)
         # 6 bars - 3 horizon = 3 labels (bars 0, 1, 2)
         assert len(labels) == 3
@@ -141,9 +123,7 @@ class TestTripleBarrierLabels:
         highs = [100, 102, 102, 102]
         lows = [99, 99, 99, 99]
         closes = [100, 101, 101, 101]
-        cfg = BarrierConfig(
-            profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3
-        )
+        cfg = BarrierConfig(profit_take_width=0.03, stop_loss_width=0.02, horizon_bars=3)
         # Override with per-bar widths: bar 0 has tight 1% upper
         per_bar = [(0.01, 0.01), (0.10, 0.10), (0.10, 0.10), (0.10, 0.10)]
         labels = triple_barrier_labels(highs, lows, closes, cfg, per_bar_widths=per_bar)
@@ -155,28 +135,36 @@ class TestTripleBarrierLabels:
     def test_mismatched_lengths(self) -> None:
         with pytest.raises(ValueError, match="equal length"):
             triple_barrier_labels(
-                [100, 101], [99], [100, 101],
+                [100, 101],
+                [99],
+                [100, 101],
                 BarrierConfig(profit_take_width=0.02, stop_loss_width=0.02, horizon_bars=1),
             )
 
     def test_invalid_profit_take(self) -> None:
         with pytest.raises(ValueError, match="profit_take_width"):
             triple_barrier_labels(
-                [100], [99], [100],
+                [100],
+                [99],
+                [100],
                 BarrierConfig(profit_take_width=0.0, stop_loss_width=0.02, horizon_bars=1),
             )
 
     def test_invalid_stop_loss(self) -> None:
         with pytest.raises(ValueError, match="stop_loss_width"):
             triple_barrier_labels(
-                [100], [99], [100],
+                [100],
+                [99],
+                [100],
                 BarrierConfig(profit_take_width=0.02, stop_loss_width=-0.01, horizon_bars=1),
             )
 
     def test_invalid_horizon(self) -> None:
         with pytest.raises(ValueError, match="horizon_bars"):
             triple_barrier_labels(
-                [100], [99], [100],
+                [100],
+                [99],
+                [100],
                 BarrierConfig(profit_take_width=0.02, stop_loss_width=0.02, horizon_bars=0),
             )
 

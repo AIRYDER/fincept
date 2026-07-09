@@ -53,7 +53,6 @@ from fincept_db.callback_tables import (
     ModelDossierRow,
     ShadowPredictionRow,
 )
-
 from quant_foundry.dossier import DossierRecord
 from quant_foundry.schemas import (
     ArtifactManifest,
@@ -62,7 +61,6 @@ from quant_foundry.schemas import (
     ShadowPrediction,
 )
 from quant_foundry.shadow_ledger import compute_batch_hash
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -405,9 +403,7 @@ class CallbackReceiptDbStore:
                     "received_at_ns": data["received_at_ns"],
                     "processed_at_ns": data.get("processed_at_ns"),
                     "status": (
-                        data["status"].value
-                        if hasattr(data["status"], "value")
-                        else data["status"]
+                        data["status"].value if hasattr(data["status"], "value") else data["status"]
                     ),
                     "error_code": data.get("error_code"),
                     "error_summary": data.get("error_summary"),
@@ -508,9 +504,7 @@ class CallbackDlqDbStore:
         from sqlalchemy import func
 
         with Session(self.engine) as session:
-            return session.scalar(
-                select(func.count()).select_from(CallbackDlqRow)
-            ) or 0
+            return session.scalar(select(func.count()).select_from(CallbackDlqRow)) or 0
 
 
 # ---------------------------------------------------------------------------
@@ -593,22 +587,28 @@ class CallbackMetricsDbStore:
         now_ns = time.time_ns()
         cutoff = now_ns - window_ns
         with Session(self.engine) as session:
-            accepted = session.scalar(
-                select(func.count())
-                .select_from(CallbackMetricRow)
-                .where(
-                    CallbackMetricRow.ts_ns >= cutoff,
-                    CallbackMetricRow.event == "accepted",
+            accepted = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(CallbackMetricRow)
+                    .where(
+                        CallbackMetricRow.ts_ns >= cutoff,
+                        CallbackMetricRow.event == "accepted",
+                    )
                 )
-            ) or 0
-            rejected = session.scalar(
-                select(func.count())
-                .select_from(CallbackMetricRow)
-                .where(
-                    CallbackMetricRow.ts_ns >= cutoff,
-                    CallbackMetricRow.event == "rejected",
+                or 0
+            )
+            rejected = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(CallbackMetricRow)
+                    .where(
+                        CallbackMetricRow.ts_ns >= cutoff,
+                        CallbackMetricRow.event == "rejected",
+                    )
                 )
-            ) or 0
+                or 0
+            )
 
         denom = accepted + rejected
         if denom == 0:

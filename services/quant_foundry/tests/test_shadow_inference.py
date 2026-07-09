@@ -493,6 +493,7 @@ class TestNoSecretsInInferenceOutput:
 # Helpers for C2 bundle-based tests. These build a real C1 bundle (requires
 # lightgbm + numpy) and exercise RealShadowScorer end-to-end.
 
+
 def _c2_train_tiny_lightgbm(n_features: int = 4, n_rows: int = 80, seed: int = 42) -> Any:
     """Train a tiny LightGBM binary model for C2 bundle tests."""
     import lightgbm as lgb
@@ -766,7 +767,7 @@ class TestRealShadowScorerFailsClosed:
         engine = RealShadowScorer(enabled=True)
 
         # Must raise — NOT silently fall back to stub scoring.
-        with pytest.raises(Exception):  # noqa: PT011 — any exception is acceptable
+        with pytest.raises(Exception):
             engine.run(request=req, snapshot=snap, model_id="m1")
 
     def test_no_silent_stub_fallback_on_bundle_error(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -775,9 +776,7 @@ class TestRealShadowScorerFailsClosed:
         pytest.importorskip("lightgbm")
 
         snap = _make_feature_snapshot(symbols=["AAPL"], n_features=4)
-        req = _make_inference_request(
-            artifact_ref="file:///nonexistent.bundle", symbols=["AAPL"]
-        )
+        req = _make_inference_request(artifact_ref="file:///nonexistent.bundle", symbols=["AAPL"])
 
         class _ExplodingLoader:
             def __call__(self, uri: str) -> Any:
@@ -801,6 +800,4 @@ class TestRealShadowScorerFailsClosed:
         snap = _make_feature_snapshot(symbols=["AAPL"], n_features=4)
         req = _make_inference_request(artifact_ref="file:///x.bundle", symbols=["AAPL"])
         with pytest.raises(InferenceDisabledError):
-            run_real_shadow_scoring(
-                request=req, snapshot=snap, model_id="m1", enabled=False
-            )
+            run_real_shadow_scoring(request=req, snapshot=snap, model_id="m1", enabled=False)

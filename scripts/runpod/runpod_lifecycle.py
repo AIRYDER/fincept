@@ -252,7 +252,9 @@ def build_job_policy(
 
             {"input": {...}, "policy": build_job_policy()}
     """
-    timeout_s = execution_timeout_s if execution_timeout_s is not None else compute_execution_timeout()
+    timeout_s = (
+        execution_timeout_s if execution_timeout_s is not None else compute_execution_timeout()
+    )
     validated = validate_execution_timeout(timeout_s)
     policy: dict[str, Any] = {
         "executionTimeout": validated * 1000,
@@ -455,11 +457,13 @@ def create_network_volume(
     if not key:
         raise RuntimeError("RUNPOD_API_KEY not set — cannot create network volume")
 
-    payload = json.dumps({
-        "name": name,
-        "size": size_gb,
-        "dataCenterId": data_center_id,
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "name": name,
+            "size": size_gb,
+            "dataCenterId": data_center_id,
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         "https://rest.runpod.io/v1/networkvolumes",
         data=payload,
@@ -507,6 +511,7 @@ def list_network_volumes(
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - RunPod REST API
             import json
+
             return json.loads(resp.read())
     except Exception as exc:
         raise RuntimeError(f"Failed to list network volumes: {exc}") from exc

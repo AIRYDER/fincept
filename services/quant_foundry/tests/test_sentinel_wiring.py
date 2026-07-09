@@ -8,24 +8,21 @@ SentinelReceipt.
 from __future__ import annotations
 
 import time
-from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
-from quant_foundry.cost_tracker import CostTracker
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.sentinel import SentinelReceipt
-from quant_foundry.budget import BudgetGuard
-
-from test_e2e_product_loop import _make_engine, _signed_training_callback, _training_payload, _MODEL_ID
-from test_auto_promotion import _dispatch_and_callback, _make_gateway, _signed_callback_with_artifact
-
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
 
 # --------------------------------------------------------------------------- #
 # Tests: _find_sentinel_receipt                                               #
@@ -38,7 +35,8 @@ class TestFindSentinelReceipt:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:1")
@@ -74,7 +72,8 @@ class TestFindSentinelReceipt:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:2")
@@ -89,7 +88,8 @@ class TestFindSentinelReceipt:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
 
@@ -103,7 +103,8 @@ class TestFindSentinelReceipt:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:3")
@@ -150,7 +151,8 @@ class TestFindSentinelReceipt:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:4")
@@ -161,8 +163,18 @@ class TestFindSentinelReceipt:
             metrics_dict={
                 "model_id": _MODEL_ID,
                 "issues": [
-                    {"code": "FUTURE_LEAK", "severity": "blocking", "message": "leak detected", "detail": {}},
-                    {"code": "SHUFFLED_LABEL", "severity": "warning", "message": "edge too high", "detail": {"edge": 0.8}},
+                    {
+                        "code": "FUTURE_LEAK",
+                        "severity": "blocking",
+                        "message": "leak detected",
+                        "detail": {},
+                    },
+                    {
+                        "code": "SHUFFLED_LABEL",
+                        "severity": "warning",
+                        "message": "edge too high",
+                        "detail": {"edge": 0.8},
+                    },
                 ],
                 "passed": False,
                 "checks_run": ["leakage", "overfit"],
@@ -217,28 +229,39 @@ class TestSentinelWiringWithPromotion:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:5")
 
         # Record tournament + sentinel metrics (sentinel FAILED).
         registry.record_metrics(
-            version_id=version_id, metric_type="tournament",
+            version_id=version_id,
+            metric_type="tournament",
             metrics_dict={
-                "model_id": _MODEL_ID, "total_score": 0.72,
-                "score_components": [], "p_value": 0.03,
-                "deflated_sharpe": 1.4, "raw_sharpe": 1.8,
-                "blocking_issues": [], "recommendation": "promote",
-                "status": "eligible", "trial_count": 1,
-                "cost_model_version": "cm-v1", "settled_count": 50,
+                "model_id": _MODEL_ID,
+                "total_score": 0.72,
+                "score_components": [],
+                "p_value": 0.03,
+                "deflated_sharpe": 1.4,
+                "raw_sharpe": 1.8,
+                "blocking_issues": [],
+                "recommendation": "promote",
+                "status": "eligible",
+                "trial_count": 1,
+                "cost_model_version": "cm-v1",
+                "settled_count": 50,
             },
         )
         registry.record_metrics(
-            version_id=version_id, metric_type="sentinel",
+            version_id=version_id,
+            metric_type="sentinel",
             metrics_dict={
                 "model_id": _MODEL_ID,
-                "issues": [{"code": "FUTURE_LEAK", "severity": "blocking", "message": "leak", "detail": {}}],
+                "issues": [
+                    {"code": "FUTURE_LEAK", "severity": "blocking", "message": "leak", "detail": {}}
+                ],
                 "passed": False,
                 "checks_run": ["leakage"],
                 "ts_ns": time.time_ns(),
@@ -266,29 +289,42 @@ class TestSentinelWiringWithPromotion:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:6")
 
         # Record tournament + sentinel metrics (both pass).
         registry.record_metrics(
-            version_id=version_id, metric_type="tournament",
+            version_id=version_id,
+            metric_type="tournament",
             metrics_dict={
-                "model_id": _MODEL_ID, "total_score": 0.72,
-                "score_components": [], "p_value": 0.03,
-                "deflated_sharpe": 1.4, "raw_sharpe": 1.8,
-                "blocking_issues": [], "recommendation": "promote",
-                "status": "eligible", "trial_count": 1,
-                "cost_model_version": "cm-v1", "settled_count": 50,
+                "model_id": _MODEL_ID,
+                "total_score": 0.72,
+                "score_components": [],
+                "p_value": 0.03,
+                "deflated_sharpe": 1.4,
+                "raw_sharpe": 1.8,
+                "blocking_issues": [],
+                "recommendation": "promote",
+                "status": "eligible",
+                "trial_count": 1,
+                "cost_model_version": "cm-v1",
+                "settled_count": 50,
             },
         )
         registry.record_metrics(
-            version_id=version_id, metric_type="sentinel",
+            version_id=version_id,
+            metric_type="sentinel",
             metrics_dict={
-                "model_id": _MODEL_ID, "issues": [], "passed": True,
-                "checks_run": ["leakage"], "ts_ns": time.time_ns(),
-                "pbo": 0.12, "pbo_flagged": False,
+                "model_id": _MODEL_ID,
+                "issues": [],
+                "passed": True,
+                "checks_run": ["leakage"],
+                "ts_ns": time.time_ns(),
+                "pbo": 0.12,
+                "pbo_flagged": False,
             },
         )
 

@@ -37,7 +37,6 @@ Idempotency:
 from __future__ import annotations
 
 import time
-import uuid
 from typing import Any
 
 from sqlalchemy import Engine, select
@@ -54,21 +53,18 @@ from fincept_db.registry_tables import (
     PromotionRow,
     ShadowEvaluationRow,
 )
-
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.promotion import (
     BlockingIssue,
     PromotionEvidence,
     PromotionGate,
     PromotionReceipt,
-    PromotionRejectionReason,
     PromotionRequest,
     PromotionWaiver,
     ReviewDecision,
 )
 from quant_foundry.sentinel import SentinelReceipt, SentinelSeverity
 from quant_foundry.tournament import TournamentResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -335,7 +331,9 @@ class ModelRegistryDB:
         from quant_foundry.champion_challenger import compare_champion_challenger
 
         decision = compare_champion_challenger(
-            champion_input, challenger_input, config,
+            champion_input,
+            challenger_input,
+            config,
         )
 
         # Record the shadow evaluation for the challenger
@@ -398,9 +396,7 @@ class ModelRegistryDB:
         # --- 1. Query the version row to get from_status + model_id ---
         with Session(engine) as session:
             version_row = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == version_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
             ).first()
             if version_row is None:
                 raise KeyError(f"unknown version_id: {version_id}")
@@ -446,9 +442,7 @@ class ModelRegistryDB:
                 decision=receipt.decision.value,
                 review_note=review_note,
                 rejection_reason=(
-                    receipt.rejection_reason.value
-                    if receipt.rejection_reason
-                    else None
+                    receipt.rejection_reason.value if receipt.rejection_reason else None
                 ),
                 waivers=waivers_json,
                 decided_at_ns=decided_at_ns,
@@ -501,9 +495,7 @@ class ModelRegistryDB:
         with Session(engine) as session:
             # Get the version row to find the dossier_content_hash.
             version_row = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == version_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
             ).first()
             if version_row is None:
                 return PromotionEvidence()
@@ -512,9 +504,7 @@ class ModelRegistryDB:
 
             # Query the dossier row.
             dossier_row = session.scalars(
-                select(ModelDossierRow).where(
-                    ModelDossierRow.content_hash == dossier_hash
-                )
+                select(ModelDossierRow).where(ModelDossierRow.content_hash == dossier_hash)
             ).first()
 
             # Build DossierRecord from the dossier row.
@@ -524,31 +514,31 @@ class ModelRegistryDB:
 
             # Query tournament metrics.
             tournament_metrics_row = session.scalars(
-                select(ModelMetricRow).where(
+                select(ModelMetricRow)
+                .where(
                     ModelMetricRow.version_id == version_id,
                     ModelMetricRow.metric_type == "tournament",
-                ).order_by(ModelMetricRow.recorded_at_ns.desc())
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
             ).first()
 
             tournament_result: TournamentResult | None = None
             if tournament_metrics_row is not None:
-                tournament_result = _build_tournament_result(
-                    tournament_metrics_row.metrics
-                )
+                tournament_result = _build_tournament_result(tournament_metrics_row.metrics)
 
             # Query sentinel metrics.
             sentinel_metrics_row = session.scalars(
-                select(ModelMetricRow).where(
+                select(ModelMetricRow)
+                .where(
                     ModelMetricRow.version_id == version_id,
                     ModelMetricRow.metric_type == "sentinel",
-                ).order_by(ModelMetricRow.recorded_at_ns.desc())
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
             ).first()
 
             sentinel_receipt: SentinelReceipt | None = None
             if sentinel_metrics_row is not None:
-                sentinel_receipt = _build_sentinel_receipt(
-                    sentinel_metrics_row.metrics
-                )
+                sentinel_receipt = _build_sentinel_receipt(sentinel_metrics_row.metrics)
 
             # Build blocking issues from the dossier's blocking_issues list.
             blocking_issues: list[BlockingIssue] = []
@@ -583,9 +573,7 @@ class ModelRegistryDB:
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         """Return the model row as a dict, or None."""
         with Session(self.engine) as session:
-            row = session.scalars(
-                select(ModelRow).where(ModelRow.model_id == model_id)
-            ).first()
+            row = session.scalars(select(ModelRow).where(ModelRow.model_id == model_id)).first()
             if row is None:
                 return None
             return _row_to_dict(row)
@@ -594,17 +582,13 @@ class ModelRegistryDB:
         """Return the version row as a dict, or None."""
         with Session(self.engine) as session:
             row = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.version_id == version_id
-                )
+                select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
             ).first()
             if row is None:
                 return None
             return _row_to_dict(row)
 
-    def list_models(
-        self, status: DossierStatus | str | None = None
-    ) -> list[dict[str, Any]]:
+    def list_models(self, status: DossierStatus | str | None = None) -> list[dict[str, Any]]:
         """List models, optionally filtered by status."""
         with Session(self.engine) as session:
             stmt = select(ModelRow)
@@ -692,9 +676,7 @@ def _build_tournament_result(metrics: dict[str, Any]) -> TournamentResult:
         TournamentStatus,
     )
 
-    score_components = [
-        ScoreComponent(**c) for c in metrics.get("score_components", [])
-    ]
+    score_components = [ScoreComponent(**c) for c in metrics.get("score_components", [])]
     return TournamentResult(
         model_id=metrics.get("model_id", ""),
         total_score=metrics.get("total_score", 0.0),
@@ -703,9 +685,7 @@ def _build_tournament_result(metrics: dict[str, Any]) -> TournamentResult:
         deflated_sharpe=metrics.get("deflated_sharpe"),
         raw_sharpe=metrics.get("raw_sharpe"),
         blocking_issues=metrics.get("blocking_issues", []),
-        recommendation=PromotionRecommendation(
-            metrics.get("recommendation", "hold")
-        ),
+        recommendation=PromotionRecommendation(metrics.get("recommendation", "hold")),
         status=TournamentStatus(metrics.get("status", "eligible")),
         trial_count=metrics.get("trial_count", 1),
         cost_model_version=metrics.get("cost_model_version", "cm-v1"),

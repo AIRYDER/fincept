@@ -11,11 +11,7 @@ Tests verify:
 
 from __future__ import annotations
 
-import pickle
-import time
-
 import pytest
-
 from quant_foundry.training_checkpoint import (
     CheckpointData,
     CheckpointError,
@@ -90,6 +86,7 @@ class TestTrainingCheckpointManager:
         )
         assert path is not None
         from pathlib import Path
+
         assert Path(path).exists()
 
     def test_save_and_load(self, tmp_path) -> None:

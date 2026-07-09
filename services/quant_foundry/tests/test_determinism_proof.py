@@ -16,7 +16,6 @@ from quant_foundry.determinism_proof import (
     DeterminismVerdict,
 )
 
-
 # --------------------------------------------------------------------------- #
 # Recipe validation                                                            #
 # --------------------------------------------------------------------------- #
@@ -131,7 +130,8 @@ class TestDeterminismProofRunner:
         """Different SHA-256s → NON_DETERMINISTIC."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(  # type: ignore[assignment]
-            label, sha256="hash_a" if label == "run1" else "hash_b",
+            label,
+            sha256="hash_a" if label == "run1" else "hash_b",
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.NON_DETERMINISTIC
@@ -141,7 +141,8 @@ class TestDeterminismProofRunner:
         """Same SHA but different size → NON_DETERMINISTIC (critical fields)."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(  # type: ignore[assignment]
-            label, size_bytes=100 if label == "run1" else 200,
+            label,
+            size_bytes=100 if label == "run1" else 200,
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.NON_DETERMINISTIC
@@ -152,7 +153,8 @@ class TestDeterminismProofRunner:
         """Same SHA but different accuracy → NON_DETERMINISTIC."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(  # type: ignore[assignment]
-            label, accuracy=0.85 if label == "run1" else 0.90,
+            label,
+            accuracy=0.85 if label == "run1" else 0.90,
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.NON_DETERMINISTIC
@@ -162,9 +164,7 @@ class TestDeterminismProofRunner:
         """Run 1 fails → FAILED."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: (  # type: ignore[assignment]
-            _make_result(label, error="import failed")
-            if label == "run1"
-            else _make_result(label)
+            _make_result(label, error="import failed") if label == "run1" else _make_result(label)
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.FAILED
@@ -174,9 +174,7 @@ class TestDeterminismProofRunner:
         """Run 2 fails → FAILED."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: (  # type: ignore[assignment]
-            _make_result(label)
-            if label == "run1"
-            else _make_result(label, error="OOM")
+            _make_result(label) if label == "run1" else _make_result(label, error="OOM")
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.FAILED
@@ -185,7 +183,8 @@ class TestDeterminismProofRunner:
         """Both runs fail → FAILED."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(  # type: ignore[assignment]
-            label, error="crash",
+            label,
+            error="crash",
         )
         receipt = runner.run(DeterminismRecipe())
         assert receipt.verdict == DeterminismVerdict.FAILED
@@ -194,9 +193,7 @@ class TestDeterminismProofRunner:
         """Non-deterministic backend (GPU) → SKIPPED."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(label)  # type: ignore[assignment]
-        receipt = runner.run(
-            DeterminismRecipe(determinism_status="non_deterministic")
-        )
+        receipt = runner.run(DeterminismRecipe(determinism_status="non_deterministic"))
         assert receipt.verdict == DeterminismVerdict.SKIPPED
         assert receipt.run1.error is not None
         assert receipt.run2.error is not None
@@ -207,7 +204,8 @@ class TestDeterminismProofRunner:
         """Both runs return empty SHA-256 → NON_DETERMINISTIC (not a match)."""
         runner = DeterminismProofRunner()
         runner._run_training = lambda recipe, label: _make_result(  # type: ignore[assignment]
-            label, sha256="",
+            label,
+            sha256="",
         )
         receipt = runner.run(DeterminismRecipe())
         # Empty SHA-256 means the run didn't produce a real artifact.
@@ -250,6 +248,7 @@ class TestDeterminismProofRunner:
 class TestRunDeterminismGate:
     def test_gate_returns_0_on_bit_deterministic(self, monkeypatch) -> None:
         """CI gate returns 0 when verdict is BIT_DETERMINISTIC."""
+
         def mock_run(self, recipe):
             return DeterminismProofReceipt(
                 timestamp_utc="2026-01-01T00:00:00Z",
@@ -260,20 +259,21 @@ class TestRunDeterminismGate:
                 critical_fields_match=True,
                 verdict=DeterminismVerdict.BIT_DETERMINISTIC,
             )
+
         monkeypatch.setattr(DeterminismProofRunner, "run", mock_run)
         # Use a minimal recipe so it doesn't try to generate a dataset
         rc = DeterminismProofRunner.__new__(DeterminismProofRunner)
         # Call the module-level function directly
         from quant_foundry.determinism_proof import run_determinism_gate
+
         # The function creates its own runner, so monkeypatch works
         assert run_determinism_gate(DeterminismRecipe()) == 0
 
     def test_gate_returns_0_on_skipped(self, monkeypatch) -> None:
         """CI gate returns 0 when verdict is SKIPPED (GPU backend)."""
+
         def mock_run(self, recipe):
-            skipped = DeterminismRunResult(
-                run_label="skipped", error="non_deterministic"
-            )
+            skipped = DeterminismRunResult(run_label="skipped", error="non_deterministic")
             return DeterminismProofReceipt(
                 timestamp_utc="2026-01-01T00:00:00Z",
                 recipe=recipe,
@@ -283,12 +283,15 @@ class TestRunDeterminismGate:
                 critical_fields_match=False,
                 verdict=DeterminismVerdict.SKIPPED,
             )
+
         monkeypatch.setattr(DeterminismProofRunner, "run", mock_run)
         from quant_foundry.determinism_proof import run_determinism_gate
+
         assert run_determinism_gate(DeterminismRecipe()) == 0
 
     def test_gate_returns_1_on_non_deterministic(self, monkeypatch) -> None:
         """CI gate returns 1 when verdict is NON_DETERMINISTIC."""
+
         def mock_run(self, recipe):
             return DeterminismProofReceipt(
                 timestamp_utc="2026-01-01T00:00:00Z",
@@ -299,12 +302,15 @@ class TestRunDeterminismGate:
                 critical_fields_match=False,
                 verdict=DeterminismVerdict.NON_DETERMINISTIC,
             )
+
         monkeypatch.setattr(DeterminismProofRunner, "run", mock_run)
         from quant_foundry.determinism_proof import run_determinism_gate
+
         assert run_determinism_gate(DeterminismRecipe()) == 1
 
     def test_gate_returns_1_on_failed(self, monkeypatch) -> None:
         """CI gate returns 1 when verdict is FAILED."""
+
         def mock_run(self, recipe):
             return DeterminismProofReceipt(
                 timestamp_utc="2026-01-01T00:00:00Z",
@@ -315,6 +321,8 @@ class TestRunDeterminismGate:
                 critical_fields_match=False,
                 verdict=DeterminismVerdict.FAILED,
             )
+
         monkeypatch.setattr(DeterminismProofRunner, "run", mock_run)
         from quant_foundry.determinism_proof import run_determinism_gate
+
         assert run_determinism_gate(DeterminismRecipe()) == 1

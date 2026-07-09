@@ -26,6 +26,14 @@ import time
 from typing import Any
 
 import pytest
+from quant_foundry.dossier import DossierStatus
+from quant_foundry.promotion import (
+    PromotionGate,
+    PromotionRejectionReason,
+    PromotionWaiver,
+    ReviewDecision,
+)
+from quant_foundry.registry_db import ModelRegistryDB
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -44,16 +52,6 @@ from fincept_db.registry_tables import (
     PromotionRow,
     ShadowEvaluationRow,
 )
-
-from quant_foundry.dossier import DossierStatus
-from quant_foundry.promotion import (
-    PromotionGate,
-    PromotionRejectionReason,
-    PromotionWaiver,
-    ReviewDecision,
-)
-from quant_foundry.registry_db import ModelRegistryDB
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -79,13 +77,13 @@ def engine():
 
     tables = [
         ArtifactManifestRow.__table__,  # FK parent
-        CallbackReceiptRow.__table__,   # FK parent
-        ModelDossierRow.__table__,      # FK parent (FKs to artifact_manifests)
+        CallbackReceiptRow.__table__,  # FK parent
+        ModelDossierRow.__table__,  # FK parent (FKs to artifact_manifests)
         ModelRow.__table__,
-        ModelVersionRow.__table__,      # FKs to models, model_dossiers, artifact_manifests, callback_receipts
-        ModelMetricRow.__table__,       # FKs to model_versions
-        PromotionRow.__table__,         # FKs to model_versions
-        PromotionDecisionRow.__table__, # FKs to promotions
+        ModelVersionRow.__table__,  # FKs to models, model_dossiers, artifact_manifests, callback_receipts
+        ModelMetricRow.__table__,  # FKs to model_versions
+        PromotionRow.__table__,  # FKs to model_versions
+        PromotionDecisionRow.__table__,  # FKs to promotions
         ShadowEvaluationRow.__table__,  # FKs to model_versions
     ]
     Base.metadata.create_all(eng, tables=tables)
@@ -189,16 +187,12 @@ class TestRegisterModel:
         assert result["current_version_id"] is None
 
         with Session(engine) as session:
-            row = session.scalars(
-                select(ModelRow).where(ModelRow.model_id == "model-001")
-            ).one()
+            row = session.scalars(select(ModelRow).where(ModelRow.model_id == "model-001")).one()
             assert row.name == "Momentum XGB v1"
             assert row.current_status == "candidate"
 
     def test_register_is_idempotent(self, registry, engine) -> None:
-        registry.register_model(
-            model_id="model-002", name="First", model_family="xgboost_gpu"
-        )
+        registry.register_model(model_id="model-002", name="First", model_family="xgboost_gpu")
         # Second call with same model_id is a no-op.
         result = registry.register_model(
             model_id="model-002", name="Second", model_family="xgboost_gpu"
@@ -206,9 +200,7 @@ class TestRegisterModel:
         assert result is None
 
         with Session(engine) as session:
-            row = session.scalars(
-                select(ModelRow).where(ModelRow.model_id == "model-002")
-            ).one()
+            row = session.scalars(select(ModelRow).where(ModelRow.model_id == "model-002")).one()
             assert row.name == "First"  # original name preserved
 
     def test_register_without_description(self, registry, engine) -> None:
@@ -403,9 +395,7 @@ class TestRecordShadowEvaluation:
 
         with Session(engine) as session:
             row = session.scalars(
-                select(ShadowEvaluationRow).where(
-                    ShadowEvaluationRow.evaluation_id == eval_id
-                )
+                select(ShadowEvaluationRow).where(ShadowEvaluationRow.evaluation_id == eval_id)
             ).one()
             assert row.settled_count == 100
             assert row.evaluation_metrics == {"sharpe": 1.5, "drawdown": -0.1}
@@ -431,9 +421,7 @@ class TestRecordShadowEvaluation:
 
         with Session(engine) as session:
             row = session.scalars(
-                select(ShadowEvaluationRow).where(
-                    ShadowEvaluationRow.evaluation_id == eval_id
-                )
+                select(ShadowEvaluationRow).where(ShadowEvaluationRow.evaluation_id == eval_id)
             ).one()
             assert row.tournament_result_id == "tourn-001"
 
@@ -514,9 +502,7 @@ class TestRecordShadowEvaluation:
         # Verify the shadow evaluation was recorded
         with Session(engine) as session:
             row = session.scalars(
-                select(ShadowEvaluationRow).where(
-                    ShadowEvaluationRow.evaluation_id == eval_id
-                )
+                select(ShadowEvaluationRow).where(ShadowEvaluationRow.evaluation_id == eval_id)
             ).one()
             assert row.settled_count == 50
             assert row.evaluation_metrics["decision"] == "promote"
@@ -621,14 +607,16 @@ class TestPromotionApproved:
         )
         # Overwrite dossier with a blocking issue.
         with Session(engine) as session:
-            session.query(ModelDossierRow).filter(
-                ModelDossierRow.content_hash == "h" * 64
-            ).delete()
+            session.query(ModelDossierRow).filter(ModelDossierRow.content_hash == "h" * 64).delete()
             session.add(
                 _make_dossier(
                     content_hash="h" * 64,
                     blocking_issues=[
-                        {"code": "HIGH_TRIAL_COUNT", "severity": "blocking", "note": "Too many trials"}
+                        {
+                            "code": "HIGH_TRIAL_COUNT",
+                            "severity": "blocking",
+                            "note": "Too many trials",
+                        }
                     ],
                 )
             )
@@ -937,59 +925,88 @@ class TestCheckConstraints:
         _seed_parents(engine)
         # Need a model + version first for FK.
         with Session(engine) as session:
-            session.add(ModelRow(
-                model_id="m1", name="M1", model_family="lightgbm",
-                created_at_ns=time.time_ns(), current_status="candidate",
-            ))
-            session.add(ModelVersionRow(
-                version_id="v1", model_id="m1",
-                dossier_content_hash="h" * 64,
-                artifact_id="art-001",
-                callback_receipt_id="cb-001",
-                version_number=1, status="candidate",
-                created_at_ns=time.time_ns(),
-            ))
-            session.add(PromotionRow(
-                promotion_id="p1", version_id="v1",
-                from_status="candidate", to_status="research_approved",
-                requested_at_ns=time.time_ns(),
-                decided_at_ns=time.time_ns(),
-                decision="invalid_decision",
-            ))
+            session.add(
+                ModelRow(
+                    model_id="m1",
+                    name="M1",
+                    model_family="lightgbm",
+                    created_at_ns=time.time_ns(),
+                    current_status="candidate",
+                )
+            )
+            session.add(
+                ModelVersionRow(
+                    version_id="v1",
+                    model_id="m1",
+                    dossier_content_hash="h" * 64,
+                    artifact_id="art-001",
+                    callback_receipt_id="cb-001",
+                    version_number=1,
+                    status="candidate",
+                    created_at_ns=time.time_ns(),
+                )
+            )
+            session.add(
+                PromotionRow(
+                    promotion_id="p1",
+                    version_id="v1",
+                    from_status="candidate",
+                    to_status="research_approved",
+                    requested_at_ns=time.time_ns(),
+                    decided_at_ns=time.time_ns(),
+                    decision="invalid_decision",
+                )
+            )
             with pytest.raises(IntegrityError):
                 session.commit()
 
     def test_bad_rejection_reason_rejected_by_db(self, engine) -> None:
         _seed_parents(engine)
         with Session(engine) as session:
-            session.add(ModelRow(
-                model_id="m1", name="M1", model_family="lightgbm",
-                created_at_ns=time.time_ns(), current_status="candidate",
-            ))
-            session.add(ModelVersionRow(
-                version_id="v1", model_id="m1",
-                dossier_content_hash="h" * 64,
-                artifact_id="art-001",
-                callback_receipt_id="cb-001",
-                version_number=1, status="candidate",
-                created_at_ns=time.time_ns(),
-            ))
-            session.add(PromotionRow(
-                promotion_id="p1", version_id="v1",
-                from_status="candidate", to_status="research_approved",
-                requested_at_ns=time.time_ns(),
-                decided_at_ns=time.time_ns(),
-                decision="rejected",
-            ))
-            session.add(PromotionDecisionRow(
-                decision_id="d1", promotion_id="p1",
-                decision="rejected",
-                review_note="test",
-                rejection_reason="invalid_reason",
-                waivers=[],
-                decided_at_ns=time.time_ns(),
-                decided_by="test",
-            ))
+            session.add(
+                ModelRow(
+                    model_id="m1",
+                    name="M1",
+                    model_family="lightgbm",
+                    created_at_ns=time.time_ns(),
+                    current_status="candidate",
+                )
+            )
+            session.add(
+                ModelVersionRow(
+                    version_id="v1",
+                    model_id="m1",
+                    dossier_content_hash="h" * 64,
+                    artifact_id="art-001",
+                    callback_receipt_id="cb-001",
+                    version_number=1,
+                    status="candidate",
+                    created_at_ns=time.time_ns(),
+                )
+            )
+            session.add(
+                PromotionRow(
+                    promotion_id="p1",
+                    version_id="v1",
+                    from_status="candidate",
+                    to_status="research_approved",
+                    requested_at_ns=time.time_ns(),
+                    decided_at_ns=time.time_ns(),
+                    decision="rejected",
+                )
+            )
+            session.add(
+                PromotionDecisionRow(
+                    decision_id="d1",
+                    promotion_id="p1",
+                    decision="rejected",
+                    review_note="test",
+                    rejection_reason="invalid_reason",
+                    waivers=[],
+                    decided_at_ns=time.time_ns(),
+                    decided_by="test",
+                )
+            )
             with pytest.raises(IntegrityError):
                 session.commit()
 
@@ -1004,8 +1021,12 @@ class TestNoSecretsInDB:
         """Verify no column in any registry table stores secrets."""
         sensitive_names = {"secret", "signature", "hmac", "password", "token", "api_key"}
         for table_cls in [
-            ModelRow, ModelVersionRow, ModelMetricRow,
-            PromotionRow, PromotionDecisionRow, ShadowEvaluationRow,
+            ModelRow,
+            ModelVersionRow,
+            ModelMetricRow,
+            PromotionRow,
+            PromotionDecisionRow,
+            ShadowEvaluationRow,
         ]:
             for col in table_cls.__table__.columns:
                 col_lower = col.name.lower()

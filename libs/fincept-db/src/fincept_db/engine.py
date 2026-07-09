@@ -98,7 +98,7 @@ def _async_url_to_sync(url: str) -> str:
     Non-postgres URLs (e.g. sqlite) are returned unchanged.
     """
     if url.startswith("postgresql+asyncpg://"):
-        return "postgresql+psycopg://" + url[len("postgresql+asyncpg://"):]
+        return "postgresql+psycopg://" + url[len("postgresql+asyncpg://") :]
     return url
 
 
@@ -113,9 +113,7 @@ def get_sync_engine() -> Engine:
     if _sync_engine is None:
         url = get_settings().DB_URL
         if not url:
-            raise RuntimeError(
-                "FINCEPT_DB_URL is empty; set it to a postgresql+asyncpg:// URL"
-            )
+            raise RuntimeError("FINCEPT_DB_URL is empty; set it to a postgresql+asyncpg:// URL")
         sync_url = _async_url_to_sync(url)
         kwargs: dict[str, object] = {"future": True}
         if os.getenv("FINCEPT_DB_TEST_NULLPOOL") == "1":

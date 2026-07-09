@@ -271,9 +271,7 @@ def test_dispatch_creates_training_jobs_row(tmp_path, engine, cost_tracker) -> N
 
     # The training_jobs row must exist with status='dispatched'.
     with Session(engine) as session:
-        row = session.scalars(
-            select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)
-        ).first()
+        row = session.scalars(select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)).first()
         assert row is not None, "training_jobs row should be created on dispatch"
         assert row.status == "dispatched"
         assert row.model_family == "gbm"
@@ -482,9 +480,7 @@ def test_callback_updates_status_and_links_receipt(tmp_path, engine, cost_tracke
 
     # The training_jobs row must be updated: status='completed' + receipt linked.
     with Session(engine) as session:
-        row = session.scalars(
-            select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)
-        ).first()
+        row = session.scalars(select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)).first()
         assert row is not None
         assert row.status == "completed"
         assert row.completed_at_ns is not None
@@ -551,9 +547,7 @@ def test_callback_inference_updates_status(tmp_path, engine, cost_tracker) -> No
     assert receipts[0]["result"] == "processed"
 
     with Session(engine) as session:
-        row = session.scalars(
-            select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)
-        ).first()
+        row = session.scalars(select(TrainingJobRow).where(TrainingJobRow.job_id == job_id)).first()
         assert row is not None
         assert row.status == "completed"
         assert row.callback_receipt_id is not None

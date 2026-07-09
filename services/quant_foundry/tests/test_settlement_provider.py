@@ -7,25 +7,20 @@ from real settled shadow predictions in the SettlementLedger.
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from quant_foundry.champion_challenger import ComparisonInput
-from quant_foundry.cost_tracker import CostTracker
-from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
-from quant_foundry.runpod_client import MockRunPodClient
-from quant_foundry.settlement import SettlementLedger
 from quant_foundry.settlement_provider import SettledComparisonInputProvider
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from fincept_db.registry_tables import ModelVersionRow
-
-from test_e2e_product_loop import _make_engine, _signed_training_callback, _training_payload, _MODEL_ID, _ARTIFACT_ID
-from test_auto_promotion import _dispatch_and_callback, _make_gateway, _signed_callback_with_artifact
-
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -92,7 +87,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:1")
@@ -100,11 +96,13 @@ class TestSettledComparisonInputProvider:
         # Create 50 settled records for the model.
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                realized_return_net=0.001 + i * 0.00001,
-                brier=0.20 + i * 0.001,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    realized_return_net=0.001 + i * 0.00001,
+                    brier=0.20 + i * 0.001,
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -128,7 +126,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:2")
@@ -136,9 +135,11 @@ class TestSettledComparisonInputProvider:
         # Only 10 settled records — min is 30.
         ledger = _FakeSettlementLedger()
         for i in range(10):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -154,7 +155,8 @@ class TestSettledComparisonInputProvider:
         """Provider returns None for an unknown version_id."""
         engine = _make_engine()
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         ledger = _FakeSettlementLedger()
 
@@ -173,7 +175,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:3")
@@ -181,23 +184,29 @@ class TestSettledComparisonInputProvider:
         ledger = _FakeSettlementLedger()
         # 40 SETTLED + 20 PENDING_TIME + 10 PENDING_DATA
         for i in range(40):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"settled-{i}",
-                status=SettlementStatus.SETTLED,
-                realized_return_net=0.001,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"settled-{i}",
+                    status=SettlementStatus.SETTLED,
+                    realized_return_net=0.001,
+                )
+            )
         for i in range(20):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pending-time-{i}",
-                status=SettlementStatus.PENDING_TIME,
-                realized_return_net=None,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pending-time-{i}",
+                    status=SettlementStatus.PENDING_TIME,
+                    realized_return_net=None,
+                )
+            )
         for i in range(10):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pending-data-{i}",
-                status=SettlementStatus.PENDING_DATA,
-                realized_return_net=None,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pending-data-{i}",
+                    status=SettlementStatus.PENDING_DATA,
+                    realized_return_net=None,
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -216,7 +225,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:4")
@@ -224,15 +234,19 @@ class TestSettledComparisonInputProvider:
         ledger = _FakeSettlementLedger()
         # 50 records for our model, 30 for a different model.
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"ours-{i}",
-                model_id=_MODEL_ID,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"ours-{i}",
+                    model_id=_MODEL_ID,
+                )
+            )
         for i in range(30):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"theirs-{i}",
-                model_id="model:other:1",
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"theirs-{i}",
+                    model_id="model:other:1",
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -250,17 +264,20 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:5")
 
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                brier=None,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    brier=None,
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -278,7 +295,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:6")
@@ -305,7 +323,8 @@ class TestSettledComparisonInputProvider:
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:7")
@@ -344,40 +363,55 @@ class TestSettledProviderWithOrchestrator:
         7. Verify v2 is promoted.
         """
         from quant_foundry.auto_promotion import AutoPromotionOrchestrator
-        from quant_foundry.budget import BudgetGuard
         from quant_foundry.champion_challenger import ChampionChallengerConfig
         from quant_foundry.dossier import DossierStatus
 
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
-            engine=engine, gate=PromotionGate(min_settled_count=10),
+            engine=engine,
+            gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
 
         # Version 1 (champion).
         v1_id = _dispatch_and_callback(
-            gateway, engine, secret, "qf:settle:champ:1",
+            gateway,
+            engine,
+            secret,
+            "qf:settle:champ:1",
             artifact_id="artifact:settle:champ:1",
             sha256="d" * 64,
         )
         registry.record_metrics(
-            version_id=v1_id, metric_type="tournament",
+            version_id=v1_id,
+            metric_type="tournament",
             metrics_dict={
-                "model_id": _MODEL_ID, "total_score": 0.72,
-                "score_components": [], "p_value": 0.03,
-                "deflated_sharpe": 1.4, "raw_sharpe": 1.8,
-                "blocking_issues": [], "recommendation": "promote",
-                "status": "eligible", "trial_count": 1,
-                "cost_model_version": "cm-v1", "settled_count": 50,
+                "model_id": _MODEL_ID,
+                "total_score": 0.72,
+                "score_components": [],
+                "p_value": 0.03,
+                "deflated_sharpe": 1.4,
+                "raw_sharpe": 1.8,
+                "blocking_issues": [],
+                "recommendation": "promote",
+                "status": "eligible",
+                "trial_count": 1,
+                "cost_model_version": "cm-v1",
+                "settled_count": 50,
             },
         )
         registry.record_metrics(
-            version_id=v1_id, metric_type="sentinel",
+            version_id=v1_id,
+            metric_type="sentinel",
             metrics_dict={
-                "model_id": _MODEL_ID, "issues": [], "passed": True,
-                "checks_run": ["leakage"], "ts_ns": 1,
-                "pbo": 0.12, "pbo_flagged": False,
+                "model_id": _MODEL_ID,
+                "issues": [],
+                "passed": True,
+                "checks_run": ["leakage"],
+                "ts_ns": 1,
+                "pbo": 0.12,
+                "pbo_flagged": False,
             },
         )
         registry.promote(
@@ -389,27 +423,42 @@ class TestSettledProviderWithOrchestrator:
 
         # Version 2 (challenger).
         v2_id = _dispatch_and_callback(
-            gateway, engine, secret, "qf:settle:chall:1",
+            gateway,
+            engine,
+            secret,
+            "qf:settle:chall:1",
             artifact_id="artifact:settle:chall:1",
             sha256="e" * 64,
         )
         registry.record_metrics(
-            version_id=v2_id, metric_type="tournament",
+            version_id=v2_id,
+            metric_type="tournament",
             metrics_dict={
-                "model_id": _MODEL_ID, "total_score": 0.85,
-                "score_components": [], "p_value": 0.01,
-                "deflated_sharpe": 2.1, "raw_sharpe": 2.5,
-                "blocking_issues": [], "recommendation": "promote",
-                "status": "eligible", "trial_count": 1,
-                "cost_model_version": "cm-v1", "settled_count": 50,
+                "model_id": _MODEL_ID,
+                "total_score": 0.85,
+                "score_components": [],
+                "p_value": 0.01,
+                "deflated_sharpe": 2.1,
+                "raw_sharpe": 2.5,
+                "blocking_issues": [],
+                "recommendation": "promote",
+                "status": "eligible",
+                "trial_count": 1,
+                "cost_model_version": "cm-v1",
+                "settled_count": 50,
             },
         )
         registry.record_metrics(
-            version_id=v2_id, metric_type="sentinel",
+            version_id=v2_id,
+            metric_type="sentinel",
             metrics_dict={
-                "model_id": _MODEL_ID, "issues": [], "passed": True,
-                "checks_run": ["leakage"], "ts_ns": 1,
-                "pbo": 0.10, "pbo_flagged": False,
+                "model_id": _MODEL_ID,
+                "issues": [],
+                "passed": True,
+                "checks_run": ["leakage"],
+                "ts_ns": 1,
+                "pbo": 0.10,
+                "pbo_flagged": False,
             },
         )
 
@@ -421,11 +470,13 @@ class TestSettledProviderWithOrchestrator:
         # pass, but the orchestrator should run without errors.
         ledger = _FakeSettlementLedger()
         for i in range(50):
-            ledger.add(_make_settlement_record(
-                prediction_id=f"pred-{i}",
-                realized_return_net=0.006,  # strong returns
-                brier=0.20,
-            ))
+            ledger.add(
+                _make_settlement_record(
+                    prediction_id=f"pred-{i}",
+                    realized_return_net=0.006,  # strong returns
+                    brier=0.20,
+                )
+            )
 
         provider = SettledComparisonInputProvider(
             registry=registry,
@@ -446,10 +497,7 @@ class TestSettledProviderWithOrchestrator:
 
         # The orchestrator should have found the challenger.
         assert receipt.total >= 1
-        chall_result = next(
-            r for r in receipt.results
-            if r.target.challenger_version_id == v2_id
-        )
+        chall_result = next(r for r in receipt.results if r.target.challenger_version_id == v2_id)
         # The comparison should have run (not skipped due to provider).
         assert chall_result.error is None or "no comparison input" not in (chall_result.error or "")
         # The shadow evaluation should be recorded.

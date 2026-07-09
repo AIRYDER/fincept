@@ -26,6 +26,7 @@ Requires:
     QUANT_FOUNDRY_CALLBACK_SECRET env var (same secret used in the image).
     RUNPOD_API_KEY env var.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,26 +47,18 @@ if _SCRIPTS_DIR not in sys.path:
 sys.path.insert(0, str(_REPO_ROOT / "runpod" / "quant-foundry-training"))
 
 from run_live_canary import (  # noqa: E402
-    CONTAINER_DISK_GB,
-    EXECUTION_TIMEOUT,
     GPU_TYPE,
-    IDLE_TIMEOUT,
     POLL_INTERVAL_S,
     REGISTRY_AUTH_ID,
-    SCALER_TYPE,
-    SCALER_VALUE,
-    WORKERS_MAX,
-    WORKERS_MIN,
     _redact,
     create_endpoint,
     delete_endpoint,
     get_endpoint_health,
-    save_template,
     safe_scale_to_zero,
+    save_template,
     update_endpoint_workers,
 )
 from runpod.runpod_lifecycle import (  # noqa: E402
-    format_timeout_receipt,
     make_unique_name,
     retry_delete_endpoint,
 )
@@ -78,7 +71,6 @@ sys.path.insert(0, str(_REPO_ROOT / "libs" / "fincept-db" / "src"))
 from quant_foundry.budget import BudgetGuard  # noqa: E402
 from quant_foundry.cost_tracker import CostTracker  # noqa: E402
 from quant_foundry.gateway import QuantFoundryGateway  # noqa: E402
-from quant_foundry.outbox import JobStatus  # noqa: E402
 from quant_foundry.promotion import PromotionGate  # noqa: E402
 from quant_foundry.registry_db import ModelRegistryDB  # noqa: E402
 from quant_foundry.runpod_client import HttpRunPodClient  # noqa: E402
@@ -262,10 +254,7 @@ def main() -> int:
             print(f"    [{i * POLL_INTERVAL_S}] ready={ready_count} unhealthy={unhealthy}")
             break
         if i % 4 == 0:
-            print(
-                f"    [{i * POLL_INTERVAL_S}] ready={ready_count} "
-                f"unhealthy={unhealthy}"
-            )
+            print(f"    [{i * POLL_INTERVAL_S}] ready={ready_count} unhealthy={unhealthy}")
         time.sleep(POLL_INTERVAL_S)
 
     if not ready:
@@ -339,8 +328,7 @@ def main() -> int:
             result_val = r.get("result", "")
             ok = r.get("ok", False)
             print(
-                f"    poll: job={r.get('job_id')} ok={ok} "
-                f"status={status_val} result={result_val}"
+                f"    poll: job={r.get('job_id')} ok={ok} status={status_val} result={result_val}"
             )
             if r.get("job_id") == job_id and ok and result_val == "processed":
                 final_receipt = r
@@ -381,7 +369,9 @@ def main() -> int:
         else:
             verification["callback_receipt_id"] = receipt_rows[0].callback_id
             verification["callback_status"] = receipt_rows[0].status
-            print(f"    callback_receipts: {len(receipt_rows)} row(s), status={receipt_rows[0].status}")
+            print(
+                f"    callback_receipts: {len(receipt_rows)} row(s), status={receipt_rows[0].status}"
+            )
 
         # model_dossiers
         dossier_rows = session.scalars(select(ModelDossierRow)).all()
@@ -392,7 +382,9 @@ def main() -> int:
             verification["dossier_model_id"] = dossier_rows[0].model_id
             verification["dossier_status"] = dossier_rows[0].status
             verification["dossier_content_hash"] = dossier_rows[0].content_hash
-            print(f"    model_dossiers: {len(dossier_rows)} row(s), model_id={dossier_rows[0].model_id}")
+            print(
+                f"    model_dossiers: {len(dossier_rows)} row(s), model_id={dossier_rows[0].model_id}"
+            )
 
         # artifact_manifests
         artifact_rows = session.scalars(select(ArtifactManifestRow)).all()
@@ -402,7 +394,9 @@ def main() -> int:
         else:
             verification["artifact_id"] = artifact_rows[0].artifact_id
             verification["artifact_sha256"] = artifact_rows[0].sha256
-            print(f"    artifact_manifests: {len(artifact_rows)} row(s), sha256={artifact_rows[0].sha256[:16]}...")
+            print(
+                f"    artifact_manifests: {len(artifact_rows)} row(s), sha256={artifact_rows[0].sha256[:16]}..."
+            )
 
         # training_jobs
         job_row = session.scalars(
@@ -411,7 +405,9 @@ def main() -> int:
         if job_row is not None:
             verification["training_jobs_status"] = job_row.status
             verification["training_jobs_callback_receipt_id"] = job_row.callback_receipt_id
-            print(f"    training_jobs: status={job_row.status}, callback_receipt_id={job_row.callback_receipt_id}")
+            print(
+                f"    training_jobs: status={job_row.status}, callback_receipt_id={job_row.callback_receipt_id}"
+            )
             if job_row.status != "completed":
                 errors.append(f"training_jobs.status is {job_row.status}, expected 'completed'")
             if job_row.callback_receipt_id is None:
@@ -430,7 +426,7 @@ def main() -> int:
 
         registry.register_model(
             model_id=model_id,
-            name=f"Callback Proof LightGBM v1",
+            name="Callback Proof LightGBM v1",
             model_family="lightgbm",
             description="Model registered from the live callback ingestion proof",
         )

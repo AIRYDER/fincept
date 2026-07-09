@@ -16,10 +16,8 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from quant_foundry.execution_costs import (
     DEFAULT_TRAINING_COST_MODEL,
-    CostAwareMetrics,
     TrainingCostModel,
     apply_training_costs,
     compute_cost_aware_metrics,
@@ -121,7 +119,9 @@ class TestApplyTrainingCosts:
     def test_borrow_cost_for_shorts(self) -> None:
         """Borrow cost applied to short positions."""
         model = TrainingCostModel(
-            fee_bps=0, spread_bps=0, slippage_bps=0,
+            fee_bps=0,
+            spread_bps=0,
+            slippage_bps=0,
             borrow_bps_per_day=10.0,
         )
         net = apply_training_costs(
@@ -138,7 +138,9 @@ class TestApplyTrainingCosts:
     def test_no_borrow_for_longs(self) -> None:
         """Borrow cost not applied to long positions."""
         model = TrainingCostModel(
-            fee_bps=0, spread_bps=0, slippage_bps=0,
+            fee_bps=0,
+            spread_bps=0,
+            slippage_bps=0,
             borrow_bps_per_day=10.0,
         )
         net = apply_training_costs(
@@ -182,7 +184,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0]
         model = TrainingCostModel(fee_bps=10, spread_bps=5, slippage_bps=5)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=math.sqrt(252),
+            gross,
+            positions,
+            model,
+            ann_factor=math.sqrt(252),
         )
         assert metrics.sharpe_net <= metrics.sharpe_gross
 
@@ -192,7 +197,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0, 1.0]
         model = TrainingCostModel(fee_bps=5, spread_bps=3, slippage_bps=0)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.sharpe_gross != 0.0
         assert metrics.sharpe_net != 0.0
@@ -205,7 +213,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0, 0.0]
         model = TrainingCostModel(fee_bps=5, spread_bps=3, slippage_bps=0)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.turnover == pytest.approx(2.0 / 5.0)
 
@@ -215,7 +226,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0, 0.0]
         model = TrainingCostModel(fee_bps=5, spread_bps=3, slippage_bps=0)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         # round_trip = 8 bps, turnover = 2/5 = 0.4
         assert metrics.total_cost_bps == pytest.approx(8.0 * 0.4)
@@ -226,7 +240,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0]
         model = TrainingCostModel(version="v2.test")
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.cost_model_version == "v2.test"
 
@@ -236,7 +253,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0]
         model = TrainingCostModel(fee_bps=10, spread_bps=5, slippage_bps=5)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.max_drawdown_net <= metrics.max_drawdown_gross
 
@@ -247,7 +267,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0]
         model = TrainingCostModel(fee_bps=10, spread_bps=5, slippage_bps=5)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.win_rate_net <= metrics.win_rate_gross
 
@@ -257,7 +280,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0, 1.0, 1.0]
         model = TrainingCostModel(fee_bps=5, spread_bps=3, slippage_bps=0)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.mean_return_net < metrics.mean_return_gross
 
@@ -267,7 +293,10 @@ class TestComputeCostAwareMetrics:
         positions = [1.0, 1.0]
         model = TrainingCostModel()
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         with pytest.raises(Exception):
             metrics.sharpe_net = 999  # type: ignore[misc]
@@ -275,12 +304,18 @@ class TestComputeCostAwareMetrics:
     def test_no_cost_model(self) -> None:
         """Zero-cost model produces net == gross."""
         model = TrainingCostModel(
-            fee_bps=0, spread_bps=0, slippage_bps=0, borrow_bps_per_day=0,
+            fee_bps=0,
+            spread_bps=0,
+            slippage_bps=0,
+            borrow_bps_per_day=0,
         )
         gross = [0.001, -0.002, 0.003, 0.001]
         positions = [1.0, -1.0, 1.0, -1.0]
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=1.0,
+            gross,
+            positions,
+            model,
+            ann_factor=1.0,
         )
         assert metrics.sharpe_net == pytest.approx(metrics.sharpe_gross)
         assert metrics.max_drawdown_net == pytest.approx(metrics.max_drawdown_gross)
@@ -291,7 +326,10 @@ class TestComputeCostAwareMetrics:
         model = TrainingCostModel()
         with pytest.raises(ValueError):
             compute_cost_aware_metrics(
-                [0.001, 0.002], [1.0], model, ann_factor=1.0,
+                [0.001, 0.002],
+                [1.0],
+                model,
+                ann_factor=1.0,
             )
 
     def test_empty_returns_raises(self) -> None:
@@ -311,13 +349,17 @@ class TestComputeCostAwareMetrics:
         # with very low variance → frictionless Sharpe explodes.
         # 1000 bars with tiny positive return + minimal noise.
         import random
+
         rng = random.Random(42)
         gross = [rng.gauss(0.0001, 0.00001) for _ in range(1000)]
         positions = [1.0] * 1000
         # With ann_factor = sqrt(525600) ~ 725 (1-minute bars)
         model = TrainingCostModel(fee_bps=5, spread_bps=3, slippage_bps=0)
         metrics = compute_cost_aware_metrics(
-            gross, positions, model, ann_factor=math.sqrt(525_600),
+            gross,
+            positions,
+            model,
+            ann_factor=math.sqrt(525_600),
         )
         # Gross Sharpe will be extremely high (low variance + high ann)
         # Net Sharpe should be lower after the entry cost

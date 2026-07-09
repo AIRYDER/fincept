@@ -19,12 +19,29 @@ Test coverage:
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from quant_foundry.callbacks import CallbackProcessor
+from quant_foundry.db_sinks import (
+    CallbackDlqDbStore,
+    CallbackMetricsDbStore,
+    CallbackReceiptDbStore,
+    DbDossierStore,
+    DbShadowLedgerStore,
+)
+from quant_foundry.inbox import CallbackInbox
+from quant_foundry.outbox import JobOutbox, JobStatus
+from quant_foundry.schemas import (
+    ArtifactManifest,
+    Authority,
+    ModelDossier,
+    RunPodCallbackEnvelope,
+    ShadowPrediction,
+)
+from quant_foundry.signatures import sign_callback
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from fincept_db.callback_tables import (
@@ -36,27 +53,6 @@ from fincept_db.callback_tables import (
     ShadowPredictionRow,
 )
 from fincept_db.models import Base
-
-from quant_foundry.callback_dlq import CallbackDLQ, DLQRejectionReason
-from quant_foundry.callbacks import CallbackProcessor
-from quant_foundry.db_sinks import (
-    CallbackDlqDbStore,
-    CallbackMetricsDbStore,
-    CallbackReceiptDbStore,
-    DbDossierStore,
-    DbShadowLedgerStore,
-)
-from quant_foundry.inbox import CallbackInbox, CallbackStatus
-from quant_foundry.outbox import JobOutbox, JobStatus
-from quant_foundry.schemas import (
-    ArtifactManifest,
-    Authority,
-    ModelDossier,
-    RunPodCallbackEnvelope,
-    ShadowPrediction,
-)
-from quant_foundry.signatures import sign_callback
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -198,17 +194,13 @@ class TestDbDossierStore:
         dossier_store.store(result)
 
         with Session(engine) as session:
-            dossiers = session.scalars(
-                session.query(ModelDossierRow).statement
-            ).all()
+            dossiers = session.scalars(session.query(ModelDossierRow).statement).all()
             assert len(dossiers) == 1
             assert dossiers[0].model_id == "gbm-v1"
             assert dossiers[0].status == "candidate"
             assert dossiers[0].trial_count == 1
 
-            artifacts = session.scalars(
-                session.query(ArtifactManifestRow).statement
-            ).all()
+            artifacts = session.scalars(session.query(ArtifactManifestRow).statement).all()
             assert len(artifacts) == 1
             assert artifacts[0].artifact_id == "art-001"
 
@@ -250,9 +242,7 @@ class TestDbDossierStore:
         dossier_store.store(result)
 
         with Session(engine) as session:
-            row = session.scalars(
-                session.query(ModelDossierRow).statement
-            ).first()
+            row = session.scalars(session.query(ModelDossierRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             # No column should contain "secret", "signature", or "password".
             for key, val in row_dict.items():
@@ -327,9 +317,7 @@ class TestDbShadowLedgerStore:
         """No secret / signature / raw payload columns in shadow_predictions."""
         shadow_store.store([_prediction()])
         with Session(engine) as session:
-            row = session.scalars(
-                session.query(ShadowPredictionRow).statement
-            ).first()
+            row = session.scalars(session.query(ShadowPredictionRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             for key in row_dict:
                 assert "secret" not in key.lower()
@@ -392,9 +380,7 @@ class TestCallbackReceiptDbStore:
         """
         receipt_store.write(self._inbox_record_dict())
         with Session(engine) as session:
-            row = session.scalars(
-                session.query(CallbackReceiptRow).statement
-            ).first()
+            row = session.scalars(session.query(CallbackReceiptRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             # No column name should contain "secret" or "password".
             for key in row_dict:
@@ -470,9 +456,7 @@ class TestCallbackDlqDbStore:
         """No secret / signature / raw payload columns in callback_dlq."""
         dlq_store.write(self._dlq_record_dict())
         with Session(engine) as session:
-            row = session.scalars(
-                session.query(CallbackDlqRow).statement
-            ).first()
+            row = session.scalars(session.query(CallbackDlqRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             for key in row_dict:
                 assert "secret" not in key.lower()
@@ -526,9 +510,7 @@ class TestCallbackMetricsDbStore:
         """No secret / signature / raw payload columns in callback_metrics."""
         metrics_store.record("received", ts_ns=1_000_000_000)
         with Session(engine) as session:
-            row = session.scalars(
-                session.query(CallbackMetricRow).statement
-            ).first()
+            row = session.scalars(session.query(CallbackMetricRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             for key in row_dict:
                 assert "secret" not in key.lower()
@@ -563,14 +545,10 @@ class TestCallbackProcessorWithDbSinks:
         )
         return processor, outbox, inbox, {"secret": secret}
 
-    def test_inference_callback_with_db_shadow_ledger(
-        self, tmp_path, engine
-    ) -> None:
+    def test_inference_callback_with_db_shadow_ledger(self, tmp_path, engine) -> None:
         """An inference callback stores shadow predictions in the DB."""
         secret = "infer-secret"
-        processor, outbox, inbox, _ = self._setup_processor(
-            tmp_path, engine, secret=secret
-        )
+        processor, outbox, inbox, _ = self._setup_processor(tmp_path, engine, secret=secret)
 
         # Create an inference job in the outbox.
         job_id = "qf:infer:db:1"
@@ -629,20 +607,14 @@ class TestCallbackProcessorWithDbSinks:
         with Session(engine) as session:
             count = session.query(ShadowPredictionRow).count()
             assert count == 1
-            row = session.scalars(
-                session.query(ShadowPredictionRow).statement
-            ).first()
+            row = session.scalars(session.query(ShadowPredictionRow).statement).first()
             assert row.prediction_id == "pred:db:1"
             assert row.authority == "shadow-only"
 
-    def test_training_callback_with_db_dossier_store(
-        self, tmp_path, engine
-    ) -> None:
+    def test_training_callback_with_db_dossier_store(self, tmp_path, engine) -> None:
         """A training callback stores a dossier + artifact in the DB."""
         secret = "train-secret"
-        processor, outbox, inbox, _ = self._setup_processor(
-            tmp_path, engine, secret=secret
-        )
+        processor, outbox, inbox, _ = self._setup_processor(tmp_path, engine, secret=secret)
 
         # Create a training job in the outbox.
         job_id = "qf:train:db:1"
@@ -695,20 +667,14 @@ class TestCallbackProcessorWithDbSinks:
         with Session(engine) as session:
             assert session.query(ModelDossierRow).count() == 1
             assert session.query(ArtifactManifestRow).count() == 1
-            row = session.scalars(
-                session.query(ModelDossierRow).statement
-            ).first()
+            row = session.scalars(session.query(ModelDossierRow).statement).first()
             assert row.model_id == "gbm-v1"
             assert row.content_hash  # non-empty
 
-    def test_replayed_callback_idempotent_in_db(
-        self, tmp_path, engine
-    ) -> None:
+    def test_replayed_callback_idempotent_in_db(self, tmp_path, engine) -> None:
         """A callback processed twice produces exactly one DB row."""
         secret = "replay-secret"
-        processor, outbox, inbox, _ = self._setup_processor(
-            tmp_path, engine, secret=secret
-        )
+        processor, outbox, inbox, _ = self._setup_processor(tmp_path, engine, secret=secret)
 
         job_id = "qf:infer:replay:1"
         outbox.enqueue(
@@ -764,14 +730,10 @@ class TestCallbackProcessorWithDbSinks:
         with Session(engine) as session:
             assert session.query(ShadowPredictionRow).count() == 1
 
-    def test_bad_signature_no_db_write(
-        self, tmp_path, engine
-    ) -> None:
+    def test_bad_signature_no_db_write(self, tmp_path, engine) -> None:
         """A callback with a bad signature does NOT write to the DB."""
         secret = "good-secret"
-        processor, outbox, inbox, _ = self._setup_processor(
-            tmp_path, engine, secret=secret
-        )
+        processor, outbox, inbox, _ = self._setup_processor(tmp_path, engine, secret=secret)
 
         job_id = "qf:infer:badsig:1"
         outbox.enqueue(

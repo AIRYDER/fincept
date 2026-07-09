@@ -713,9 +713,7 @@ class TestLoadBundleScorer:
     """C2: load_bundle_scorer loads a C1 bundle and returns a BundleScorer
     with .score() for full Decision objects."""
 
-    def test_load_bundle_scorer_returns_scorer_with_score_method(
-        self, tmp_path
-    ) -> None:  # type: ignore[no-untyped-def]
+    def test_load_bundle_scorer_returns_scorer_with_score_method(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """load_bundle_scorer returns an object with .score() (BundleScorer)."""
         lgb = pytest.importorskip("lightgbm")
         np = pytest.importorskip("numpy")
@@ -747,18 +745,14 @@ class TestLoadBundleScorer:
         # Decision carries bundle_sha256.
         assert len(decisions[0].bundle_sha256) == 64
 
-    def test_load_bundle_scorer_fails_closed_on_corrupt_bundle(
-        self, tmp_path
-    ) -> None:  # type: ignore[no-untyped-def]
+    def test_load_bundle_scorer_fails_closed_on_corrupt_bundle(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """load_bundle_scorer raises on a corrupt bundle (no stub fallback)."""
         bad_path = tmp_path / "corrupt.bundle"
         bad_path.write_bytes(b"not a valid bundle")
-        with pytest.raises(Exception):  # noqa: PT011
+        with pytest.raises(Exception):
             load_bundle_scorer(str(bad_path))
 
-    def test_model_loader_load_bundle_returns_scorer_with_score(
-        self, tmp_path
-    ) -> None:  # type: ignore[no-untyped-def]
+    def test_model_loader_load_bundle_returns_scorer_with_score(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """ModelLoader.load() on a C1 bundle returns a BundleScorer with
         .score() — the C1 work already added this; this test confirms the
         contract for C2 shadow use."""

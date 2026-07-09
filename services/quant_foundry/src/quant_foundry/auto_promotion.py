@@ -43,7 +43,6 @@ from pydantic import BaseModel, ConfigDict
 from quant_foundry.champion_challenger import (
     ChampionChallengerConfig,
     ComparisonInput,
-    PromotionDecision,
 )
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.promotion import PromotionReceipt, ReviewDecision
@@ -51,8 +50,8 @@ from quant_foundry.registry_db import ModelRegistryDB
 
 __all__ = [
     "AutoPromotionOrchestrator",
-    "AutoPromotionResult",
     "AutoPromotionReceipt",
+    "AutoPromotionResult",
     "PromotionTarget",
 ]
 
@@ -253,13 +252,15 @@ class AutoPromotionOrchestrator:
                         continue
                     to_status = _PROMOTION_LADDER.get(from_status)
                     if to_status is not None:
-                        targets.append(PromotionTarget(
-                            model_id=model.model_id,
-                            champion_version_id=None,
-                            challenger_version_id=v["version_id"],
-                            from_status=from_status,
-                            to_status=to_status,
-                        ))
+                        targets.append(
+                            PromotionTarget(
+                                model_id=model.model_id,
+                                champion_version_id=None,
+                                challenger_version_id=v["version_id"],
+                                from_status=from_status,
+                                to_status=to_status,
+                            )
+                        )
                 else:
                     # Multiple versions: find the champion (highest status).
                     champion = self._find_champion(versions)
@@ -275,19 +276,19 @@ class AutoPromotionOrchestrator:
                             continue
                         to_status = _PROMOTION_LADDER.get(from_status)
                         if to_status is not None:
-                            targets.append(PromotionTarget(
-                                model_id=model.model_id,
-                                champion_version_id=champion_vid,
-                                challenger_version_id=v["version_id"],
-                                from_status=from_status,
-                                to_status=to_status,
-                            ))
+                            targets.append(
+                                PromotionTarget(
+                                    model_id=model.model_id,
+                                    champion_version_id=champion_vid,
+                                    challenger_version_id=v["version_id"],
+                                    from_status=from_status,
+                                    to_status=to_status,
+                                )
+                            )
 
         return targets
 
-    def _find_champion(
-        self, versions: list[dict[str, Any]]
-    ) -> dict[str, Any] | None:
+    def _find_champion(self, versions: list[dict[str, Any]]) -> dict[str, Any] | None:
         """Find the champion (highest-status version) from a list.
 
         The champion is the version with the highest DossierStatus.
@@ -403,8 +404,7 @@ class AutoPromotionOrchestrator:
     ) -> AutoPromotionResult:
         """Attempt to promote the challenger through the gate."""
         review_note = (
-            f"Auto-promoted via champion/challenger comparison "
-            f"(decision={comparison_decision})"
+            f"Auto-promoted via champion/challenger comparison (decision={comparison_decision})"
         )
 
         try:

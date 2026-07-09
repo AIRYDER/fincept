@@ -80,6 +80,7 @@ class _ManifestLike(Protocol):
     """
 
     def manifest_hash(self) -> str: ...
+
     feature_schema_hash: str
     feature_set_version: str | None
     row_count: int

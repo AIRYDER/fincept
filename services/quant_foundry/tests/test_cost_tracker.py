@@ -26,6 +26,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from quant_foundry.cost_tracker import (
+    DEFAULT_GPU_RATE,
+    CostTracker,
+    estimate_gpu_cost,
+)
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -38,14 +43,6 @@ from fincept_db.observability import (
     JobMetricRow,
     TrainingJobRow,
 )
-
-from quant_foundry.cost_tracker import (
-    DEFAULT_GPU_RATE,
-    DEFAULT_GPU_RATES,
-    CostTracker,
-    estimate_gpu_cost,
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -251,9 +248,7 @@ class TestUpdateJobStatus:
             mode="canary",
         )
         tracker.update_job_status("job-done", status="running", started_at_ns=100)
-        tracker.update_job_status(
-            "job-done", status="completed", completed_at_ns=200
-        )
+        tracker.update_job_status("job-done", status="completed", completed_at_ns=200)
 
         with Session(engine) as session:
             row = session.scalars(
@@ -270,9 +265,7 @@ class TestUpdateJobStatus:
             model_family="gbm",
             mode="canary",
         )
-        tracker.update_job_status(
-            "job-preserve", status="running", started_at_ns=111
-        )
+        tracker.update_job_status("job-preserve", status="running", started_at_ns=111)
         # Status-only update — should NOT clear started_at_ns.
         tracker.update_job_status("job-preserve", status="completed")
 
@@ -369,9 +362,7 @@ class TestRecordCostEvent:
             model_family="gbm",
             mode="canary",
         )
-        eid = tracker.record_cost_event(
-            "job-eid", event_type="overhead", amount=1, unit_cost=0.01
-        )
+        eid = tracker.record_cost_event("job-eid", event_type="overhead", amount=1, unit_cost=0.01)
         assert eid is not None and len(eid) > 0
 
     def test_cost_event_decimal_arithmetic(self, tracker, engine) -> None:
@@ -412,9 +403,7 @@ class TestRecordMetric:
         )
 
         with Session(engine) as session:
-            row = session.scalars(
-                select(JobMetricRow).where(JobMetricRow.metric_id == mid)
-            ).one()
+            row = session.scalars(select(JobMetricRow).where(JobMetricRow.metric_id == mid)).one()
             assert row.metric_type == "duration"
             assert row.value == Decimal("1800.5")
             assert row.unit == "seconds"
@@ -500,9 +489,9 @@ class TestComputePeriodCost:
 
         with Session(engine) as session:
             row = session.scalars(
-                select(CostSummaryRow).where(
-                    CostSummaryRow.model_family == "gbm"
-                ).where(CostSummaryRow.period_start_ns == period_start)
+                select(CostSummaryRow)
+                .where(CostSummaryRow.model_family == "gbm")
+                .where(CostSummaryRow.period_start_ns == period_start)
             ).one()
             assert row.total_cost == Decimal("2160.000000")
             assert row.total_jobs == 2
@@ -538,9 +527,7 @@ class TestComputePeriodCost:
             assert count == 1, "recompute should upsert, not insert a second row"
 
             row = session.scalars(
-                select(CostSummaryRow).where(
-                    CostSummaryRow.model_family == "xgb"
-                )
+                select(CostSummaryRow).where(CostSummaryRow.model_family == "xgb")
             ).one()
             assert row.total_cost == Decimal("2160.000000")
             assert row.total_jobs == 2
@@ -705,9 +692,7 @@ class TestNoSecretsInDb:
         cols = [c["name"] for c in inspector.get_columns("training_jobs")]
         forbidden = {"secret", "api_key", "token", "signature", "password", "hmac"}
         for col in cols:
-            assert col.lower() not in forbidden, (
-                f"training_jobs has forbidden column: {col}"
-            )
+            assert col.lower() not in forbidden, f"training_jobs has forbidden column: {col}"
 
 
 # ---------------------------------------------------------------------------
@@ -735,11 +720,15 @@ class TestReadApi:
 
     def test_list_jobs_all(self, tracker, engine) -> None:
         tracker.record_job_dispatch(
-            job_id="job-l1", model_family="gbm", mode="canary",
+            job_id="job-l1",
+            model_family="gbm",
+            mode="canary",
             dispatched_at_ns=100,
         )
         tracker.record_job_dispatch(
-            job_id="job-l2", model_family="xgb", mode="research",
+            job_id="job-l2",
+            model_family="xgb",
+            mode="research",
             dispatched_at_ns=200,
         )
         jobs = tracker.list_jobs()
@@ -750,10 +739,14 @@ class TestReadApi:
 
     def test_list_jobs_filter_by_status(self, tracker, engine) -> None:
         tracker.record_job_dispatch(
-            job_id="job-f1", model_family="gbm", mode="canary",
+            job_id="job-f1",
+            model_family="gbm",
+            mode="canary",
         )
         tracker.record_job_dispatch(
-            job_id="job-f2", model_family="gbm", mode="canary",
+            job_id="job-f2",
+            model_family="gbm",
+            mode="canary",
         )
         tracker.update_job_status("job-f2", status="completed")
         jobs = tracker.list_jobs(status="completed")
@@ -762,10 +755,14 @@ class TestReadApi:
 
     def test_list_jobs_filter_by_model_family(self, tracker, engine) -> None:
         tracker.record_job_dispatch(
-            job_id="job-mf-a", model_family="gbm", mode="canary",
+            job_id="job-mf-a",
+            model_family="gbm",
+            mode="canary",
         )
         tracker.record_job_dispatch(
-            job_id="job-mf-b", model_family="xgb", mode="canary",
+            job_id="job-mf-b",
+            model_family="xgb",
+            mode="canary",
         )
         jobs = tracker.list_jobs(model_family="xgb")
         assert len(jobs) == 1
@@ -773,12 +770,12 @@ class TestReadApi:
 
     def test_get_job_metrics(self, tracker, engine) -> None:
         tracker.record_job_dispatch(
-            job_id="job-gm", model_family="gbm", mode="canary",
+            job_id="job-gm",
+            model_family="gbm",
+            mode="canary",
         )
-        tracker.record_metric("job-gm", "duration", 1800, "seconds",
-                              recorded_at_ns=100)
-        tracker.record_metric("job-gm", "gpu_utilization", 85.0, "percent",
-                              recorded_at_ns=200)
+        tracker.record_metric("job-gm", "duration", 1800, "seconds", recorded_at_ns=100)
+        tracker.record_metric("job-gm", "gpu_utilization", 85.0, "percent", recorded_at_ns=200)
         metrics = tracker.get_job_metrics("job-gm")
         assert len(metrics) == 2
         assert metrics[0]["metric_type"] == "duration"
@@ -786,12 +783,12 @@ class TestReadApi:
 
     def test_get_job_cost_events(self, tracker, engine) -> None:
         tracker.record_job_dispatch(
-            job_id="job-gce", model_family="gbm", mode="canary",
+            job_id="job-gce",
+            model_family="gbm",
+            mode="canary",
         )
-        tracker.record_cost_event("job-gce", "gpu_seconds", 3600, 0.40,
-                                  recorded_at_ns=100)
-        tracker.record_cost_event("job-gce", "overhead", 1, 0.50,
-                                  recorded_at_ns=200)
+        tracker.record_cost_event("job-gce", "gpu_seconds", 3600, 0.40, recorded_at_ns=100)
+        tracker.record_cost_event("job-gce", "overhead", 1, 0.50, recorded_at_ns=200)
         events = tracker.get_job_cost_events("job-gce")
         assert len(events) == 2
         assert events[0]["event_type"] == "gpu_seconds"

@@ -34,8 +34,8 @@ Design notes:
 
 from __future__ import annotations
 
-import math
 import random
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from quant_foundry.significance import deflated_sharpe_ratio
@@ -202,10 +202,7 @@ def _paired_bootstrap_pvalue(
         return 1.0
 
     # Paired differences
-    diffs = [
-        challenger_returns[i] - champion_returns[i]
-        for i in range(n)
-    ]
+    diffs = [challenger_returns[i] - champion_returns[i] for i in range(n)]
     observed_mean = _mean(diffs)
 
     rng = random.Random(seed)
@@ -244,10 +241,12 @@ def compare_champion_challenger(
     """
     # --- compute metrics for both sides --------------------------------
     champ_dsr_result = deflated_sharpe_ratio(
-        champion.oos_returns_net, champion.trial_count,
+        champion.oos_returns_net,
+        champion.trial_count,
     )
     chal_dsr_result = deflated_sharpe_ratio(
-        challenger.oos_returns_net, challenger.trial_count,
+        challenger.oos_returns_net,
+        challenger.trial_count,
     )
 
     champ_net_edge = _bps(champion.oos_returns_net)
@@ -315,20 +314,14 @@ def compare_champion_challenger(
         return PromotionDecision(
             decision="not_significant",
             result=result,
-            reason=(
-                f"bootstrap p-value {p_value:.4f} >= "
-                f"alpha {config.alpha}"
-            ),
+            reason=(f"bootstrap p-value {p_value:.4f} >= alpha {config.alpha}"),
         )
 
     if chal_dsr < config.dsr_threshold:
         return PromotionDecision(
             decision="low_dsr",
             result=result,
-            reason=(
-                f"challenger DSR {chal_dsr:.4f} < "
-                f"threshold {config.dsr_threshold:.4f}"
-            ),
+            reason=(f"challenger DSR {chal_dsr:.4f} < threshold {config.dsr_threshold:.4f}"),
         )
 
     return PromotionDecision(

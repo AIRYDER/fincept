@@ -505,7 +505,7 @@ class TestPitEvidenceV1:
 
     def test_build_pit_evidence_produces_valid_record(self) -> None:
         """build_pit_evidence produces a PITEvidence with a valid sha256."""
-        from quant_foundry.pit_evidence import build_pit_evidence, verify_pit_evidence
+        from quant_foundry.pit_evidence import verify_pit_evidence
 
         rows = _clean_rows()
         builder = FeatureLakeBuilder(
@@ -530,7 +530,6 @@ class TestPitEvidenceV1:
         """verify_pit_evidence raises PitEvidenceTamperedError on tampering."""
         from quant_foundry.pit_evidence import (
             PitEvidenceTamperedError,
-            build_pit_evidence,
             verify_pit_evidence,
         )
 
@@ -576,7 +575,6 @@ class TestPitEvidenceV1:
 
     def test_pit_evidence_max_observed_at_margin_is_non_negative(self) -> None:
         """max_observed_at_margin is >= 0 for a valid (no-violation) dataset."""
-        from quant_foundry.pit_evidence import build_pit_evidence
 
         rows = _clean_rows()
         builder = FeatureLakeBuilder(

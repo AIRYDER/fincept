@@ -229,15 +229,11 @@ def make_cpcv_folds(
     if n_groups < 2:
         raise ValueError(f"n_groups must be >= 2, got {n_groups}")
     if n_val_groups < 1 or n_val_groups >= n_groups:
-        raise ValueError(
-            f"n_val_groups must be in [1, {n_groups - 1}], got {n_val_groups}"
-        )
+        raise ValueError(f"n_val_groups must be in [1, {n_groups - 1}], got {n_val_groups}")
     if purge_bars < 0:
         raise ValueError(f"purge_bars must be >= 0, got {purge_bars}")
     if n_bars < n_groups:
-        raise ValueError(
-            f"need at least {n_groups} bars for {n_groups} groups; got {n_bars}"
-        )
+        raise ValueError(f"need at least {n_groups} bars for {n_groups} groups; got {n_bars}")
 
     # Split into n_groups contiguous blocks. The last block absorbs the
     # remainder so every bar is covered.
@@ -251,9 +247,7 @@ def make_cpcv_folds(
         start += size
 
     folds: list[CPCVFold] = []
-    for idx, val_tuple in enumerate(
-        combinations(range(n_groups), n_val_groups)
-    ):
+    for idx, val_tuple in enumerate(combinations(range(n_groups), n_val_groups)):
         val_set = set(val_tuple)
         val_ranges_raw = [boundaries[g] for g in val_tuple]
 

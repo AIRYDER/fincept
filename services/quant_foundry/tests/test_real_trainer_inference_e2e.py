@@ -780,7 +780,7 @@ class TestMetaLabeledBundleE2E:
 
     def test_meta_labeled_bundle_train_load_score(self, tmp_path: Path) -> None:
         """Full round-trip: train meta-labeled → write bundle → load → score."""
-        from quant_foundry.bundle_io import BundleKind, BundleScorer, Decision, load_bundle
+        from quant_foundry.bundle_io import BundleKind, Decision, load_bundle
         from quant_foundry.dataset_manifest import ColumnRoles
         from quant_foundry.real_trainer import RealLightGBMTrainer
         from quant_foundry.training_manifest import ModelTaskSpec
@@ -882,9 +882,7 @@ class TestMetaLabeledBundleE2E:
         assert selfcheck.bundle_sha256 == bundle_sha
         assert len(selfcheck.output_sha256) == 64
 
-    def test_meta_labeled_bundle_through_real_inference_engine(
-        self, tmp_path: Path
-    ) -> None:
+    def test_meta_labeled_bundle_through_real_inference_engine(self, tmp_path: Path) -> None:
         """The meta-labeled bundle loads through RealInferenceEngine.run()."""
         from quant_foundry.dataset_manifest import ColumnRoles
         from quant_foundry.real_inference import RealInferenceEngine

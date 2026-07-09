@@ -54,7 +54,7 @@ from quant_foundry.dataset_manifest import (
     SourceReceipt,
 )
 from quant_foundry.feature_availability import FeatureAvailabilityReport
-from quant_foundry.pit_evidence import PITEvidence, build_pit_evidence
+from quant_foundry.pit_evidence import build_pit_evidence
 
 
 class LeakyFeatureError(ValueError):

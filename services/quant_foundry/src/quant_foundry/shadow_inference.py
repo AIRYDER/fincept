@@ -385,9 +385,7 @@ class RealShadowScorer:
                 p_up = float(decision.p)
                 direction = float(decision.direction)
                 # Confidence: high when not abstaining, reduced when abstaining.
-                confidence = 0.3 if decision.abstained else min(
-                    1.0, abs(p_up - 0.5) * 2.0 + 0.5
-                )
+                confidence = 0.3 if decision.abstained else min(1.0, abs(p_up - 0.5) * 2.0 + 0.5)
                 meta_p_val = decision.meta_p
                 metadata: dict[str, str] = {
                     "bundle_sha256": str(decision.bundle_sha256),

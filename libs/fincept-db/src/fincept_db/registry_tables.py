@@ -73,9 +73,7 @@ class ModelRow(Base):
         ForeignKey("model_versions.version_id", name="fk_models_current_version_id"),
         nullable=True,
     )
-    current_status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="candidate"
-    )
+    current_status: Mapped[str] = mapped_column(String(32), nullable=False, default="candidate")
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     __table_args__ = (
@@ -253,9 +251,7 @@ class ShadowEvaluationRow(Base):
     tournament_result_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
-        CheckConstraint(
-            "settled_count >= 0", name="ck_shadow_evaluations_settled_count_nonneg"
-        ),
+        CheckConstraint("settled_count >= 0", name="ck_shadow_evaluations_settled_count_nonneg"),
         Index("ix_shadow_evaluations_version_id", "version_id"),
     )
 
@@ -303,12 +299,8 @@ class DatasetManifestRow(Base):
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     label_schema_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    readiness_level: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="L1"
-    )
-    pit_proof_verified: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    readiness_level: Mapped[str] = mapped_column(String(16), nullable=False, default="L1")
+    pit_proof_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     purged_fold_spec: Mapped[JSONDict] = mapped_column(JSON, nullable=False, default=dict)
     embargo_length: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     quality_report_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -321,11 +313,10 @@ class DatasetManifestRow(Base):
             "readiness_level IN ('L1','L2','L3','L4')",
             name="ck_dataset_manifests_readiness_level_domain",
         ),
-        CheckConstraint(
-            "row_count >= 0", name="ck_dataset_manifests_row_count_nonneg"
-        ),
+        CheckConstraint("row_count >= 0", name="ck_dataset_manifests_row_count_nonneg"),
         UniqueConstraint(
-            "dataset_id", "manifest_hash",
+            "dataset_id",
+            "manifest_hash",
             name="uq_dataset_manifests_dataset_id_manifest_hash",
         ),
         Index("ix_dataset_manifests_dataset_id", "dataset_id"),

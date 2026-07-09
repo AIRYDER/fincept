@@ -31,12 +31,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "FeatureDefinition",
-    "FeatureSetVersion",
     "FeatureRegistry",
+    "FeatureSetVersion",
     "RegistryError",
     "compute_feature_set_hash",
 ]
@@ -173,7 +174,7 @@ class FeatureSetVersion(BaseModel):
         feature_definitions: tuple[FeatureDefinition, ...],
         created_at_ns: int,
         description: str | None = None,
-    ) -> "FeatureSetVersion":
+    ) -> FeatureSetVersion:
         """Create a FeatureSetVersion, computing the hash automatically."""
         if not feature_definitions:
             raise ValueError("feature_definitions must be non-empty")
@@ -250,16 +251,12 @@ class FeatureRegistry:
         key = (feature_set_id, version)
         fsv = self._sets.get(key)
         if fsv is None:
-            raise RegistryError(
-                f"feature set {feature_set_id} version {version} not found"
-            )
+            raise RegistryError(f"feature set {feature_set_id} version {version} not found")
         return fsv
 
     def list_versions(self, feature_set_id: str) -> list[str]:
         """List all registered versions for a feature set id."""
-        return sorted(
-            v for (sid, v) in self._sets if sid == feature_set_id
-        )
+        return sorted(v for (sid, v) in self._sets if sid == feature_set_id)
 
     def verify(self, feature_set_id: str, version: str) -> bool:
         """Verify that a feature set version is registered.

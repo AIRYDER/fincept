@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from fincept_db.registry_tables import ModelRow, ModelVersionRow
+from fincept_db.registry_tables import ModelVersionRow
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.registry_db import ModelRegistryDB
@@ -152,15 +152,17 @@ class AutoShadowDispatcher:
                 elif result.skipped:
                     skipped += 1
             except Exception as exc:
-                results.append(ShadowDispatchResult(
-                    version_id=version["version_id"],
-                    model_id=version["model_id"],
-                    artifact_id=version.get("artifact_id", ""),
-                    job_id="",
-                    dispatched=False,
-                    skipped=True,
-                    error=str(exc),
-                ))
+                results.append(
+                    ShadowDispatchResult(
+                        version_id=version["version_id"],
+                        model_id=version["model_id"],
+                        artifact_id=version.get("artifact_id", ""),
+                        job_id="",
+                        dispatched=False,
+                        skipped=True,
+                        error=str(exc),
+                    )
+                )
                 errored += 1
 
         return AutoShadowReceipt(
@@ -192,9 +194,7 @@ class AutoShadowDispatcher:
         with Session(engine) as session:
             # Find all versions with the target status.
             version_rows = session.scalars(
-                select(ModelVersionRow).where(
-                    ModelVersionRow.status == target_status_val
-                )
+                select(ModelVersionRow).where(ModelVersionRow.status == target_status_val)
             ).all()
 
             for row in version_rows:
@@ -203,19 +203,19 @@ class AutoShadowDispatcher:
                 existing = self.shadow_ledger.read_by_model(model_id)
                 if existing:
                     continue  # already has shadow predictions
-                eligible.append({
-                    "version_id": row.version_id,
-                    "model_id": model_id,
-                    "artifact_id": row.artifact_id,
-                    "status": row.status,
-                    "version_number": row.version_number,
-                })
+                eligible.append(
+                    {
+                        "version_id": row.version_id,
+                        "model_id": model_id,
+                        "artifact_id": row.artifact_id,
+                        "status": row.status,
+                        "version_number": row.version_number,
+                    }
+                )
 
         return eligible
 
-    def _dispatch_for_version(
-        self, version: dict[str, Any]
-    ) -> ShadowDispatchResult:
+    def _dispatch_for_version(self, version: dict[str, Any]) -> ShadowDispatchResult:
         """Dispatch shadow inference for a single version.
 
         Builds a payload similar to

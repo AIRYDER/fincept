@@ -8,6 +8,7 @@ causes ``runpod`` to be imported as a namespace package from the root
 ``runpod/`` directory.  We force-import the real package from
 ``scripts/runpod/`` and inject it into sys.modules before collection.
 """
+
 import importlib.util
 import sys
 from pathlib import Path

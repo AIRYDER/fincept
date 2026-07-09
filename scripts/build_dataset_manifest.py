@@ -308,7 +308,11 @@ def compute_features_and_labels(
     # --- triple-barrier labels (Tier 2.3) --------------------------------
     tb_label_map: dict[int, float] = {}  # bar index → label
     if label_method == "triple_barrier":
-        from fincept_core.datasets import BarrierConfig, triple_barrier_labels, volatility_scaled_widths
+        from fincept_core.datasets import (
+            BarrierConfig,
+            triple_barrier_labels,
+            volatility_scaled_widths,
+        )
 
         highs = [float(b["high"]) for b in bars]
         lows = [float(b["low"]) for b in bars]
@@ -329,7 +333,11 @@ def compute_features_and_labels(
             horizon_bars=label_horizon_days,
         )
         tb_labels = triple_barrier_labels(
-            highs, lows, closes, cfg, per_bar_widths=per_bar_widths,
+            highs,
+            lows,
+            closes,
+            cfg,
+            per_bar_widths=per_bar_widths,
         )
         for tbl in tb_labels:
             # Map triple-barrier label to float: +1 → 1.0, -1 → 0.0

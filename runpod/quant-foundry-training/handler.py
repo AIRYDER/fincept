@@ -86,6 +86,9 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
 # writer for tests) behind a single contract.
 from pydantic import BaseModel, ConfigDict  # noqa: E402
 
+# C1: bundle round-trip contract — selfcheck before signing success.
+from quant_foundry.bundle_io import TrainingSelfCheck, run_selfcheck  # noqa: E402
+
 # Phase 3 / T-3.3: worker-side quality gate runner. Imports the quality
 # policy registry + validation function so the worker can recompute cheap
 # data checks and reject bad data even if the trusted-side preflight was
@@ -105,6 +108,7 @@ from quant_foundry.dataset_manifest import (  # noqa: E402
 from quant_foundry.dataset_manifest import (
     FoldSpec as QFFoldSpec,
 )
+
 # C3: PIT evidence tamper detection.
 from quant_foundry.pit_evidence import PitEvidenceTamperedError, verify_pit_evidence
 
@@ -113,11 +117,9 @@ from quant_foundry.pit_evidence import PitEvidenceTamperedError, verify_pit_evid
 # (lightgbm/numpy are imported lazily inside ``train()``).
 from quant_foundry.real_trainer import (  # noqa: E402
     TypedArtifactResult,
+    _probe_gpu_model,
     build_artifact_result,
 )
-from quant_foundry.real_trainer import _probe_gpu_model  # noqa: E402
-# C1: bundle round-trip contract — selfcheck before signing success.
-from quant_foundry.bundle_io import run_selfcheck, TrainingSelfCheck  # noqa: E402
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
@@ -3432,7 +3434,7 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
                         "dataset_id": str(dataset_id),
                     },
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Registry load failure (corrupt JSONL, IO error) — fail
                 # closed for production rather than silently bypassing.
                 write_status(
@@ -3557,9 +3559,7 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         if request_fsv is not None:
             raw_mode = req.extra_constraints.get("training_mode") or "research"
             try:
-                fsv_gate_mode = (
-                    TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
-                )
+                fsv_gate_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
             except ValueError:
                 fsv_gate_mode = TrainingMode.PRODUCTION
             if manifest_fsv != request_fsv:
@@ -3616,9 +3616,7 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
         if pit_evidence_dict and isinstance(pit_evidence_dict, dict):
             raw_mode = req.extra_constraints.get("training_mode") or "research"
             try:
-                pit_ev_mode = (
-                    TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
-                )
+                pit_ev_mode = TrainingMode(raw_mode) if raw_mode else TrainingMode.RESEARCH
             except ValueError:
                 pit_ev_mode = TrainingMode.PRODUCTION
             try:
@@ -4594,7 +4592,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     # Debug logging to network volume (try both mount paths)
     def _log(msg):
-        print(msg, flush=True)  # noqa: T201 - CLI debug output
+        print(msg, flush=True)
         for path in ["/runpod-volume/handler-debug.log", "/workspace/handler-debug.log"]:
             try:
                 with open(path, "a") as f:
@@ -4635,7 +4633,7 @@ if __name__ == "__main__":  # pragma: no cover
         raw = sys.stdin.read()
         event = json.loads(raw) if raw else {}
         result = handler(event)
-        print(json.dumps(result, indent=2))  # noqa: T201 - CLI entrypoint output
+        print(json.dumps(result, indent=2))
     except Exception as e:
         _log(f"ERROR in runpod.serverless.start(): {e}")
         _log(traceback.format_exc())

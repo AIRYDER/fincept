@@ -599,7 +599,9 @@ class RegistryPromoteRequest(BaseModel):
     review_note: str = ""
 
 
-def _list_metrics_for_model(registry: ModelRegistryDB, model_id: str) -> list[dict[str, Any]]:
+def _list_metrics_for_model(
+    registry: ModelRegistryDB, model_id: str
+) -> list[dict[str, Any]]:
     """List metric rows for all versions of a model_id.
 
     Queries ``model_metrics`` joined to ``model_versions`` via the
@@ -619,9 +621,7 @@ def _list_metrics_for_model(registry: ModelRegistryDB, model_id: str) -> list[di
             .where(ModelMetricRow.version_id.in_(version_ids))
             .order_by(ModelMetricRow.recorded_at_ns.desc())
         ).all()
-        return [
-            {c: getattr(r, c) for c in r.__table__.columns.keys()} for r in rows
-        ]
+        return [{c: getattr(r, c) for c in r.__table__.columns.keys()} for r in rows]
 
 
 @router.get("/registry/models")

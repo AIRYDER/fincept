@@ -199,9 +199,7 @@ class TestPitProofGate:
         # Canary mode should NOT block — training proceeds.
         assert result.get("error_code") != "pit_proof_not_verified"
 
-    def test_no_load_spec_skips_pit_gate(
-        self, handler_module, tmp_path: pathlib.Path
-    ) -> None:
+    def test_no_load_spec_skips_pit_gate(self, handler_module, tmp_path: pathlib.Path) -> None:
         """No dataset_load_spec → gate skipped (inline CSV path, canary only)."""
         # Use inline_dataset_csv with canary mode (production mode is
         # rejected by the inline_dataset_csv production guard).
@@ -379,10 +377,12 @@ class TestDatasetRegistryDispatchGate:
         # L3+ requires a quality report URI + hash on the entry. Patch the
         # entry to add them before promoting to L3.
         entry = registry.inspect("l3-prod-ds")
-        updated = entry.model_copy(update={
-            "quality_report_uri": "file:///quality_report.json",
-            "quality_report_sha256": "e" * 64,
-        })
+        updated = entry.model_copy(
+            update={
+                "quality_report_uri": "file:///quality_report.json",
+                "quality_report_sha256": "e" * 64,
+            }
+        )
         registry._entries["l3-prod-ds"][-1] = updated
         if registry._path is not None:
             registry._rewrite_ledger()

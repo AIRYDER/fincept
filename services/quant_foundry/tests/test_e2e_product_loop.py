@@ -293,9 +293,7 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
 
         # The artifact_manifests row must also exist (written by the DB sink).
         artifact_rows = session.scalars(
-            select(ArtifactManifestRow).where(
-                ArtifactManifestRow.artifact_id == _ARTIFACT_ID
-            )
+            select(ArtifactManifestRow).where(ArtifactManifestRow.artifact_id == _ARTIFACT_ID)
         ).all()
         assert len(artifact_rows) == 1, "artifact_manifests row must be created"
         assert artifact_rows[0].sha256 == "a" * 64
@@ -335,16 +333,12 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
         model_db_row = session.scalars(
             select(ModelRow).where(ModelRow.model_id == _MODEL_ID)
         ).first()
-        assert model_db_row is not None, (
-            "models row must be auto-registered by the gateway"
-        )
+        assert model_db_row is not None, "models row must be auto-registered by the gateway"
         assert model_db_row.model_id == _MODEL_ID
         assert model_db_row.current_status == "candidate"
 
         version_db_row = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.version_id == expected_version_id
-            )
+            select(ModelVersionRow).where(ModelVersionRow.version_id == expected_version_id)
         ).first()
         assert version_db_row is not None, (
             "model_versions row must be auto-registered by the gateway"
@@ -417,13 +411,9 @@ def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> 
         idempotency_key="idem-gate-prod-1",
         request_payload=payload,
     )
-    assert receipt["ok"] is False, (
-        "production dispatch with unregistered dataset must be rejected"
-    )
+    assert receipt["ok"] is False, "production dispatch with unregistered dataset must be rejected"
     assert receipt["error_code"] == "dataset_dispatch_rejected"
-    assert dataset_id in receipt["detail"], (
-        "error detail must mention the dataset id"
-    )
+    assert dataset_id in receipt["detail"], "error detail must mention the dataset id"
     # The job must NOT be in the outbox (rejected before enqueue).
     ob_rec = gateway.outbox.get("qf:gate:prod:1")
     assert ob_rec is None, "rejected job must not be enqueued"
@@ -540,9 +530,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         dossier_content_hash = dossier_row.content_hash
 
         version_row = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.model_id == _MODEL_ID
-            )
+            select(ModelVersionRow).where(ModelVersionRow.model_id == _MODEL_ID)
         ).first()
         assert version_row is not None
         version_id = version_row.version_id
@@ -600,9 +588,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         f"reason={promotion_receipt.rejection_reason}"
     )
     assert promotion_receipt.rejection_reason is None
-    assert promotion_receipt.review_note == (
-        "E2E full loop proof — promotion to research_approved"
-    )
+    assert promotion_receipt.review_note == ("E2E full loop proof — promotion to research_approved")
 
     # 12) Verify promotions + promotion_decisions rows are persisted.
     with Session(engine) as session:
@@ -626,20 +612,15 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         assert decision.decision == "approved"
         assert decision.rejection_reason is None
         assert decision.decided_by == "e2e-proof-script"
-        assert decision.review_note == (
-            "E2E full loop proof — promotion to research_approved"
-        )
+        assert decision.review_note == ("E2E full loop proof — promotion to research_approved")
 
     # 13) Verify model_versions.status is updated to research_approved.
     with Session(engine) as session:
         updated_version = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.version_id == version_id
-            )
+            select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
         ).first()
         assert updated_version.status == "research_approved", (
-            f"version status should be 'research_approved', "
-            f"got {updated_version.status!r}"
+            f"version status should be 'research_approved', got {updated_version.status!r}"
         )
         assert updated_version.promoted_at_ns is not None
 
@@ -670,9 +651,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
     # 16) Verify the shadow_evaluations row is persisted.
     with Session(engine) as session:
         eval_rows = session.scalars(
-            select(ShadowEvaluationRow).where(
-                ShadowEvaluationRow.evaluation_id == evaluation_id
-            )
+            select(ShadowEvaluationRow).where(ShadowEvaluationRow.evaluation_id == evaluation_id)
         ).all()
         assert len(eval_rows) == 1, "exactly one shadow_evaluations row"
         eval_row = eval_rows[0]
@@ -683,9 +662,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
     # 17) Verify model_metrics rows: 1 tournament + 1 sentinel = 2 total.
     with Session(engine) as session:
         metric_rows = session.scalars(
-            select(ModelMetricRow).where(
-                ModelMetricRow.version_id == version_id
-            )
+            select(ModelMetricRow).where(ModelMetricRow.version_id == version_id)
         ).all()
         assert len(metric_rows) == 2, "should have 2 metric rows (tournament + sentinel)"
         metric_types = {r.metric_type for r in metric_rows}
@@ -717,7 +694,6 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
     """
     from quant_foundry.dossier import DossierStatus
     from quant_foundry.promotion import (
-        PromotionReceipt,
         PromotionRejectionReason,
         ReviewDecision,
     )
@@ -767,9 +743,7 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
     # Get the auto-registered version_id.
     with Session(engine) as session:
         version_row = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.model_id == _MODEL_ID
-            )
+            select(ModelVersionRow).where(ModelVersionRow.model_id == _MODEL_ID)
         ).first()
         assert version_row is not None
         version_id = version_row.version_id
@@ -785,9 +759,7 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
 
     # The gate must reject with INSUFFICIENT_EVIDENCE.
     assert rejection_receipt.decision == ReviewDecision.REJECTED
-    assert rejection_receipt.rejection_reason == (
-        PromotionRejectionReason.INSUFFICIENT_EVIDENCE
-    )
+    assert rejection_receipt.rejection_reason == (PromotionRejectionReason.INSUFFICIENT_EVIDENCE)
 
     # The rejection must be persisted in promotions + promotion_decisions.
     with Session(engine) as session:
@@ -809,12 +781,9 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
     # The version status must NOT have changed (still candidate).
     with Session(engine) as session:
         unchanged_version = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.version_id == version_id
-            )
+            select(ModelVersionRow).where(ModelVersionRow.version_id == version_id)
         ).first()
         assert unchanged_version.status == "candidate"
         assert unchanged_version.promoted_at_ns is None
 
     engine.dispose()
-

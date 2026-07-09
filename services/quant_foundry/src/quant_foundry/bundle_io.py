@@ -200,7 +200,7 @@ class ModelBundle:
     archive bytes the bundle was loaded from.
     """
 
-    __slots__ = ("manifest", "primary_model", "meta_model", "bundle_sha256")
+    __slots__ = ("bundle_sha256", "manifest", "meta_model", "primary_model")
 
     def __init__(
         self,
@@ -480,8 +480,7 @@ def _load_zip_bundle(raw: bytes, bundle_sha256: str) -> ModelBundle:
         # Validate bundle_kind.
         if manifest.bundle_kind not in (BundleKind.SINGLE, BundleKind.META_LABELED):
             raise BundleLoadError(
-                f"unknown bundle_kind: {manifest.bundle_kind!r} "
-                "(allowed: single, meta_labeled)"
+                f"unknown bundle_kind: {manifest.bundle_kind!r} (allowed: single, meta_labeled)"
             )
 
         # Verify every declared member exists and its sha256 matches.
@@ -508,9 +507,7 @@ def _load_zip_bundle(raw: bytes, bundle_sha256: str) -> ModelBundle:
             try:
                 loaded_members[member_name] = pickle.loads(member_bytes)  # noqa: S301
             except Exception as exc:
-                raise BundleLoadError(
-                    f"failed to unpickle member {member_name!r}: {exc}"
-                ) from exc
+                raise BundleLoadError(f"failed to unpickle member {member_name!r}: {exc}") from exc
 
         # Validate member presence per bundle_kind.
         if "primary" not in loaded_members:
@@ -527,9 +524,7 @@ def _load_zip_bundle(raw: bytes, bundle_sha256: str) -> ModelBundle:
         else:
             # single bundle must not have a meta member.
             if "meta" in loaded_members:
-                raise BundleLoadError(
-                    "single bundle has an unexpected meta member"
-                )
+                raise BundleLoadError("single bundle has an unexpected meta member")
 
     return ModelBundle(manifest, primary_model, meta_model, bundle_sha256)
 
@@ -617,9 +612,7 @@ class BundleScorer:
             and "abstain_threshold" in bundle.manifest.meta_label_config
         ):
             try:
-                self._meta_threshold = float(
-                    bundle.manifest.meta_label_config["abstain_threshold"]
-                )
+                self._meta_threshold = float(bundle.manifest.meta_label_config["abstain_threshold"])
             except (TypeError, ValueError):
                 pass
 
@@ -720,9 +713,7 @@ class BundleScorer:
 
         # meta_labeled: primary → side → meta → abstention → Decision
         if self.bundle.meta_model is None:
-            raise BundleLoadError(
-                "meta_labeled bundle has no meta model (fail closed)"
-            )
+            raise BundleLoadError("meta_labeled bundle has no meta model (fail closed)")
 
         # Compute sides from primary predictions.
         sides = np.array(

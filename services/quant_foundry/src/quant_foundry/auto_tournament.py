@@ -20,7 +20,6 @@ consistency with the manual sweep path.
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -149,38 +148,42 @@ class AutoTournamentConsumer:
 
         for model_id, records in sorted(by_model.items()):
             if len(records) < self.min_settled_count:
-                results.append(TournamentScoreResult(
-                    model_id=model_id,
-                    version_id="",
-                    settled_count=len(records),
-                    tournament_result=TournamentResult(
+                results.append(
+                    TournamentScoreResult(
                         model_id=model_id,
-                        total_score=0.0,
+                        version_id="",
                         settled_count=len(records),
-                    ),
-                    metric_id="",
-                    skipped=True,
-                    error=f"insufficient settled count: {len(records)} < {self.min_settled_count}",
-                ))
+                        tournament_result=TournamentResult(
+                            model_id=model_id,
+                            total_score=0.0,
+                            settled_count=len(records),
+                        ),
+                        metric_id="",
+                        skipped=True,
+                        error=f"insufficient settled count: {len(records)} < {self.min_settled_count}",
+                    )
+                )
                 skipped += 1
                 continue
 
             # Find the latest version for this model in the registry.
             version_id = self._find_latest_version(model_id)
             if version_id is None:
-                results.append(TournamentScoreResult(
-                    model_id=model_id,
-                    version_id="",
-                    settled_count=len(records),
-                    tournament_result=TournamentResult(
+                results.append(
+                    TournamentScoreResult(
                         model_id=model_id,
-                        total_score=0.0,
+                        version_id="",
                         settled_count=len(records),
-                    ),
-                    metric_id="",
-                    skipped=True,
-                    error=f"no version found for model_id {model_id}",
-                ))
+                        tournament_result=TournamentResult(
+                            model_id=model_id,
+                            total_score=0.0,
+                            settled_count=len(records),
+                        ),
+                        metric_id="",
+                        skipped=True,
+                        error=f"no version found for model_id {model_id}",
+                    )
+                )
                 skipped += 1
                 continue
 
@@ -191,28 +194,32 @@ class AutoTournamentConsumer:
                     metric_type="tournament",
                     metrics_dict=result.to_dict(),
                 )
-                results.append(TournamentScoreResult(
-                    model_id=model_id,
-                    version_id=version_id,
-                    settled_count=len(records),
-                    tournament_result=result,
-                    metric_id=metric_id,
-                ))
+                results.append(
+                    TournamentScoreResult(
+                        model_id=model_id,
+                        version_id=version_id,
+                        settled_count=len(records),
+                        tournament_result=result,
+                        metric_id=metric_id,
+                    )
+                )
                 scored += 1
             except Exception as exc:
-                results.append(TournamentScoreResult(
-                    model_id=model_id,
-                    version_id=version_id,
-                    settled_count=len(records),
-                    tournament_result=TournamentResult(
+                results.append(
+                    TournamentScoreResult(
                         model_id=model_id,
-                        total_score=0.0,
+                        version_id=version_id,
                         settled_count=len(records),
-                    ),
-                    metric_id="",
-                    skipped=True,
-                    error=str(exc),
-                ))
+                        tournament_result=TournamentResult(
+                            model_id=model_id,
+                            total_score=0.0,
+                            settled_count=len(records),
+                        ),
+                        metric_id="",
+                        skipped=True,
+                        error=str(exc),
+                    )
+                )
                 errored += 1
 
         return AutoTournamentReceipt(
@@ -257,9 +264,7 @@ class AutoTournamentConsumer:
         now_ns: int,
     ) -> TournamentResult:
         """Build ScoringInput and run the tournament scorer."""
-        last_settled_at_ns = max(
-            (r.settled_at_ns or 0) for r in records
-        )
+        last_settled_at_ns = max((r.settled_at_ns or 0) for r in records)
         age_ns = now_ns - last_settled_at_ns
         is_stale = age_ns > self.stale_threshold_ns
 

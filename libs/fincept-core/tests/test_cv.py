@@ -17,7 +17,6 @@ import pytest
 from pydantic import ValidationError
 
 from fincept_core.datasets import (
-    CPCVFold,
     Fold,
     WalkForwardWindow,
     derive_walk_forward_window,
@@ -473,6 +472,7 @@ class TestMakeCPCVFolds:
         n_groups, n_val_groups = 5, 2
         folds = make_cpcv_folds(100, n_groups=n_groups, n_val_groups=n_val_groups, purge_bars=0)
         from math import comb
+
         expected_count = comb(n_groups - 1, n_val_groups - 1)
         bar_val_count: dict[int, int] = {}
         for f in folds:

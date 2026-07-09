@@ -509,8 +509,8 @@ def test_real_trainer_multiclass_triple_barrier(tmp_path: Path) -> None:
     """Tier 2.3: when task_type='multiclass' (triple-barrier labels),
     the trainer must use the multiclass objective and compute accuracy
     via argmax, not the binary threshold-at-0.5 pattern."""
-    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.dataset_manifest import ColumnRoles
+    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.training_manifest import ModelTaskSpec
 
     data_path = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
@@ -556,10 +556,9 @@ def test_real_trainer_meta_labeling(tmp_path: Path) -> None:
     a secondary binary meta-model that decides whether to act on the
     primary signal. The artifact must bundle both models, and the
     dossier must record meta-model metrics."""
-    import pickle
 
-    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.dataset_manifest import ColumnRoles
+    from quant_foundry.real_trainer import RealLightGBMTrainer
     from quant_foundry.training_manifest import ModelTaskSpec
 
     data_path = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
@@ -621,7 +620,6 @@ def test_real_trainer_meta_labeling(tmp_path: Path) -> None:
 
 def test_model_spec_meta_label_requires_barrier() -> None:
     """Tier 2.3b: meta_label_config without barrier_config must fail."""
-    from pydantic import ValidationError
 
     from quant_foundry.training_manifest import ModelTaskSpec
 

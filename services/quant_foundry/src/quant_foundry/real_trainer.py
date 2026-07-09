@@ -558,9 +558,7 @@ class RealLightGBMTrainer:
         meta_model = None
         meta_metrics: dict[str, Any] = {}
         if self._is_meta_labeling():
-            meta_model, meta_metrics = self._train_meta_model(
-                X, y, final_model, seed, req
-            )
+            meta_model, meta_metrics = self._train_meta_model(X, y, final_model, seed, req)
 
         # C1: Serialize the model(s) as a ModelBundle v1 archive (zip).
         # New training writes only ModelBundle v1. The bundle carries
@@ -577,8 +575,10 @@ class RealLightGBMTrainer:
         feature_schema_hash = hashlib.sha256(
             f"n_features={n_features}".encode(),
         ).hexdigest()[:16]
-        label_type = "meta" if meta_model is not None else (
-            "multiclass" if self._is_multiclass() else "binary"
+        label_type = (
+            "meta"
+            if meta_model is not None
+            else ("multiclass" if self._is_multiclass() else "binary")
         )
         label_schema_hash = hashlib.sha256(
             f"label={label_type}".encode(),
@@ -710,9 +710,7 @@ class RealLightGBMTrainer:
                 "has_rank_report": str(rank_report is not None),
                 # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
                 "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
-                "deflated_sharpe_trial_count": str(
-                    metrics.get("deflated_sharpe_trial_count", "")
-                ),
+                "deflated_sharpe_trial_count": str(metrics.get("deflated_sharpe_trial_count", "")),
                 "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
                 "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
                 "deflated_sharpe_multiple_trials_penalty": str(
@@ -730,9 +728,7 @@ class RealLightGBMTrainer:
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
                 # Tier 2.3: triple-barrier label config (when set).
-                "barrier_config": str(
-                    self.task_spec.barrier_config if self.task_spec else None
-                ),
+                "barrier_config": str(self.task_spec.barrier_config if self.task_spec else None),
                 # Tier 2.3b: meta-labeling config + meta-model metrics.
                 "meta_label_config": str(
                     self.task_spec.meta_label_config if self.task_spec else None
@@ -1190,10 +1186,7 @@ class RealLightGBMTrainer:
         triple-barrier labels (+1/-1/0 mapped to {0,1,2}).
         """
         # Tier 2.3: multiclass objective for triple-barrier labels.
-        is_multiclass = (
-            self.task_spec is not None
-            and self.task_spec.task_type == "multiclass"
-        )
+        is_multiclass = self.task_spec is not None and self.task_spec.task_type == "multiclass"
         params: dict[str, Any] = {
             "objective": "multiclass" if is_multiclass else "binary",
             "metric": "multi_logloss" if is_multiclass else "binary_logloss",
@@ -1397,10 +1390,7 @@ class RealLightGBMTrainer:
 
     def _is_multiclass(self) -> bool:
         """Check if the task is multiclass (e.g. triple-barrier labels)."""
-        return (
-            self.task_spec is not None
-            and self.task_spec.task_type == "multiclass"
-        )
+        return self.task_spec is not None and self.task_spec.task_type == "multiclass"
 
     def _map_labels_for_lgb(self, y: Any) -> tuple[Any, dict[int, int]]:
         """Map labels to LightGBM-compatible integer classes.
@@ -1440,21 +1430,13 @@ class RealLightGBMTrainer:
             val_pred_arr = np.asarray(val_pred)
             # Multiclass: predictions are (n_samples, n_classes) probabilities.
             if train_pred_arr.ndim == 2:
-                train_acc = float(
-                    np.mean(train_pred_arr.argmax(axis=1) == np.asarray(y_train))
-                )
+                train_acc = float(np.mean(train_pred_arr.argmax(axis=1) == np.asarray(y_train)))
             else:
-                train_acc = float(
-                    np.mean(train_pred_arr == np.asarray(y_train))
-                )
+                train_acc = float(np.mean(train_pred_arr == np.asarray(y_train)))
             if val_pred_arr.ndim == 2:
-                val_acc = float(
-                    np.mean(val_pred_arr.argmax(axis=1) == np.asarray(y_val))
-                )
+                val_acc = float(np.mean(val_pred_arr.argmax(axis=1) == np.asarray(y_val)))
             else:
-                val_acc = float(
-                    np.mean(val_pred_arr == np.asarray(y_val))
-                )
+                val_acc = float(np.mean(val_pred_arr == np.asarray(y_val)))
             return train_acc, val_acc
 
         # Binary: existing threshold-at-0.5 pattern.
@@ -1471,10 +1453,7 @@ class RealLightGBMTrainer:
         triple-barrier labels, then trains a secondary binary
         meta-model that decides whether to act on the primary signal.
         """
-        return (
-            self.task_spec is not None
-            and self.task_spec.meta_label_config is not None
-        )
+        return self.task_spec is not None and self.task_spec.meta_label_config is not None
 
     def _compute_meta_labels(
         self,
@@ -1494,6 +1473,7 @@ class RealLightGBMTrainer:
         meta-model).
         """
         import numpy as np
+
         from fincept_core.datasets.labels import meta_labels
 
         preds_arr = np.asarray(oof_preds, dtype=np.float64)
@@ -1559,6 +1539,7 @@ class RealLightGBMTrainer:
         """
         import lightgbm as lgb
         import numpy as np
+
         from fincept_core.datasets.labels import meta_labels
 
         # Get the primary model's predictions on the full dataset.
@@ -1635,10 +1616,12 @@ class RealLightGBMTrainer:
             val_start = i * fold_size
             val_end = (i + 1) * fold_size if i < n_folds - 1 else n
             val_idx = np.arange(val_start, val_end)
-            train_idx = np.concatenate([
-                np.arange(0, val_start),
-                np.arange(val_end, n),
-            ])
+            train_idx = np.concatenate(
+                [
+                    np.arange(0, val_start),
+                    np.arange(val_end, n),
+                ]
+            )
 
             X_tr, X_va = X_meta[train_idx], X_meta[val_idx]
             y_tr, y_va = meta_labels_arr[train_idx], meta_labels_arr[val_idx]
@@ -1674,8 +1657,7 @@ class RealLightGBMTrainer:
         pred_clipped = np.clip(preds_arr, eps, 1 - eps)
         meta_logloss = float(
             -np.mean(
-                labels_arr * np.log(pred_clipped)
-                + (1 - labels_arr) * np.log(1 - pred_clipped),
+                labels_arr * np.log(pred_clipped) + (1 - labels_arr) * np.log(1 - pred_clipped),
             )
         )
         meta_brier = float(np.mean((preds_arr - labels_arr) ** 2))
@@ -1706,10 +1688,7 @@ class RealLightGBMTrainer:
         0-based position is <= resume_from_fold (i.e. the fold was
         completed in a previous run and has a checkpoint).
         """
-        return (
-            self.resume_from_fold is not None
-            and fold_position <= self.resume_from_fold
-        )
+        return self.resume_from_fold is not None and fold_position <= self.resume_from_fold
 
     def _save_fold_checkpoint(
         self,
@@ -1904,9 +1883,7 @@ class RealLightGBMTrainer:
                 if timestamps is not None:
                     all_timestamps.extend(timestamps[val_idx].tolist())
                 # Tier 2.7: save per-fold checkpoint.
-                self._save_fold_checkpoint(
-                    fold_position, model, train_acc, val_acc, total_folds
-                )
+                self._save_fold_checkpoint(fold_position, model, train_acc, val_acc, total_folds)
                 fold_position += 1
         else:
             # --- heuristic walk-forward fold path (existing) ------------
@@ -2004,9 +1981,7 @@ class RealLightGBMTrainer:
                 if timestamps_s is not None:
                     all_timestamps.extend(timestamps_s[val_start:val_end].tolist())
                 # Tier 2.7: save per-fold checkpoint.
-                self._save_fold_checkpoint(
-                    fold.index, model, train_acc, val_acc, len(folds)
-                )
+                self._save_fold_checkpoint(fold.index, model, train_acc, val_acc, len(folds))
 
         if not all_preds:
             raise TrainingFailure(
@@ -2210,9 +2185,7 @@ class RealLightGBMTrainer:
 
             train_pred = np.asarray(model.predict(X_train), dtype=np.float64)
             val_pred = np.asarray(model.predict(X_val), dtype=np.float64)
-            train_acc, val_acc = self._compute_fold_accuracy(
-                train_pred, y_train, val_pred, y_val
-            )
+            train_acc, val_acc = self._compute_fold_accuracy(train_pred, y_train, val_pred, y_val)
 
             fold_train_acc.append(train_acc)
             fold_val_acc.append(val_acc)
@@ -2233,9 +2206,7 @@ class RealLightGBMTrainer:
             fold_oos_returns.append([float(r) for r in oos_returns])
 
             # Tier 2.7: save per-fold checkpoint.
-            self._save_fold_checkpoint(
-                fold.index, model, train_acc, val_acc, len(cpcv_folds)
-            )
+            self._save_fold_checkpoint(fold.index, model, train_acc, val_acc, len(cpcv_folds))
 
         if not all_preds:
             raise TrainingFailure(
@@ -2594,9 +2565,7 @@ class RealLightGBMTrainer:
         win_rate = float(np.mean(returns > 0))
 
         # Sharpe ratio (annualized).
-        ann_factor = (
-            periods_per_year if periods_per_year is not None else self.annualization_factor
-        )
+        ann_factor = periods_per_year if periods_per_year is not None else self.annualization_factor
         if len(returns) > 1 and np.std(returns) > 1e-12:
             sharpe = float(np.mean(returns) / np.std(returns) * np.sqrt(ann_factor))
         else:
@@ -2965,9 +2934,7 @@ class RealLightGBMTrainer:
             # floating-point summation order); plain catboost trains on
             # CPU (deterministic reference baseline alongside LightGBM CPU).
             determinism_status=(
-                "non_deterministic"
-                if req.model_family == "catboost_gpu"
-                else "deterministic"
+                "non_deterministic" if req.model_family == "catboost_gpu" else "deterministic"
             ),
             # Tier 1.3: record the GPU model when training on GPU.
             gpu_model=_probe_gpu_model() if req.model_family == "catboost_gpu" else None,
@@ -3092,9 +3059,7 @@ class RealLightGBMTrainer:
             # floating-point summation order); plain xgboost trains on CPU
             # (deterministic reference baseline alongside LightGBM CPU).
             determinism_status=(
-                "non_deterministic"
-                if req.model_family == "xgboost_gpu"
-                else "deterministic"
+                "non_deterministic" if req.model_family == "xgboost_gpu" else "deterministic"
             ),
             # Tier 1.3: record the GPU model when training on CUDA so
             # the registry/gate can group same-GPU-family runs.
@@ -3341,9 +3306,7 @@ class RealLightGBMTrainer:
                 "has_rank_report": str(rank_report is not None),
                 # Tier 2.1/2.2: DSR + PBO detail fields for transparency.
                 "deflated_sharpe_raw": str(metrics.get("deflated_sharpe_raw", "")),
-                "deflated_sharpe_trial_count": str(
-                    metrics.get("deflated_sharpe_trial_count", "")
-                ),
+                "deflated_sharpe_trial_count": str(metrics.get("deflated_sharpe_trial_count", "")),
                 "deflated_sharpe_skew": str(metrics.get("deflated_sharpe_skew", "")),
                 "deflated_sharpe_kurtosis": str(metrics.get("deflated_sharpe_kurtosis", "")),
                 "deflated_sharpe_multiple_trials_penalty": str(
@@ -3360,9 +3323,7 @@ class RealLightGBMTrainer:
                 "cpcv_n_val_groups": str(metrics.get("cpcv_n_val_groups", "")),
                 "cpcv_n_folds": str(metrics.get("cpcv_n_folds", "")),
                 # Tier 2.3: triple-barrier label config (when set).
-                "barrier_config": str(
-                    self.task_spec.barrier_config if self.task_spec else None
-                ),
+                "barrier_config": str(self.task_spec.barrier_config if self.task_spec else None),
                 # Tier 2.5: execution-aware (net-of-cost) metrics.
                 "sharpe_net": str(metrics.get("sharpe_net", "")),
                 "max_drawdown_net": str(metrics.get("max_drawdown_net", "")),

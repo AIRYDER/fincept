@@ -27,12 +27,12 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
     UniqueConstraint,
@@ -52,9 +52,7 @@ class TrainingJobRow(Base):
     job_id: Mapped[str] = mapped_column(String(128), primary_key=True, nullable=False)
     model_family: Mapped[str] = mapped_column(String(64), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="dispatched"
-    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="dispatched")
     dispatched_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
     started_at_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     completed_at_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -78,9 +76,7 @@ class TrainingJobRow(Base):
             "status IN ('dispatched','running','completed','failed','cancelled','timed_out')",
             name="ck_training_jobs_status_domain",
         ),
-        CheckConstraint(
-            "gpu_count >= 0", name="ck_training_jobs_gpu_count_nonneg"
-        ),
+        CheckConstraint("gpu_count >= 0", name="ck_training_jobs_gpu_count_nonneg"),
         Index("ix_training_jobs_model_family", "model_family"),
         Index("ix_training_jobs_status", "status"),
         Index("ix_training_jobs_dispatched_at_ns", "dispatched_at_ns"),
@@ -105,24 +101,16 @@ class JobCostEventRow(Base):
     total_cost: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     recorded_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    extra_metadata: Mapped[JSONDict | None] = mapped_column(
-        "metadata", JSON, nullable=True
-    )
+    extra_metadata: Mapped[JSONDict | None] = mapped_column("metadata", JSON, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
             "event_type IN ('gpu_seconds','storage_gb_hours','network_egress_gb','overhead')",
             name="ck_job_cost_events_event_type_domain",
         ),
-        CheckConstraint(
-            "amount >= 0", name="ck_job_cost_events_amount_nonneg"
-        ),
-        CheckConstraint(
-            "unit_cost >= 0", name="ck_job_cost_events_unit_cost_nonneg"
-        ),
-        CheckConstraint(
-            "total_cost >= 0", name="ck_job_cost_events_total_cost_nonneg"
-        ),
+        CheckConstraint("amount >= 0", name="ck_job_cost_events_amount_nonneg"),
+        CheckConstraint("unit_cost >= 0", name="ck_job_cost_events_unit_cost_nonneg"),
+        CheckConstraint("total_cost >= 0", name="ck_job_cost_events_total_cost_nonneg"),
         Index("ix_job_cost_events_job_id", "job_id"),
         Index("ix_job_cost_events_event_type", "event_type"),
         Index("ix_job_cost_events_recorded_at_ns", "recorded_at_ns"),

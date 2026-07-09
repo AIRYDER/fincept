@@ -14,12 +14,9 @@ from __future__ import annotations
 import random
 
 import pytest
-
 from quant_foundry.champion_challenger import (
     ChampionChallengerConfig,
     ComparisonInput,
-    PromotionDecision,
-    ShadowComparisonResult,
     compare_champion_challenger,
 )
 
@@ -147,9 +144,7 @@ class TestCompareChampionChallenger:
             min_settled_count=30,
             net_edge_threshold=1.0,
         )
-        decision = compare_champion_challenger(
-            champ_with_brier, chal_with_brier, cfg
-        )
+        decision = compare_champion_challenger(champ_with_brier, chal_with_brier, cfg)
         assert decision.result.brier_delta is not None
         assert decision.result.brier_delta == pytest.approx(-0.05)
 
@@ -184,12 +179,16 @@ class TestCompareChampionChallenger:
         champ = _make_input("champ-v1", mean=0.0001, std=0.002, seed=1)
         chal = _make_input("chal-v2", mean=0.0003, std=0.002, seed=2)
         cfg1 = ChampionChallengerConfig(
-            min_settled_count=30, net_edge_threshold=0.0,
-            bootstrap_samples=100, seed=1,
+            min_settled_count=30,
+            net_edge_threshold=0.0,
+            bootstrap_samples=100,
+            seed=1,
         )
         cfg2 = ChampionChallengerConfig(
-            min_settled_count=30, net_edge_threshold=0.0,
-            bootstrap_samples=100, seed=999,
+            min_settled_count=30,
+            net_edge_threshold=0.0,
+            bootstrap_samples=100,
+            seed=999,
         )
         d1 = compare_champion_challenger(champ, chal, cfg1)
         d2 = compare_champion_challenger(champ, chal, cfg2)
@@ -211,7 +210,8 @@ class TestCompareChampionChallenger:
             settled_count=50,
         )
         cfg = ChampionChallengerConfig(
-            min_settled_count=30, net_edge_threshold=1.0,
+            min_settled_count=30,
+            net_edge_threshold=1.0,
         )
         decision = compare_champion_challenger(champ, chal, cfg)
         assert decision.result.champion_net_edge_bps == pytest.approx(0.0)
@@ -231,7 +231,8 @@ class TestCompareChampionChallenger:
             settled_count=50,
         )
         cfg = ChampionChallengerConfig(
-            min_settled_count=30, net_edge_threshold=1.0,
+            min_settled_count=30,
+            net_edge_threshold=1.0,
         )
         decision = compare_champion_challenger(champ, chal, cfg)
         # Should not crash; uses min length for bootstrap
@@ -258,7 +259,8 @@ class TestCompareChampionChallenger:
         champ = _make_input("champ-v1", seed=1)
         chal = _make_input("chal-v2", seed=2)
         cfg = ChampionChallengerConfig(
-            min_settled_count=30, net_edge_threshold=1.0,
+            min_settled_count=30,
+            net_edge_threshold=1.0,
         )
         decision = compare_champion_challenger(champ, chal, cfg)
         with pytest.raises(Exception):
