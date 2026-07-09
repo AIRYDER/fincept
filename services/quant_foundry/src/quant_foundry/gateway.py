@@ -1149,6 +1149,14 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                     job_id,
                     callback_receipt_id=in_rec.callback_id,
                 )
+        # Tier 1.6: extract operational metrics from the callback payload
+        # and record them via CostTracker.record_metric(). The handler
+        # emits execution_time_ms, queue_delay_ms, cost_usd, and gpu_model
+        # in the metrics_summary dict inside the callback payload. Best-
+        # effort: failures are caught and logged so they do not break the
+        # callback path.
+        with contextlib.suppress(Exception):
+            self._record_operational_metrics(job_id, payload)
         # Tier 1.2: auto-register a model version when a registry is
         # wired in and the callback was a successful training_complete.
         # Best-effort: registration failures are caught and logged via
@@ -1227,6 +1235,103 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             callback_receipt_id=callback_receipt_id,
             version_number=version_number,
         )
+
+    def _record_operational_metrics(
+        self,
+        job_id: str,
+        payload: bytes,
+    ) -> None:
+        """Tier 1.6: Extract operational metrics from the callback payload
+        and record them via CostTracker.record_metric().
+
+        The handler emits these metrics in the ``metrics_summary`` dict
+        inside the callback payload:
+        - ``execution_time_ms``: wall-clock training time in milliseconds
+        - ``queue_delay_ms``: time spent in the RunPod queue (0 from worker)
+        - ``cost_usd``: estimated GPU cost in USD
+        - ``gpu_model``: GPU model name (e.g. "RTX 4090")
+
+        Each metric is recorded as a separate ``job_metrics`` row via
+        CostTracker.record_metric(). Best-effort: all exceptions are
+        suppressed by the caller.
+        """
+        import json as _json
+
+        try:
+            payload_dict = _json.loads(payload)
+        except Exception:
+            return
+
+        # The metrics_summary is inside the callback payload under
+        # either "metrics_summary" (flat) or "payload.metrics_summary"
+        # (nested in the callback envelope).
+        metrics_summary = payload_dict.get("metrics_summary")
+        if not isinstance(metrics_summary, dict):
+            nested_payload = payload_dict.get("payload")
+            if isinstance(nested_payload, dict):
+                metrics_summary = nested_payload.get("metrics_summary")
+        if not isinstance(metrics_summary, dict):
+            return
+
+        tracker = self.cost_tracker()
+        now_ns = time.time_ns()
+
+        # Record each operational metric.
+        metric_map = {
+            "execution_time_ms": ("execution_time", "ms"),
+            "queue_delay_ms": ("queue_delay", "ms"),
+            "cost_usd": ("cost_usd", "USD"),
+        }
+        for field, (metric_type, unit) in metric_map.items():
+            value = metrics_summary.get(field)
+            if value is not None:
+                try:
+                    tracker.record_metric(
+                        job_id=job_id,
+                        metric_type=metric_type,
+                        value=float(value),
+                        unit=unit,
+                        recorded_at_ns=now_ns,
+                    )
+                except Exception:
+                    pass
+
+        # Record GPU model as a metric (string → hash to numeric if needed,
+        # but CostTracker accepts float/int/Decimal — store as 1.0 with
+        # the model name in the metric_type).
+        gpu_model = metrics_summary.get("gpu_model")
+        if gpu_model:
+            try:
+                tracker.record_metric(
+                    job_id=job_id,
+                    metric_type=f"gpu_model:{gpu_model}",
+                    value=1.0,
+                    unit="boolean",
+                    recorded_at_ns=now_ns,
+                )
+            except Exception:
+                pass
+
+        # Record a cost event for the GPU cost (so cost_summary rollups
+        # include it). This is the primary cost record — the metric above
+        # is the observability side.
+        cost_usd = metrics_summary.get("cost_usd")
+        execution_time_ms = metrics_summary.get("execution_time_ms")
+        if cost_usd is not None and execution_time_ms is not None:
+            try:
+                tracker.record_cost_event(
+                    job_id=job_id,
+                    event_type="gpu_compute",
+                    amount=float(execution_time_ms) / 1000.0,
+                    unit_cost=float(cost_usd) / max(float(execution_time_ms) / 1000.0, 0.001),
+                    metadata={
+                        "gpu_model": gpu_model or "unknown",
+                        "execution_time_ms": int(execution_time_ms),
+                    },
+                    currency="USD",
+                )
+            except Exception:
+                pass
 
     @staticmethod
     def _extract_training_mode(payload: Any) -> str:

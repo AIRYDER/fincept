@@ -113,6 +113,7 @@ from quant_foundry.real_trainer import (  # noqa: E402
     TypedArtifactResult,
     build_artifact_result,
 )
+from quant_foundry.real_trainer import _probe_gpu_model  # noqa: E402
 from quant_foundry.runpod_training import (  # noqa: E402
     LocalTrainer,
     RunPodTrainingHandler,
@@ -3028,6 +3029,8 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
 
 def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     """Actual handler implementation (called by the crash-logging wrapper)."""
+    # Tier 1.6: capture handler start time for execution_time_ms metric.
+    _handler_start_ns = time.time_ns()
     input_data = event.get("input") if isinstance(event, dict) else None
     if not isinstance(input_data, dict):
         # Phase 5 / T-5.3: signed failure envelope (mode unknown → canary,
@@ -4179,6 +4182,50 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     if optuna_trial_count is not None:
         metrics_summary["optuna_trial_count"] = optuna_trial_count
         metrics_summary["optuna_best_params"] = optuna_best_params or {}
+
+    # Tier 1.6: Observability + cost accounting.
+    # Emit per-job structured operational metrics in the callback so the
+    # trusted-side CostTracker can persist them. RunPod bills per-second,
+    # so execution_time_ms drives the $ cost. queue_delay_ms is the time
+    # the job spent waiting in the RunPod queue (extracted from the
+    # RunPod receipt when available, else 0). cost_usd is estimated from
+    # the GPU type, GPU count, and execution time using the rate table
+    # from cost_tracker.py. gpu_model is probed via nvidia-smi (best
+    # effort — None when no GPU or nvidia-smi is unavailable).
+    _handler_end_ns = time.time_ns()
+    _execution_time_ms = int((_handler_end_ns - _handler_start_ns) // 1_000_000)
+    metrics_summary["execution_time_ms"] = _execution_time_ms
+    # Queue delay: RunPop populates delayTime in the job status response,
+    # but the handler does not have access to that at training time. The
+    # trusted-side gateway can inject it from the RunPod receipt when
+    # processing the callback. Default to 0 here (no queue delay known
+    # inside the worker).
+    metrics_summary["queue_delay_ms"] = 0
+    # GPU model + cost estimate (best effort).
+    _gpu_model_for_cost = None
+    try:
+        _gpu_model_for_cost = _probe_gpu_model()
+    except Exception:
+        pass
+    if _gpu_model_for_cost is not None:
+        metrics_summary["gpu_model"] = _gpu_model_for_cost
+    # Estimate cost from the GPU type + execution time. The rate table
+    # is imported lazily to avoid a hard dependency on cost_tracker at
+    # handler import time (the handler must remain importable without
+    # fincept_db).
+    try:
+        from quant_foundry.cost_tracker import estimate_gpu_cost
+
+        _cost = estimate_gpu_cost(
+            gpu_type=_gpu_model_for_cost,
+            gpu_count=1,
+            duration_seconds=_execution_time_ms / 1000.0,
+        )
+        metrics_summary["cost_usd"] = float(_cost)
+    except Exception:
+        # If cost estimation fails (no cost_tracker, bad GPU type), emit
+        # a zero cost rather than failing the job.
+        metrics_summary["cost_usd"] = 0.0
 
     # Quality gate passed flag (fail-closed when unknown).
     quality_gate_passed: bool | None = None
