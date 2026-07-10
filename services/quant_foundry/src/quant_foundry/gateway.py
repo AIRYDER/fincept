@@ -1,5 +1,5 @@
 """
-quant_foundry.gateway â€” Quant Foundry gateway wiring (TASK-0306).
+quant_foundry.gateway — Quant Foundry gateway wiring (TASK-0306).
 
 Wires the durability + mock loop pieces from TASK-0304/0305 into a single
 facade that the FastAPI route (`api.routes.quant_foundry`) calls. The
@@ -130,7 +130,7 @@ from quant_foundry.tournament_sweep import TournamentSweep
 
 # `sign_callback` is imported (not used at runtime) so the callback-security
 # test can monkey-patch this module's `sign_callback` attribute and assert the
-# poller never signs on the Fincept side â€” only `verify_callback` is allowed.
+# poller never signs on the Fincept side — only `verify_callback` is allowed.
 
 
 class RunPodConfigError(RuntimeError):
@@ -165,7 +165,7 @@ class _DbCallbackDLQ(CallbackDLQ):
     Subclasses :class:`CallbackDLQ` but overrides ``_store`` and ``__init__``
     so records are written to the DB via :class:`CallbackDlqDbStore` instead
     of to a JSONL file. The ``enqueue`` interface (used by
-    :class:`GatewayCallbackMixin`) is unchanged â€” only the persistence layer
+    :class:`GatewayCallbackMixin`) is unchanged — only the persistence layer
     is swapped.
     """
 
@@ -238,7 +238,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # without a manual register_version() call.
         self._registry: ModelRegistryDB | None = registry
         # Tier 1.5: optional dataset registry. When provided, production
-        # training jobs must pass dispatch_training() â€” which enforces
+        # training jobs must pass dispatch_training() — which enforces
         # that the dataset is registered, L3+ readiness, not stale, and
         # not deprecated/rejected. Canary/research are permissive.
         self._dataset_registry: DatasetRegistry | None = dataset_registry
@@ -269,7 +269,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # When sink_backend == "db", construct DB-backed sinks instead of the
         # JSONL-backed DurableDossierStore / DurableShadowLedgerStore. The
         # CallbackProcessor accepts any object implementing the sink protocols,
-        # so no change to the processor is needed â€” just pass the DB sinks.
+        # so no change to the processor is needed — just pass the DB sinks.
         if self.sink_backend == "db":
             self.shadow_ledger: DbShadowLedgerStore | DurableShadowLedgerStore = (
                 DbShadowLedgerStore(engine=self._db_engine)
@@ -293,7 +293,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             self.dossier_store = DurableDossierStore(self.dossier_registry())
             # When a CostTracker is injected in jsonl mode, we still need a
             # CallbackReceiptDbStore so callback receipts are mirrored to the
-            # DB â€” the training_jobs.callback_receipt_id FK references
+            # DB — the training_jobs.callback_receipt_id FK references
             # callback_receipts.callback_id, so the parent row must exist for
             # CostTracker.link_callback() to succeed. Use the CostTracker's
             # engine (which may be the same injected engine or a lazy-init
@@ -368,16 +368,16 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         Railway dashboard setups keep working during migration.
 
         Canonical (preferred):
-        - ``RUNPOD_API_KEY`` (required in runpod mode) â€” RunPod API key.
-        - ``RUNPOD_TRAINING_ENDPOINT_ID`` (required in runpod mode) â€”
+        - ``RUNPOD_API_KEY`` (required in runpod mode) — RunPod API key.
+        - ``RUNPOD_TRAINING_ENDPOINT_ID`` (required in runpod mode) —
           serverless endpoint ID for the training worker.
-        - ``RUNPOD_INFERENCE_ENDPOINT_ID`` (required in runpod mode) â€”
+        - ``RUNPOD_INFERENCE_ENDPOINT_ID`` (required in runpod mode) —
           serverless endpoint ID for the inference worker.
         - ``RUNPOD_BASE_URL`` (optional, default
-          ``https://api.runpod.ai/v2``) â€” RunPod API base URL.
-        - ``RUNPOD_TIMEOUT_SECONDS`` (optional, default ``30``) â€” HTTP
+          ``https://api.runpod.ai/v2``) — RunPod API base URL.
+        - ``RUNPOD_TIMEOUT_SECONDS`` (optional, default ``30``) — HTTP
           request timeout for dispatch calls.
-        - ``RUNPOD_COST_PER_DISPATCH_CENTS`` (optional, default ``0``) â€”
+        - ``RUNPOD_COST_PER_DISPATCH_CENTS`` (optional, default ``0``) —
           estimated cost per dispatch for budget guard checks.
 
         Deprecated fallbacks (read with a warning):
@@ -557,7 +557,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         clients are wired for both training and inference and that the
         callback secret is non-empty.
 
-        Never returns secret values â€” only the names of missing env vars.
+        Never returns secret values — only the names of missing env vars.
         """
         if not self._is_runpod_mode():
             return {"valid": True, "missing_env": []}
@@ -577,7 +577,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         """Check RunPod endpoint health (only in runpod mode).
 
         Returns a dict with ``ok``, ``status``, and ``detail``. Never
-        raises â€” network errors are caught and reported as ``ok=False``.
+        raises — network errors are caught and reported as ``ok=False``.
         When not in runpod mode or no client is wired, returns
         ``{"ok": False, "status": "not_runpod_mode"}``.
         """
@@ -606,16 +606,16 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         payload with its copy of the secret and returns it; the API
         verifies the signature with its own copy.
 
-        This is a LIVE check â€” it dispatches a real (tiny) job to RunPod
+        This is a LIVE check — it dispatches a real (tiny) job to RunPod
         and polls for completion. It does NOT touch the outbox or inbox;
-        the canary is a direct client â†’ poll â†’ verify round-trip.
+        the canary is a direct client → poll → verify round-trip.
 
         Args:
             job_type: which endpoint to canary ("training" or "inference").
 
         Returns:
             A receipt dict with ``ok``, ``verified``, ``job_type``,
-            ``nonce``, and ``detail``. Never raises â€” errors are
+            ``nonce``, and ``detail``. Never raises — errors are
             reported as ``ok=False`` with a detail string.
         """
         import secrets as _secrets
@@ -658,7 +658,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 "job_type": normalized,
                 "nonce": nonce,
                 "detail": (
-                    f"dispatch failed: {dispatch_result.error_code} â€” "
+                    f"dispatch failed: {dispatch_result.error_code} — "
                     f"{dispatch_result.error_summary}"
                 ),
             }
@@ -713,7 +713,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                     "runpod_job_id": runpod_job_id,
                     "detail": f"unknown RunPod status: {status_value}",
                 }
-            # Completed â€” extract callback fields from the output.
+            # Completed — extract callback fields from the output.
             output = status.get("output")
             callback_fields = _extract_callback_fields(output if output is not None else status)
             if callback_fields is None:
@@ -755,7 +755,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         """Worker heartbeats from the RunPod status files.
 
         In local_mock mode (or when no ``worker_status_dir`` is configured),
-        returns an empty list â€” the mock worker is implicit. In RunPod mode
+        returns an empty list — the mock worker is implicit. In RunPod mode
         with a mounted status directory, scans ``{worker_status_dir}/*.json``
         and returns all status records.
         """
@@ -956,7 +956,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             else:
                 dispatcher.dispatch(job_id, request_payload=dispatch_payload)
         # CostTracker: record the dispatch (creates a training_jobs row).
-        # Best-effort â€” a tracking failure must not break the dispatch path.
+        # Best-effort — a tracking failure must not break the dispatch path.
         self._record_job_dispatch_cost(job_id, job_type, dispatch_payload)
         rec = self.outbox.get(job_id)
         return {
@@ -1043,9 +1043,9 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             if callback_fields is None:
                 # Fail-closed: RunPod handlers MUST return signed
                 # callback_payload/callback_signature/callback_ts fields. The
-                # Fincept side only verifies (verify_callback) â€” it never signs
+                # Fincept side only verifies (verify_callback) — it never signs
                 # on behalf of an unsigned handler (legacy compat shim removed).
-                # Metrics are observability, not security â€” a disk error
+                # Metrics are observability, not security — a disk error
                 # must not mask the fail-closed verdict below.
                 with contextlib.suppress(OSError):
                     self.callback_metrics_store().record(
@@ -1093,8 +1093,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         """Override that wires CostTracker into the callback processing path.
 
         Delegates to the mixin's ``receive_callback`` (HMAC verification,
-        inbox recording, processor.process()), then â€” when the callback
-        completes successfully â€” calls ``CostTracker.update_job_status()``
+        inbox recording, processor.process()), then — when the callback
+        completes successfully — calls ``CostTracker.update_job_status()``
         and ``CostTracker.link_callback()`` to update the training_jobs row.
 
         The callback receipt id is read from the inbox record (the latest
@@ -1299,8 +1299,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 except Exception:
                     pass
 
-        # Record GPU model as a metric (string â†’ hash to numeric if needed,
-        # but CostTracker accepts float/int/Decimal â€” store as 1.0 with
+        # Record GPU model as a metric (string → hash to numeric if needed,
+        # but CostTracker accepts float/int/Decimal — store as 1.0 with
         # the model name in the metric_type).
         gpu_model = metrics_summary.get("gpu_model")
         if gpu_model:
@@ -1316,7 +1316,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 pass
 
         # Record a cost event for the GPU cost (so cost_summary rollups
-        # include it). This is the primary cost record â€” the metric above
+        # include it). This is the primary cost record — the metric above
         # is the observability side.
         cost_usd = metrics_summary.get("cost_usd")
         execution_time_ms = metrics_summary.get("execution_time_ms")
@@ -1559,7 +1559,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         Reads all settlement records, scores each model, populates the
         expanded leaderboard, and returns a JSON-serializable receipt
-        with scored/blocked/stale model lists. Advisory-only â€” never
+        with scored/blocked/stale model lists. Advisory-only — never
         promotes a model.
         """
         if not self.enabled:
@@ -1573,7 +1573,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         """Return a summary of the current tournament state.
 
         Includes the ranked leaderboard, scored/blocked/stale counts,
-        and the last sweep timestamp. Advisory-only â€” no promotion.
+        and the last sweep timestamp. Advisory-only — no promotion.
         """
         if not self.enabled:
             return {"enabled": False, "scored": 0, "blocked": 0, "stale": 0, "leaderboard": []}
@@ -1599,12 +1599,15 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         Builds PromotionEvidence from the dossier, tournament result,
         and sentinel receipt (if available), then submits a
         PromotionRequest to the PromotionReviewQueue. Returns the
-        pending entry dict. Advisory-only â€” does not promote.
+        pending entry dict. Advisory-only — does not promote.
         """
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
 
+        from quant_foundry.bundle_io import TrainingSelfCheck  # noqa: F401
         from quant_foundry.promotion import (
+            CallbackReceiptRef,  # noqa: F401
+            PITEvidenceRef,  # noqa: F401
             PromotionEvidence,
             PromotionRequest,
         )
@@ -1633,7 +1636,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         blocking_issues = self._build_blocking_issues(dossier, tournament_result, sentinel_receipt)
 
-        # C7 evidence chain â€” query the DB for C7 metrics when available,
+        # C7 evidence chain — query the DB for C7 metrics when available,
         # otherwise construct passing defaults from the dossier so the
         # gate can reach the downstream checks (sentinel, evidence bar).
         (
@@ -1683,7 +1686,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         Finds the pending entry matching ``model_id``, processes it
         through the PromotionGate, and returns the receipt dict.
-        The gate fails closed â€” missing evidence or blocking issues
+        The gate fails closed — missing evidence or blocking issues
         result in REJECTED, not APPROVED.
         """
         if not self.enabled:
@@ -2017,14 +2020,14 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         Exposes the same ``PromotionGate`` that the review queue uses.
         The Alpha Genome Lab (TASK-1005) requires a gate for its
-        evidence-backed registration â€” every candidate recipe must pass
+        evidence-backed registration — every candidate recipe must pass
         through this gate, no shortcut, no bypass.
 
         The minimum settled-prediction count required for promotion is
         configurable via the ``QUANT_FOUNDRY_PROMOTION_MIN_SETTLED`` env
         var (default: 10). Setting this to 0 allows bootstrap promotion
         of newly trained models into shadow inference without prior
-        settlement evidence â€” this is intended ONLY for the initial
+        settlement evidence — this is intended ONLY for the initial
         bootstrap phase when no shadow predictions exist yet. Once real
         settlements accumulate, raise this back to 10 to restore the
         full evidence requirement.
@@ -2038,7 +2041,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
           authority=SHADOW_ONLY and cannot reach live trading without
           further human approval.
         - The promotion receipt records the decision but does NOT
-          record the threshold value â€” operators should audit env vars
+          record the threshold value — operators should audit env vars
           when reviewing promotion history.
         """
         if self._promotion_gate is None:
@@ -2060,7 +2063,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         The lab is **opt-in**: constructing it does not start any work.
         Operators trigger sweeps via ``start_alpha_sweep(...)``. Every
-        candidate recipe flows through ``PromotionGate.evaluate()`` â€”
+        candidate recipe flows through ``PromotionGate.evaluate()`` —
         no shortcut, no bypass (per the TASK-1005 acceptance criteria).
 
         Args:
@@ -2072,7 +2075,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 is the dispatch target.
             tournament_probe: optional callable taking ``recipe_id`` and
                 returning a tournament score (or None). When None, no
-                early-stop decision is made â€” the lab only enforces
+                early-stop decision is made — the lab only enforces
                 budget limits.
 
         Returns:
@@ -2083,7 +2086,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
           only registration path).
         - No recipe can be registered with authority above
           ``SHADOW_ONLY`` (alpha-genome recipes are SHADOW_ONLY by
-          construction â€” promotion to paper_approved requires the same
+          construction — promotion to paper_approved requires the same
           human approval path as any other model).
         - Budget exhaustion stops new trials, doesn't kill running ones.
         - No secrets in any receipt.
@@ -2128,7 +2131,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         survivor via the dossier registry or discards the rest with a
         receipt. The full per-trial list is returned.
 
-        The sweep's overall lifecycle is bounded â€” it runs to completion
+        The sweep's overall lifecycle is bounded — it runs to completion
         or stops at the budget ceiling. There is no long-running daemon.
 
         Args:
@@ -2172,7 +2175,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             }
 
         payload = _sweep_receipt_to_dict(receipt)
-        # Stash for status lookups. In-memory only â€” operator persistence
+        # Stash for status lookups. In-memory only — operator persistence
         # happens via the per-trial dossier registrations.
         self._alpha_sweep_receipts[receipt.sweep_id] = payload
         return {"enabled": True, "ok": True, "sweep": payload}
@@ -2199,7 +2202,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         This is the explicit dossier registration contract for the Alpha
         Genome Lab. It is wired to the same ``DossierRegistry`` as every
-        other model â€” there is no separate registry, no shortcut.
+        other model — there is no separate registry, no shortcut.
 
         Returns the registered dossier as a JSON-safe dict. Raises
         ``ValueError`` on a content-hash mismatch for an existing
@@ -2234,7 +2237,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         Sweeps all shadow predictions, settles expired ones, and returns
         a JSON-serializable receipt with settled / pending_time /
-        pending_data / failed counts. Idempotent â€” safe to rerun.
+        pending_data / failed counts. Idempotent — safe to rerun.
         """
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
@@ -2349,7 +2352,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # The training_jobs table has a CHECK constraint forcing mode to be
         # one of 'canary', 'research', 'production'. The gateway mode
         # ('runpod', 'local_mock') is a transport mode, not a deployment
-        # tier â€” map it to 'canary' (the default tier for shadow-only
+        # tier — map it to 'canary' (the default tier for shadow-only
         # dispatches) unless the payload overrides it.
         ct_mode = str(payload.get("deployment_mode", "canary"))
         # Persist the request payload to disk and use the path as the ref.
@@ -2372,7 +2375,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         """Persist the request payload to disk and return the file path.
 
         Stored under ``<base_dir>/request_payloads/<job_id>.json``. This is
-        a reference (file path), never the raw payload itself â€” the
+        a reference (file path), never the raw payload itself — the
         CostTracker stores only the path in ``training_jobs.request_payload_ref``.
         """
         import json as _json
@@ -2431,7 +2434,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # computed from the append-only ``CallbackMetricsStore`` (JSONL at
         # ``<base_dir>/callback_metrics/callback_metrics.jsonl``) rather
         # than the inbox. ``received`` events are excluded from the
-        # denominator â€” only ``accepted`` + ``rejected`` count. Return
+        # denominator — only ``accepted`` + ``rejected`` count. Return
         # ``None`` only when no callback events have been recorded at all;
         # otherwise surface the numeric rate (even if 0.0).
         metrics_store = self.callback_metrics_store()
@@ -2481,7 +2484,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         ``SHADOW_APPROVED`` or higher, builds a feature snapshot for each,
         and dispatches an inference job via ``create_job``. Only runs in
         ``runpod_shadow`` or ``runpod_research`` mode. Errors for one model
-        are caught and recorded â€” a single model failing does not stop the
+        are caught and recorded — a single model failing does not stop the
         rest of the batch.
 
         Returns a JSON-safe dispatch receipt:
@@ -2602,7 +2605,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
 
         Returns an empty list when no feature lake is wired or no rows are
         available. This is the extension point for a real feature lake
-        adapter â€” the default returns no rows so the dispatch loop can run
+        adapter — the default returns no rows so the dispatch loop can run
         end-to-end without a live feature store.
         """
         feature_lake = getattr(self, "_feature_lake", None)

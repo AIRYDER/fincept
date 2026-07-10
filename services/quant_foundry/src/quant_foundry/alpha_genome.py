@@ -1,12 +1,12 @@
 """
-quant_foundry.alpha_genome â€” automated recipe generation lab (TASK-1005).
+quant_foundry.alpha_genome — automated recipe generation lab (TASK-1005).
 
 The Alpha Genome Lab is the bounded-mutation engine that proposes candidate
 recipes (feature set + model type + hyperparameters + windows) for training
 and evaluation. Every recipe must be reproducible, every mutation must fall
 inside an allowlist, every trial must respect cost budgets, and every
 candidate must pass through the same ``PromotionGate.evaluate()`` path as
-any other model â€” no recipe can bypass the tournament / sentinel gates.
+any other model — no recipe can bypass the tournament / sentinel gates.
 
 Cross-cutting quant rigor (BIG_PLAN):
 - **Point-in-time discipline.** Mutations never bypass the feature lake's
@@ -17,7 +17,7 @@ Cross-cutting quant rigor (BIG_PLAN):
   higher authority requires the same human approval path as any other
   model.
 - **No secrets in recipes or receipts.** Recipe configs contain only
-  feature names, model families, hyperparameters, and window boundaries â€”
+  feature names, model families, hyperparameters, and window boundaries —
   never credentials, environment-variable values, or filesystem paths.
 - **Cost fails closed.** ``TrialBudget`` denies any trial that would
   exceed per-recipe or per-sweep limits, and consults ``BudgetGuard`` for
@@ -26,7 +26,7 @@ Cross-cutting quant rigor (BIG_PLAN):
 File-disjoint from all active builders. New module. No imports of
 settlement / dossier (other than type references for DossierStatus and
 PromotionEvidence) / tournament / gateway / outbox / inbox. The lab is
-**opt-in** â€” disabling ``AlphaGenomeLab`` falls back to the manual model
+**opt-in** — disabling ``AlphaGenomeLab`` falls back to the manual model
 registry with no behavioral change.
 
 Design:
@@ -47,11 +47,11 @@ Design:
   supplied ``TrainingDispatcher`` callable, collect evidence through a
   ``PromotionGate``, and either register the survivor or discard the rest
   with a ``DiscardReceipt``. **Every candidate goes through the same
-  ``PromotionGate.evaluate()`` path** â€” no shortcut, no bypass.
+  ``PromotionGate.evaluate()`` path** — no shortcut, no bypass.
 
 - ``TrialBudget`` enforces per-recipe and per-sweep cost ceilings and
   consults ``BudgetGuard`` for the global kill switch. ``Budget exhaustion
-  stops new trials, doesn't kill running ones`` â€” running trials complete
+  stops new trials, doesn't kill running ones`` — running trials complete
   but no new trial is dispatched once the budget is exhausted.
 
 - ``EarlyStopper`` reads intermediate ``TournamentScore`` values from a
@@ -93,7 +93,7 @@ ALLOWED_TRANSFORMS: frozenset[str] = frozenset(
 )
 
 # Allowed model families. Limited to the families the rest of the system
-# has contracts for â€” adding a family requires new dispatchers and new
+# has contracts for — adding a family requires new dispatchers and new
 # dossier schemas, so the lab cannot introduce unsupported families.
 ALLOWED_MODEL_FAMILIES: frozenset[str] = frozenset(
     {
@@ -172,11 +172,11 @@ DEFAULT_VAL_WINDOW_RANGE_NS: tuple[int, int] = (
 #   (``runpod_image`` is not None and ``requires_gpu`` is True) OR carry an
 #   explicit baseline exception (``is_baseline_exception`` is True). Any
 #   other family is rejected for production. Canary and research modes are
-#   permissive â€” the GPU requirement is advisory only.
+#   permissive — the GPU requirement is advisory only.
 #
 # The legacy ``ALLOWED_MODEL_FAMILIES`` / ``HYPERPARAM_BOUNDS`` constants
 # above remain the allowlist for the Alpha Genome Lab's *bounded mutation
-# engine* (a separate concern â€” the lab mutates recipes within a small,
+# engine* (a separate concern — the lab mutates recipes within a small,
 # profiled family set). The registry is the source of truth for
 # *production deployment* of trained families.
 
@@ -270,7 +270,7 @@ class FamilyValidationResult(BaseModel):
 
 
 class ModelFamilyRegistry:
-    """Versioned registry of model family specs â€” the single source of truth.
+    """Versioned registry of model family specs — the single source of truth.
 
     The registry is process-global: the module-level
     :data:`MODEL_FAMILY_REGISTRY` singleton is pre-populated with the
@@ -280,7 +280,7 @@ class ModelFamilyRegistry:
 
     Thread-safety: the registry is populated once at import and read-only
     thereafter. ``register`` is not intended for concurrent mutation at
-    runtime â€” it exists so a deployment can add a family in a controlled
+    runtime — it exists so a deployment can add a family in a controlled
     startup hook.
     """
 
@@ -340,7 +340,7 @@ class ModelFamilyRegistry:
         """Validate that ``family_id`` may run in ``mode``.
 
         Rules:
-          - The family MUST be registered (unknown family â†’ error).
+          - The family MUST be registered (unknown family → error).
           - The family MUST declare an artifact loader (non-empty
             ``artifact_loader``); a family without a loader is rejected.
           - For ``production`` mode: the family MUST map to a GPU RunPod
@@ -349,7 +349,7 @@ class ModelFamilyRegistry:
             (``is_baseline_exception`` is True). Any other family is
             rejected for production.
           - For ``canary`` / ``research``: the GPU requirement is
-            advisory â€” a GPU family running without a GPU produces a
+            advisory — a GPU family running without a GPU produces a
             warning, not an error.
 
         Returns a :class:`FamilyValidationResult` with ``passed`` True
@@ -389,7 +389,7 @@ class ModelFamilyRegistry:
                     "registered loader (see artifact_io.LOADER_REGISTRY)"
                 )
             except ImportError:
-                # artifact_io not importable â€” treat as advisory (older
+                # artifact_io not importable — treat as advisory (older
                 # deployment). The loader-name presence check above still
                 # applies.
                 pass
@@ -545,7 +545,7 @@ class Recipe:
 
     A recipe is the unit the lab proposes, trains, and registers. Two
     recipes with the same canonical content produce the same
-    ``recipe_hash`` and therefore the same idempotency key â€” training
+    ``recipe_hash`` and therefore the same idempotency key — training
     dispatchers can dedupe on this hash to guarantee reproducibility.
 
     Fields:
@@ -628,7 +628,7 @@ class Recipe:
             raise ValueError(f"label_horizon_ns must be > 0; got {self.label_horizon_ns}")
         # Reject any field that looks like it carries a secret. We don't
         # have a "secret" field on Recipe, but a defensive check on the
-        # feature names is cheap insurance â€” secrets often masquerade as
+        # feature names is cheap insurance — secrets often masquerade as
         # feature names ("api_key", "token", "secret", "password").
         forbidden_name_substrings = (
             "password",
@@ -951,7 +951,7 @@ class TrialBudget:
           a single sweep. Defaults to $500.
         - ``guard``: optional ``BudgetGuard`` for the global kill switch.
           When present, paid trials also pass through ``guard.check_and_reserve``.
-        - Running trials are NOT killed by budget exhaustion â€” only new
+        - Running trials are NOT killed by budget exhaustion — only new
           trial dispatch is blocked. This matches the BIG_PLAN rule
           "Budget exhaustion stops new trials, doesn't kill running ones."
     """
@@ -1085,7 +1085,7 @@ class EarlyStopper:
         - ``min_settled >= 1`` (need at least one settled prediction
           before a kill decision).
         - ``relative_threshold > 0`` (positive threshold).
-        - If the parent score is None (no parent â€” seed recipe), no
+        - If the parent score is None (no parent — seed recipe), no
           early stop is performed.
     """
 
@@ -1254,7 +1254,7 @@ class AlphaGenomeLab:
 
     The lab is **opt-in**: a sweep is started via ``run_sweep``. Every
     candidate recipe must pass through the supplied ``gate`` (a
-    ``PromotionGate`` from ``promotion.py``) â€” there is no fast path.
+    ``PromotionGate`` from ``promotion.py``) — there is no fast path.
     Surviving candidates are added to ``registry`` (a
     ``DossierRegistry``-like object with an ``upsert`` method).
 
@@ -1275,11 +1275,11 @@ class AlphaGenomeLab:
           ``APPROVED``.
         - No recipe can be registered with authority above
           ``SHADOW_ONLY`` (alpha_genome recipes are SHADOW_ONLY by
-          construction â€” promotion to paper_approved requires the same
+          construction — promotion to paper_approved requires the same
           human approval path as any other model).
         - Budget exhaustion stops new trials, doesn't kill running ones.
         - All receipts are immutable (frozen dataclasses).
-        - No secrets in any receipt â€” the sweep iterates over Recipe
+        - No secrets in any receipt — the sweep iterates over Recipe
           objects whose constructor rejects secret-shaped feature names.
     """
 
@@ -1298,7 +1298,7 @@ class AlphaGenomeLab:
     ) -> RecipeMutation:
         """Pick the next mutation deterministically from a parent + seed.
 
-        The choice is intentionally simple and bounded â€” the lab's
+        The choice is intentionally simple and bounded — the lab's
         responsibility is to *enforce* the allowlist, not to invent a
         fancy search algorithm. Six rotations cycle through the allowlisted
         mutation kinds; the per-kind parameters are chosen within the
@@ -1388,7 +1388,7 @@ class AlphaGenomeLab:
             try:
                 candidate = mutation.apply(seed_recipe)
             except ValueError as exc:
-                # Mutation outside allowlist â€” discard and continue.
+                # Mutation outside allowlist — discard and continue.
                 receipt = TrialReceipt(
                     recipe_id=f"rejected-{sid}-{i}",
                     parent_recipe_id=seed_recipe.recipe_id,
@@ -1413,7 +1413,7 @@ class AlphaGenomeLab:
                 cost_cents=estimate_cents,
             )
             if not bd.allowed:
-                # Budget exhausted â€” stop dispatching new trials.
+                # Budget exhausted — stop dispatching new trials.
                 receipt = TrialReceipt(
                     recipe_id=candidate.recipe_id,
                     parent_recipe_id=seed_recipe.recipe_id,
@@ -1531,7 +1531,7 @@ class AlphaGenomeLab:
 
         Uses ``PromotionEvidence`` if importable; otherwise the gate's
         ``evaluate`` will see ``dossier=None`` and reject with
-        ``NO_DOSSIER`` â€” which is the correct behavior.
+        ``NO_DOSSIER`` — which is the correct behavior.
 
         C7 hardening: the gate now requires a full evidence chain
         (selfcheck, callback_receipt, artifact_uri, dossier_hash,
@@ -1543,6 +1543,8 @@ class AlphaGenomeLab:
         try:
             from quant_foundry.dossier import DossierRecord
             from quant_foundry.promotion import (
+                CallbackReceiptRef,  # noqa: F401
+                PITEvidenceRef,  # noqa: F401
                 PromotionEvidence,
             )
             from quant_foundry.sentinel import SentinelReceipt
@@ -1560,7 +1562,7 @@ class AlphaGenomeLab:
         if sentinel is not None and not isinstance(sentinel, SentinelReceipt):
             sentinel = None
 
-        # C7 evidence chain â€” pull from the outcome's optional c7_evidence
+        # C7 evidence chain — pull from the outcome's optional c7_evidence
         # dict. When not provided, the gate will reject with the
         # appropriate C7 rejection reason (MISSING_SELFCHECK, etc.),
         # which is the safe fail-closed behavior.
@@ -1592,7 +1594,7 @@ class AlphaGenomeLab:
     def _build_request(self, candidate: Recipe, outcome: Any) -> Any:
         """Build a ``PromotionRequest`` for a candidate recipe.
 
-        The target level is ``research_approved`` â€” the first step above
+        The target level is ``research_approved`` — the first step above
         ``candidate``. Higher levels require human approval, which is
         out of scope for the lab's automated path.
         """

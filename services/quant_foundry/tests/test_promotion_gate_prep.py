@@ -1,5 +1,5 @@
 """
-C7 Promotion Gate Hardening â€” tests for the hardened promotion gate.
+C7 Promotion Gate Hardening — tests for the hardened promotion gate.
 
 These tests verify the C7 evidence chain: no model can advance unless the
 full receipt chain is complete.
@@ -40,7 +40,7 @@ from quant_foundry.tournament import (
 )
 
 # ---------------------------------------------------------------------------
-# Helpers â€” minimal evidence factory
+# Helpers — minimal evidence factory
 # ---------------------------------------------------------------------------
 
 
@@ -148,7 +148,7 @@ def _make_evidence_complete(
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” selfcheck
+# Tests — selfcheck
 # ===========================================================================
 
 
@@ -171,7 +171,7 @@ def test_promotion_rejects_selfcheck_failed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” bundle sha256
+# Tests — bundle sha256
 # ===========================================================================
 
 
@@ -186,7 +186,7 @@ def test_promotion_rejects_missing_bundle_sha256() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” backend production eligibility
+# Tests — backend production eligibility
 # ===========================================================================
 
 
@@ -200,7 +200,7 @@ def test_promotion_rejects_backend_not_production_eligible() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” complete receipt chain (positive path)
+# Tests — complete receipt chain (positive path)
 # ===========================================================================
 
 
@@ -214,7 +214,7 @@ def test_promotion_accepts_complete_receipt_chain() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” retired terminal status
+# Tests — retired terminal status
 # ===========================================================================
 
 
@@ -235,7 +235,7 @@ def test_retired_is_terminal_status() -> None:
 
 
 def test_rejected_is_terminal_status() -> None:
-    """``rejected`` is also terminal â€” no promotion out of rejected."""
+    """``rejected`` is also terminal — no promotion out of rejected."""
     dossier = _make_dossier(status=DossierStatus.REJECTED)
     ev = _make_evidence_complete(dossier=dossier)
     gate = PromotionGate()
@@ -248,7 +248,7 @@ def test_rejected_is_terminal_status() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” callback receipt
+# Tests — callback receipt
 # ===========================================================================
 
 
@@ -271,7 +271,7 @@ def test_promotion_rejects_callback_not_processed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” artifact URI
+# Tests — artifact URI
 # ===========================================================================
 
 
@@ -285,7 +285,7 @@ def test_promotion_rejects_missing_artifact_uri() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” dossier hash
+# Tests — dossier hash
 # ===========================================================================
 
 
@@ -308,7 +308,7 @@ def test_promotion_rejects_missing_dossier_hash() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” feature set version
+# Tests — feature set version
 # ===========================================================================
 
 
@@ -331,7 +331,7 @@ def test_promotion_rejects_empty_feature_set_version() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests â€” PIT evidence
+# Tests — PIT evidence
 # ===========================================================================
 
 

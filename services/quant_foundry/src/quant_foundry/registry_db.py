@@ -1,4 +1,4 @@
-"""quant_foundry.registry_db â€” DB-backed model registry with promotion workflow.
+"""quant_foundry.registry_db — DB-backed model registry with promotion workflow.
 
 The ``ModelRegistryDB`` is the durable, Postgres-backed home for model identity,
 versions, metrics, promotion decisions, and shadow evaluations. It mirrors the
@@ -7,11 +7,11 @@ JSONL-backed ``DossierRegistry`` (TASK-0403) but writes to fincept-db via a
 
 Why sync, not async:
   The ``PromotionGate.evaluate`` is sync, and the promotion workflow is a
-  synchronous request-response cycle (assemble evidence â†’ evaluate â†’ persist
-  receipt â†’ update status). The DB-backed registry uses a sync SQLAlchemy
+  synchronous request-response cycle (assemble evidence → evaluate → persist
+  receipt → update status). The DB-backed registry uses a sync SQLAlchemy
   engine + sync sessions (``sync_session_scope`` from ``fincept_db.engine``).
 
-CRITICAL â€” the registry persists, the gate enforces:
+CRITICAL — the registry persists, the gate enforces:
   The registry's ``promote()`` method does NOT duplicate PromotionGate logic.
   It:
     1. Queries the registry tables to assemble ``PromotionEvidence``.
@@ -397,7 +397,7 @@ class ModelRegistryDB:
         This method:
           1. Queries the registry tables to assemble ``PromotionEvidence``.
           2. Calls ``PromotionGate.evaluate(request, evidence)``.
-          3. Persists the ``promotions`` row (always â€” approved or rejected).
+          3. Persists the ``promotions`` row (always — approved or rejected).
           4. Persists the ``PromotionReceipt`` into ``promotion_decisions``.
           5. Only if approved: updates ``model_versions.status`` and
              ``models.current_status``.
@@ -435,7 +435,7 @@ class ModelRegistryDB:
         # --- 4. Call the gate (the gate enforces; the registry persists) ---
         receipt = self._gate.evaluate(request=request, evidence=evidence)
 
-        # --- 5. Persist the promotions row (always â€” audit trail) ---
+        # --- 5. Persist the promotions row (always — audit trail) ---
         promotion_id = f"promo:{version_id}:{now_ns}"
         decided_at_ns = receipt.decided_at_ns or time.time_ns()
         with Session(engine) as session:
@@ -692,7 +692,7 @@ class ModelRegistryDB:
             artifact_uri=artifact_uri,
             # Use the DossierRecord's recomputed content_hash as the
             # dossier_hash. The gate checks that dossier_hash matches
-            # dossier.content_hash â€” this ensures the dossier row's content
+            # dossier.content_hash — this ensures the dossier row's content
             # matches the recomputed hash (tamper detection). The
             # version_row.dossier_content_hash FK ensures the version
             # points to the correct dossier row.
