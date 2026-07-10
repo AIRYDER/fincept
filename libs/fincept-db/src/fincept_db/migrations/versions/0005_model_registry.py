@@ -245,6 +245,13 @@ def downgrade() -> None:
     op.drop_index("ix_model_metrics_version_id", table_name="model_metrics")
     op.drop_table("model_metrics")
 
+    # Drop the deferred FK (use_alter=True in upgrade) from models ->
+    # model_versions BEFORE dropping model_versions, otherwise PostgreSQL
+    # rejects the drop (RESTRICT) because models still references it.
+    op.drop_constraint(
+        "fk_models_current_version_id", "models", type_="foreignkey"
+    )
+
     op.drop_index("ix_model_versions_status", table_name="model_versions")
     op.drop_index("ix_model_versions_model_id", table_name="model_versions")
     op.drop_table("model_versions")
