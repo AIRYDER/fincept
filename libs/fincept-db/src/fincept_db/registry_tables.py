@@ -70,7 +70,9 @@ class ModelRow(Base):
     created_at_ns: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_version_id: Mapped[str | None] = mapped_column(
         String(128),
-        ForeignKey("model_versions.version_id", name="fk_models_current_version_id"),
+        ForeignKey(
+            "model_versions.version_id", name="fk_models_current_version_id", use_alter=True
+        ),
         nullable=True,
     )
     current_status: Mapped[str] = mapped_column(String(32), nullable=False, default="candidate")
