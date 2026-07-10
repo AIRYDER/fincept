@@ -15,13 +15,11 @@ from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.sentinel import SentinelReceipt
-from test_auto_promotion import (
-    _dispatch_and_callback,
-    _make_gateway,
-)
-from test_e2e_product_loop import (
+from helpers.product_loop_helpers import (
     _MODEL_ID,
+    _dispatch_and_callback,
     _make_engine,
+    _make_gateway,
 )
 
 # --------------------------------------------------------------------------- #

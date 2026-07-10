@@ -1,3 +1,13 @@
+[[rules]]
+id = "runpod-s3-access-key"
+description = "RunPod S3 access key (rps_ prefix) or user_ prefixed S3 credential literal"
+regex = '''rps_[A-Za-z0-9]{20,}|user_[A-Za-z0-9]{20,}'''
+
+[[rules]]
+id = "runpod-s3-secret-key-assignment"
+description = "RunPod S3 secret key assigned to a credential variable"
+regex = '''S3_SECRET_KEY\s*=\s*["'][A-Za-z0-9]{20,}["']'''
+
 [allowlist]
 description = "Allow fake redaction-test tokens that intentionally resemble provider secrets."
 regexes = [

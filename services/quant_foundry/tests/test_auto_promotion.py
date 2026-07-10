@@ -42,123 +42,22 @@ from quant_foundry.schemas import (
 )
 from quant_foundry.signatures import sign_callback
 
-
-def _signed_callback_with_artifact(
-    job_id: str,
-    *,
-    secret: str,
-    artifact_id: str,
-    sha256: str,
-) -> tuple[bytes, str, int]:
-    """Build a signed callback with a custom artifact_id + sha256.
-
-    This allows creating multiple versions under the same model
-    (the default _signed_training_callback uses a fixed artifact hash
-    which causes deduplication).
-    """
-    artifact = ArtifactManifest(
-        artifact_id=artifact_id,
-        sha256=sha256,
-        size_bytes=2048,
-        uri=None,
-        model_family="gbm",
-        created_at_ns=time.time_ns(),
-        feature_schema_hash="feature-hash-e2e",
-        label_schema_hash="label-hash-e2e",
-        code_git_sha="git-sha-e2e",
-        lockfile_hash="lock-hash-e2e",
-        container_image_digest="sha256:container-digest-e2e",
-    )
-    dossier = ModelDossier(
-        model_id=_MODEL_ID,
-        artifact_manifest_id=artifact.artifact_id,
-        dataset_manifest_id="dataset:training:e2e",
-        code_git_sha="git-sha-e2e",
-        lockfile_hash="lock-hash-e2e",
-        container_image_digest="sha256:container-digest-e2e",
-        random_seed=7,
-        hardware_class="runpod-gpu",
-        training_metrics={"accuracy": 0.62, "logloss": 0.49},
-        pbo=0.12,
-        deflated_sharpe=1.1,
-        authority=Authority.SHADOW_ONLY,
-        metadata={"model_family": "gbm"},
-    )
-    envelope = RunPodCallbackEnvelope(
-        job_id=job_id,
-        worker_id="runpod-training-e2e",
-        result_type="training_complete",
-        payload={
-            "model_family": "gbm",
-            "dossier": dossier.model_dump(mode="json"),
-            "artifact_manifest": artifact.model_dump(mode="json"),
-        },
-    )
-    payload = envelope.model_dump_json().encode("utf-8")
-    ts = int(time.time())
-    signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
-    return payload, signature, ts
-
-
+from helpers.product_loop_helpers import (
+    _ARTIFACT_ID,
+    _MODEL_ID,
+    _dispatch_and_callback,
+    _make_engine,
+    _make_gateway,
+    _signed_callback_with_artifact,
+    _training_payload,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-# Re-use the engine + callback helpers from the e2e test module.
-# --------------------------------------------------------------------------- #
-# Helpers                                                                      #
-# --------------------------------------------------------------------------- #
-# Use the same model_id as the e2e helpers (hardcoded in _signed_training_callback).
-from test_e2e_product_loop import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
 
 from fincept_db.registry_tables import (
     ModelVersionRow,
     ShadowEvaluationRow,
 )
-
-
-def _dispatch_and_callback(
-    gateway: QuantFoundryGateway,
-    engine: Any,
-    secret: str,
-    job_id: str,
-    model_id: str = _MODEL_ID,
-    artifact_id: str = _ARTIFACT_ID,
-    sha256: str = "a" * 64,
-) -> str:
-    """Dispatch a training job, receive the callback, return version_id.
-
-    Pass a unique ``artifact_id`` + ``sha256`` to create distinct
-    versions under the same model.
-    """
-    gateway.create_job(
-        job_id=job_id,
-        job_type="training",
-        idempotency_key=f"idem-{job_id}",
-        request_payload=_training_payload(job_id),
-    )
-    payload, signature, ts = _signed_callback_with_artifact(
-        job_id,
-        secret=secret,
-        artifact_id=artifact_id,
-        sha256=sha256,
-    )
-    gateway.receive_callback(
-        job_id=job_id,
-        payload=payload,
-        signature=signature,
-        ts=ts,
-        worker_id="test-worker",
-    )
-
-    with Session(engine) as session:
-        version_row = session.scalars(
-            select(ModelVersionRow).where(
-                ModelVersionRow.model_id == model_id,
-                ModelVersionRow.artifact_id == artifact_id,
-            )
-        ).first()
-        assert version_row is not None, f"no version row for artifact {artifact_id}"
-        return version_row.version_id
 
 
 def _record_tournament_metrics(
@@ -204,32 +103,6 @@ def _record_sentinel_metrics(
             "pbo": 0.12,
             "pbo_flagged": False,
         },
-    )
-
-
-def _make_gateway(
-    engine: Any,
-    secret: str,
-    registry: ModelRegistryDB,
-    tmp_path: Any,
-) -> QuantFoundryGateway:
-    """Create a gateway with DB sinks + CostTracker."""
-    training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
-    return QuantFoundryGateway(
-        enabled=True,
-        mode="runpod",
-        shadow_only=True,
-        callback_secret=secret,
-        base_dir=tmp_path / "qf-auto",
-        runpod_clients={"training": training_client},
-        cost_tracker=CostTracker(engine=engine),
-        sink_backend="db",
-        db_engine=engine,
-        registry=registry,
-        budget_guard=BudgetGuard(
-            base_dir=tmp_path / "qf-auto" / "budget",
-            monthly_budget_cents=1_000_000,
-        ),
     )
 
 
@@ -590,3 +463,6 @@ class TestAutoPromotionWithChampion:
             assert len(eval_rows) >= 1
 
         engine.dispose()
+
+
+

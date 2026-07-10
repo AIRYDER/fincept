@@ -22,8 +22,7 @@ from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.schemas import Authority
 from quant_foundry.shadow_ledger import ShadowLedgerRecord
-from test_auto_promotion import _dispatch_and_callback
-from test_e2e_product_loop import _MODEL_ID, _make_engine
+from helpers.product_loop_helpers import _dispatch_and_callback, _MODEL_ID, _make_engine
 
 
 def _make_shadow_gateway(
@@ -407,7 +406,7 @@ class TestFullAutomatedProductLoop:
         from quant_foundry.auto_promotion import AutoPromotionOrchestrator
         from quant_foundry.champion_challenger import ChampionChallengerConfig
         from quant_foundry.settlement_provider import SettledComparisonInputProvider
-        from test_settlement_provider import _FakeSettlementLedger, _make_settlement_record
+        from helpers.product_loop_helpers import _FakeSettlementLedger, _make_settlement_record
 
         engine = _make_engine()
         secret = "test-secret"
@@ -450,7 +449,6 @@ class TestFullAutomatedProductLoop:
                 "pbo_flagged": False,
             },
         )
-
         # Auto-promote: candidate → research_approved.
         settlement_ledger = _FakeSettlementLedger()
         import random

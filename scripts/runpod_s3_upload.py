@@ -1,18 +1,30 @@
 """Upload dataset to RunPod network volume via S3-compatible API (boto3)."""
 
+import os
 import pathlib
+import sys
 
 import boto3
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 
-VOLUME_ID = "rrsd005i3g"
+VOLUME_ID = os.environ.get("RUNPOD_S3_BUCKET")
 REGION = "US-NC-1"
-ENDPOINT = f"https://s3api-{REGION}.runpod.io/"
+ENDPOINT = os.environ.get("RUNPOD_S3_ENDPOINT")
 
 # RunPod S3 API keys (separate from the RunPod API key)
-S3_ACCESS_KEY = "user_32lBXOnFFDX3g9rIuiuE0xg1U1h"
-S3_SECRET_KEY = "rps_LWRJPV4VJLIUPROC43HC3IB7MG06GK4DF4YSD1SUnj5x7m"
+S3_ACCESS_KEY = os.environ.get("RUNPOD_S3_ACCESS_KEY")
+S3_SECRET_KEY = os.environ.get("RUNPOD_S3_SECRET_KEY")
+
+for _var, _val in (
+    ("RUNPOD_S3_ACCESS_KEY", S3_ACCESS_KEY),
+    ("RUNPOD_S3_SECRET_KEY", S3_SECRET_KEY),
+    ("RUNPOD_S3_ENDPOINT", ENDPOINT),
+    ("RUNPOD_S3_BUCKET", VOLUME_ID),
+):
+    if not _val:
+        print(f"Missing required environment variable: {_var}", file=sys.stderr)
+        sys.exit(1)
 
 csv_path = _REPO / "data" / "datasets" / "deep_real" / "dataset_full.csv"
 s3_key = "datasets/deep_real/dataset_full.csv"

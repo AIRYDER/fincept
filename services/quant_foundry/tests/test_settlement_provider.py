@@ -13,68 +13,14 @@ from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.settlement_provider import SettledComparisonInputProvider
-from test_auto_promotion import (
-    _dispatch_and_callback,
-    _make_gateway,
-)
-from test_e2e_product_loop import (
+from helpers.product_loop_helpers import (
     _MODEL_ID,
+    _dispatch_and_callback,
     _make_engine,
+    _make_gateway,
+    _make_settlement_record,
+    _FakeSettlementLedger,
 )
-
-# --------------------------------------------------------------------------- #
-# Helpers                                                                      #
-# --------------------------------------------------------------------------- #
-
-
-def _make_settlement_record(
-    *,
-    prediction_id: str,
-    model_id: str = _MODEL_ID,
-    realized_return_net: float | None = 0.001,
-    brier: float | None = 0.21,
-    status: SettlementStatus = SettlementStatus.SETTLED,
-    ts_event: int | None = None,
-) -> SettlementRecord:
-    """Create a synthetic SettlementRecord for testing."""
-    ts = ts_event or time.time_ns()
-    is_settled = status == SettlementStatus.SETTLED
-    net = realized_return_net if is_settled else None
-    return SettlementRecord(
-        prediction_id=prediction_id,
-        model_id=model_id,
-        symbol="AAPL",
-        ts_event=ts,
-        horizon_ns=86_400_000_000_000,  # 1 day
-        status=status,
-        settled_at_ns=ts + 86_400_000_000_000 if is_settled else None,
-        realized_return_gross=(net + 0.0001) if net is not None else None,
-        realized_return_net=net,
-        abnormal_return=(net * 0.9) if net is not None else None,
-        brier=brier if is_settled else None,
-        calibration_bucket="bucket_0.5_0.6" if is_settled else None,
-        cost_model_version="cm-v1",
-        decision_window_start=ts,
-        decision_window_end=ts + 86_400_000_000_000,
-    )
-
-
-class _FakeSettlementLedger:
-    """In-memory settlement ledger for testing.
-
-    Implements the read_all() method that SettledComparisonInputProvider
-    needs. Does not write to disk.
-    """
-
-    def __init__(self, records: list[SettlementRecord] | None = None) -> None:
-        self._records = records or []
-
-    def read_all(self) -> list[SettlementRecord]:
-        return list(self._records)
-
-    def add(self, record: SettlementRecord) -> None:
-        self._records.append(record)
-
 
 # --------------------------------------------------------------------------- #
 # Tests: SettledComparisonInputProvider                                       #
@@ -461,7 +407,6 @@ class TestSettledProviderWithOrchestrator:
                 "pbo_flagged": False,
             },
         )
-
         # Create a settlement ledger with settled records.
         # Since both versions share the same model_id, the provider
         # returns the same records for both. The comparison will

@@ -69,77 +69,7 @@ from fincept_db.registry_tables import (
     ShadowEvaluationRow,
 )
 
-# ---------------------------------------------------------------------------
-# Engine fixture — all callback + observability + registry tables
-# ---------------------------------------------------------------------------
-
-
-def _make_engine():
-    """In-memory SQLite engine with every table the product loop touches.
-
-    Creates the 6 callback ingestion tables, the 4 observability tables, and
-    the 6 registry tables. FK enforcement is enabled via a connect pragma so
-    the cross-table FKs (training_jobs.callback_receipt_id ->
-    callback_receipts.callback_id; model_versions -> models / model_dossiers /
-    artifact_manifests / callback_receipts) are honored.
-    """
-    eng = create_engine("sqlite:///:memory:", future=True)
-
-    @sa_event.listens_for(eng, "connect")
-    def _enable_fk(dbapi_conn, _conn_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    tables = [
-        # Callback ingestion tables (FK parents for registry versions).
-        ArtifactManifestRow.__table__,
-        ModelDossierRow.__table__,
-        CallbackReceiptRow.__table__,
-        CallbackDlqRow.__table__,
-        CallbackMetricRow.__table__,
-        # Observability tables (CostTracker writes here).
-        TrainingJobRow.__table__,
-        JobCostEventRow.__table__,
-        JobMetricRow.__table__,
-        CostSummaryRow.__table__,
-        # Registry tables (ModelRegistryDB writes here).
-        ModelRow.__table__,
-        ModelVersionRow.__table__,
-        ModelMetricRow.__table__,
-        PromotionRow.__table__,
-        PromotionDecisionRow.__table__,
-        ShadowEvaluationRow.__table__,
-    ]
-    Base.metadata.create_all(eng, tables=tables)
-    return eng
-
-
-# ---------------------------------------------------------------------------
-# Payload helpers
-# ---------------------------------------------------------------------------
-
-
-_MODEL_ID = "model:qf:train:e2e:1"
-_ARTIFACT_ID = "artifact:e2e:1"
-
-
-def _training_payload(job_id: str) -> dict[str, Any]:
-    """A training request payload (mirrors the worker contract)."""
-    return {
-        "schema_version": 1,
-        "job_id": job_id,
-        "dataset_manifest_ref": "dataset:training:e2e",
-        "model_family": "gbm",
-        "search_space": {"n_estimators": [64]},
-        "random_seed": 7,
-        "hardware_class": "runpod-gpu",
-        "extra_constraints": {},
-        "gpu_type": "RTX_4090",
-        "gpu_count": 1,
-        "execution_timeout_ms": 1_860_000,
-        "container_image": "ghcr.io/fincept/quant-foundry-worker:latest",
-    }
+from helpers.product_loop_helpers import _make_engine, _MODEL_ID, _ARTIFACT_ID, _training_payload
 
 
 def _signed_training_callback(job_id: str, *, secret: str) -> tuple[bytes, str, int]:

@@ -21,15 +21,14 @@ from quant_foundry.tournament import Tournament
 from quant_foundry.tournament_sweep import TournamentSweep
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from test_auto_promotion import (
-    _dispatch_and_callback,
-    _make_gateway,
-)
-from test_e2e_product_loop import (
+from helpers.product_loop_helpers import (
+    _FakeSettlementLedger,
     _MODEL_ID,
+    _dispatch_and_callback,
     _make_engine,
+    _make_gateway,
+    _make_settlement_record,
 )
-from test_settlement_provider import _FakeSettlementLedger, _make_settlement_record
 
 from fincept_db.registry_tables import ModelMetricRow
 
@@ -420,7 +419,6 @@ class TestAutoTournamentWithAutoPromotion:
                 "pbo_flagged": False,
             },
         )
-
         # Auto-tournament: score from settled records.
         # Use varied returns so the Sharpe ratio is meaningful.
         ledger = _FakeSettlementLedger()

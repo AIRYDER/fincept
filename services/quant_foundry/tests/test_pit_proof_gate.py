@@ -589,6 +589,39 @@ class TestFeatureSetVersionPin:
         result = handler_module.handler(inp)
         assert result.get("error_code") != "feature_set_version_mismatch"
 
+    def test_canary_feature_pin_advisory(
+        self, handler_module, tmp_path: pathlib.Path
+    ) -> None:
+        """Canary mode + feature_set_version mismatch → advisory, does NOT fail.
+
+        Canary mode is permissive by design. A feature_set_version mismatch
+        must NOT produce a hard ``feature_set_version_mismatch`` failure.
+        Instead, the advisory is recorded and training continues.
+        """
+        manifest = _make_valid_manifest(
+            pit_proof_verified=True,
+            feature_set_version="v1.2.0",
+        )
+        load_spec = _make_load_spec(manifest_dict=manifest)
+        inp = _make_training_input(
+            "fsv-canary-advisory-1",
+            dataset_load_spec=load_spec,
+            feature_set_version="v1.3.0",  # mismatch
+            extra_constraints={"training_mode": "canary"},
+        )
+        result = handler_module.handler(inp)
+
+        # Canary mode must NOT raise a hard feature_set_version_mismatch.
+        assert result.get("error_code") != "feature_set_version_mismatch", (
+            "canary mode must not hard-fail on feature_set_version mismatch; "
+            f"got error_code={result.get('error_code')!r}"
+        )
+
+        # Advisory behavior: training proceeds (no error_code at all, or
+        # a non-fsv error_code).  The result should look like a normal
+        # canary training outcome.
+        assert result.get("error_code") != "pit_proof_not_verified"
+
 
 # --------------------------------------------------------------------------- #
 # C3: PIT evidence tamper detection                                            #

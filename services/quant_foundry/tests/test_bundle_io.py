@@ -922,3 +922,63 @@ class TestXGBoostBundle:
         assert len(decisions) == 5
         for d in decisions:
             assert 0.0 <= d.p <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Deterministic bytes — safety test (Agent G)
+# ===========================================================================
+
+
+class TestDeterministicBytes:
+    """Verify that write_bundle produces byte-for-byte identical output
+    when called with identical inputs and a fixed ``created_at_ns``."""
+
+    def test_bundle_deterministic_bytes(self, tmp_path) -> None:
+        """Two calls to write_bundle with identical inputs + fixed
+        created_at_ns must produce byte-for-byte identical bytes."""
+        from quant_foundry.bundle_io import write_bundle
+
+        model = _train_tiny_lightgbm(n_features=4, n_rows=50, seed=42)
+        feature_names = ["f1", "f2", "f3", "f4"]
+        feature_schema_hash = hashlib.sha256(b"test-feature-schema").hexdigest()[:16]
+        label_schema_hash = hashlib.sha256(b"test-label-schema").hexdigest()[:16]
+        fixed_ts = 1_700_000_000_000_000_000  # deterministic timestamp
+
+        bundle_a = write_bundle(
+            primary_model=model,
+            meta_model=None,
+            feature_names=feature_names,
+            feature_schema_hash=feature_schema_hash,
+            label_schema_hash=label_schema_hash,
+            model_family="gbm",
+            created_at_ns=fixed_ts,
+        )
+        bundle_b = write_bundle(
+            primary_model=model,
+            meta_model=None,
+            feature_names=feature_names,
+            feature_schema_hash=feature_schema_hash,
+            label_schema_hash=label_schema_hash,
+            model_family="gbm",
+            created_at_ns=fixed_ts,
+        )
+
+        # Write both to temp files and read back as raw bytes.
+        path_a = tmp_path / "bundle_a.zip"
+        path_b = tmp_path / "bundle_b.zip"
+        path_a.write_bytes(bundle_a)
+        path_b.write_bytes(bundle_b)
+
+        bytes_a = path_a.read_bytes()
+        bytes_b = path_b.read_bytes()
+
+        # Byte-for-byte equality.
+        assert bytes_a == bytes_b, (
+            "write_bundle with identical inputs + fixed created_at_ns "
+            "must produce identical bytes"
+        )
+
+        # SHA-256 equality.
+        sha_a = hashlib.sha256(bytes_a).hexdigest()
+        sha_b = hashlib.sha256(bytes_b).hexdigest()
+        assert sha_a == sha_b, "sha256 of both bundles must be equal"

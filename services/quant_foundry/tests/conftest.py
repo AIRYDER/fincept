@@ -19,6 +19,14 @@ import warnings
 
 import pytest
 
+import os
+import sys
+
+# Make the helpers/ subpackage importable under pytest's importlib import mode.
+_TESTS_DIR = os.path.dirname(__file__)
+if _TESTS_DIR not in sys.path:
+    sys.path.insert(0, _TESTS_DIR)
+
 
 @pytest.fixture(autouse=True)
 def _close_lingering_event_loops() -> None:
@@ -35,7 +43,7 @@ def _close_lingering_event_loops() -> None:
         if not loop.is_closed():
             loop.close()
     except RuntimeError:
-        # No current event loop — nothing to close.
+        # No current event loop â€” nothing to close.
         pass
     except Exception:
         # Swallow any unexpected cleanup error so it never fails a test.
