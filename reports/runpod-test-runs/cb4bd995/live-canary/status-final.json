@@ -1,0 +1,36 @@
+{
+  "delayTime": 19995,
+  "executionTime": 40,
+  "id": "21712f39-db4b-4f37-be6a-b1169b51b03f-u1",
+  "output": {
+    "callback_payload": "{\"job_id\": \"qf:canary:cb4bd995\", \"payload\": {\"nonce\": \"n-1783669872\"}, \"result_type\": \"callback_secret_canary\", \"schema_version\": 1, \"worker_id\": \"runpod-canary\"}",
+    "callback_signature": "d06ca0accd22201129f742477051ed50149887e009e76e9a9d7c056aa04c6d60",
+    "callback_ts": 1783669894,
+    "canary": true,
+    "job_id": "qf:canary:cb4bd995",
+    "nonce": "n-1783669872",
+    "preflight_result": {
+      "callback_url_validated": false,
+      "checked_at_ns": 1783669894715764700,
+      "container_user": "root:0",
+      "forbidden_vars_found": [],
+      "mode": "canary",
+      "passed": true,
+      "preflight_error": null,
+      "redacted_config": {
+        "QUANT_FOUNDRY_CALLBACK_SECRET": "****",
+        "QUANT_FOUNDRY_GIT_SHA": "cb4bd995923516f2f0bea78a3f29bba2fd8534d2",
+        "QUANT_FOUNDRY_TRAINING_DEADLINE_SECONDS": "1800",
+        "QUANT_FOUNDRY_TRAINING_MODE": "canary",
+        "QUANT_FOUNDRY_USE_REAL_TRAINER": "true",
+        "RUNPOD_WEBHOOK_GET_JOB": "****"
+      },
+      "uri_allowlists_validated": true,
+      "writable_dirs": [
+        "/tmp"
+      ]
+    }
+  },
+  "status": "COMPLETED",
+  "workerId": "if75uiuxhono6q"
+}

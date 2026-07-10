@@ -1,0 +1,21 @@
+{
+  "endpoint_id": "i48mb4n6fms7na",
+  "name": "qf-canary-cb4bd995-1783669784",
+  "template_id": "mhgmiev80u",
+  "gpu_type": "ADA_24",
+  "workers_min": 1,
+  "workers_max": 1,
+  "idle_timeout": 300,
+  "execution_timeout": 1860,
+  "scaler_type": "QUEUE_DELAY",
+  "scaler_value": 4,
+  "timeout_config": {
+    "executionTimeout": 1860,
+    "idleTimeout": 300,
+    "handler_deadline_s": 1800,
+    "slack_s": 60,
+    "meets_min_requirement": true,
+    "min_required_execution_timeout": 1860,
+    "note": "executionTimeout >= handler deadline + 60s slack so the handler's signed failure envelope fires before RunPod times the job out."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "job_id": "21712f39-db4b-4f37-be6a-b1169b51b03f-u1",
+  "input": {
+    "task": "callback_secret_canary",
+    "job_id": "qf:canary:cb4bd995",
+    "nonce": "n-1783669872"
+  }
+}

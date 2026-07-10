@@ -1,0 +1,3 @@
+Template ID: mhgmiev80u
+Image: ghcr.io/airyder/fincept/quant-foundry-training:cb4bd995923516f2f0bea78a3f29bba2fd8534d2
+GPU: ADA_24
