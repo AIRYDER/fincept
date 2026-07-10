@@ -107,6 +107,13 @@ class SettlementLedger:
     ``settlement_records`` table (idempotent via ON CONFLICT DO NOTHING).
     The JSONL write remains the read path until ``QF_POSTGRES_READS_ENABLED``
     is flipped in a later task.
+
+    C10 read-compare: when a ``db_store`` is injected AND the
+    ``QF_POSTGRES_READ_COMPARE_ENABLED`` flag is on, ``read_all()`` reads
+    from JSONL (legacy canonical), then reads the same record from
+    Postgres, normalizes both, compares, and emits structured evidence.
+    The legacy record is always returned — Postgres data is never returned
+    while ``QF_POSTGRES_READS_ENABLED=0``.
     """
 
     def __init__(
@@ -346,7 +353,14 @@ class SettlementLedger:
         return None
 
     def read_all(self) -> list[SettlementRecord]:
-        """Return all settled records across all model files (newest-first)."""
+        """Return all settled records across all model files (newest-first).
+
+        C10 read-compare: when ``QF_POSTGRES_READ_COMPARE_ENABLED=1`` and a
+        ``db_store`` is injected, each legacy record is compared against
+        the Postgres record with the same key. The legacy record is always
+        returned — Postgres data is never returned while
+        ``QF_POSTGRES_READS_ENABLED=0``. Mismatches are logged and counted.
+        """
         if not self._root.is_dir():
             return []
         rows: list[SettlementRecord] = []
@@ -362,4 +376,44 @@ class SettlementLedger:
                         # Malformed line must not take the read down.
                         continue
         rows.sort(key=lambda r: r.settled_at_ns or 0, reverse=True)
+
+        # C10 read-compare: compare each legacy record against Postgres.
+        self._read_compare(rows)
+
         return rows
+
+    # ------------------------------------------------------------------ #
+    # C10 read-compare                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _read_compare(self, records: list[SettlementRecord]) -> None:
+        """Compare legacy records against Postgres if read-compare is enabled.
+
+        Called after ``read_all()`` has collected the legacy records. The
+        legacy records are already in ``records`` and are always returned
+        to the caller — this method only emits evidence.
+
+        Behavior:
+          - If ``db_store`` is None → no-op (no DB store injected).
+          - If ``QF_POSTGRES_READ_COMPARE_ENABLED=0`` → no-op (flag off).
+          - If ``QF_POSTGRES_READS_ENABLED=1`` → no-op (reads already
+            flipped to Postgres; read-compare is no longer needed).
+          - For each record: read Postgres, normalize, compare, emit evidence.
+          - Errors are logged. In fail-hard mode, re-raise.
+        """
+        if self._db_store is None:
+            return
+        from quant_foundry.c10_flags import (
+            postgres_reads_enabled,
+            should_read_compare,
+        )
+
+        # If reads are already flipped to Postgres, read-compare is moot.
+        if postgres_reads_enabled():
+            return
+        if not should_read_compare():
+            return
+
+        from quant_foundry.read_compare import read_compare_settlement_batch
+
+        read_compare_settlement_batch(records, self._db_store)

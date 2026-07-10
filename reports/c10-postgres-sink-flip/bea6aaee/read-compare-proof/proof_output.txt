@@ -1,0 +1,35 @@
+C10 read-compare: MISS settlement_record key=pred-miss-000:cm-v1 � legacy exists, Postgres missing
+C10 read-compare: MISS settlement_record key=pred-miss-001:cm-v1 � legacy exists, Postgres missing
+C10 read-compare: MISS settlement_record key=pred-miss-002:cm-v1 � legacy exists, Postgres missing
+C10 read-compare: MISS settlement_record key=pred-miss-003:cm-v1 � legacy exists, Postgres missing
+C10 read-compare: MISS settlement_record key=pred-miss-004:cm-v1 � legacy exists, Postgres missing
+C10 read-compare: MISMATCH settlement_record key=pred-mismatch-000:cm-v1 legacy_hash=f9b37c12f61c765d0b127a0583f1d199070a12655732d8463a443c5034de1a8a postgres_hash=f88a914adf769c537e3fb855886a37ee66e78376f6edc20d5d1903e6f1c6eeb3 diffs=['realized_return_gross']
+C10 read-compare: MISMATCH settlement_record key=pred-mismatch-001:cm-v1 legacy_hash=e0c7d244d8bbb8a5c3a192462f2437908df9d30a4ac649cb517a2a663e805f20 postgres_hash=4b7869b5db9d0a52b7d1eb691eaf96bf7e4836f75a46aa386d0311ffb53d1d4f diffs=['realized_return_gross']
+C10 read-compare: MISMATCH settlement_record key=pred-mismatch-002:cm-v1 legacy_hash=ba35f23a75d2ef7a1e2cc867a6532f3f9e890af9ff53e01c58287a657025a346 postgres_hash=cece41c719539993efe0a077619503b54e64d970a998f79042282d86742a05df diffs=['realized_return_gross']
+C10 read-compare: ERROR settlement_record key=pred-err-000:cm-v1 error_class=RuntimeError error_message=Simulated DB connection refused
+C10 read-compare: ERROR settlement_record key=pred-err-001:cm-v1 error_class=RuntimeError error_message=Simulated DB connection refused
+C10 read-compare: ERROR settlement_record key=pred-err-002:cm-v1 error_class=RuntimeError error_message=Simulated DB connection refused
+======================================================================
+C10 Read-Compare Mode � Deterministic Proof
+======================================================================
+
+[1/4] Match proof: 10 records, all should match...
+  -> PASS: matches=10, misses=0, mismatches=0, errors=0
+
+[2/4] Missing Postgres proof: 5 legacy records, Postgres empty...
+  -> PASS: misses=5, matches=0, legacy_returned=True
+
+[3/4] Mismatch proof: 3 records, Postgres differs...
+  -> PASS: mismatches=3, matches=0, legacy_returned=True, pg_values_not_returned=True
+
+[4/4] Error proof: 3 records, Postgres read errors...
+  -> PASS: errors=3, matches=0, legacy_returned=True
+
+======================================================================
+OVERALL: ALL PASS
+======================================================================
+  Saved: C:\Users\nolan\CascadeProjects\fincept-terminal\reports\c10-postgres-sink-flip\bea6aaee\read-compare-proof\read_compare_match.json
+  Saved: C:\Users\nolan\CascadeProjects\fincept-terminal\reports\c10-postgres-sink-flip\bea6aaee\read-compare-proof\read_compare_missing_postgres.json
+  Saved: C:\Users\nolan\CascadeProjects\fincept-terminal\reports\c10-postgres-sink-flip\bea6aaee\read-compare-proof\read_compare_mismatch.json
+  Saved: C:\Users\nolan\CascadeProjects\fincept-terminal\reports\c10-postgres-sink-flip\bea6aaee\read-compare-proof\read_compare_error.json
+  Saved: C:\Users\nolan\CascadeProjects\fincept-terminal\reports\c10-postgres-sink-flip\bea6aaee\read-compare-proof\summary.json

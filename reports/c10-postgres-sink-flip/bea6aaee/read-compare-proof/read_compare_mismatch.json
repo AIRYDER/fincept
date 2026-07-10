@@ -1,0 +1,12 @@
+{
+  "errors": 0,
+  "legacy_returned": true,
+  "matches": 0,
+  "mismatches": 3,
+  "misses": 0,
+  "pass": true,
+  "postgres_values_not_returned": true,
+  "proof": "mismatch",
+  "records_read": 3,
+  "records_written": 3
+}

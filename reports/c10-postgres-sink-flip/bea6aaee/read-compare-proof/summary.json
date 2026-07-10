@@ -1,0 +1,33 @@
+{
+  "overall_pass": true,
+  "proofs": {
+    "error": {
+      "errors": 3,
+      "matches": 0,
+      "mismatches": 0,
+      "misses": 0,
+      "pass": true
+    },
+    "match": {
+      "errors": 0,
+      "matches": 10,
+      "mismatches": 0,
+      "misses": 0,
+      "pass": true
+    },
+    "mismatch": {
+      "errors": 0,
+      "matches": 0,
+      "mismatches": 3,
+      "misses": 0,
+      "pass": true
+    },
+    "missing_postgres": {
+      "errors": 0,
+      "matches": 0,
+      "mismatches": 0,
+      "misses": 5,
+      "pass": true
+    }
+  }
+}

@@ -28,6 +28,8 @@ def clean_env(monkeypatch: pytest.MonkeyPatch):
         "QF_POSTGRES_READS_ENABLED",
         "QF_DUAL_WRITE_SETTLEMENTS",
         "QF_LEGACY_FILE_READ_FALLBACK",
+        "QF_DUAL_WRITE_FAIL_HARD",
+        "QF_POSTGRES_READ_COMPARE_ENABLED",
     ):
         monkeypatch.delenv(key, raising=False)
     yield
@@ -56,6 +58,21 @@ def test_dual_write_settlements_defaults_off(clean_env: None) -> None:
 def test_legacy_file_read_fallback_defaults_on(clean_env: None) -> None:
     """QF_LEGACY_FILE_READ_FALLBACK defaults to 1 (on — safe rollback)."""
     assert c10_flags.legacy_file_read_fallback() is True
+
+
+def test_postgres_read_compare_enabled_defaults_off(clean_env: None) -> None:
+    """QF_POSTGRES_READ_COMPARE_ENABLED defaults to 0 (off)."""
+    assert c10_flags.postgres_read_compare_enabled() is False
+
+
+def test_dual_write_fail_hard_defaults_off(clean_env: None) -> None:
+    """QF_DUAL_WRITE_FAIL_HARD defaults to 0 (off)."""
+    assert c10_flags.dual_write_fail_hard() is False
+
+
+def test_should_read_compare_defaults_false(clean_env: None) -> None:
+    """should_read_compare() is False by default."""
+    assert c10_flags.should_read_compare() is False
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +152,22 @@ def test_full_postgres_mode(clean_env: None, monkeypatch: pytest.MonkeyPatch) ->
     assert c10_flags.should_write_to_postgres() is True
     assert c10_flags.should_read_from_postgres() is True
     assert c10_flags.should_write_to_jsonl() is False
+
+
+def test_read_compare_on_reads_off(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read-compare on, reads off → compare but don't serve Postgres."""
+    monkeypatch.setenv("QF_POSTGRES_READ_COMPARE_ENABLED", "1")
+    assert c10_flags.should_read_compare() is True
+    assert c10_flags.should_read_from_postgres() is False  # reads still off
+
+
+def test_read_compare_on_reads_on(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read-compare on + reads on → read-compare is moot (reads already flipped)."""
+    monkeypatch.setenv("QF_POSTGRES_READ_COMPARE_ENABLED", "1")
+    monkeypatch.setenv("QF_POSTGRES_READS_ENABLED", "1")
+    monkeypatch.setenv("QF_LEGACY_FILE_READ_FALLBACK", "0")
+    assert c10_flags.should_read_compare() is True
+    assert c10_flags.should_read_from_postgres() is True
 
 
 # ---------------------------------------------------------------------------
