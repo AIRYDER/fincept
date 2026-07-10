@@ -126,3 +126,36 @@ session-db.md
 
 # --- RunPod scratch scripts (diagnostic one-offs, not durable tools) ---------
 /.tmp_*.py
+
+# --- Session handoffs (local-only, not project artifacts) — Agent E ---------
+/handoffs/
+
+# --- Skills tooling scripts & generated artifacts (local machine-specific) ---
+/ALL_SKILLS.md
+/SESSION_HANDOFF.md
+/SKILLS_IMPROVEMENT_REPORT.md
+/kimiSuggestionFix.md
+/analyze_skills.ps1
+/diff_skills.ps1
+/gather_skills.ps1
+/verify_skills.ps1
+
+# --- Generated proof / audit report directories (no tracked content) --------
+/reports/c8-live-proof-prep/
+/reports/determinism-proof/
+/reports/merge-readiness/
+/reports/postgres-sink-audit/
+/reports/promotion-gate-prep/
+/reports/pytest-basetemp-*/
+/reports/s3-product-loop-proof/
+/reports/settlement-unification-audit/
+/reports/runpod-test-runs/manual-train-*/
+
+# --- RunPod training worker generated reports --------------------------------
+/runpod/quant-foundry-training/reports/
+
+# --- Binary archives in docs (not source documentation) ---------------------
+/docs/*.zip
+
+# --- Env-var expansion failure artifact --------------------------------------
+/%TMPDIR%/
