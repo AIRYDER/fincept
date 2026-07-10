@@ -316,7 +316,7 @@ class CatBoostTrainer:
 
             vals = list(importances)
         except Exception:
-            vals = list(importances)  # type: ignore[assignment]
+            vals = list(importances)
         out: dict[str, float] = {}
         for i, imp in enumerate(vals):
             name = feature_names[i] if i < len(feature_names) else f"f{i}"
@@ -332,7 +332,7 @@ class CatBoostTrainer:
     def _require_catboost() -> Any:
         """Lazy-import catboost or raise a helpful ImportError."""
         try:
-            import catboost as cb  # type: ignore[import-not-found]
+            import catboost as cb
         except ImportError as exc:
             raise ImportError(
                 "catboost is not installed; the CatBoostTrainer requires "
@@ -345,7 +345,7 @@ class CatBoostTrainer:
     def _require_numpy() -> Any:
         """Lazy-import numpy or raise a helpful ImportError."""
         try:
-            import numpy as np  # type: ignore[import-not-found]
+            import numpy as np
         except ImportError as exc:
             raise ImportError(
                 "numpy is not installed; the CatBoostTrainer requires "
@@ -474,7 +474,7 @@ class CatBoostTrainer:
         # are robust to ``StringDtype`` (pandas 3.x) vs ``object`` columns.
         if hasattr(X_feat, "dtypes"):
             try:
-                import pandas as pd  # type: ignore[import-not-found]
+                import pandas as pd
             except ImportError:
                 pd = None  # type: ignore[assignment]
             mask: list[bool] = []

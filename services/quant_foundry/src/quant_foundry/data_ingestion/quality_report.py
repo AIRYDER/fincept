@@ -22,7 +22,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -165,8 +165,8 @@ def compute_quality_report(
 
     # --- coverage --------------------------------------------------------
     if total_rows > 0 and ts_column in df.columns:
-        time_span_start_ns = int(df[ts_column].min())
-        time_span_end_ns = int(df[ts_column].max())
+        time_span_start_ns = int(cast("int | float", df[ts_column].min()))
+        time_span_end_ns = int(cast("int | float", df[ts_column].max()))
     else:
         time_span_start_ns = 0
         time_span_end_ns = 0
@@ -196,8 +196,8 @@ def compute_quality_report(
             round(100.0 * non_null / total_rows, 6) if total_rows > 0 else 0.0
         )
         if non_null > 0:
-            mean_feature_values[name] = float(col.mean() or 0.0)
-            std_feature_values[name] = float(col.std(ddof=0) or 0.0)
+            mean_feature_values[name] = float(cast("float | None", col.mean()) or 0.0)
+            std_feature_values[name] = float(cast("float | None", col.std(ddof=0)) or 0.0)
         else:
             mean_feature_values[name] = 0.0
             std_feature_values[name] = 0.0

@@ -46,7 +46,7 @@ import json
 import pathlib
 import time
 from enum import StrEnum
-from typing import Any
+from typing import Any, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -422,7 +422,7 @@ class CallbackDLQ:
             records = records[:limit]
         return records
 
-    def get_retryable_due(self) -> list[DLQRecord]:
+    def get_retryable_due(self) -> List[DLQRecord]:
         """Return retryable entries whose next retry is due now.
 
         An entry is due if ``next_retry_at_ns`` is set and
@@ -463,4 +463,4 @@ class CallbackDLQ:
             return 0.0
         n = max(0, retry_count)
         delay = base_seconds * (2**n)
-        return min(delay, _BACKOFF_CAP_SECONDS)
+        return float(min(delay, _BACKOFF_CAP_SECONDS))

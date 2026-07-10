@@ -75,7 +75,7 @@ def load_lightgbm_model(path: str) -> Any:
     """
     _validate_path(path)
     try:
-        import lightgbm as lgb  # type: ignore[import-not-found]
+        import lightgbm as lgb
     except ImportError:
         # Fall back to joblib/pickle for sklearn-API models saved without
         # the native booster format. If that also fails, raise a helpful
@@ -108,7 +108,7 @@ def load_catboost_model(path: str) -> Any:
     """
     _validate_path(path)
     try:
-        import catboost as cb  # type: ignore[import-not-found]
+        import catboost as cb
     except ImportError:
         try:
             return _load_pickle_or_joblib(path)
@@ -149,7 +149,7 @@ def load_xgboost_model(path: str) -> Any:
     """
     _validate_path(path)
     try:
-        import xgboost as xgb  # type: ignore[import-not-found]
+        import xgboost as xgb
     except ImportError:
         try:
             return _load_pickle_or_joblib(path)
@@ -184,7 +184,7 @@ def _load_pickle_or_joblib(path: str) -> Any:
     Raises the underlying exception if both joblib and pickle fail.
     """
     try:
-        import joblib  # type: ignore[import-not-found]
+        import joblib
 
         return joblib.load(path)
     except ImportError:

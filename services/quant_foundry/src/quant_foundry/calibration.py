@@ -358,10 +358,10 @@ class Calibrator:
         if self.method is CalibrationMethod.ISOTONIC:
             from sklearn.isotonic import IsotonicRegression
 
-            X = [float(p) for p in raw_probs]
-            y = [float(v) for v in labels]
+            X_iso = [float(p) for p in raw_probs]
+            y_iso = [float(v) for v in labels]
             est = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-            est.fit(X, y)
+            est.fit(X_iso, y_iso)
             self._estimator = est
             self._fitted = True
             return self
@@ -385,8 +385,8 @@ class Calibrator:
             probs = self._estimator.predict_proba(X)[:, 1]
             return [float(p) for p in probs]
         if self.method is CalibrationMethod.ISOTONIC:
-            X = [float(p) for p in raw_probs]
-            out = self._estimator.transform(X)
+            X_iso = [float(p) for p in raw_probs]
+            out = self._estimator.transform(X_iso)
             return [float(v) for v in out]
         return [float(p) for p in raw_probs]
 

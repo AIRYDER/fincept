@@ -313,7 +313,7 @@ class TrainEvalSeparator:
         ts = _parse_iso(timestamp)
         return self.eval_start <= ts < self.eval_end
 
-    def get_train_data(self, data: list[dict], timestamp_field: str = "timestamp") -> list[dict]:
+    def get_train_data(self, data: list[dict[str, Any]], timestamp_field: str = "timestamp") -> list[dict[str, Any]]:
         """Filter ``data`` to records whose timestamp is in the train period.
 
         Args:
@@ -325,7 +325,7 @@ class TrainEvalSeparator:
         """
         return [row for row in data if self.is_in_train_period(str(row[timestamp_field]))]
 
-    def get_eval_data(self, data: list[dict], timestamp_field: str = "timestamp") -> list[dict]:
+    def get_eval_data(self, data: list[dict[str, Any]], timestamp_field: str = "timestamp") -> list[dict[str, Any]]:
         """Filter ``data`` to records whose timestamp is in the eval period.
 
         Args:
@@ -576,7 +576,7 @@ class RLShadowPolicy:
 
     def train(
         self,
-        returns_data: list[dict],
+        returns_data: list[dict[str, Any]],
         timestamp_field: str = "timestamp",
     ) -> RLShadowResult:
         """Run shadow training and return an :class:`RLShadowResult`.
@@ -686,7 +686,7 @@ class RLShadowPolicy:
 
     def evaluate(
         self,
-        returns_data: list[dict],
+        returns_data: list[dict[str, Any]],
         timestamp_field: str = "timestamp",
     ) -> dict[str, float]:
         """Run shadow evaluation and return a metrics dict.

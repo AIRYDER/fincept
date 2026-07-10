@@ -47,7 +47,7 @@ import json
 import pathlib
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from quant_foundry.modules.composer import DatasetComposer
 
@@ -116,13 +116,13 @@ class BenchmarkResult:
     def deflated_sharpe(self) -> float | None:
         if self.dossier is None:
             return None
-        return self.dossier.deflated_sharpe
+        return cast("float", self.dossier.deflated_sharpe)
 
     @property
     def pbo(self) -> float | None:
         if self.dossier is None:
             return None
-        return self.dossier.pbo
+        return cast("float", self.dossier.pbo)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict for reporting."""

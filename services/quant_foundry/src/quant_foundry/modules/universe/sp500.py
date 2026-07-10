@@ -265,7 +265,7 @@ def _date_to_ns(date_str: str) -> int:
     return int(dt.datetime(y, m, d, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
 
-def _load_sp500_changes(path: pathlib.Path) -> dict:
+def _load_sp500_changes(path: pathlib.Path) -> dict[str, Any]:
     """Load and validate the S&P 500 changes JSON file.
 
     Args:
@@ -315,7 +315,7 @@ def _load_sp500_changes(path: pathlib.Path) -> dict:
     return data
 
 
-def _constituents_at_time(changes_data: dict, target_ns: int) -> set[str]:
+def _constituents_at_time(changes_data: dict[str, Any], target_ns: int) -> set[str]:
     """Return the set of S&P 500 constituents at a specific point in time.
 
     Starts from ``base_constituents_2018`` and applies every change whose
@@ -346,7 +346,7 @@ def _constituents_at_time(changes_data: dict, target_ns: int) -> set[str]:
 
 
 def _constituents_during_range(
-    changes_data: dict,
+    changes_data: dict[str, Any],
     start_ns: int,
     end_ns: int,
 ) -> set[str]:
@@ -424,9 +424,9 @@ class SP500PointInTimeUniverse:
             pathlib.Path(changes_path) if changes_path else _DEFAULT_CHANGES_PATH
         )
         # Lazily loaded on first use so module construction is cheap.
-        self._changes_data: dict | None = None
+        self._changes_data: dict[str, Any] | None = None
 
-    def _ensure_loaded(self) -> dict:
+    def _ensure_loaded(self) -> dict[str, Any]:
         if self._changes_data is None:
             self._changes_data = _load_sp500_changes(self.changes_path)
         return self._changes_data

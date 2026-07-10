@@ -181,8 +181,8 @@ def _cuda_available() -> bool:
     actually called).
     """
     try:
-        import numpy as np  # type: ignore[import-not-found]
-        import xgboost as xgb  # type: ignore[import-not-found]
+        import numpy as np
+        import xgboost as xgb
     except ImportError:
         return False
     try:
@@ -387,8 +387,8 @@ class XGBoostTrainer:
             ValueError: invalid data shapes / ranking without groups.
         """
         try:
-            import numpy as np  # type: ignore[import-not-found]
-            import xgboost as xgb  # type: ignore[import-not-found]
+            import numpy as np
+            import xgboost as xgb
         except ImportError as exc:
             raise ImportError(
                 f"XGBoost training requires the 'xgboost' and 'numpy' packages; missing: {exc.name}"
@@ -479,7 +479,7 @@ class XGBoostTrainer:
             return list(self.column_roles.feature_columns)
         # Last-resort fallback (numpy array without column roles).
         try:
-            n = X.shape[1]  # type: ignore[index]
+            n = X.shape[1]
         except Exception:
             n = 0
         return [f"f{i}" for i in range(n)]
@@ -523,7 +523,7 @@ class XGBoostTrainer:
         per-group sizes are derived from the contiguous runs (the row
         order of the DMatrix is assumed to be sorted by group).
         """
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
 
         if groups is None:
             raise ValueError(
@@ -628,7 +628,7 @@ class XGBoostTrainer:
     def _n_rows(X: Any) -> int:
         """Return the number of rows in X (len or shape[0])."""
         try:
-            return int(X.shape[0])  # type: ignore[index]
+            return int(X.shape[0])
         except Exception:
             return len(X)
 
@@ -662,7 +662,7 @@ class XGBoostTrainer:
         if hasattr(arr, "iloc"):
             return arr.iloc[idx]
         if hasattr(arr, "__getitem__") and hasattr(arr, "shape"):
-            import numpy as np  # type: ignore[import-not-found]
+            import numpy as np
 
             return np.asarray(arr)[idx]
         # Plain list / tuple.
@@ -813,7 +813,7 @@ class XGBoostTrainer:
         if self._model is None:
             raise RuntimeError("save_artifact() called before train(); no model to save")
         try:
-            import xgboost as xgb  # type: ignore[import-not-found]  # noqa: F401
+            import xgboost as xgb  # noqa: F401
         except ImportError as exc:
             raise ImportError(
                 f"saving an XGBoost artifact requires the 'xgboost' package; missing: {exc.name}"

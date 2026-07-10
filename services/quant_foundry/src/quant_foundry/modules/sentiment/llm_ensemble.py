@@ -202,7 +202,7 @@ class LLMEnsemble4Sentiment:
         # Aggregate per-item
         detailed: list[dict[str, Any]] = []
         for i, item in enumerate(items):
-            provider_details: list[dict[str, float]] = []
+            provider_details: list[dict[str, str | float]] = []
             scores: list[float] = []
 
             for name in self._providers:

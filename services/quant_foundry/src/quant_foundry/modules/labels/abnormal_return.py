@@ -158,15 +158,15 @@ class AbnormalReturnLabel:
         for row in rows:
             sym = row.symbol
             dt = row.decision_time
-            bars = asset_sorted.get(sym)
-            if not bars:
+            sym_bars = asset_sorted.get(sym)
+            if not sym_bars:
                 continue
 
             # --- base bar (last at or before decision_time) ------------
-            base_idx = _last_idx_at_or_before([b.ts_ns for b in bars], dt)
+            base_idx = _last_idx_at_or_before([b.ts_ns for b in sym_bars], dt)
             if base_idx is None:
                 continue
-            bars[base_idx]
+            sym_bars[base_idx]
 
             base_bench_idx = _last_idx_at_or_before(bench_ts, dt)
             if base_bench_idx is None:
@@ -174,7 +174,7 @@ class AbnormalReturnLabel:
 
             # --- β estimation (trailing window, no look-ahead) ----------
             beta = _estimate_beta_v2(
-                bars,
+                sym_bars,
                 bench_sorted,
                 dt,
                 window=self.beta_window,
@@ -420,18 +420,18 @@ class AbnormalReturnLabelV1:
         for row in rows:
             sym = row.symbol
             dt = row.decision_time
-            bars = asset_sorted.get(sym)
-            if not bars:
+            sym_bars = asset_sorted.get(sym)
+            if not sym_bars:
                 continue
 
-            base_asset = _last_at_or_before(bars, dt)
+            base_asset = _last_at_or_before(sym_bars, dt)
             base_bench_idx = _last_idx_at_or_before(bench_ts, dt)
             if base_asset is None or base_bench_idx is None:
                 continue
             base_bench_price = bench_close[base_bench_idx]
 
             beta = _estimate_beta_v1(
-                bars,
+                sym_bars,
                 bench_ts,
                 bench_close,
                 dt,

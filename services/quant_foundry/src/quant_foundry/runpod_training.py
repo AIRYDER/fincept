@@ -55,7 +55,7 @@ import platform
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
@@ -71,7 +71,7 @@ from quant_foundry.schemas import (
 from quant_foundry.signatures import sign_callback
 from quant_foundry.training_manifest import (
     MODE_RULES,
-    TrainingMode,
+    TrainingMode as TrainingMode,  # re-export for verification_matrix
 )
 
 # --- metric sanity bounds (Tier 0) -----------------------------------------
@@ -1110,7 +1110,7 @@ def _fetch_artifact_bytes(artifact_uri: str) -> bytes:
                         "artifact_fetch_failed",
                         f"artifact fetch failed: HTTP {status} for {artifact_uri!r}",
                     )
-                return resp.read()
+                return cast("bytes", resp.read())
         except ArtifactVerificationError:
             raise
         except Exception as exc:

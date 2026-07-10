@@ -343,7 +343,7 @@ class DeterministicMarketSimulator:
 
     # -- gym-style API ----------------------------------------------------
 
-    def reset(self) -> dict:
+    def reset(self) -> dict[str, Any]:
         """Reset the simulator and return the initial observation.
 
         The observation dict contains ``prices`` (current price row),
@@ -357,7 +357,7 @@ class DeterministicMarketSimulator:
         self._portfolio_value = 1.0
         return self._observation()
 
-    def _observation(self) -> dict:
+    def _observation(self) -> dict[str, Any]:
         """Return the current observation dict."""
         return {
             "prices": list(self._prices[self._current_step]),
@@ -387,7 +387,7 @@ class DeterministicMarketSimulator:
             if abs(float(w)) > self._max_weight + 1e-9:
                 raise ValueError(f"weight {w} at index {i} exceeds max_weight {self._max_weight}")
 
-    def step(self, action: list[float]) -> tuple[dict, float, bool, bool, dict]:
+    def step(self, action: list[float]) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Apply a target-weight action and advance one step.
 
         Computes the per-asset return from the price series, the portfolio

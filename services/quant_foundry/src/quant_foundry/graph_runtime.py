@@ -56,7 +56,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -615,7 +615,7 @@ class TinyGNNModel:
 
         planner = self
 
-        class _GCNLayer(nn.Module):
+        class _GCNLayer(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
             """A single graph convolution layer (pure torch)."""
 
             def __init__(self, in_dim: int, out_dim: int) -> None:
@@ -642,7 +642,7 @@ class TinyGNNModel:
                 # Self-loop + neighbor aggregation (GCN-style).
                 return x_transformed + agg
 
-        class _TinyGNN(nn.Module):
+        class _TinyGNN(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
             """2-layer GCN with ReLU + Dropout."""
 
             def __init__(self) -> None:
@@ -696,7 +696,7 @@ class TinyGNNModel:
 
     def state_dict(self) -> dict[str, Any]:
         """Return the underlying module's state_dict."""
-        return self.module.state_dict()
+        return cast("dict[str, Any]", self.module.state_dict())
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load a state_dict into the underlying module."""

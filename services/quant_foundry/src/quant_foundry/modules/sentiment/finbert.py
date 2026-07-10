@@ -141,6 +141,8 @@ class FinBERTSentiment:
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self._device = self.device
+
+        assert self._model is not None  # loaded above
         self._model.to(self._device)
         self._model.eval()
 
@@ -228,6 +230,9 @@ class FinBERTSentiment:
 
         import torch
 
+        assert self._model is not None  # loaded by _load_model
+        assert self._tokenizer is not None  # loaded by _load_model
+
         new_results: list[SentimentResult] = []
         for batch_start in range(0, len(to_score), self.batch_size):
             batch = to_score[batch_start : batch_start + self.batch_size]
@@ -271,7 +276,7 @@ class FinBERTSentiment:
                 }
 
         self._save_cache()
-        return results  # type: ignore[return-value]
+        return results
 
 
 __all__ = ["DEFAULT_MODEL", "FinBERTSentiment"]

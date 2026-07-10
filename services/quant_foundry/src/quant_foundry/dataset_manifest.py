@@ -1711,9 +1711,9 @@ def validate_column_roles(
         (roles.group_column, "group_column"),
         (roles.sector_column, "sector_column"),
     ]
-    for col, role_name in optional_roles:
-        if col is not None and col not in available:
-            errors.append(f"{role_name} {col!r} not found in available columns")
+    for opt_col, role_name in optional_roles:
+        if opt_col is not None and opt_col not in available:
+            errors.append(f"{role_name} {opt_col!r} not found in available columns")
 
     # Check excluded columns exist (warning if not — an excluded column
     # that is absent is harmless but may indicate a stale manifest).

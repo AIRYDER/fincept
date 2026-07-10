@@ -38,6 +38,7 @@ Design:
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -89,7 +90,7 @@ class DeterminismRecipe(BaseModel):
 
     model_family: str = "lightgbm"
     random_seed: int = 42
-    search_space: dict[str, list] = Field(default_factory=dict)
+    search_space: dict[str, list[Any]] = Field(default_factory=dict)
     extra_constraints: dict[str, str] = Field(default_factory=dict)
     inline_dataset_csv: str | None = None
     dataset_manifest_ref: str | None = None
@@ -281,7 +282,7 @@ class DeterminismProofRunner:
         os.environ.setdefault("QUANT_FOUNDRY_USE_REAL_TRAINER", "true")
 
         job_id = f"det-proof-{run_label}-{int(time.time())}"
-        job_input: dict = {
+        job_input: dict[str, Any] = {
             "schema_version": 1,
             "job_id": job_id,
             "dataset_manifest_ref": recipe.dataset_manifest_ref or "inline://placeholder",

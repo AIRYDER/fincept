@@ -281,7 +281,7 @@ def _as_row_set(data: Any) -> set[tuple[float, ...]]:
     hashable and comparable. Non-finite values (nan / inf) are kept as-is
     (Python's ``float`` handles them in tuples / sets).
     """
-    rows: list[list[float]] = []
+    rows: list[tuple[float, ...]] = []
     if hasattr(data, "tolist"):
         data = data.tolist()
     for row in data:

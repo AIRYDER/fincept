@@ -661,6 +661,7 @@ class BundleScorer:
 
     def _meta_predict(self, arr: Any) -> Any:
         """Run the meta model's predict, handling XGBoost DMatrix."""
+        assert self.bundle.meta_model is not None  # only called for META_LABELED bundles
         cls = type(self.bundle.meta_model)
         if cls.__module__.startswith("xgboost"):
             import xgboost as xgb

@@ -56,11 +56,11 @@ except ModuleNotFoundError:
     # scripts/build_dataset_manifest.py is not available in the worker image.
     # The names are only used inside ingest_equity_bars(); callers that do not
     # invoke ingestion will never touch them.
-    FEATURE_NAMES = ()  # type: ignore[assignment]
-    build_dataset_manifest = None  # type: ignore[assignment]
-    load_bars_from_parquet = None  # type: ignore[assignment]
-    write_dataset_parquet = None  # type: ignore[assignment]
-    write_manifest_json = None  # type: ignore[assignment]
+    FEATURE_NAMES = ()
+    build_dataset_manifest = None
+    load_bars_from_parquet = None
+    write_dataset_parquet = None
+    write_manifest_json = None
 
 if TYPE_CHECKING:
     from quant_foundry.data_ingestion.quality_report import DatasetQualityReport

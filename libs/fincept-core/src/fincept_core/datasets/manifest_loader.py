@@ -52,7 +52,7 @@ import json
 import pathlib
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -538,7 +538,7 @@ class ManifestDatasetLoader:
         """Extract a required string field from the manifest."""
         val = manifest.get(key)
         if val is not None and isinstance(val, str) and val.strip():
-            return val
+            return cast("str", val)
         if fallback:
             return fallback
         raise DatasetLoadError(
@@ -572,7 +572,7 @@ class ManifestDatasetLoader:
                 "parse_failed",
                 f"manifest field {key!r} must be an integer; got {val!r}",
             )
-        return val
+        return cast("int", val)
 
     # ------------------------------------------------------------------ #
     # Schema hash verification                                            #
@@ -693,11 +693,11 @@ class ManifestDatasetLoader:
         import io
 
         try:
-            return pq.read_table(io.BytesIO(data_bytes)).to_pandas()
+            return pq.read_table(io.BytesIO(data_bytes)).to_pandas()  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
         except Exception:
             # Fallback: pyarrow Table (no pandas conversion).
             try:
-                return pq.read_table(io.BytesIO(data_bytes))
+                return pq.read_table(io.BytesIO(data_bytes))  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
             except Exception as exc:
                 raise DatasetLoadError(
                     "parse_failed",

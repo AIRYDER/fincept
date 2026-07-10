@@ -62,7 +62,7 @@ from quant_foundry.fold_consumer import FoldAssignment, get_fold_data
 # ---------------------------------------------------------------------------
 
 
-def canonical_row_id(row_key: tuple) -> str:
+def canonical_row_id(row_key: tuple[Any, ...]) -> str:
     """Build a canonical ``row_id`` string from a fold-assignment row key.
 
     The fold assignment stores each row's key as a tuple of the

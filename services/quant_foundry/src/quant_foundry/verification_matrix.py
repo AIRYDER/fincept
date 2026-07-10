@@ -35,7 +35,7 @@ import traceback
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -238,8 +238,8 @@ def _test_manifest_hashing_event() -> None:
         event_type="earnings",
         label_horizons=[1, 5],
     )
-    e1 = EventRecord(**common)
-    e2 = EventRecord(**common)
+    e1 = EventRecord(**common)  # type: ignore[arg-type]  # mypy can't verify **dict unpacking matches Pydantic model fields
+    e2 = EventRecord(**common)  # type: ignore[arg-type]  # mypy can't verify **dict unpacking matches Pydantic model fields
     h1 = compute_event_data_hash([e1])
     h2 = compute_event_data_hash([e2])
     assert h1 == h2
@@ -693,7 +693,7 @@ class VerificationMatrix:
             raise AttributeError(
                 f"module {spec.module!r} has no attribute {spec.test_function!r}"
             ) from exc
-        return fn
+        return cast("Callable[..., Any]", fn)
 
     def _run_one(self, spec: VerificationTestSpec) -> VerificationResult:
         """Run a single spec ``min_passes`` times and return a result."""

@@ -259,7 +259,7 @@ class PromptSpec(BaseModel):
     prompt_id: str
     prompt_template: str
     prompt_hash: str
-    output_schema: dict
+    output_schema: dict[str, Any]
 
     @field_validator("prompt_id")
     @classmethod
@@ -282,7 +282,7 @@ class PromptSpec(BaseModel):
 
     @field_validator("output_schema")
     @classmethod
-    def _output_schema_dict(cls, v: dict) -> dict:
+    def _output_schema_dict(cls, v: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(v, dict):
             raise ValueError("output_schema must be a dict")
         return v
@@ -330,7 +330,7 @@ class LLMFeature(BaseModel):
     model_hash: str
     source_hash: str
     feature_name: str
-    feature_value: str | float | list[Any] | dict
+    feature_value: str | float | list[Any] | dict[str, Any]
     availability_time: str
     created_at: str
     validated: bool = False
@@ -521,7 +521,7 @@ def _coerce_value_to_schema_type(value: Any, schema_type: str) -> bool:
     return True  # unknown type — be permissive
 
 
-def _validate_against_schema(value: Any, schema: dict) -> bool:
+def _validate_against_schema(value: Any, schema: dict[str, Any]) -> bool:
     """Validate ``value`` against a (small subset of) JSON Schema.
 
     Supports ``type``, ``enum``, ``items`` (for arrays), and
@@ -680,7 +680,7 @@ class LLMFeatureAgent:
         provider = model_spec.provider
         if provider == "openai":
             try:
-                import openai  # type: ignore[import-not-found]  # noqa: F401
+                import openai  # noqa: F401
             except ImportError as exc:  # pragma: no cover - exercised in prod
                 raise ValueError("openai SDK is not installed; cannot call LLM") from exc
             # Real call would go here; tests inject a mock instead.
@@ -689,7 +689,7 @@ class LLMFeatureAgent:
             )
         if provider == "anthropic":
             try:
-                import anthropic  # type: ignore[import-not-found]  # noqa: F401
+                import anthropic  # noqa: F401
             except ImportError as exc:  # pragma: no cover
                 raise ValueError("anthropic SDK is not installed; cannot call LLM") from exc
             raise ValueError(

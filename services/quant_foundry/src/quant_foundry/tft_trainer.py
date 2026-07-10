@@ -75,7 +75,7 @@ from __future__ import annotations
 import enum
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -513,7 +513,7 @@ class TFTModel:
 
     def state_dict(self) -> dict[str, Any]:
         """Return the underlying module's state_dict."""
-        return self.module.state_dict()
+        return cast("dict[str, Any]", self.module.state_dict())
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load a state_dict into the underlying module."""
@@ -544,7 +544,7 @@ def _make_tft_module_class() -> Any:
     import torch.nn as nn
     import torch.nn.functional as F
 
-    class _VariableSelectionNetwork(nn.Module):
+    class _VariableSelectionNetwork(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
         """Variable Selection Network (VSN).
 
         Learns a per-variable weight (via a softmax over variables) and
@@ -576,7 +576,7 @@ def _make_tft_module_class() -> Any:
             selected = (proj * weights_expanded).sum(dim=2)
             return self.dropout(selected)
 
-    class _GatedResidualNetwork(nn.Module):
+    class _GatedResidualNetwork(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
         """Gated Residual Network (GRN).
 
         A gated skip-connection block: ``output = LayerNorm(x + GLU(
@@ -600,7 +600,7 @@ def _make_tft_module_class() -> Any:
             gated = transformed * gate
             return self.layer_norm(x + self.dropout(gated))
 
-    class _TFTNet(nn.Module):
+    class _TFTNet(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
         """Inner nn.Module implementing the simplified TFT forward pass."""
 
         def __init__(
@@ -1161,7 +1161,7 @@ class TFTTrainer:
             pred_value = (
                 float(fold_predictions[i][0])
                 if isinstance(fold_predictions[i], list)
-                else float(fold_predictions[i])
+                else float(cast("float", fold_predictions[i]))
             )
             writer.add_prediction(
                 row_id=row_id,

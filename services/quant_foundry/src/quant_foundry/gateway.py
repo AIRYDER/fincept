@@ -271,8 +271,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # CallbackProcessor accepts any object implementing the sink protocols,
         # so no change to the processor is needed — just pass the DB sinks.
         if self.sink_backend == "db":
-            self.shadow_ledger = DbShadowLedgerStore(engine=self._db_engine)
-            self.dossier_store = DbDossierStore(engine=self._db_engine)
+            self.shadow_ledger: DbShadowLedgerStore | DurableShadowLedgerStore = DbShadowLedgerStore(
+                engine=self._db_engine
+            )
+            self.dossier_store: DbDossierStore | DurableDossierStore = DbDossierStore(
+                engine=self._db_engine
+            )
             # DB-backed DLQ: wrap CallbackDlqDbStore in the _DbCallbackDLQ
             # adapter so the mixin's enqueue() interface is preserved.
             self._callback_receipt_db_store = CallbackReceiptDbStore(
@@ -1131,7 +1135,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             "failed": "failed",
             "validating": "running",
         }
-        ct_status = status_map.get(outbox_status, outbox_status)
+        ct_status = status_map.get(cast("str", outbox_status), outbox_status)
         if ct_status is not None:
             with contextlib.suppress(Exception):
                 self.cost_tracker().update_job_status(
@@ -1220,6 +1224,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 _select(ModelVersionRow).where(ModelVersionRow.model_id == model_id)
             ).all()
             version_number = len(existing) + 1
+        assert self._registry is not None  # registry required for model registration
         self._registry.register_model(
             model_id=model_id,
             name=model_id,

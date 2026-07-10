@@ -36,7 +36,7 @@ import pathlib
 import time
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -668,7 +668,7 @@ class OptunaTuner:
             trials=trial_results_sorted,
             best_trial=best_trial,
             study_hash=study_hash,
-            created_at=study_data["created_at"],
+            created_at=cast("str", study_data["created_at"]),
             total_wall_clock_seconds=total_elapsed,
         )
         self._last_study_artifact = artifact

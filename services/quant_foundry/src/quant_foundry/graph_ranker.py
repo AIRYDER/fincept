@@ -65,7 +65,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -281,7 +281,7 @@ class GraphRankerModel:
         gnn_module = gnn.module
         head = nn.Linear(self.hidden_dim, 1)
 
-        class _GraphRankerNet(nn.Module):
+        class _GraphRankerNet(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
             """Inner nn.Module implementing the graph ranker forward pass."""
 
             def __init__(self) -> None:
@@ -335,7 +335,7 @@ class GraphRankerModel:
 
     def state_dict(self) -> dict[str, Any]:
         """Return the underlying module's state_dict."""
-        return self.module.state_dict()
+        return cast("dict[str, Any]", self.module.state_dict())
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load a state_dict into the underlying module."""

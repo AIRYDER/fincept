@@ -252,7 +252,7 @@ class FailureEnvelopeBuilder:
         ctx_data = context.model_dump(exclude={"context_hash"})
         return _sha256_hex(_canonical_json(ctx_data))
 
-    def compute_envelope_hash(self, envelope_data: dict) -> str:
+    def compute_envelope_hash(self, envelope_data: dict[str, Any]) -> str:
         """Deterministic SHA-256 over canonical JSON of envelope fields.
 
         Excludes signature and envelope_hash from the input (signature is

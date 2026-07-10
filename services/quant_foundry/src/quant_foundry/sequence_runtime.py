@@ -200,7 +200,7 @@ class SequenceTensorLoader:
     def __init__(
         self,
         data_path: str,
-        manifest_data: dict | None = None,
+        manifest_data: dict[str, Any] | None = None,
     ) -> None:
         self.data_path = data_path
         self.manifest_data = manifest_data
@@ -329,10 +329,10 @@ class CheckpointManager:
 
     def save(
         self,
-        model_state: dict,
-        optimizer_state: dict,
+        model_state: dict[str, Any],
+        optimizer_state: dict[str, Any],
         epoch: int,
-        metrics: dict,
+        metrics: dict[str, Any],
     ) -> str:
         """Save a checkpoint and return its path.
 
@@ -362,7 +362,7 @@ class CheckpointManager:
         torch.save(payload, str(path))
         return str(path)
 
-    def load(self, path: str) -> dict:
+    def load(self, path: str) -> dict[str, Any]:
         """Load a checkpoint from ``path`` and return its dict.
 
         Raises:

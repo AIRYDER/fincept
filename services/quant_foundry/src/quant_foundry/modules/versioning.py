@@ -21,7 +21,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # --------------------------------------------------------------------------- #
 # Module config hash                                                           #
@@ -79,10 +79,10 @@ def _canonical_config(config: dict[str, Any]) -> dict[str, Any]:
         # Round-trip through JSON with sort_keys to canonicalize.  This
         # handles nested dicts and lists deterministically when values are
         # JSON-serializable.
-        return json.loads(json.dumps(config, sort_keys=True))
+        return cast("dict[str, Any]", json.loads(json.dumps(config, sort_keys=True)))
     except (TypeError, ValueError):
         # Fallback: stringify any non-serializable values.
-        return json.loads(json.dumps(config, sort_keys=True, default=str))
+        return cast("dict[str, Any]", json.loads(json.dumps(config, sort_keys=True, default=str)))
 
 
 # --------------------------------------------------------------------------- #

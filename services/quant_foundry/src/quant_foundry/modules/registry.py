@@ -29,7 +29,7 @@ Design principles:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 # --------------------------------------------------------------------------- #
 # Module metadata                                                             #
@@ -350,7 +350,7 @@ class ModuleRegistry:
             raise KeyError(
                 f"module not registered: {full_id!r}; available: {sorted(self._modules.keys())}",
             )
-        return entry["cls"]
+        return cast("type", entry["cls"])
 
     def get_info(self, full_id: str) -> ModuleInfo:
         """Return :class:`ModuleInfo` for a registered module."""
@@ -426,7 +426,7 @@ def register_module(
         )
         # Attach ModuleInfo as a class attribute so Protocol checks
         # (``hasattr(cls, 'info')``) pass before instantiation.
-        cls.info = ModuleInfo(
+        cls.info = ModuleInfo(  # type: ignore[attr-defined]  # dynamic attribute on module class
             module_id=module_id,
             category=category,
             version=version,

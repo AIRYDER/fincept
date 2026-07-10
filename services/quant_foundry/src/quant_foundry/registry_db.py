@@ -37,7 +37,7 @@ Idempotency:
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -71,7 +71,7 @@ from quant_foundry.tournament import TournamentResult
 # ---------------------------------------------------------------------------
 
 
-def _dialect_insert(engine: Engine):
+def _dialect_insert(engine: Engine) -> Callable[..., Any]:
     """Return the dialect-specific insert() for the engine."""
     name = engine.dialect.name
     if name == "sqlite":
@@ -173,7 +173,7 @@ class ModelRegistryDB:
             result = session.execute(stmt)
             session.commit()
             # ON CONFLICT DO NOTHING returns no row; check if inserted.
-            if result.rowcount == 0:
+            if result.rowcount == 0:  # type: ignore[attr-defined]  # CursorResult has rowcount but Result type stubs don't expose it
                 return None
             return {
                 "model_id": model_id,
@@ -224,7 +224,7 @@ class ModelRegistryDB:
             )
             result = session.execute(stmt)
             session.commit()
-            if result.rowcount == 0:
+            if result.rowcount == 0:  # type: ignore[attr-defined]  # CursorResult has rowcount but Result type stubs don't expose it
                 return None
             return {
                 "version_id": version_id,
@@ -720,7 +720,7 @@ def _build_sentinel_receipt(metrics: dict[str, Any]) -> SentinelReceipt:
 
 
 def sqlalchemy_update_status(
-    model: type,
+    model: Any,
     version_id: str,
     status: str,
     promoted_at_ns: int,
@@ -736,7 +736,7 @@ def sqlalchemy_update_status(
 
 
 def sqlalchemy_update_model_status(
-    model: type,
+    model: Any,
     model_id: str,
     version_id: str,
     status: str,

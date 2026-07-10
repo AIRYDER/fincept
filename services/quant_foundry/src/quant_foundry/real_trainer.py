@@ -35,7 +35,8 @@ import pickle
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 from urllib.parse import unquote, urlparse
 
 # Phase 8 / T-8.1: explicit column roles + task spec. Imported lazily-safe
@@ -608,7 +609,7 @@ class RealLightGBMTrainer:
             feature_schema_hash=feature_schema_hash,
             label_schema_hash=label_schema_hash,
             model_family=req.model_family,
-            label_map=self._label_map if self._label_map else None,
+            label_map={str(k): v for k, v in self._label_map.items()} if self._label_map else None,
             meta_label_config=meta_label_config,
             created_at_ns=bundle_created_ns,
         )
@@ -966,7 +967,7 @@ class RealLightGBMTrainer:
         try:
             import pyarrow.parquet as pq
 
-            table = pq.read_table(str(path))
+            table = pq.read_table(str(path))  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
             columns = table.column_names
             data = table.to_pydict()
         except ImportError:
@@ -1642,12 +1643,12 @@ class RealLightGBMTrainer:
                 train_set,
                 num_boost_round=n_estimators,
                 valid_sets=[val_set],
-                callbacks=callbacks,
+                callbacks=cast("list[Callable[..., Any]] | None", callbacks),
             )
-            val_pred = model.predict(X_va)
+            val_pred = cast("Any", model.predict(X_va))
             all_meta_preds.extend(val_pred.tolist())
-            all_meta_labels.extend(y_va.tolist())
-            fold_accs.append(float(np.mean((val_pred > 0.5) == (y_va > 0.5))))
+            all_meta_labels.extend(cast("Any", y_va).tolist())
+            fold_accs.append(float(np.mean((val_pred > 0.5) == (cast("Any", y_va) > 0.5))))
 
         # Compute meta-model metrics.
         preds_arr = np.array(all_meta_preds, dtype=np.float64)
@@ -1857,7 +1858,7 @@ class RealLightGBMTrainer:
                         train_set,
                         num_boost_round=n_estimators,
                         valid_sets=[val_set],
-                        callbacks=callbacks,
+                        callbacks=cast("list[Callable[..., Any]] | None", callbacks),
                     )
                     fold_best_iterations.append(model.best_iteration)
                 else:
@@ -1935,7 +1936,7 @@ class RealLightGBMTrainer:
                 if len(np.unique(y_train)) < 2:
                     continue
 
-                train_kwargs: dict[str, Any] = {}
+                train_kwargs: dict[str, Any] = {}  # type: ignore[no-redef]  # redefined in walk-forward branch below
                 if weights_s is not None:
                     w_train = weights_s[:train_end]
                     train_kwargs["weight"] = w_train
@@ -1955,7 +1956,7 @@ class RealLightGBMTrainer:
                         train_set,
                         num_boost_round=n_estimators,
                         valid_sets=[val_set],
-                        callbacks=callbacks,
+                        callbacks=cast("list[Callable[..., Any]] | None", callbacks),
                     )
                     fold_best_iterations.append(model.best_iteration)
                 else:
@@ -2172,7 +2173,7 @@ class RealLightGBMTrainer:
                     train_set,
                     num_boost_round=n_estimators,
                     valid_sets=[val_set],
-                    callbacks=callbacks,
+                    callbacks=cast("list[Callable[..., Any]] | None", callbacks),
                 )
                 fold_best_iterations.append(model.best_iteration)
             else:
@@ -2852,6 +2853,8 @@ class RealLightGBMTrainer:
         tmp_dir = tempfile.mkdtemp(prefix="qf_catboost_")
         artifact_path = os.path.join(tmp_dir, "model.cbm")
 
+        assert self.column_roles is not None  # validated before dispatch
+        assert self.task_spec is not None  # validated before dispatch
         trainer = CatBoostTrainer(
             column_roles=self.column_roles,
             task_spec=self.task_spec,
@@ -2987,6 +2990,8 @@ class RealLightGBMTrainer:
         tmp_dir = tempfile.mkdtemp(prefix="qf_xgboost_")
         artifact_path = os.path.join(tmp_dir, "model.ubj")
 
+        assert self.column_roles is not None  # validated before dispatch
+        assert self.task_spec is not None  # validated before dispatch
         trainer = XGBoostTrainer(
             column_roles=self.column_roles,
             task_spec=self.task_spec,
@@ -3049,7 +3054,7 @@ class RealLightGBMTrainer:
             req,
             model_bytes,
             metrics,
-            n_features=len(self.column_roles.feature_columns),
+            n_features=len(self.column_roles.feature_columns) if self.column_roles else 0,
             n_rows=int(X.shape[0]) if hasattr(X, "shape") else len(y),
             artifact_format="xgboost-ubj",
             loader_family="xgboost",
@@ -3171,7 +3176,7 @@ class RealLightGBMTrainer:
             try:
                 import xgboost as xgb
 
-                feature_names = list(self.column_roles.feature_columns)
+                feature_names = list(self.column_roles.feature_columns) if self.column_roles else []
                 dmat = xgb.DMatrix(X, label=y, feature_names=feature_names)
                 preds = np.asarray(model.predict(dmat), dtype=np.float64)
             except Exception:
@@ -3230,7 +3235,7 @@ class RealLightGBMTrainer:
             f"{req.dataset_manifest_ref}:n_features={n_features}".encode(),
         ).hexdigest()[:16]
         label_schema_hash = hashlib.sha256(
-            f"{req.dataset_manifest_ref}:label={self.task_spec.task_type}".encode(),
+            f"{req.dataset_manifest_ref}:label={self.task_spec.task_type if self.task_spec else 'unknown'}".encode(),
         ).hexdigest()[:16]
 
         now_ns = time.time_ns()
@@ -3407,6 +3412,7 @@ class RealLightGBMTrainer:
         X, y, timestamps, weights, groups = self._extract_arrays_from_df(df)
 
         # Consume manifest folds using the dataframe.
+        assert self.fold_spec is not None  # validated before dataset load
         fold_assignment = consume_manifest_folds(
             self.fold_spec,
             df,

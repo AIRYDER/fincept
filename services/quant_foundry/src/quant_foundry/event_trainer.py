@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -333,7 +333,7 @@ class EventAbnormalReturnModel:
 
     def state_dict(self) -> dict[str, Any]:
         """Return the underlying module's state_dict."""
-        return self.module.state_dict()
+        return cast("dict[str, Any]", self.module.state_dict())
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load a state_dict into the underlying module."""
@@ -365,7 +365,7 @@ def _make_event_module_class() -> Any:
     import torch
     import torch.nn as nn
 
-    class _EventAbnormalReturnNet(nn.Module):
+    class _EventAbnormalReturnNet(nn.Module):  # type: ignore[misc]  # torch nn.Module is Any when torch not installed
         """Inner nn.Module implementing the multi-horizon forward pass."""
 
         def __init__(
@@ -831,7 +831,7 @@ class EventTrainer:
             preds = model.forward(x_tensor.to(device))
             preds_np = preds.cpu().numpy()
 
-        return preds_np.tolist()
+        return cast("list[list[float]]", preds_np.tolist())
 
     # -- artifact persistence ---------------------------------------------
 

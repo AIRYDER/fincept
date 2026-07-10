@@ -37,7 +37,7 @@ from __future__ import annotations
 import time
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -106,7 +106,7 @@ def estimate_gpu_cost(
 # ---------------------------------------------------------------------------
 
 
-def _dialect_insert(engine: Engine):
+def _dialect_insert(engine: Engine) -> Callable[..., Any]:
     """Return the dialect-specific insert() for the engine."""
     name = engine.dialect.name
     if name == "sqlite":

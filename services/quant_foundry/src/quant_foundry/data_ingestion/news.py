@@ -66,8 +66,8 @@ except ModuleNotFoundError:
     # news-impact-model is not available in the worker image.  The names are
     # only used inside ingest_news_events(); callers that do not invoke news
     # ingestion will never touch them.
-    NormalizedNewsEvent = None  # type: ignore[assignment,misc]
-    load_vendor_news_events = None  # type: ignore[assignment]
+    NormalizedNewsEvent = None
+    load_vendor_news_events = None
 
 NEWS_FEATURE_NAMES: tuple[str, ...] = (
     "headline_len",

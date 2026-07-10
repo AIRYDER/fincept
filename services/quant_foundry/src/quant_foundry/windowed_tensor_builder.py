@@ -696,7 +696,7 @@ class WindowedTensorBuilder:
         if self.config.include_window_id:
             archive["window_id"] = np.array([w.window_id for w in windows], dtype=object)
 
-        np.savez(str(path), **archive)
+        np.savez(str(path), **archive)  # type: ignore[arg-type]  # numpy savez **kwargs typing doesn't match dict unpacking
         return str(path)
 
     def build_parquet(

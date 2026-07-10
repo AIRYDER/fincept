@@ -41,7 +41,7 @@ import hashlib
 import json
 import pathlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -656,7 +656,7 @@ class DatasetComposer:
             )
         )
         # Max decision_time in the existing dataset (informational + state).
-        max_existing_dt = int(existing_df["decision_time"].max())
+        max_existing_dt = int(cast("int | float", existing_df["decision_time"].max()))
 
         # --- collect NEW rows -------------------------------------------
         new_rows, new_feature_names, symbols, new_available_at = self._collect_rows(
@@ -791,7 +791,7 @@ class DatasetComposer:
         import polars as pl
 
         df = pl.read_parquet(str(result.parquet_path))
-        last_build_ns = int(df["decision_time"].max()) if df.height > 0 else 0
+        last_build_ns = int(cast("int | float", df["decision_time"].max())) if df.height > 0 else 0
         new_state = IncrementalState(
             dataset_id=dataset_id,
             last_build_ns=last_build_ns,
@@ -1026,7 +1026,7 @@ class DatasetComposer:
         self,
         rows: list[FeatureRowData],
         feature_names: list[str],
-    ):
+    ) -> Any:
         """Build a polars DataFrame from FeatureRowData rows."""
         import polars as pl
 
@@ -1041,7 +1041,7 @@ class DatasetComposer:
 
     def _rows_from_df(
         self,
-        df,
+        df: Any,
         feature_names: list[str],
     ) -> list[FeatureRowData]:
         """Reconstruct :class:`FeatureRowData` list from a polars DataFrame."""

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from datetime import date as _date
-from typing import Any
+from typing import Any, Iterator
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -144,13 +144,13 @@ class FoldAssignment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: int = 1
-    row_keys: list[tuple]
+    row_keys: list[tuple[Any, ...]]
     fold_ids: list[int]
     fold_spec: FoldSpec
 
     @field_validator("row_keys", "fold_ids")
     @classmethod
-    def _nonempty_lists(cls, v: list, info: Any) -> list:
+    def _nonempty_lists(cls, v: list[Any], info: Any) -> list[Any]:
         if not isinstance(v, list):
             raise ValueError(f"{info.field_name} must be a list")
         return v
@@ -279,7 +279,7 @@ def consume_manifest_folds(
             }
         )
 
-    row_keys: list[tuple] = []
+    row_keys: list[tuple[Any, ...]] = []
     fold_ids: list[int] = []
 
     for idx, row in _iter_rows(df):
@@ -469,7 +469,7 @@ def _coerce_key_timestamp(value: Any) -> float:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=UTC)
-        return value.timestamp()
+        return float(value.timestamp())
     if isinstance(value, _date):
         return datetime(value.year, value.month, value.day, tzinfo=UTC).timestamp()
     raise ValueError(f"cannot coerce row-key timestamp value {value!r} to epoch")
@@ -582,7 +582,7 @@ def _get_df_columns(df: Any) -> list[str]:
     )
 
 
-def _iter_rows(df: Any):
+def _iter_rows(df: Any) -> Iterator[tuple[int, Any]]:
     """Yield (index, row) pairs for a dataframe-like object.
 
     For a pandas DataFrame, uses ``iterrows()``. For a list of dicts,

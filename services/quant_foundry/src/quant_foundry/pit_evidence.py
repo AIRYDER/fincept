@@ -81,16 +81,24 @@ class _ManifestLike(Protocol):
 
     def manifest_hash(self) -> str: ...
 
-    feature_schema_hash: str
-    feature_set_version: str | None
-    row_count: int
+    @property
+    def feature_schema_hash(self) -> str: ...
+
+    @property
+    def feature_set_version(self) -> str | None: ...
+
+    @property
+    def row_count(self) -> int: ...
 
 
 class _FeatureRowLike(Protocol):
     """Duck-typed feature row interface for :func:`build_pit_evidence`."""
 
-    decision_time: int
-    label_horizon_ns: int
+    @property
+    def decision_time(self) -> int: ...
+
+    @property
+    def label_horizon_ns(self) -> int: ...
 
     @property
     def features(self) -> tuple[Any, ...]: ...

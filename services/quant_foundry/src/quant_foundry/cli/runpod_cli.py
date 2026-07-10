@@ -397,7 +397,7 @@ def _looks_like_raw_csv(value: str) -> bool:
     return False
 
 
-def validate_preflight(command: str, args: dict, config: CLIConfig) -> None:
+def validate_preflight(command: str, args: dict[str, Any], config: CLIConfig) -> None:
     """Run fail-closed preflight checks for ``command``.
 
     For production/canary train commands:
@@ -455,7 +455,7 @@ def validate_preflight(command: str, args: dict, config: CLIConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-def format_status_report(status: dict) -> str:
+def format_status_report(status: dict[str, Any]) -> str:
     """Format a job status dict as readable text showing all states.
 
     The status dict (typically from :meth:`TrainingJobLedger.trace`)
@@ -598,7 +598,7 @@ class RunPodCLI:
 
     # --- dispatch --------------------------------------------------------
 
-    def dispatch(self, command: str, args: dict) -> CommandResult:
+    def dispatch(self, command: str, args: dict[str, Any]) -> CommandResult:
         """Parse ``command`` and dispatch to the appropriate handler.
 
         Runs :func:`validate_preflight` before dispatch (fail-closed).
@@ -652,7 +652,7 @@ class RunPodCLI:
 
     # --- handlers --------------------------------------------------------
 
-    def cmd_dataset_register(self, args: dict) -> CommandResult:
+    def cmd_dataset_register(self, args: dict[str, Any]) -> CommandResult:
         """Register a dataset in the registry.
 
         Local operation (no remote training). Validates the dataset id
@@ -693,7 +693,7 @@ class RunPodCLI:
             ),
         )
 
-    def cmd_dataset_upload(self, args: dict) -> CommandResult:
+    def cmd_dataset_upload(self, args: dict[str, Any]) -> CommandResult:
         """Validate a manifest and construct an upload request.
 
         Local operation (manifest validation + upload request
@@ -752,7 +752,7 @@ class RunPodCLI:
             ),
         )
 
-    def cmd_train_canary(self, args: dict) -> CommandResult:
+    def cmd_train_canary(self, args: dict[str, Any]) -> CommandResult:
         """Dispatch a canary training job to RunPod.
 
         Requires a registered dataset (fail-closed if a raw CSV path is
@@ -769,7 +769,7 @@ class RunPodCLI:
             args=args,
         )
 
-    def cmd_train_production(self, args: dict) -> CommandResult:
+    def cmd_train_production(self, args: dict[str, Any]) -> CommandResult:
         """Dispatch a production training job to RunPod.
 
         Requires a registered dataset (fail-closed if a raw CSV path is
@@ -792,7 +792,7 @@ class RunPodCLI:
         command: str,
         mode: TrainingMode,
         budget_usd: float,
-        args: dict,
+        args: dict[str, Any],
     ) -> CommandResult:
         """Shared dispatch logic for canary/production train commands.
 
@@ -855,7 +855,7 @@ class RunPodCLI:
             job_id=job_id,
         )
 
-    def cmd_train_status(self, args: dict) -> CommandResult:
+    def cmd_train_status(self, args: dict[str, Any]) -> CommandResult:
         """Show dispatch, queue, worker, callback, artifact verification,
         and final eligibility states for a job.
 
@@ -875,7 +875,7 @@ class RunPodCLI:
             job_id=job_id,
         )
 
-    def cmd_train_verify(self, args: dict) -> CommandResult:
+    def cmd_train_verify(self, args: dict[str, Any]) -> CommandResult:
         """Verify an artifact for a completed job.
 
         Local operation — artifact verification. Checks that the job has
@@ -910,7 +910,7 @@ class RunPodCLI:
             error=f"not verified (state={rec.state.value})",
         )
 
-    def cmd_train_cost(self, args: dict) -> CommandResult:
+    def cmd_train_cost(self, args: dict[str, Any]) -> CommandResult:
         """Show a cost estimate for a job.
 
         Local operation — cost report from the job ledger.

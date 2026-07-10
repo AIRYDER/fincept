@@ -72,7 +72,7 @@ import json
 import re
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -119,7 +119,7 @@ try:
 
     _ALLOWED_MODEL_FAMILIES: frozenset[str] = _AG_MODEL_FAMILIES
     _HYPERPARAM_BOUNDS: dict[str, dict[str, tuple[float, float]]] = dict(_AG_HYPERPARAM_BOUNDS)
-    _FAMILY_REGISTRY = _AG_MODEL_FAMILY_REGISTRY
+    _FAMILY_REGISTRY: Any = _AG_MODEL_FAMILY_REGISTRY
 except Exception:
     _ALLOWED_MODEL_FAMILIES = frozenset({"gbm", "catboost", "logreg", "linear"})
     _HYPERPARAM_BOUNDS = {
@@ -165,7 +165,7 @@ class ModelFamilyStr(str):
     __slots__ = ()
 
     @property
-    def value(self) -> str:  # type: ignore[override]
+    def value(self) -> str:
         return str.__str__(self)
 
 
@@ -302,7 +302,7 @@ def validate_family_for_mode(
     if _FAMILY_REGISTRY is None or _AGFamilyValidationResult is None:
         return None
     mode_str = mode.value if isinstance(mode, TrainingMode) else str(mode)
-    return _FAMILY_REGISTRY.validate_family(
+    return _FAMILY_REGISTRY.validate_family(  # type: ignore[no-any-return]  # _FAMILY_REGISTRY is Any when alpha_genome is importable
         family_id=family_id,
         mode=mode_str,
         has_gpu=has_gpu,
@@ -316,10 +316,10 @@ def is_family_registered(family_id: str) -> bool:
     """
     if _FAMILY_REGISTRY is None:
         return False
-    return _FAMILY_REGISTRY.is_registered(family_id)
+    return cast("bool", _FAMILY_REGISTRY.is_registered(family_id))
 
 
-def get_family_spec(family_id: str):
+def get_family_spec(family_id: str) -> Any:
     """Return the :class:`ModelFamilySpec` for ``family_id``.
 
     Raises ``KeyError`` if the family is not registered. Returns ``None``

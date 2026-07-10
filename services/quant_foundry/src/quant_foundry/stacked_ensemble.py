@@ -401,7 +401,7 @@ class EnsembleResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def compute_ensemble_hash(manifest_data: dict) -> str:
+def compute_ensemble_hash(manifest_data: dict[str, Any]) -> str:
     """Compute a deterministic SHA-256 hash over a manifest dict.
 
     The manifest data is serialized to canonical JSON (sorted keys,
@@ -900,7 +900,7 @@ class StackedEnsemble:
     def _fit_lightgbm_meta(self, X: Any, y: Any) -> Any:
         """Train a LightGBM meta-learner."""
         try:
-            from lightgbm import LGBMRegressor  # type: ignore[import-not-found]
+            from lightgbm import LGBMRegressor
         except ImportError as exc:
             raise ImportError(
                 "lightgbm is not installed — cannot train a LightGBM "
@@ -917,7 +917,7 @@ class StackedEnsemble:
         """Train a logistic-regression meta-learner."""
         try:
             from sklearn.linear_model import (
-                LogisticRegression,  # type: ignore[import-not-found]
+                LogisticRegression,
             )
         except ImportError as exc:
             raise ImportError(

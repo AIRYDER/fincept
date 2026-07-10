@@ -38,7 +38,7 @@ Protocols implemented (no interface change to CallbackProcessor):
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -67,7 +67,7 @@ from quant_foundry.shadow_ledger import compute_batch_hash
 # ---------------------------------------------------------------------------
 
 
-def _dialect_insert(engine: Engine):
+def _dialect_insert(engine: Engine) -> Callable[..., Any]:
     """Return the dialect-specific insert() for the engine.
 
     Both SQLite and Postgres support ``on_conflict_do_nothing()``. We pick

@@ -48,7 +48,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -303,7 +303,7 @@ class TinyTabularNet:
 
     def state_dict(self) -> dict[str, Any]:
         """Return the underlying module's state_dict."""
-        return self.module.state_dict()
+        return cast("dict[str, Any]", self.module.state_dict())
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load a state_dict into the underlying module."""

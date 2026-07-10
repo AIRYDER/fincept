@@ -106,7 +106,7 @@ def _sharpe_ratio(returns: list[float]) -> float:
     variance = sum((r - mean) ** 2 for r in returns) / (n - 1)
     if variance <= 0.0:
         return 0.0
-    return mean / (variance**0.5)
+    return float(mean / (variance**0.5))
 
 
 def _metric_from_predictions(y_true: list[float], y_pred: list[float]) -> float:
@@ -276,6 +276,6 @@ class PlaceboTest:
         except Exception:
             pass
         try:
-            return model.__class__()  # type: ignore[call-arg]
+            return model.__class__()
         except Exception:
             return model
