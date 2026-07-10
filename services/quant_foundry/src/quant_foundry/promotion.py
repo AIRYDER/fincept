@@ -1,15 +1,15 @@
 """
-quant_foundry.promotion â€” promotion review queue (TASK-0702 / C7 hardened).
+quant_foundry.promotion — promotion review queue (TASK-0702 / C7 hardened).
 
 The governance gate between "model exists" and "model can influence paper
 trading." Requires human approval and evidence packets for model promotion.
 
 Promotion levels (from ``DossierStatus``):
-``candidate`` â†’ ``research_approved`` â†’ ``shadow_approved`` â†’
-``paper_approved`` â†’ ``limited_live_approved``.
+``candidate`` → ``research_approved`` → ``shadow_approved`` →
+``paper_approved`` → ``limited_live_approved``.
 For MVP, allow only up to ``paper_approved``.
 
-C7 hardening â€” the gate now verifies the full evidence chain before
+C7 hardening — the gate now verifies the full evidence chain before
 approving any promotion:
 
 - durable artifact URI exists
@@ -56,6 +56,7 @@ from pydantic import BaseModel, ConfigDict
 
 from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
+from quant_foundry.pit_evidence import PITEvidence  # noqa: F401
 from quant_foundry.sentinel import SentinelReceipt, SentinelSeverity
 from quant_foundry.tournament import TournamentResult
 
@@ -82,7 +83,7 @@ class PromotionWaiver(BaseModel):
 
     Frozen + extra='forbid'. Carries the issue code being waived, the
     person who waived it, and the reason. The waiver must be recorded and
-    named â€” the gate fails closed without it.
+    named — the gate fails closed without it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -249,7 +250,7 @@ class PromotionReceipt(BaseModel):
 _MVP_MAX_LEVEL = DossierStatus.PAPER_APPROVED
 
 # Explicit promotion level order (candidate < research < shadow < paper < ...).
-# RETIRED is intentionally excluded â€” it is a terminal sink with no
+# RETIRED is intentionally excluded — it is a terminal sink with no
 # outgoing promotion path. REJECTED is also terminal.
 _LEVEL_ORDER: dict[DossierStatus, int] = {
     DossierStatus.CANDIDATE: 0,
@@ -259,7 +260,7 @@ _LEVEL_ORDER: dict[DossierStatus, int] = {
     DossierStatus.LIMITED_LIVE_APPROVED: 4,
 }
 
-# Terminal statuses â€” no promotion path out of these.
+# Terminal statuses — no promotion path out of these.
 _TERMINAL_STATUSES = frozenset({DossierStatus.REJECTED, DossierStatus.RETIRED})
 
 
@@ -299,7 +300,7 @@ class PromotionGate:
         if evidence.dossier is None:
             return _reject(PromotionRejectionReason.NO_DOSSIER)
 
-        # 2. Retired is terminal â€” no promotion out of retired.
+        # 2. Retired is terminal — no promotion out of retired.
         if evidence.dossier.status in _TERMINAL_STATUSES:
             return _reject(PromotionRejectionReason.RETIRED_IS_TERMINAL)
 

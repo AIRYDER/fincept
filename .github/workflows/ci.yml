@@ -115,6 +115,129 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  # Temporary C7 gate: verify migration 0007 downgrade/upgrade cycle
+  # against real PostgreSQL/TimescaleDB. Remove after C7 merge.
+  alembic-downgrade-verify:
+    name: Alembic downgrade/upgrade verify (C7 gate)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: fincept
+          POSTGRES_USER: fincept
+          POSTGRES_PASSWORD: fincept
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fincept"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      FINCEPT_DB_URL: postgresql+asyncpg://fincept:fincept@localhost:5432/fincept
+      FINCEPT_TRADING_MODE: paper
+      FINCEPT_LOG_LEVEL: WARNING
+    steps:
+      # pin: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install uv
+        # pin: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages --all-groups
+
+      - name: Alembic upgrade head
+        run: uv run alembic -c libs/fincept-db/alembic.ini upgrade head
+
+      - name: Verify 0007 constraints exist after upgrade
+        run: |
+          set -e
+          echo "=== Status domain constraints (should include 'retired') ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT conname, pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conname IN (
+              'ck_models_current_status_domain',
+              'ck_model_versions_status_domain',
+              'ck_model_dossiers_status_domain',
+              'ck_promotions_from_status_domain',
+              'ck_promotions_to_status_domain'
+            )
+            ORDER BY conname;
+          "
+          echo "=== Rejection reason domain (should include C7 reasons) ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT conname, pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conname = 'ck_promotion_decisions_rejection_reason_domain';
+          "
+          echo "=== Metric type domain (should include C7 types) ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT conname, pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conname = 'ck_model_metrics_metric_type_domain';
+          "
+
+      - name: Alembic downgrade -1 (drops 0007)
+        run: uv run alembic -c libs/fincept-db/alembic.ini downgrade -1
+
+      - name: Verify 0007 constraints removed after downgrade
+        run: |
+          set -e
+          # After downgrade, retired should NOT be in the status domain
+          if PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'ck_models_current_status_domain'
+              AND pg_get_constraintdef(oid) LIKE '%retired%';
+          " | grep -q 1; then
+            echo "FAIL: retired still in ck_models_current_status_domain after downgrade"
+            exit 1
+          fi
+          echo "OK: retired removed from status domain after downgrade"
+          # C7 rejection reasons should be gone
+          if PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'ck_promotion_decisions_rejection_reason_domain'
+              AND pg_get_constraintdef(oid) LIKE '%missing_selfcheck%';
+          " | grep -q 1; then
+            echo "FAIL: missing_selfcheck still in rejection_reason domain after downgrade"
+            exit 1
+          fi
+          echo "OK: C7 rejection reasons removed after downgrade"
+
+      - name: Alembic re-upgrade head (restores 0007)
+        run: uv run alembic -c libs/fincept-db/alembic.ini upgrade head
+
+      - name: Verify 0007 constraints restored after re-upgrade
+        run: |
+          set -e
+          # After re-upgrade, retired SHOULD be in the status domain
+          if ! PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'ck_models_current_status_domain'
+              AND pg_get_constraintdef(oid) LIKE '%retired%';
+          " | grep -q 1; then
+            echo "FAIL: retired not in ck_models_current_status_domain after re-upgrade"
+            exit 1
+          fi
+          echo "OK: retired restored to status domain after re-upgrade"
+          # C7 rejection reasons should be back
+          if ! PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'ck_promotion_decisions_rejection_reason_domain'
+              AND pg_get_constraintdef(oid) LIKE '%missing_selfcheck%';
+          " | grep -q 1; then
+            echo "FAIL: missing_selfcheck not in rejection_reason domain after re-upgrade"
+            exit 1
+          fi
+          echo "OK: C7 rejection reasons restored after re-upgrade"
+
   js-lint-typecheck-test:
     name: JS lint + typecheck + test
     runs-on: ubuntu-latest

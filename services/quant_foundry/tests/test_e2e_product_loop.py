@@ -70,7 +70,7 @@ from fincept_db.registry_tables import (
 )
 
 # ---------------------------------------------------------------------------
-# Engine fixture â€” all callback + observability + registry tables
+# Engine fixture — all callback + observability + registry tables
 # ---------------------------------------------------------------------------
 
 
@@ -324,7 +324,7 @@ def test_e2e_product_loop_dispatch_to_model_versions(tmp_path) -> None:
         )
 
     # 7) Verify the model version was AUTO-registered by the gateway
-    #    (Tier 1.2: no manual register_version call needed â€” the gateway
+    #    (Tier 1.2: no manual register_version call needed — the gateway
     #    auto-registers when a registry is wired in).
     expected_version_id = f"version:{_MODEL_ID}:{dossier_content_hash[:16]}"
 
@@ -404,7 +404,7 @@ def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> 
         "extra_constraints": {"training_mode": "production"},
     }
 
-    # 1) Production dispatch with unregistered dataset â†’ rejected.
+    # 1) Production dispatch with unregistered dataset → rejected.
     receipt = gateway.create_job(
         job_id="qf:gate:prod:1",
         job_type="training",
@@ -418,7 +418,7 @@ def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> 
     ob_rec = gateway.outbox.get("qf:gate:prod:1")
     assert ob_rec is None, "rejected job must not be enqueued"
 
-    # 2) Canary dispatch with the same unregistered dataset â†’ allowed.
+    # 2) Canary dispatch with the same unregistered dataset → allowed.
     canary_payload = dict(payload)
     canary_payload["job_id"] = "qf:gate:canary:1"
     canary_payload["extra_constraints"] = {"training_mode": "canary"}
@@ -440,15 +440,15 @@ def test_dataset_registry_rejects_unregistered_production_dispatch(tmp_path) -> 
 
 
 # ---------------------------------------------------------------------------
-# Tier 2a: Full product loop â€” dispatch â†’ callback â†’ model_versions â†’
-#          metrics â†’ promotion gate â†’ promotion receipt â†’ shadow evaluation
+# Tier 2a: Full product loop — dispatch → callback → model_versions →
+#          metrics → promotion gate → promotion receipt → shadow evaluation
 # ---------------------------------------------------------------------------
 
 
 def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
-    """Prove the FULL product loop: dispatch â†’ callback â†’ model_versions â†’
-    tournament metrics â†’ sentinel metrics â†’ promotion gate â†’ promotion receipt
-    â†’ shadow evaluation row.
+    """Prove the FULL product loop: dispatch → callback → model_versions →
+    tournament metrics → sentinel metrics → promotion gate → promotion receipt
+    → shadow evaluation row.
 
     Extends ``test_e2e_product_loop_dispatch_to_model_versions`` with:
       8. Record tournament metrics (settled_count >= gate minimum).
@@ -520,12 +520,14 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
     # 4-7) model_versions auto-registered (same as Phase A).
     in_rec = gateway.inbox.get_by_job_id(job_id)
     assert in_rec is not None
+    callback_receipt_id = in_rec.callback_id  # noqa: F841
 
     with Session(engine) as session:
         dossier_row = session.scalars(
             select(ModelDossierRow).where(ModelDossierRow.model_id == _MODEL_ID)
         ).first()
         assert dossier_row is not None
+        dossier_content_hash = dossier_row.content_hash  # noqa: F841
 
         version_row = session.scalars(
             select(ModelVersionRow).where(ModelVersionRow.model_id == _MODEL_ID)
@@ -534,7 +536,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         version_id = version_row.version_id
         assert version_row.status == "candidate"
 
-    # 8) Record tournament metrics â€” settled_count=50 (>= gate minimum of 10).
+    # 8) Record tournament metrics — settled_count=50 (>= gate minimum of 10).
     tournament_metrics = {
         "model_id": _MODEL_ID,
         "total_score": 0.72,
@@ -555,7 +557,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         metrics_dict=tournament_metrics,
     )
 
-    # 9) Record sentinel metrics â€” passed=True, no issues.
+    # 9) Record sentinel metrics — passed=True, no issues.
     sentinel_metrics = {
         "model_id": _MODEL_ID,
         "issues": [],
@@ -597,11 +599,11 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         metrics_dict={"production_eligible": True},
     )
 
-    # 10) Run the promotion gate: candidate â†’ research_approved.
+    # 10) Run the promotion gate: candidate → research_approved.
     promotion_receipt = registry.promote(
         version_id=version_id,
         target_status=DossierStatus.RESEARCH_APPROVED,
-        review_note="E2E full loop proof â€” promotion to research_approved",
+        review_note="E2E full loop proof — promotion to research_approved",
         decided_by="e2e-proof-script",
     )
 
@@ -612,9 +614,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         f"reason={promotion_receipt.rejection_reason}"
     )
     assert promotion_receipt.rejection_reason is None
-    assert promotion_receipt.review_note == (
-        "E2E full loop proof â€” promotion to research_approved"
-    )
+    assert promotion_receipt.review_note == ("E2E full loop proof — promotion to research_approved")
 
     # 12) Verify promotions + promotion_decisions rows are persisted.
     with Session(engine) as session:
@@ -638,7 +638,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         assert decision.decision == "approved"
         assert decision.rejection_reason is None
         assert decision.decided_by == "e2e-proof-script"
-        assert decision.review_note == ("E2E full loop proof â€” promotion to research_approved")
+        assert decision.review_note == ("E2E full loop proof — promotion to research_approved")
 
     # 13) Verify model_versions.status is updated to research_approved.
     with Session(engine) as session:
@@ -720,7 +720,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
 def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
     """Prove the promotion gate fails closed when evidence is insufficient.
 
-    Dispatch â†’ callback â†’ model_versions â†’ promote WITHOUT tournament or
+    Dispatch → callback → model_versions → promote WITHOUT tournament or
     sentinel metrics. The gate must reject with INSUFFICIENT_EVIDENCE
     (settled_count=0 < min_settled_count=10). The rejection receipt must
     be persisted, and the model version status must NOT change.
@@ -783,7 +783,7 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
         assert version_row.status == "candidate"
 
     # Record C7 evidence chain metrics but NOT tournament metrics
-    # (settled_count=0 < min_settled_count=10 â†’ INSUFFICIENT_EVIDENCE).
+    # (settled_count=0 < min_settled_count=10 → INSUFFICIENT_EVIDENCE).
     registry.record_metrics(
         version_id=version_id,
         metric_type="selfcheck",
@@ -809,7 +809,7 @@ def test_e2e_promotion_gate_rejects_insufficient_evidence(tmp_path) -> None:
     rejection_receipt = registry.promote(
         version_id=version_id,
         target_status=DossierStatus.RESEARCH_APPROVED,
-        review_note="Should be rejected â€” no evidence",
+        review_note="Should be rejected — no evidence",
         decided_by="e2e-reject-test",
     )
 
