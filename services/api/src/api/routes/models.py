@@ -82,6 +82,26 @@ def _get_settlement_store() -> SettlementStore:
     return SettlementStore()
 
 
+def _get_settlement_ledger() -> Any:
+    """Return a Path B ``SettlementLedger`` for canonical settlement reads.
+
+    Used by the outcomes route when ``SETTLEMENTS_USE_PATH_B=1`` (default).
+    Tests monkey-patch this function to inject a fixture-rooted ledger.
+    """
+    from quant_foundry.settlement import SettlementLedger
+
+    return SettlementLedger()
+
+
+def _use_path_b_settlement() -> bool:
+    """Check whether API routes should read from Path B (canonical) ledger.
+
+    Defaults to True. Set ``SETTLEMENTS_USE_PATH_B=0`` to fall back to
+    the legacy Path A ``SettlementStore`` for rollback.
+    """
+    return os.environ.get("SETTLEMENTS_USE_PATH_B", "1") != "0"
+
+
 # Lazy singleton for the feature-snapshot store.  Unlike the settlement
 # store, the snapshot store keeps an in-memory seen-cache that benefits
 # from reuse across requests, so we hold a single process-wide instance.
@@ -1012,12 +1032,31 @@ async def get_outcomes(
         since_ns=since_ns,
     )
 
-    # Load settlements for this agent and index by prediction_id.
-    # read_for_agent tolerates a missing file (returns []) and skips
-    # malformed JSONL lines, so a corrupt settlement log never takes
-    # the route down.
-    settlements = _get_settlement_store().read_for_agent(agent_id=agent_id)
-    settlement_by_pid: dict[str, Any] = {s.prediction_id: s for s in settlements}
+    # Load settlements and index by prediction_id.
+    #
+    # When SETTLEMENTS_USE_PATH_B=1 (default), read from the canonical
+    # Path B SettlementLedger (keyed by model_id). The agent_id is
+    # mapped to model_id via the default mapping function.
+    #
+    # When SETTLEMENTS_USE_PATH_B=0, fall back to the legacy Path A
+    # SettlementStore (keyed by agent_id) for rollback.
+    settlement_by_pid: dict[str, Any] = {}
+
+    if _use_path_b_settlement():
+        from settlements.compat import default_agent_to_model_id
+
+        ledger = _get_settlement_ledger()
+        model_id = default_agent_to_model_id(agent_id)
+        # read_all returns all records across all model files; filter by
+        # model_id to get only this model's settlements.
+        all_records = ledger.read_all()
+        settlement_by_pid = {
+            s.prediction_id: s for s in all_records if s.model_id == model_id
+        }
+    else:
+        # Legacy Path A read (keyed by agent_id).
+        settlements = _get_settlement_store().read_for_agent(agent_id=agent_id)
+        settlement_by_pid = {s.prediction_id: s for s in settlements}
 
     snapshot_store = _get_snapshot_store()
     outcomes = []

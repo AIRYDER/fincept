@@ -52,19 +52,30 @@ def golden_stores(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ):
-    """Redirect all evidence-spine stores at tmp dirs and return them."""
+    """Redirect all evidence-spine stores at tmp dirs and return them.
+
+    Both Path A (SettlementStore) and Path B (SettlementLedger) are
+    patched so the outcomes route works with SETTLEMENTS_USE_PATH_B=1.
+    """
+    from quant_foundry.settlement import SettlementLedger
+
     predictions_dir = tmp_path / "predictions"
     settlements_dir = tmp_path / "settlements"
+    settlements_b_dir = tmp_path / "settlements_b"
     snapshots_dir = tmp_path / "feature_snapshots"
     models_dir = tmp_path / "models"
 
     log = PredictionLog(predictions_dir=predictions_dir)
     settlement_store = SettlementStore(root=settlements_dir)
+    settlement_ledger = SettlementLedger(root=settlements_b_dir)
     snapshot_store = FeatureSnapshotStore(root=snapshots_dir)
 
     monkeypatch.setattr("api.routes.models._get_prediction_log", lambda: log)
     monkeypatch.setattr(
         "api.routes.models._get_settlement_store", lambda: settlement_store
+    )
+    monkeypatch.setattr(
+        "api.routes.models._get_settlement_ledger", lambda: settlement_ledger
     )
     monkeypatch.setattr("api.routes.models._get_snapshot_store", lambda: snapshot_store)
     # Redirect MODELS_DIR so the test doesn't see real models on disk.
@@ -72,6 +83,7 @@ def golden_stores(
     return {
         "log": log,
         "settlements": settlement_store,
+        "settlement_ledger": settlement_ledger,
         "snapshots": snapshot_store,
         "tmp_path": tmp_path,
         "models_dir": models_dir,
@@ -222,6 +234,38 @@ async def test_golden_e2e_evidence_spine(
         settled_at_ns=ts_event + horizon_ns,
     )
     settlement_store.append(settlement, now_ns=ts_event + horizon_ns + 1)
+
+    # Also seed the Path B ledger so the outcomes route finds the
+    # settlement when SETTLEMENTS_USE_PATH_B=1 (default).
+    from quant_foundry.outcomes import SettlementRecord as BRecord
+    from quant_foundry.outcomes import SettlementStatus
+    from quant_foundry.settlement_sweep import default_cost_model
+    from settlements.compat import default_agent_to_model_id
+
+    model_id = default_agent_to_model_id(agent_id)
+    cm = default_cost_model()
+    b_record = BRecord(
+        prediction_id=pred_row.id,
+        model_id=model_id,
+        symbol="AAPL",
+        ts_event=ts_event,
+        horizon_ns=horizon_ns,
+        status=SettlementStatus.SETTLED,
+        settled_at_ns=ts_event + horizon_ns,
+        realized_return_gross=0.018,
+        realized_return_net=0.0172,
+        abnormal_return=None,
+        brier=0.0784,
+        calibration_bucket="0.6-0.8",
+        cost_model_version=cm.version,
+        decision_window_start=ts_event,
+        decision_window_end=ts_event + horizon_ns,
+    )
+    ledger = golden_stores["settlement_ledger"]
+    ledger._root.mkdir(parents=True, exist_ok=True)
+    path = ledger._path(b_record.model_id)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(b_record.to_json() + "\n")
 
     # --- Step 6: Verify GET /models/{name}/outcomes returns complete receipt
     r = await client.get(

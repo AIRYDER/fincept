@@ -1,0 +1,17 @@
+fixture_name,path,status,realized_return_gross,realized_return_net,cost_fee_bps,cost_spread_bps,cost_slippage_bps,brier_component,cost_model_version,abnormal_return,calibration_bucket,key_field,key_value,settled_at_ns
+winning_long,A_compat,settled,0.05,0.0482,10.0,5.0,3.0,0.09000000000000002,cm-v1,0.045000000000000005,0.6-0.8,agent_id,test-agent,1700003660000000000
+winning_long,B_direct,settled,0.05,0.0482,10.0,5.0,3.0,0.09000000000000002,cm-v1,0.045000000000000005,0.6-0.8,model_id,test-model,1700003660000000000
+losing_long,A_compat,settled,-0.05,-0.051800000000000006,10.0,5.0,3.0,0.36,cm-v1,-0.055,0.4-0.6,agent_id,test-agent,1700003660000000000
+losing_long,B_direct,settled,-0.05,-0.051800000000000006,10.0,5.0,3.0,0.36,cm-v1,-0.055,0.4-0.6,model_id,test-model,1700003660000000000
+winning_short,A_compat,settled,0.05,0.045700000000000005,10.0,5.0,3.0,0.42250000000000004,cm-v1,0.045000000000000005,0.6-0.8,agent_id,test-agent,1700003660000000000
+winning_short,B_direct,settled,0.05,0.045700000000000005,10.0,5.0,3.0,0.42250000000000004,cm-v1,0.045000000000000005,0.6-0.8,model_id,test-model,1700003660000000000
+flat,A_compat,settled,0.0,-0.0018,10.0,5.0,3.0,0.25,cm-v1,0.0,0.4-0.6,agent_id,test-agent,1700003660000000000
+flat,B_direct,settled,0.0,-0.0018,10.0,5.0,3.0,0.25,cm-v1,0.0,0.4-0.6,model_id,test-model,1700003660000000000
+missing_prices,A_compat,pending_data,,,10.0,5.0,3.0,,cm-v1,,,agent_id,test-agent,
+missing_prices,B_direct,pending_data,,,10.0,5.0,3.0,,cm-v1,,,model_id,test-model,
+partial_prices_entry_only,A_compat,pending_data,,,10.0,5.0,3.0,,cm-v1,,,agent_id,test-agent,
+partial_prices_entry_only,B_direct,pending_data,,,10.0,5.0,3.0,,cm-v1,,,model_id,test-model,
+high_confidence_win,A_compat,settled,0.1,0.09820000000000001,10.0,5.0,3.0,0.009999999999999995,cm-v1,0.07500000000000001,0.8-1.0,agent_id,test-agent,1700003660000000000
+high_confidence_win,B_direct,settled,0.1,0.09820000000000001,10.0,5.0,3.0,0.009999999999999995,cm-v1,0.07500000000000001,0.8-1.0,model_id,test-model,1700003660000000000
+losing_short,A_compat,settled,-0.05,-0.0543,10.0,5.0,3.0,0.16000000000000003,cm-v1,-0.055,0.4-0.6,agent_id,test-agent,1700003660000000000
+losing_short,B_direct,settled,-0.05,-0.0543,10.0,5.0,3.0,0.16000000000000003,cm-v1,-0.055,0.4-0.6,model_id,test-model,1700003660000000000

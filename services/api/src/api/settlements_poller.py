@@ -1,34 +1,27 @@
-"""Settlements worker poller — bridges the new fincept_core.datasets.SettlementStore
-to the production prediction log.
+"""Settlements worker poller — settles due predictions via the canonical
+Path B ledger (``quant_foundry.SettlementLedger``).
 
-Reconciliation strategy
-~~~~~~~~~~~~~~~~~~~~~~~
+Settlement strategy
+~~~~~~~~~~~~~~~~~~~
 
-Two settlement systems coexist in this codebase while the new
-``fincept_core.datasets`` spine is validated operationally:
+As of C6 settlement unification, the canonical settlement path is
+**Path B** — ``quant_foundry.SettlementLedger`` via
+``settlements.compat.PathACompatAdapter``. The adapter:
 
-* **New** — ``settlements.worker.tick`` writes to
-  ``fincept_core.datasets.SettlementStore`` (on-disk JSONL under
-  ``data/settlements/``), keyed by ``agent_id``, cost model
-  ``v1.default`` = 5 bps fee + 3 bps spread + 0 bps slippage.  This
-  store feeds the ``/models/{name}/outcomes`` API route.
+  * Accepts ``PredictionRow`` inputs (agent_id keyed).
+  * Maps ``agent_id`` → ``model_id``.
+  * Derives ``p_up`` from ``confidence``.
+  * Delegates to ``SettlementLedger.settle()`` with the ``cm-v1`` cost model.
+  * Writes to both the canonical store (``data/quant-foundry/settlements/``)
+    and the legacy store (``data/settlements/``) for backward-compatible reads.
 
-* **Old** — ``quant_foundry.settlement_sweep.SettlementSweep`` (driven
-  by ``gateway.run_settlement_sweep``) writes to
-  ``quant_foundry.settlement.SettlementLedger``, keyed by ``model_id``,
-  cost model ``cm-v1`` = 10 bps fee + 5 bps spread + 3 bps slippage.
-  This ledger feeds the quant_foundry dashboard.
-
-Both systems run side-by-side: the new worker reads the same
-``data/predictions/`` log but writes to a separate store, so neither
-ledger mutates the other.  Full consolidation — unifying the two
-ledgers, cost models, and keying (``agent_id`` vs ``model_id``) — is
-deferred to a future task pending operational validation of the new
-spine.
+The legacy Path A math (``settlements.worker._build_settled_record``) is
+deprecated. When ``SETTLEMENTS_USE_PATH_B=1`` (the default), the poller
+uses the adapter. When ``SETTLEMENTS_USE_PATH_B=0``, the poller falls
+back to the legacy Path A math for rollback.
 
 The env var ``SETTLEMENTS_WORKER_POLL_S`` controls the poll interval
-(default ``60`` seconds; set to ``0`` to disable the new worker while
-keeping the old sweep running).
+(default ``60`` seconds; set to ``0`` to disable the worker).
 """
 
 from __future__ import annotations
@@ -53,6 +46,15 @@ def _settlements_worker_interval_seconds() -> float:
         return 60.0
 
 
+def _use_path_b() -> bool:
+    """Check whether the poller should use Path B (canonical) settlement.
+
+    Defaults to True (Path B is canonical). Set ``SETTLEMENTS_USE_PATH_B=0``
+    to fall back to the legacy Path A math for rollback.
+    """
+    return os.environ.get("SETTLEMENTS_USE_PATH_B", "1") != "0"
+
+
 def _build_market_data_source() -> Any:
     """Construct the async market_data_source from the production BarDataAdapter.
 
@@ -67,35 +69,72 @@ def _build_market_data_source() -> Any:
     return make_async_market_data_source(bar_adapter)
 
 
-async def _poll_settlements_worker(interval_seconds: float) -> None:
-    """Periodically run the settlements worker to settle due predictions.
+def _build_compat_adapter() -> Any:
+    """Construct the PathACompatAdapter with the canonical cost model.
 
-    Best-effort: any exception raised by ``tick`` (or the market-data
-    source) is logged and swallowed so a stuck worker never crashes the
-    API process.  The loop runs forever until cancelled by the lifespan
-    shutdown handler.
+    Imported lazily so the api service does not pay the import cost when
+    the poller is disabled.
     """
-    from settlements.worker import tick
+    from fincept_core.datasets import SettlementStore
+    from settlements.compat import PathACompatAdapter
 
-    predictions_dir = pathlib.Path(
-        os.environ.get("PREDICTIONS_DIR", "data/predictions")
-    )
     settlements_dir = pathlib.Path(
         os.environ.get("SETTLEMENTS_DIR", "data/settlements")
     )
+    legacy_store = SettlementStore(root=settlements_dir)
+
+    return PathACompatAdapter(legacy_store=legacy_store)
+
+
+async def _poll_settlements_worker(interval_seconds: float) -> None:
+    """Periodically settle due predictions via the canonical Path B ledger.
+
+    Best-effort: any exception raised by the settlement path (or the
+    market-data source) is logged and swallowed so a stuck worker never
+    crashes the API process.  The loop runs forever until cancelled by
+    the lifespan shutdown handler.
+    """
+    predictions_dir = pathlib.Path(
+        os.environ.get("PREDICTIONS_DIR", "data/predictions")
+    )
     market_data_source = _build_market_data_source()
+
+    use_path_b = _use_path_b()
+    adapter = _build_compat_adapter() if use_path_b else None
 
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            records = await tick(
-                _now_ns(),
-                predictions_dir=predictions_dir,
-                settlements_dir=settlements_dir,
-                market_data_source=market_data_source,
-            )
-            if records:
-                log.info("settlements.worker.tick", settled=len(records))
+            if use_path_b and adapter is not None:
+                records = await adapter.settle_due_predictions_async(
+                    predictions_dir,
+                    now_ns=_now_ns(),
+                    market_data_source=market_data_source,
+                )
+                if records:
+                    log.info(
+                        "settlements.compat.settle",
+                        settled=len(records),
+                        path="B",
+                    )
+            else:
+                from settlements.worker import tick
+
+                settlements_dir = pathlib.Path(
+                    os.environ.get("SETTLEMENTS_DIR", "data/settlements")
+                )
+                records = await tick(
+                    _now_ns(),
+                    predictions_dir=predictions_dir,
+                    settlements_dir=settlements_dir,
+                    market_data_source=market_data_source,
+                )
+                if records:
+                    log.info(
+                        "settlements.worker.tick",
+                        settled=len(records),
+                        path="A_legacy",
+                    )
         except Exception as exc:
             log.warning(
                 "settlements.worker_poll_failed",
@@ -104,7 +143,9 @@ async def _poll_settlements_worker(interval_seconds: float) -> None:
 
 
 __all__ = [
+    "_build_compat_adapter",
     "_build_market_data_source",
     "_poll_settlements_worker",
     "_settlements_worker_interval_seconds",
+    "_use_path_b",
 ]
