@@ -4,12 +4,6 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fakeredis.aioredis import FakeRedis
-
-from agents.news_impact_agent.main import (
-    build_news_impact_signals,
-    handle_information_event,
-    information_to_news_event,
-)
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_SIG_NEWS_IMPACT
 from fincept_core.events import Event, deserialize
@@ -17,6 +11,12 @@ from fincept_core.schemas import InformationEvent, NewsImpactSignal
 from news_impact_model.analogs import HistoricalAnalogIndex
 from news_impact_model.model import NewsImpactModel
 from news_impact_model.schema import HistoricalOutcome
+
+from agents.news_impact_agent.main import (
+    build_news_impact_signals,
+    handle_information_event,
+    information_to_news_event,
+)
 
 
 @pytest.fixture

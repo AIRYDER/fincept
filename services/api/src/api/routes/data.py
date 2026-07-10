@@ -28,15 +28,15 @@ from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from api.auth import require_user
-from api.deps import get_position_store
-from api.symbol_search import search_symbols
 from fincept_core.config import get_settings
 from fincept_db.bars import read_bar_coverage, read_bars
 from fincept_db.universe import read_universe, upsert_universe_symbols
 from oms.alpaca.data import DATA_BASE_URL, AlpacaDataClient, AlpacaDataError
 from portfolio.store import PositionStore
+
+from api.auth import require_user
+from api.deps import get_position_store
+from api.symbol_search import search_symbols
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -34,7 +34,7 @@ from quant_foundry.moe_expert_router import (
 )
 
 try:
-    import sklearn  # noqa: F401
+    import sklearn  # noqa: F401 - availability check
 
     _HAS_SKLEARN = True
 except ImportError:

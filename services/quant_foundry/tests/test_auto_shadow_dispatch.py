@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from helpers.product_loop_helpers import _MODEL_ID, _dispatch_and_callback, _make_engine
 from quant_foundry.auto_shadow_dispatch import (
     AutoShadowDispatcher,
 )
@@ -22,7 +23,6 @@ from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.schemas import Authority
 from quant_foundry.shadow_ledger import ShadowLedgerRecord
-from helpers.product_loop_helpers import _dispatch_and_callback, _MODEL_ID, _make_engine
 
 
 def _make_shadow_gateway(
@@ -351,7 +351,7 @@ class TestAutoShadowDispatcher:
 
         try:
             receipt.dispatched = 999
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except Exception:
             pass  # expected — frozen model
         engine.dispose()
@@ -403,10 +403,10 @@ class TestFullAutomatedProductLoop:
         4. Auto-shadow-dispatch dispatches shadow inference for the version.
         5. Verify the shadow inference job is in the outbox.
         """
+        from helpers.product_loop_helpers import _FakeSettlementLedger, _make_settlement_record
         from quant_foundry.auto_promotion import AutoPromotionOrchestrator
         from quant_foundry.champion_challenger import ChampionChallengerConfig
         from quant_foundry.settlement_provider import SettledComparisonInputProvider
-        from helpers.product_loop_helpers import _FakeSettlementLedger, _make_settlement_record
 
         engine = _make_engine()
         secret = "test-secret"

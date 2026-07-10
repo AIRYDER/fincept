@@ -10,18 +10,18 @@ from typing import Any
 import lightgbm as lgb
 import numpy as np
 import polars as pl
+from fincept_core.config import get_settings
+from fincept_core.schemas import FeatureFrame
 from redis.asyncio import Redis
 
-from agents.news_alpha_predictor.features import DEFAULT_FEATURES, extract_sentiment_row
 from agents.news_alpha_predictor.evaluate import (
-    CandidateGatePolicy,
     DEFAULT_REPORT_PATH,
+    CandidateGatePolicy,
     evaluate_candidate,
     write_report,
 )
-from agents.news_outcome_labeler.store import EXAMPLE_KEY_TEMPLATE, DEFAULT_HORIZONS_NS
-from fincept_core.config import get_settings
-from fincept_core.schemas import FeatureFrame
+from agents.news_alpha_predictor.features import DEFAULT_FEATURES, extract_sentiment_row
+from agents.news_outcome_labeler.store import DEFAULT_HORIZONS_NS, EXAMPLE_KEY_TEMPLATE
 
 LABEL_PREFIX = "label:{horizon}:return"
 DEFAULT_DATASET_PATH = "data/news_alpha_training.parquet"

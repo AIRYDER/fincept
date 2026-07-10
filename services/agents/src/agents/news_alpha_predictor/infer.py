@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 import lightgbm as lgb
 import numpy as np
-
 from fincept_core.clock import now_ns
 from fincept_core.schemas import FeatureFrame, Prediction
 

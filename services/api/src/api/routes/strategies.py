@@ -54,18 +54,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
-
-from api.auth import require_user
-from api.deps import get_position_store, get_strategy_config_store
 from backtester.strategies import STRATEGY_REGISTRY
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fincept_core.strategy_config import (
     StrategyConfig,
     StrategyConfigError,
     StrategyConfigStore,
 )
 from portfolio.store import PositionStore
+from pydantic import BaseModel, Field
+
+from api.auth import require_user
+from api.deps import get_position_store, get_strategy_config_store
 
 router = APIRouter()
 

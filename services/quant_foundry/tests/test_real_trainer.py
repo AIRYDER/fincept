@@ -594,7 +594,7 @@ def test_real_trainer_meta_labeling(tmp_path: Path) -> None:
         task_spec=task_spec,
     )
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     # The dossier must record meta-model metrics.
     assert dossier.metadata.get("has_meta_model") == "True"
@@ -630,7 +630,7 @@ def test_model_spec_meta_label_requires_barrier() -> None:
             label_column="label",
             meta_label_config={"side_column": "side"},
         )
-        assert False, "should have raised"
+        pytest.fail("should have raised")
     except ValueError as exc:
         assert "barrier_config" in str(exc)
 
@@ -642,7 +642,7 @@ def test_model_spec_meta_label_requires_barrier() -> None:
             barrier_config={"profit_take_width": 0.02, "stop_loss_width": 0.01, "horizon_bars": 10},
             meta_label_config={"side_column": "side"},
         )
-        assert False, "should have raised"
+        pytest.fail("should have raised")
     except ValueError as exc:
         assert "multiclass" in str(exc)
 
@@ -786,7 +786,7 @@ def test_real_trainer_saves_fold_checkpoints(tmp_path: Path) -> None:
         checkpoint_manager=mgr,
     )
     deadline_ns = time.time_ns() + 120 * 1_000_000_000
-    _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+    _artifact, _dossier = trainer.train(req, deadline_ns=deadline_ns)
 
     # Checkpoints must exist for each completed fold.
     completed = mgr.completed_folds()

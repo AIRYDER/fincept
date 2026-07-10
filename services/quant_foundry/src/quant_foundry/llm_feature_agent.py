@@ -680,7 +680,7 @@ class LLMFeatureAgent:
         provider = model_spec.provider
         if provider == "openai":
             try:
-                import openai  # noqa: F401
+                import openai  # noqa: F401 - availability check
             except ImportError as exc:  # pragma: no cover - exercised in prod
                 raise ValueError("openai SDK is not installed; cannot call LLM") from exc
             # Real call would go here; tests inject a mock instead.
@@ -689,7 +689,7 @@ class LLMFeatureAgent:
             )
         if provider == "anthropic":
             try:
-                import anthropic  # noqa: F401
+                import anthropic  # noqa: F401 - availability check
             except ImportError as exc:  # pragma: no cover
                 raise ValueError("anthropic SDK is not installed; cannot call LLM") from exc
             raise ValueError(

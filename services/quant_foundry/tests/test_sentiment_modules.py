@@ -96,8 +96,8 @@ def test_finbert_raises_on_missing_deps_at_score_time() -> None:
     # If transformers/torch are not installed, this should raise ImportError.
     # If they ARE installed (e.g. on RunPod), this should succeed.
     try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
+        import torch  # noqa: F401 - availability check
+        import transformers  # noqa: F401 - availability check
 
         # Heavy deps available — skip this test (it would try to load the model)
         pytest.skip("transformers+torch installed — model load test requires GPU")

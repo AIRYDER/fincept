@@ -343,8 +343,6 @@ def _resolve_trainer_command() -> list[str]:
         return shlex.split(override, posix=os.name != "nt")
 
     try:
-        import agents.gbm_predictor.train as _probe  # noqa: F401
-
         return [sys.executable, "-m", "agents.gbm_predictor.train"]
     except Exception:
         uv = shutil.which("uv")

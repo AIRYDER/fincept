@@ -25,10 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from redis.asyncio import Redis
-
-from api.auth import require_user
-from api.deps import get_redis
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_ALERTS
 from fincept_core.clock import now_ns
@@ -36,6 +32,10 @@ from fincept_core.events import Event
 from fincept_core.heartbeat import read_all
 from fincept_core.ids import new_id
 from fincept_core.schemas import AlertEvent
+from redis.asyncio import Redis
+
+from api.auth import require_user
+from api.deps import get_redis
 
 router = APIRouter()
 

@@ -19,6 +19,8 @@ from typing import Any
 
 import fakeredis.aioredis
 from httpx import AsyncClient
+from oms.alpaca.marks import write_mark
+from oms.alpaca.news_sync import NEWS_INDEX_KEY, _article_key
 
 from api.routes.news import (
     ADVERSE_BOOST,
@@ -28,8 +30,6 @@ from api.routes.news import (
     _book_equity_usd,
     _score,
 )
-from oms.alpaca.marks import write_mark
-from oms.alpaca.news_sync import NEWS_INDEX_KEY, _article_key
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #

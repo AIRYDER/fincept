@@ -21,11 +21,11 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fincept_bus.streams import STREAM_SIG_REGIME
 from redis.asyncio import Redis
 
 from api.auth import require_user
 from api.deps import get_redis
-from fincept_bus.streams import STREAM_SIG_REGIME
 
 router = APIRouter()
 

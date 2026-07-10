@@ -890,7 +890,7 @@ class RealLightGBMTrainer:
             os.close(fd)  # close fd; urlretrieve will write to the path
             tmp_path = Path(tmp_name)
             try:
-                urllib.request.urlretrieve(ref, str(tmp_path))
+                urllib.request.urlretrieve(ref, str(tmp_path))  # noqa: S310 - operator-provided dataset URL
             except Exception as exc:
                 raise TrainingFailure(
                     error_code="dataset_download_failed",
@@ -2066,11 +2066,11 @@ class RealLightGBMTrainer:
 
         try:
             from fincept_core.datasets import make_cpcv_folds as _make_cpcv_folds
-        except ImportError:
+        except ImportError as exc:
             raise TrainingFailure(
                 error_code="missing_dependency",
                 error_summary="fincept_core.datasets.cv.make_cpcv_folds not available",
-            )
+            ) from exc
 
         params = self._build_lgb_params(seed, req)
         n_estimators = self._get_n_estimators(req)

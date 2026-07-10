@@ -212,7 +212,7 @@ class ModelLoader:
 
             with open(path, "rb") as fh:
                 # The trainer produces this trusted model artifact; never load user bytes here.
-                booster = pickle.load(fh)  # noqa: S301
+                booster = pickle.load(fh)
             if not isinstance(booster, lgb.Booster):
                 raise RuntimeError(
                     f"pickle did not contain a lightgbm.Booster (got {type(booster)!r})"

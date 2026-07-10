@@ -11,10 +11,9 @@ import fakeredis.aioredis
 import numpy as np
 import pytest
 import pytest_asyncio
-from redis.asyncio import Redis
-
 from features.store import OnlineStore
 from fincept_core.schemas import FeatureFrame, Prediction
+from redis.asyncio import Redis
 
 from agents.gbm_predictor.features import FEATURES
 from agents.gbm_predictor.infer import GBMPredictor

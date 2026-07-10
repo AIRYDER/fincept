@@ -17,7 +17,6 @@ import pathlib
 
 import pytest
 from httpx import AsyncClient
-
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.ids import make_idempotency_key
 from quant_foundry.signatures import sign_callback

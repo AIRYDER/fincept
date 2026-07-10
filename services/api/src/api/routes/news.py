@@ -56,14 +56,14 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from redis.asyncio import Redis
-
-from api.auth import require_user
-from api.deps import get_position_store, get_redis
 from fincept_core.clock import now_ns
 from oms.alpaca.marks import read_marks
 from oms.alpaca.news_sync import NEWS_INDEX_KEY, _article_key
 from portfolio.store import PositionStore
+from redis.asyncio import Redis
+
+from api.auth import require_user
+from api.deps import get_position_store, get_redis
 
 router = APIRouter()
 
@@ -366,7 +366,7 @@ async def list_news(
 
     # Score-desc on alert + impact lanes.  Stories without impact math
     # naturally fall to the bottom because their score is 0.
-    score_key = lambda a: (a["score"], int(a.get("ts_event_ns", 0)))  # noqa: E731
+    score_key = lambda a: (a["score"], int(a.get("ts_event_ns", 0)))
     alert.sort(key=score_key, reverse=True)
     impact.sort(key=score_key, reverse=True)
 

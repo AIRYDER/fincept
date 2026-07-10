@@ -192,7 +192,7 @@ class TestRealTrainerInferenceE2E:
         from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
 
         # --- Step 1: Create a small synthetic dataset with signal ---
-        data_path, X, y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path, X, _y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
         assert data_path.exists()
 
         # --- Step 2: Dataset is written (CSV; pyarrow/pandas not required) ---
@@ -372,7 +372,7 @@ class TestDeterminism:
         from quant_foundry.real_trainer import RealLightGBMTrainer
         from quant_foundry.schemas import RunPodInferenceRequest
 
-        data_path, X, y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path, X, _y = _make_synthetic_dataset(tmp_path, n=300, seed=42)
         req = _make_training_request("qf:det:pred:1", data_path.as_uri(), seed=42)
         trainer = RealLightGBMTrainer()
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
@@ -413,8 +413,8 @@ class TestDeterminism:
         from quant_foundry.schemas import RunPodInferenceRequest
 
         # Two datasets with different seeds -> different signal.
-        data_path_a, X_a, y_a = _make_synthetic_dataset(tmp_path, n=300, seed=42)
-        data_path_b, X_b, y_b = _make_synthetic_dataset(tmp_path / "alt", n=300, seed=99)
+        data_path_a, X_a, _y_a = _make_synthetic_dataset(tmp_path, n=300, seed=42)
+        data_path_b, _X_b, _y_b = _make_synthetic_dataset(tmp_path / "alt", n=300, seed=99)
 
         req_a = _make_training_request("qf:diff:1", data_path_a.as_uri(), seed=42)
         req_b = _make_training_request("qf:diff:2", data_path_b.as_uri(), seed=99)
@@ -786,7 +786,7 @@ class TestMetaLabeledBundleE2E:
         from quant_foundry.training_manifest import ModelTaskSpec
 
         # --- Train a meta-labeled model ---
-        data_path, X, y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+        data_path, X, _y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
         req = _make_training_request(
             "qf:e2e:meta:bundle:1",
             data_path.as_uri(),
@@ -817,7 +817,7 @@ class TestMetaLabeledBundleE2E:
             task_spec=task_spec,
         )
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
-        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+        artifact, _dossier = trainer.train(req, deadline_ns=deadline_ns)
 
         # --- Verify the artifact is a ModelBundle v1 ---
         model_bytes = trainer.last_model_bytes
@@ -890,7 +890,7 @@ class TestMetaLabeledBundleE2E:
         from quant_foundry.schemas import Authority, RunPodInferenceRequest
         from quant_foundry.training_manifest import ModelTaskSpec
 
-        data_path, X, y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+        data_path, X, _y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
         req = _make_training_request(
             "qf:e2e:meta:infer:1",
             data_path.as_uri(),

@@ -51,9 +51,9 @@ from typing import Any
 import lightgbm as lgb
 import numpy as np
 import polars as pl
+from fincept_core.datasets import ArtifactManifest, make_folds
 
 from agents.gbm_predictor.features import FEATURES, _compute_feature_schema_hash
-from fincept_core.datasets import ArtifactManifest, make_folds
 
 
 def build_dataset(
@@ -547,8 +547,8 @@ def create_dossier(
 
     # Try to build a proper DossierRecord via quant_foundry.
     try:
-        from quant_foundry.dossier import DossierBuilder, DossierStatus
         from quant_foundry.artifacts import ArtifactRecord
+        from quant_foundry.dossier import DossierBuilder, DossierStatus
 
         artifact = ArtifactRecord(
             artifact_id=artifact_id,

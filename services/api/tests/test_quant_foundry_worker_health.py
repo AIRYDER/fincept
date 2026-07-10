@@ -25,7 +25,6 @@ import time
 
 import pytest
 from httpx import AsyncClient
-
 from quant_foundry.gateway import QuantFoundryGateway
 
 

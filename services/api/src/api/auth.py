@@ -17,7 +17,6 @@ from typing import Any
 
 import jwt
 from fastapi import Header, HTTPException, status
-
 from fincept_core.config import get_settings
 
 

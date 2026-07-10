@@ -4,11 +4,9 @@ import argparse
 import asyncio
 import contextlib
 import os
-from pathlib import Path
 import signal
+from pathlib import Path
 from typing import Any, cast
-
-from redis.asyncio import Redis
 
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
@@ -27,6 +25,7 @@ from news_impact_model.analogs import HistoricalAnalogIndex
 from news_impact_model.data import load_historical_outcomes
 from news_impact_model.model import NewsImpactModel
 from news_impact_model.schema import MarketContext, NewsEvent
+from redis.asyncio import Redis
 
 ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_HISTORY_PATH = (

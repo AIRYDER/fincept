@@ -8,6 +8,14 @@ from __future__ import annotations
 
 import time
 
+from helpers.product_loop_helpers import (
+    _MODEL_ID,
+    _dispatch_and_callback,
+    _FakeSettlementLedger,
+    _make_engine,
+    _make_gateway,
+    _make_settlement_record,
+)
 from quant_foundry.auto_tournament import (
     AutoTournamentConsumer,
 )
@@ -21,14 +29,6 @@ from quant_foundry.tournament import Tournament
 from quant_foundry.tournament_sweep import TournamentSweep
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from helpers.product_loop_helpers import (
-    _FakeSettlementLedger,
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _make_engine,
-    _make_gateway,
-    _make_settlement_record,
-)
 
 from fincept_db.registry_tables import ModelMetricRow
 
@@ -272,7 +272,7 @@ class TestAutoTournamentConsumer:
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         # Create two versions under the same model.
-        v1 = _dispatch_and_callback(
+        _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -280,7 +280,7 @@ class TestAutoTournamentConsumer:
             artifact_id="artifact:tourn:multi:1",
             sha256="f" * 64,
         )
-        v2 = _dispatch_and_callback(
+        _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -371,7 +371,7 @@ class TestAutoTournamentConsumer:
 
         try:
             receipt.scored = 999
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except Exception:
             pass  # expected — frozen model
         engine.dispose()

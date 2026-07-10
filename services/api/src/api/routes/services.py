@@ -13,11 +13,11 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from fincept_core.heartbeat import DEFAULT_TTL_SEC, read_all
 from redis.asyncio import Redis
 
 from api.auth import require_user
 from api.deps import get_redis
-from fincept_core.heartbeat import DEFAULT_TTL_SEC, read_all
 
 router = APIRouter()
 

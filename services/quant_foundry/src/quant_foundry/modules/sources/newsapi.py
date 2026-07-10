@@ -32,8 +32,8 @@ DEFAULT_MAX_PAGES = 5
 DEFAULT_PAGE_DELAY = 1.0
 
 # Reuse the event-type classifier from the news-impact-model experiment.
-import pathlib
-import sys
+import pathlib  # noqa: E402
+import sys  # noqa: E402
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[6]
 _NEWS_SRC = _REPO_ROOT / "experiments" / "news-impact-model" / "src"

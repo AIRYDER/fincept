@@ -39,8 +39,9 @@ def patched_training_with_roots(
     """
     import sys
 
-    from api.training import reset_store
     from fincept_core.datasets import ApprovedRoots
+
+    from api.training import reset_store
 
     # Build a stub trainer script (same shape as test_training.py).
     script = tmp_path / "stub_trainer.py"

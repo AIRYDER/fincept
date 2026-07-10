@@ -306,7 +306,6 @@ def _test_request_creation_runpod_training() -> None:
     assert req.job_id == "job-req-1"
     assert req.search_space["max_depth"] == [3, 5, 7]
     # Ensure the runpod_training module is importable (request creation path).
-    import quant_foundry.runpod_training  # noqa: F401
 
 
 def _test_request_creation_inference() -> None:

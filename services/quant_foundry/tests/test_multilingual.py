@@ -432,8 +432,8 @@ def test_finbert_english_uses_finbert_path() -> None:
     from quant_foundry.modules.sentiment.finbert import FinBERTSentiment
 
     try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
+        import torch  # noqa: F401 - availability check
+        import transformers  # noqa: F401 - availability check
 
         pytest.skip("transformers+torch installed — model load test requires GPU")
     except ImportError:

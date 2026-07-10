@@ -1177,7 +1177,7 @@ class StackedEnsemble:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"meta-learner artifact not found: {path!r}")
         with open(path, "rb") as fh:
-            return pickle.load(fh)  # noqa: S301
+            return pickle.load(fh)
 
     # -- manifest save / load --------------------------------------------
 

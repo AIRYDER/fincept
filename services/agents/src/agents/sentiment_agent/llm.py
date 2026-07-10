@@ -147,7 +147,7 @@ def is_unrecoverable_provider_error(exc: BaseException) -> bool:
     body_text = ""
     try:
         body_text = exc.response.text
-    except Exception:  # noqa: BLE001 - defensive: response may be closed
+    except Exception:
         return False
     lowered = body_text.lower()
     keywords = ("credit balance", "billing", "insufficient", "exceeded your")

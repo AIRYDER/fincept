@@ -6,9 +6,6 @@ import contextlib
 import signal
 from typing import Any
 
-from redis.asyncio import Redis
-
-from agents.sentiment_features.store import SentimentFeatureStore
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE, STREAM_SIG_SENT
@@ -18,6 +15,9 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import SentimentSignal
 from fincept_core.tracing import configure_tracing
+from redis.asyncio import Redis
+
+from agents.sentiment_features.store import SentimentFeatureStore
 
 log = get_logger(__name__)
 SERVICE_NAME = "sentiment_features"

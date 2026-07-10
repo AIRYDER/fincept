@@ -22,40 +22,50 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from redis.asyncio import Redis
-
-from api.background import AlpacaScheduler, NewsScheduler
-from api.approved_roots import register_approved_roots_handler
-from api.task_manager import TaskManager
-from api.settlements_poller import (
-    _poll_settlements_worker,
-    _settlements_worker_interval_seconds,
-)
-from api.routes import (
-    backtest as backtest_route,
-    control,
-    data,
-    health as health_route,
-    models as models_route,
-    news,
-    news_impact,
-    orders,
-    positions,
-    regime as regime_route,
-    research,
-    services as services_route,
-    strategies,
-)
-from api.routes import quant_foundry as quant_foundry_route
-from api.routes import quant_foundry_alpha as quant_foundry_alpha_route
-from api.routes import modules as modules_route
-from api.ws import router as ws_router
-from fincept_core.heartbeat import beat_periodically
 from fincept_core.config import assert_safe_for_runtime, get_settings
+from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.tracing import configure_tracing
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.registry_db import ModelRegistryDB
+from redis.asyncio import Redis
+
+from api.approved_roots import register_approved_roots_handler
+from api.background import AlpacaScheduler, NewsScheduler
+from api.routes import (
+    backtest as backtest_route,
+)
+from api.routes import (
+    control,
+    data,
+    news,
+    news_impact,
+    orders,
+    positions,
+    research,
+    strategies,
+)
+from api.routes import (
+    health as health_route,
+)
+from api.routes import (
+    models as models_route,
+)
+from api.routes import modules as modules_route
+from api.routes import quant_foundry as quant_foundry_route
+from api.routes import quant_foundry_alpha as quant_foundry_alpha_route
+from api.routes import (
+    regime as regime_route,
+)
+from api.routes import (
+    services as services_route,
+)
+from api.settlements_poller import (
+    _poll_settlements_worker,
+    _settlements_worker_interval_seconds,
+)
+from api.task_manager import TaskManager
+from api.ws import router as ws_router
 
 API_VERSION = "0.1.0"
 
@@ -107,9 +117,9 @@ class RedisPredictionPublisher:
         Returns the Redis stream ID. Uses the same Event serialization as
         the async Producer so consumers see identical message format.
         """
-        from fincept_bus.streams import STREAM_SIG_PREDICT, RETENTION
-        from fincept_core.events import make_event, serialize
+        from fincept_bus.streams import RETENTION, STREAM_SIG_PREDICT
         from fincept_core.clock import now_ns
+        from fincept_core.events import make_event, serialize
         from fincept_core.ids import new_id
 
         event = make_event("prediction", prediction)

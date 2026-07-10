@@ -38,7 +38,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _HANDLER_DIR = str(_REPO_ROOT / "runpod" / "quant-foundry-training")
 
 try:
-    import optuna  # noqa: F401
+    import optuna  # noqa: F401 - availability check
 
     _HAS_OPTUNA = True
 except ImportError:

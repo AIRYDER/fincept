@@ -61,7 +61,6 @@ def _build_market_data_source() -> Any:
     code can monkeypatch this function without importing quant_foundry.
     """
     from quant_foundry.market_data_adapter import BarDataAdapter
-
     from settlements.market_data_bridge import make_async_market_data_source
 
     bar_adapter = BarDataAdapter()

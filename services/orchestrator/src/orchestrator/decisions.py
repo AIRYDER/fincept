@@ -47,8 +47,6 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
-from redis.asyncio import Redis
-
 from fincept_core.ids import new_id
 from fincept_core.logging import get_logger
 from fincept_core.schemas import (
@@ -59,6 +57,7 @@ from fincept_core.schemas import (
     TimeInForce,
     Venue,
 )
+from redis.asyncio import Redis
 
 log = get_logger(__name__)
 

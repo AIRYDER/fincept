@@ -6,9 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-
 from fincept_core.events import Event
 from fincept_core.schemas import Prediction, SentimentSignal
+
 from orchestrator.main import (
     SENTIMENT_HORIZON_NS,
     _make_sentiment_handler,

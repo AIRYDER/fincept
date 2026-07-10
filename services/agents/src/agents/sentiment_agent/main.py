@@ -38,10 +38,6 @@ import signal
 from typing import Any
 
 import httpx
-from redis.asyncio import Redis
-
-from agents.sentiment_agent.llm import LLMRouter, pick_providers
-from agents.sentiment_agent.news import Article, fetch_articles, query_for_symbol
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_INFO_ENRICHED, STREAM_SIG_SENT
@@ -52,6 +48,10 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import InformationEvent, SentimentSignal
 from fincept_core.tracing import configure_tracing
+from redis.asyncio import Redis
+
+from agents.sentiment_agent.llm import LLMRouter, pick_providers
+from agents.sentiment_agent.news import Article, fetch_articles, query_for_symbol
 
 log = get_logger(__name__)
 

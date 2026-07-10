@@ -6,21 +6,19 @@ from real settled shadow predictions in the SettlementLedger.
 
 from __future__ import annotations
 
-import time
-
-from quant_foundry.champion_challenger import ComparisonInput
-from quant_foundry.outcomes import SettlementRecord, SettlementStatus
-from quant_foundry.promotion import PromotionGate
-from quant_foundry.registry_db import ModelRegistryDB
-from quant_foundry.settlement_provider import SettledComparisonInputProvider
 from helpers.product_loop_helpers import (
     _MODEL_ID,
     _dispatch_and_callback,
+    _FakeSettlementLedger,
     _make_engine,
     _make_gateway,
     _make_settlement_record,
-    _FakeSettlementLedger,
 )
+from quant_foundry.champion_challenger import ComparisonInput
+from quant_foundry.outcomes import SettlementStatus
+from quant_foundry.promotion import PromotionGate
+from quant_foundry.registry_db import ModelRegistryDB
+from quant_foundry.settlement_provider import SettledComparisonInputProvider
 
 # --------------------------------------------------------------------------- #
 # Tests: SettledComparisonInputProvider                                       #

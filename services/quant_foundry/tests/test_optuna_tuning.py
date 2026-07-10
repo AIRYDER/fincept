@@ -48,7 +48,7 @@ from quant_foundry.optuna_tuning import (
 )
 
 try:
-    import optuna  # noqa: F401
+    import optuna  # noqa: F401 - availability check
 
     _HAS_OPTUNA = True
 except ImportError:

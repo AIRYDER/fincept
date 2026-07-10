@@ -13,6 +13,6 @@ Tools:
                           raises NotInUniverse on miss
 """
 
-from fincept_tools.data import tools as _tools  # noqa: F401 — import for side-effects
+from fincept_tools.data import tools as _tools  # noqa: F401 - re-export
 
 __all__: list[str] = []

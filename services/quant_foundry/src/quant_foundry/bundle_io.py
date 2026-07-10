@@ -398,7 +398,7 @@ def _load_legacy_pickle(raw: bytes, bundle_sha256: str) -> ModelBundle:
       the pre-C1 trainer). We load it but wrap it in a synthetic manifest.
     """
     try:
-        obj = pickle.loads(raw)  # noqa: S301 — trusted trainer artifact
+        obj = pickle.loads(raw)
     except Exception as exc:
         raise BundleLoadError(f"legacy pickle load failed: {exc}") from exc
 
@@ -517,7 +517,7 @@ def _load_zip_bundle(raw: bytes, bundle_sha256: str) -> ModelBundle:
                 )
             # Unpickle the member.
             try:
-                loaded_members[member_name] = pickle.loads(member_bytes)  # noqa: S301
+                loaded_members[member_name] = pickle.loads(member_bytes)
             except Exception as exc:
                 raise BundleLoadError(f"failed to unpickle member {member_name!r}: {exc}") from exc
 

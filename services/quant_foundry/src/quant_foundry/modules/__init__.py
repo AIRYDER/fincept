@@ -80,7 +80,7 @@ def load_all_modules() -> None:
     import quant_foundry.modules.price_join
     import quant_foundry.modules.sentiment
     import quant_foundry.modules.sources
-    import quant_foundry.modules.universe  # noqa: F401
+    import quant_foundry.modules.universe  # noqa: F401 - side-effect import (module registration)
 
 
 # Lazy import of DatasetComposer to avoid circular imports at module level.

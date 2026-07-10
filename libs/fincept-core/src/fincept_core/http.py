@@ -74,7 +74,7 @@ def _backoff_sleep_s(attempt: int) -> float:
     base = min(DEFAULT_BASE_SLEEP_S * (2 ** (attempt - 1)), DEFAULT_MAX_SLEEP_S)
     # S311: random.uniform is fine for jitter; we don't need crypto-grade
     # randomness for "wait a few extra ms before retrying".
-    return float(base + random.uniform(0.0, DEFAULT_JITTER_S))  # noqa: S311
+    return float(base + random.uniform(0.0, DEFAULT_JITTER_S))  # noqa: S311 - jitter, not crypto
 
 
 async def http_request(

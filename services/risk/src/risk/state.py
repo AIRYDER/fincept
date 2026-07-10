@@ -35,10 +35,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from redis.asyncio import Redis
-
 from fincept_core.logging import get_logger
 from fincept_core.schemas import AlertEvent
+from redis.asyncio import Redis
 
 log = get_logger(__name__)
 

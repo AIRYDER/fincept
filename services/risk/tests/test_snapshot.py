@@ -6,10 +6,9 @@ from decimal import Decimal
 
 import fakeredis.aioredis
 import pytest_asyncio
-from redis.asyncio import Redis
-
 from fincept_core.schemas import Position
 from portfolio.store import PositionStore
+from redis.asyncio import Redis
 
 from risk.snapshot import build_context
 from risk.state import KillSwitchState

@@ -17,9 +17,8 @@ from typing import Any
 import fakeredis.aioredis
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from fincept_core.config import Settings
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture(autouse=True)

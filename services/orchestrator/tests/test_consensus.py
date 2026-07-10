@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fincept_core.schemas import Prediction
+
 from orchestrator.consensus import ConsensusBuilder
 
 

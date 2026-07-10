@@ -261,8 +261,6 @@ class TestRunDeterminismGate:
             )
 
         monkeypatch.setattr(DeterminismProofRunner, "run", mock_run)
-        # Use a minimal recipe so it doesn't try to generate a dataset
-        rc = DeterminismProofRunner.__new__(DeterminismProofRunner)
         # Call the module-level function directly
         from quant_foundry.determinism_proof import run_determinism_gate
 

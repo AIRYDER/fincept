@@ -17,11 +17,11 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
+from news_impact_model.data import load_historical_outcomes
+from news_impact_model.workbench import WorkbenchState
 from pydantic import BaseModel, Field
 
 from api.auth import require_user
-from news_impact_model.data import load_historical_outcomes
-from news_impact_model.workbench import WorkbenchState
 
 ROOT = Path(__file__).resolve().parents[5]
 EXPERIMENT_ROOT = ROOT / "experiments" / "news-impact-model"
@@ -98,7 +98,7 @@ async def predict(
             top_k=body.top_k,
             weights=body.weights,
         )
-    except Exception as exc:  # noqa: BLE001 - API boundary for experiment.
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "prediction": prediction,
@@ -119,7 +119,7 @@ async def optimize(
             min_train_events=body.min_train_events,
             top_k=body.top_k,
         )
-    except Exception as exc:  # noqa: BLE001 - API boundary for experiment.
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "optimization": optimization,

@@ -190,7 +190,7 @@ def _load_pickle_or_joblib(path: str) -> Any:
     except ImportError:
         pass
     with open(path, "rb") as fh:
-        return pickle.load(fh)  # noqa: S301
+        return pickle.load(fh)
 
 
 # ---------------------------------------------------------------------------

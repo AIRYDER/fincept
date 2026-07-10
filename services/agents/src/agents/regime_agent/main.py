@@ -32,6 +32,15 @@ import signal
 from typing import Any
 
 import httpx
+from fincept_bus.producer import Producer
+from fincept_bus.streams import STREAM_SIG_REGIME
+from fincept_core.clock import now_ns
+from fincept_core.config import assert_safe_for_runtime, get_settings
+from fincept_core.events import Event
+from fincept_core.heartbeat import beat_periodically
+from fincept_core.logging import configure_logging, get_logger
+from fincept_core.schemas import RegimeSignal
+from fincept_core.tracing import configure_tracing
 from redis.asyncio import Redis
 
 from agents.regime_agent.fred import latest_value
@@ -43,15 +52,6 @@ from agents.regime_agent.rules import (
     RegimeView,
     classify,
 )
-from fincept_bus.producer import Producer
-from fincept_bus.streams import STREAM_SIG_REGIME
-from fincept_core.clock import now_ns
-from fincept_core.config import assert_safe_for_runtime, get_settings
-from fincept_core.events import Event
-from fincept_core.heartbeat import beat_periodically
-from fincept_core.logging import configure_logging, get_logger
-from fincept_core.schemas import RegimeSignal
-from fincept_core.tracing import configure_tracing
 
 log = get_logger(__name__)
 

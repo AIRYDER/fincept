@@ -47,23 +47,20 @@ import pathlib
 import signal
 from typing import Any, cast
 
-from redis.asyncio import Redis
-
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_SIG_PREDICT
 from fincept_core.config import assert_safe_for_runtime, get_settings
+from fincept_core.datasets import FeatureRow, FeatureSnapshot, FeatureSnapshotStore
 from fincept_core.events import Event
 from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
+from fincept_core.prediction_log import PredictionLog, PredictionRow, _validate_agent_id
 from fincept_core.schemas import Prediction
 from fincept_core.tracing import configure_tracing
+from redis.asyncio import Redis
 
-from fincept_core.prediction_log import PredictionLog, PredictionRow, _validate_agent_id
-
-from fincept_core.datasets import FeatureRow, FeatureSnapshot, FeatureSnapshotStore
-
-from agents.gbm_predictor.infer import GBMPredictor
 from agents.gbm_predictor.features import _compute_feature_schema_hash
+from agents.gbm_predictor.infer import GBMPredictor
 
 log = get_logger(__name__)
 
@@ -622,7 +619,7 @@ async def _publish_loop(
                         defaulted=list(health.defaulted),
                         aliased=list(health.aliased),
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     # Best-effort: a broken health sidecar must never
                     # stop predictions from being published/recorded.
                     log.warning(
@@ -658,7 +655,7 @@ async def _publish_loop(
                         snapshot,
                         agent_id=event_payload.agent_id,
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     # Best-effort: a broken snapshot store must never
                     # stop predictions from being published/recorded.
                     log.warning(
@@ -734,7 +731,7 @@ async def _shadow_loop(
                         snapshot,
                         agent_id=event_payload.agent_id,
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning(
                         "feature_snapshot_write_failed",
                         agent_id=event_payload.agent_id,

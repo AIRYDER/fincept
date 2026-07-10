@@ -55,7 +55,34 @@ addopts = "-ra --strict-markers"
 # B008: function call in argument default.  Every FastAPI route uses
 # Depends/Body/Query as defaults — canonical pattern, well-known
 # B008 false-positive.
-ignore = ["B008"]
+#
+# NOTE: this config overrides the root `ruff.toml` for files under
+# services/api/. The deferred-style-rule ignores below mirror the root
+# config so CI behaviour is consistent across the workspace.
+ignore = [
+    "B008",   # function call in argument default (FastAPI Depends/Body/Query)
+    "SIM108", # if-else-block-instead-of-if-exp (style preference)
+    "RUF001", # ambiguous-unicode-character-string (intentional Greek letters in math)
+    "SIM102", # collapsible-if (style preference)
+    "SIM117", # multiple-with-statements (style preference)
+    "RUF002", # ambiguous-unicode-character-docstring (intentional Greek letters)
+    "S110",   # try-except-pass (context-dependent, may be intentional)
+    "SIM103", # needless-bool (style preference)
+    "T201",   # print (scripts/CLI tools use print intentionally)
+    "RUF043", # pytest-raises-ambiguous-pattern (test-specific)
+    "SIM105", # suppressible-exception (style preference)
+    "E741",   # ambiguous-variable-name (math contexts: n, i, l, etc.)
+    "RUF005", # collection-literal-concatenation (style preference)
+    "SIM118", # in-dict-keys (style preference)
+    "RUF003", # ambiguous-unicode-character-comment (intentional)
+    "S112",   # try-except-continue (context-dependent, may be intentional)
+    "S607",   # start-process-with-partial-path (scripts may use partial paths)
+    "E731",   # lambda-assignment (style preference)
+    "RUF015", # unnecessary-iterable-allocation-for-first-element (style)
+    "UP042",  # replace-str-enum (requires API changes to migrate to StrEnum)
+    "ASYNC251", # blocking-sleep-in-async-function (context-dependent)
+    "RUF012", # mutable-class-default (requires API changes to refactor)
+]
 
 [tool.ruff.lint.per-file-ignores]
 # training.py dispatches the quant-foundry training subprocess intentionally.

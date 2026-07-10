@@ -813,7 +813,7 @@ class XGBoostTrainer:
         if self._model is None:
             raise RuntimeError("save_artifact() called before train(); no model to save")
         try:
-            import xgboost as xgb  # noqa: F401
+            import xgboost as xgb  # noqa: F401 - availability check
         except ImportError as exc:
             raise ImportError(
                 f"saving an XGBoost artifact requires the 'xgboost' package; missing: {exc.name}"

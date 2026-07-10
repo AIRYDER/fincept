@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 
 import pytest
-from httpx import AsyncClient
-
 from fincept_db.provider_data import (
     build_exa_record,
     build_openbb_call_record,
     build_openbb_quote_record,
 )
+from httpx import AsyncClient
 
 
 def test_build_exa_record_normalizes_research_brief() -> None:

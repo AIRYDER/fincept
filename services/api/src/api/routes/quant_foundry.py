@@ -29,17 +29,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict
-
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from api.auth import require_user
 from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
+from pydantic import BaseModel, ConfigDict
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outbox import JobStatus
 from quant_foundry.registry_db import ModelRegistryDB
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from api.auth import require_user
 
 router = APIRouter()
 

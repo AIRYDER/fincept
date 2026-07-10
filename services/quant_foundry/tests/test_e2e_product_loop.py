@@ -25,8 +25,8 @@ callback + observability + registry tables, constructs the gateway with
 from __future__ import annotations
 
 import time
-from typing import Any
 
+from helpers.product_loop_helpers import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.cost_tracker import CostTracker
 from quant_foundry.dataset_manifest import DatasetRegistry
@@ -42,22 +42,15 @@ from quant_foundry.schemas import (
     RunPodCallbackEnvelope,
 )
 from quant_foundry.signatures import sign_callback
-from sqlalchemy import create_engine, select
-from sqlalchemy import event as sa_event
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from fincept_db.callback_tables import (
     ArtifactManifestRow,
-    CallbackDlqRow,
-    CallbackMetricRow,
     CallbackReceiptRow,
     ModelDossierRow,
 )
-from fincept_db.models import Base
 from fincept_db.observability import (
-    CostSummaryRow,
-    JobCostEventRow,
-    JobMetricRow,
     TrainingJobRow,
 )
 from fincept_db.registry_tables import (
@@ -68,8 +61,6 @@ from fincept_db.registry_tables import (
     PromotionRow,
     ShadowEvaluationRow,
 )
-
-from helpers.product_loop_helpers import _make_engine, _MODEL_ID, _ARTIFACT_ID, _training_payload
 
 
 def _signed_training_callback(job_id: str, *, secret: str) -> tuple[bytes, str, int]:
@@ -450,14 +441,13 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
     # 4-7) model_versions auto-registered (same as Phase A).
     in_rec = gateway.inbox.get_by_job_id(job_id)
     assert in_rec is not None
-    callback_receipt_id = in_rec.callback_id
+    callback_receipt_id = in_rec.callback_id  # noqa: F841
 
     with Session(engine) as session:
         dossier_row = session.scalars(
             select(ModelDossierRow).where(ModelDossierRow.model_id == _MODEL_ID)
         ).first()
         assert dossier_row is not None
-        dossier_content_hash = dossier_row.content_hash
 
         version_row = session.scalars(
             select(ModelVersionRow).where(ModelVersionRow.model_id == _MODEL_ID)

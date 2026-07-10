@@ -7,9 +7,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from redis.asyncio import Redis
-
 from fincept_core.schemas import FeatureFrame
+from redis.asyncio import Redis
 
 PENDING_ZSET = "news_alpha:pending_labels"
 EXAMPLE_KEY_TEMPLATE = "news_alpha:example:{example_id}"

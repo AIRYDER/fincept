@@ -33,7 +33,6 @@ from fincept_core.events import Event
 from fincept_core.logging import get_logger
 from fincept_core.schemas import Prediction, Venue
 from fincept_db import audit
-
 from oms.prices import LivePrices
 
 from orchestrator.allocator import target_notional

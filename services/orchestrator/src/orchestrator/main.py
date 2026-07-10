@@ -26,8 +26,6 @@ import signal
 from decimal import Decimal
 from typing import Any
 
-from redis.asyncio import Redis
-
 from fincept_bus.consumer import Consumer
 from fincept_bus.producer import Producer
 from fincept_bus.streams import (
@@ -42,8 +40,8 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import Prediction, RegimeSignal, SentimentSignal, TradeEvent
 from fincept_core.tracing import configure_tracing
-
 from oms.prices import LivePrices
+from redis.asyncio import Redis
 
 from orchestrator.consensus import ConsensusBuilder
 from orchestrator.decisions import TargetState

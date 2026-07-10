@@ -7,10 +7,9 @@ from typing import Any
 
 import fakeredis.aioredis
 import pytest_asyncio
-from redis.asyncio import Redis
-
 from features.store import OnlineStore
 from fincept_core.schemas import FeatureFrame
+from redis.asyncio import Redis
 
 from agents.gbm_predictor.features import FEATURES, load_live
 

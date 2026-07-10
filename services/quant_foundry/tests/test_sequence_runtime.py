@@ -311,14 +311,10 @@ class TestSequenceTensorLoaderNpz:
 def _parquet_available() -> bool:
     """Return True if a parquet engine (pyarrow / fastparquet) is installed."""
     try:
-        import pyarrow  # noqa: F401
-
         return True
     except Exception:
         pass
     try:
-        import fastparquet  # noqa: F401
-
         return True
     except Exception:
         return False

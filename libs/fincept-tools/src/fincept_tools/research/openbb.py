@@ -153,13 +153,13 @@ async def _get_json(
             raise ToolBackendError("OpenBB API HTTP URL must be local")
         if parsed_url.scheme not in {"http", "https"}:
             raise ToolBackendError("OpenBB API URL must use HTTP or HTTPS")
-        req = request.Request(  # noqa: S310
+        req = request.Request(  # noqa: S310 - HTTP/HTTPS-validated API URL
             full_url,
             headers={"Accept": "application/json", "User-Agent": "FinceptTerminal/0.1"},
             method="GET",
         )
         try:
-            with request.urlopen(req, timeout=request_timeout) as response:  # noqa: S310
+            with request.urlopen(req, timeout=request_timeout) as response:  # noqa: S310 - HTTP/HTTPS-validated API URL
                 response_body = response.read().decode("utf-8")
         except error.URLError as exc:
             raise OpenBBUnavailable(

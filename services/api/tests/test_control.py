@@ -5,9 +5,8 @@ from __future__ import annotations
 import time
 
 import fakeredis.aioredis
-from httpx import AsyncClient
-
 from fincept_bus.streams import STREAM_ALERTS
+from httpx import AsyncClient
 
 
 async def test_kill_switch_post_requires_auth(client: AsyncClient) -> None:

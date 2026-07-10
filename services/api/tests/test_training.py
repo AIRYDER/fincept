@@ -41,7 +41,6 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                   #
 # --------------------------------------------------------------------------- #
@@ -114,8 +113,9 @@ def patched_training(
     an approved dev root -- the approved-root gate (todo 6) would
     otherwise reject the tmp_path-based input files the tests create.
     """
-    from api.training import reset_store
     from fincept_core.datasets import ApprovedRoots
+
+    from api.training import reset_store
 
     runs_dir = tmp_path / "training_runs"
     models_dir = tmp_path / "models"

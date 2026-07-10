@@ -5,13 +5,13 @@ from typing import Any
 import fakeredis.aioredis
 import httpx
 import pytest
-
-from agents.sentiment_agent.llm import SentimentScore
-from agents.sentiment_agent.main import _info_seen_key, _process_information_event
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_SIG_SENT
 from fincept_core.events import deserialize
 from fincept_core.schemas import InformationEvent, SentimentSignal
+
+from agents.sentiment_agent.llm import SentimentScore
+from agents.sentiment_agent.main import _info_seen_key, _process_information_event
 
 
 class FakeRouter:

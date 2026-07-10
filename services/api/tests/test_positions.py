@@ -5,9 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import fakeredis.aioredis
-from httpx import AsyncClient
-
 from fincept_core.schemas import Position
+from httpx import AsyncClient
 from portfolio.store import PositionStore
 
 

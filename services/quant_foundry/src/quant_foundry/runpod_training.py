@@ -1104,7 +1104,7 @@ def _fetch_artifact_bytes(artifact_uri: str) -> bytes:
             ) from exc
     if scheme == "https":
         try:
-            req = Request(artifact_uri, method="GET")
+            req = Request(artifact_uri, method="GET")  # noqa: S310 - operator-provided URL
             with urlopen(req, timeout=120) as resp:  # noqa: S310 - operator-provided URL
                 status = getattr(resp, "status", None) or resp.getcode()
                 if status != 200:

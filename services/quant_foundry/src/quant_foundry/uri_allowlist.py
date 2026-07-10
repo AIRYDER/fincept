@@ -196,9 +196,9 @@ def is_localhost(host: str) -> bool:
     cleaned = host.strip().lower()
     if cleaned.startswith("[") and cleaned.endswith("]"):
         cleaned = cleaned[1:-1]
-    # noqa: S104 — "0.0.0.0" is a string literal in a URI-validation
+
     # host set (is_localhost predicate), not a bind-all-interfaces call.
-    return cleaned in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # noqa: S104
+    return cleaned in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # noqa: S104 - localhost predicate, not bind
 
 
 def is_private_ip(host: str) -> bool:

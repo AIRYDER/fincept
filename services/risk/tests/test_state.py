@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from fincept_core.schemas import AlertEvent
+
 from risk.state import KILL_SWITCH_STATE_KEY, KillSwitchState
 
 

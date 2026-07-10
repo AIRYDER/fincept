@@ -7,11 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from redis.asyncio import Redis
-
 from features.store import OnlineStore
 from fincept_core.clock import now_ns
 from fincept_core.schemas import FeatureFrame, SentimentSignal
+from redis.asyncio import Redis
 
 FREQ = "sentiment"
 SERVICE_TAG = "sentiment_features.v1"

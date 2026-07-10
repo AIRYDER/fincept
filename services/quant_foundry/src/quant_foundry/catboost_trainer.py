@@ -312,8 +312,6 @@ class CatBoostTrainer:
             return {}
         # CatBoost returns a numpy array; normalise to Python floats.
         try:
-            import numpy as _np  # noqa: F401
-
             vals = list(importances)
         except Exception:
             vals = list(importances)

@@ -20,7 +20,6 @@ import pathlib
 
 import pytest
 from httpx import AsyncClient
-
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.schemas import Authority, ShadowPrediction
 from quant_foundry.shadow_ledger import compute_batch_hash

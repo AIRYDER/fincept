@@ -8,14 +8,12 @@ from typing import Any
 
 import fakeredis.aioredis
 import pytest_asyncio
-from redis.asyncio import Redis
-
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_DECISIONS, STREAM_ORDERS
 from fincept_core.events import Event
 from fincept_core.schemas import Decision, OrderIntent, Prediction
-
 from oms.prices import LivePrices
+from redis.asyncio import Redis
 
 from orchestrator.consensus import ConsensusBuilder
 from orchestrator.decisions import TargetState

@@ -8,13 +8,6 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
-
-from api.auth import require_user
-from api.deps import get_redis
-from api.openbb_health_store import fetch_history, record_health, summarise
-from api.rate_limit import RateLimitExceeded, enforce_rate_limit
 from fincept_db.provider_data import (
     ProviderDataRecord,
     build_exa_record,
@@ -32,6 +25,13 @@ from fincept_tools.research.openbb import (
     check_openbb_health,
     check_openbb_readiness,
 )
+from pydantic import BaseModel, Field
+from redis.asyncio import Redis
+
+from api.auth import require_user
+from api.deps import get_redis
+from api.openbb_health_store import fetch_history, record_health, summarise
+from api.rate_limit import RateLimitExceeded, enforce_rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

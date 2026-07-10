@@ -38,11 +38,6 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from redis.asyncio import Redis
-
-from api.auth import require_user
-from api.deps import get_redis
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_ORDERS
 from fincept_core.clock import now_ns
@@ -59,6 +54,11 @@ from fincept_core.schemas import (
 )
 from fincept_db import audit
 from fincept_db.audit import list_recent_orders
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from redis.asyncio import Redis
+
+from api.auth import require_user
+from api.deps import get_redis
 
 router = APIRouter()
 log = get_logger(__name__)

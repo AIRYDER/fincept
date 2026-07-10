@@ -28,7 +28,6 @@ import time
 import fakeredis.aioredis
 from httpx import AsyncClient
 
-
 # --------------------------------------------------------------------------- #
 # Registry / allowlist                                                         #
 # --------------------------------------------------------------------------- #

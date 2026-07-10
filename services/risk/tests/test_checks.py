@@ -5,7 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-
 from fincept_core.config import Settings
 from fincept_core.schemas import (
     OrderIntent,
@@ -14,6 +13,7 @@ from fincept_core.schemas import (
     TimeInForce,
     Venue,
 )
+
 from risk.checks import RiskContext, check_intent
 
 

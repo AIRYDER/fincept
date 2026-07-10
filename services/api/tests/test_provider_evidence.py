@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import time
 
-
 from fincept_db.evidence_redaction import (
     RedactionResult,
     redact_dict,
@@ -28,7 +27,6 @@ from fincept_db.provider_receipts import (
     build_evidence_receipt,
     freshness_from_age_sec,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Redaction — string level                                                     #

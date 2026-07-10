@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import fakeredis.aioredis
 import pytest
-
-from agents.sentiment_features.main import GROUP_NAME, handle_sentiment_event
-from agents.sentiment_features.store import FREQ, SentimentFeatureStore
 from features.store import OnlineStore
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE
 from fincept_core.events import Event, deserialize
 from fincept_core.schemas import FeatureFrame, SentimentSignal
+
+from agents.sentiment_features.main import GROUP_NAME, handle_sentiment_event
+from agents.sentiment_features.store import FREQ, SentimentFeatureStore
 
 NS_PER_MIN = 60 * 1_000_000_000
 

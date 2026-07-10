@@ -27,8 +27,6 @@ from typing import Any
 
 import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from redis.asyncio import Redis
-
 from fincept_bus.streams import (
     STREAM_ALERTS,
     STREAM_FILLS,
@@ -37,6 +35,7 @@ from fincept_bus.streams import (
 )
 from fincept_core.config import get_settings
 from fincept_core.events import deserialize
+from redis.asyncio import Redis
 
 _log = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ async def stream(ws: WebSocket) -> None:
                     )
                     try:
                         event = deserialize(fields)
-                    except Exception:  # noqa: S112 - malformed events on the bus must skip silently; logging would spam.
+                    except Exception:
                         continue
                     await ws.send_json(
                         {

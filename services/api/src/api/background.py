@@ -21,8 +21,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from redis.asyncio import Redis
-
 from fincept_core.config import get_settings
 from fincept_core.logging import get_logger
 from oms.alpaca.news_sync import (
@@ -30,6 +28,7 @@ from oms.alpaca.news_sync import (
     sync_recent_news,
 )
 from oms.alpaca.sync_runner import sync_positions_and_marks
+from redis.asyncio import Redis
 
 log = get_logger(__name__)
 
@@ -80,7 +79,7 @@ class AlpacaScheduler:
                 log.info("alpaca.sync.ok", **summary)
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("alpaca.sync.error", error=str(exc))
             try:
                 await asyncio.sleep(self._interval)
@@ -162,7 +161,7 @@ class NewsScheduler:
                     log.info("news.refresh.ok", **summary)
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("news.sync.error", error=str(exc))
             self._tick += 1
             try:

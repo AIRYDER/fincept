@@ -891,7 +891,7 @@ class ManifestDatasetLoader:
         if hasattr(df, "columns"):
             try:
                 return [str(c) for c in df.columns]
-            except Exception:  # noqa: S110 - best-effort column extraction
+            except Exception:
                 pass
         # pyarrow Table.
         if hasattr(df, "column_names"):

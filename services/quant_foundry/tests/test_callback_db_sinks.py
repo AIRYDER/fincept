@@ -245,7 +245,7 @@ class TestDbDossierStore:
             row = session.scalars(session.query(ModelDossierRow).statement).first()
             row_dict = {c: getattr(row, c) for c in row.__table__.columns.keys()}
             # No column should contain "secret", "signature", or "password".
-            for key, val in row_dict.items():
+            for key, _ in row_dict.items():
                 assert "secret" not in key.lower(), f"secret column: {key}"
                 assert "signature" not in key.lower(), f"signature column: {key}"
                 assert "password" not in key.lower(), f"password column: {key}"
@@ -579,7 +579,7 @@ class TestCallbackProcessorWithDbSinks:
         )
         payload = envelope.model_dump_json().encode("utf-8")
         ts = int(time.time())
-        signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
+        sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
 
         # Receive the callback in the inbox.
         safe_id = job_id.replace(":", "_")
@@ -639,7 +639,7 @@ class TestCallbackProcessorWithDbSinks:
         )
         payload = envelope.model_dump_json().encode("utf-8")
         ts = int(time.time())
-        signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
+        sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
 
         # Receive the callback in the inbox.
         safe_id = job_id.replace(":", "_")
@@ -702,7 +702,7 @@ class TestCallbackProcessorWithDbSinks:
         )
         payload = envelope.model_dump_json().encode("utf-8")
         ts = int(time.time())
-        signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
+        sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
 
         safe_id = job_id.replace(":", "_")
         payload_ref = str(tmp_path / "payloads" / f"{safe_id}.bin")

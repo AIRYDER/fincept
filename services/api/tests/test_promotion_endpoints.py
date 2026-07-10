@@ -17,7 +17,6 @@ import time
 
 import pytest
 from httpx import AsyncClient
-
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outcomes import SettlementRecord, SettlementStatus

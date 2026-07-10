@@ -9,6 +9,7 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 import pytest
+from fincept_core.datasets import make_folds
 
 from agents.gbm_predictor.train import (
     build_dataset,
@@ -16,7 +17,6 @@ from agents.gbm_predictor.train import (
     train_booster,
     walk_forward_splits,
 )
-from fincept_core.datasets import make_folds
 
 
 def _synthetic_frame(rows: int = 1000, *, seed: int = 0) -> pl.DataFrame:

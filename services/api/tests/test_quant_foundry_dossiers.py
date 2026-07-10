@@ -11,7 +11,6 @@ import pathlib
 
 import pytest
 from httpx import AsyncClient
-
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 

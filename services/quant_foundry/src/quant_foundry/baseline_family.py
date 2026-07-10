@@ -366,7 +366,7 @@ class BaselineFamily:
         The edge metric is |AUC - 0.5| (AUC above chance). The sentinel
         flags if this exceeds the threshold (default 5%).
         """
-        rng = random.Random(self.config.seed + 1)  # noqa: S311 - statistical, not crypto
+        rng = random.Random(self.config.seed + 1)
         shuffled_labels = list(labels)
         rng.shuffle(shuffled_labels)
 
@@ -588,7 +588,7 @@ def train_baseline_family(
 # Helpers
 # ---------------------------------------------------------------------------
 
-import os  # noqa: E402 — needed for path joining in _package_artifact
+import os  # noqa: E402
 
 
 def model_to_bytes(model: lgb.Booster) -> bytes:

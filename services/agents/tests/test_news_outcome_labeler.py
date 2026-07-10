@@ -4,6 +4,8 @@ from decimal import Decimal
 
 import fakeredis.aioredis
 import pytest
+from fincept_core.events import Event
+from fincept_core.schemas import AssetClass, FeatureFrame, TradeEvent, Venue
 
 from agents.news_outcome_labeler.main import (
     handle_event,
@@ -11,8 +13,6 @@ from agents.news_outcome_labeler.main import (
     read_mark_at_or_after,
 )
 from agents.news_outcome_labeler.store import NewsOutcomeStore
-from fincept_core.events import Event
-from fincept_core.schemas import AssetClass, FeatureFrame, TradeEvent, Venue
 
 NS_PER_MIN = 60 * 1_000_000_000
 

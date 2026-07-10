@@ -76,6 +76,10 @@ markers = [
 # FastAPI route uses `Depends(...)`, `Body(...)`, `Query(...)` etc. as
 # defaults — the canonical pattern, and a well-known B008 false-positive
 # (the calls return immutable sentinels).
+#
+# NOTE: the active ruff configuration lives in `ruff.toml` at the repo
+# root, which takes precedence over this section.  Deferred-style-rule
+# ignores are recorded there (with per-rule rationale comments).
 ignore = ["B008"]
 
 [tool.coverage.run]

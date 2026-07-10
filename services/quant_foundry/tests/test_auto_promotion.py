@@ -14,43 +14,27 @@ from the e2e product loop tests.
 from __future__ import annotations
 
 import time
-from typing import Any
 
+from helpers.product_loop_helpers import (
+    _MODEL_ID,
+    _dispatch_and_callback,
+    _make_engine,
+    _make_gateway,
+)
 from quant_foundry.auto_promotion import (
     AutoPromotionOrchestrator,
     PromotionTarget,
 )
-from quant_foundry.budget import BudgetGuard
 from quant_foundry.champion_challenger import (
     ChampionChallengerConfig,
     ComparisonInput,
 )
-from quant_foundry.cost_tracker import CostTracker
 from quant_foundry.dossier import DossierStatus
-from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.promotion import (
     PromotionGate,
     ReviewDecision,
 )
 from quant_foundry.registry_db import ModelRegistryDB
-from quant_foundry.runpod_client import MockRunPodClient
-from quant_foundry.schemas import (
-    ArtifactManifest,
-    Authority,
-    ModelDossier,
-    RunPodCallbackEnvelope,
-)
-from quant_foundry.signatures import sign_callback
-
-from helpers.product_loop_helpers import (
-    _ARTIFACT_ID,
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _make_engine,
-    _make_gateway,
-    _signed_callback_with_artifact,
-    _training_payload,
-)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -304,7 +288,7 @@ class TestAutoPromotionRun:
             gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
-        version_id = _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
+        _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
 
         # Provider returns None → no comparison input → skipped.
         orchestrator = AutoPromotionOrchestrator(
@@ -463,6 +447,3 @@ class TestAutoPromotionWithChampion:
             assert len(eval_rows) >= 1
 
         engine.dispose()
-
-
-

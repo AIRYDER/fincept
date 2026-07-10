@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import pathlib
 import json
+import pathlib
 from typing import Any
 
 import pytest
+from fincept_core.schemas import FeatureFrame
 
 from agents.news_alpha_predictor.features import DEFAULT_FEATURES, extract_sentiment_row
 from agents.news_alpha_predictor.infer import NewsAlphaPredictor
 from agents.news_alpha_predictor.main import resolve_model_dir
-from fincept_core.schemas import FeatureFrame
 
 
 class FakeModel:

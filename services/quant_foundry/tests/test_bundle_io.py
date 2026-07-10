@@ -103,7 +103,7 @@ def _train_tiny_meta_model(
     import lightgbm as lgb
     import numpy as np
 
-    rng = np.random.RandomState(seed)
+    np.random.RandomState(seed)
     primary_preds = primary_model.predict(X)
     preds_arr = np.asarray(primary_preds, dtype=np.float64)
 
@@ -974,8 +974,7 @@ class TestDeterministicBytes:
 
         # Byte-for-byte equality.
         assert bytes_a == bytes_b, (
-            "write_bundle with identical inputs + fixed created_at_ns "
-            "must produce identical bytes"
+            "write_bundle with identical inputs + fixed created_at_ns must produce identical bytes"
         )
 
         # SHA-256 equality.

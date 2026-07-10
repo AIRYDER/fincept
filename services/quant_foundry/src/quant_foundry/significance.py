@@ -261,7 +261,7 @@ def stationary_bootstrap_pvalue(
     if n_bootstrap <= 0:
         raise ValueError("n_bootstrap must be positive")
 
-    rng = random.Random(seed)  # noqa: S311 - statistical bootstrap, not crypto
+    rng = random.Random(seed)
     if expected_block_len is None:
         expected_block_len = max(2, n // 10)
     p = 1.0 / max(expected_block_len, 1)

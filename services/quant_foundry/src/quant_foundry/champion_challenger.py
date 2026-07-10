@@ -203,7 +203,6 @@ def _paired_bootstrap_pvalue(
 
     # Paired differences
     diffs = [challenger_returns[i] - champion_returns[i] for i in range(n)]
-    observed_mean = _mean(diffs)
 
     rng = random.Random(seed)
     count_leq_zero = 0

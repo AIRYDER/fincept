@@ -27,8 +27,6 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-
 from fincept_core.datasets import (
     ApprovedRoots,
     FeatureSnapshotStore,
@@ -37,6 +35,7 @@ from fincept_core.datasets import (
     default_approved_roots,
 )
 from fincept_core.prediction_log import PredictionLog
+from pydantic import BaseModel, Field
 
 from api.auth import require_user
 from api.feature_importance import compute_feature_importance

@@ -7,10 +7,8 @@ from typing import Any
 
 import fakeredis.aioredis
 import pytest
-from httpx import AsyncClient
-
 from fincept_bus.streams import STREAM_ORDERS
-
+from httpx import AsyncClient
 
 # --------------------------------------------------------------------------- #
 # Shared helpers                                                              #

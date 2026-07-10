@@ -28,8 +28,6 @@ import pathlib
 import time
 
 import pytest
-from httpx import AsyncClient
-
 from fincept_core.datasets import (
     ArtifactManifest,
     FeatureRow,
@@ -42,7 +40,7 @@ from fincept_core.datasets.schema_compat import (
     assert_feature_schema_compatible,
 )
 from fincept_core.prediction_log import PredictionLog
-
+from httpx import AsyncClient
 
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                     #
@@ -323,7 +321,7 @@ async def test_golden_e2e_resume_endpoint(
     tmp_path: pathlib.Path,
 ) -> None:
     """A resumable_failed run can be resumed via POST /models/runs/{id}/resume."""
-    from api.training import TrainingRun, TrainingRequest, TrainingStore
+    from api.training import TrainingRequest, TrainingRun, TrainingStore
 
     # Create an isolated training store with a resumable_failed run.
     runs_dir = tmp_path / "training_runs"
@@ -394,7 +392,7 @@ async def test_golden_e2e_resume_rejects_completed(
     tmp_path: pathlib.Path,
 ) -> None:
     """Resume endpoint rejects a completed run with 409."""
-    from api.training import TrainingRun, TrainingRequest, TrainingStore
+    from api.training import TrainingRequest, TrainingRun, TrainingStore
 
     runs_dir = tmp_path / "training_runs"
     models_dir = tmp_path / "models"

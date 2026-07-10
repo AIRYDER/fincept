@@ -26,12 +26,11 @@ from typing import Any
 import fakeredis.aioredis
 import pytest
 import pytest_asyncio
-from redis.asyncio import Redis
-
 from features.store import OnlineStore
 from fincept_core.datasets import FeatureSnapshotStore
 from fincept_core.prediction_log import PredictionLog
 from fincept_core.schemas import FeatureFrame, Prediction
+from redis.asyncio import Redis
 
 from agents.gbm_predictor import main as gbm_main
 from agents.gbm_predictor.features import (
@@ -40,7 +39,6 @@ from agents.gbm_predictor.features import (
     _compute_feature_schema_hash,
     load_live,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Shared fixtures                                                             #

@@ -346,8 +346,8 @@ class SecurityPreflight:
             os.environ.get("TMPDIR", ""),
             os.environ.get("TEMP", ""),
             os.environ.get("TMP", ""),
-            "/tmp",
-            "/var/tmp",
+            "/tmp",  # noqa: S108 - probing standard temp dirs for writability
+            "/var/tmp",  # noqa: S108 - probing standard temp dirs for writability
         ]
         writable: list[str] = []
         for candidate in candidates:

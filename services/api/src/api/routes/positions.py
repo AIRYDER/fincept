@@ -22,12 +22,12 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from oms.alpaca.marks import read_marks
+from portfolio.store import PositionStore
 from redis.asyncio import Redis
 
 from api.auth import require_user
 from api.deps import get_position_store, get_redis
-from oms.alpaca.marks import read_marks
-from portfolio.store import PositionStore
 
 router = APIRouter()
 

@@ -43,7 +43,6 @@ from redis.asyncio import Redis
 
 from agents.gbm_predictor import main as gbm_main
 
-
 # --------------------------------------------------------------------------- #
 # Stub agent + helpers                                                       #
 # --------------------------------------------------------------------------- #

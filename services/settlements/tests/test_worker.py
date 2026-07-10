@@ -19,9 +19,9 @@ from __future__ import annotations
 import pathlib
 
 import pytest
-
 from fincept_core.datasets import SettlementStore
 from fincept_core.prediction_log import PredictionLog
+
 from settlements.worker import tick, tick_sync
 
 # --------------------------------------------------------------------------- #

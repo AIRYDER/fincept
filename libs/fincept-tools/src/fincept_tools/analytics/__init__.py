@@ -11,6 +11,6 @@ Tools:
   - analytics.compute_drawdown    — max peak-to-trough drawdown over a lookback
 """
 
-from fincept_tools.analytics import tools as _tools  # noqa: F401 — import for side-effects
+from fincept_tools.analytics import tools as _tools  # noqa: F401 - re-export
 
 __all__: list[str] = []

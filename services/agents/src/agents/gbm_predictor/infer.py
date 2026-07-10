@@ -26,14 +26,13 @@ from typing import Any
 
 import lightgbm as lgb
 import numpy as np
-from pydantic import BaseModel
-from redis.asyncio import Redis
-
 from features.store import OnlineStore
 from fincept_core.clock import now_ns
 from fincept_core.config import get_settings
 from fincept_core.logging import get_logger
 from fincept_core.schemas import Prediction
+from pydantic import BaseModel
+from redis.asyncio import Redis
 
 from agents.base import Agent
 from agents.gbm_predictor.features import (
@@ -175,7 +174,7 @@ class GBMPredictor(Agent):
 
         try:
             manifest = ArtifactManifest.model_validate_json(manifest_path.read_text())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning(
                 "gbm.schema_compat_skipped",
                 model_dir=str(self._model_dir),

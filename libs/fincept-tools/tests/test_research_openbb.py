@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-import fincept_tools.research  # noqa: F401 - registers research tools as a side-effect
 from fincept_tools.registry import REGISTRY
 
 

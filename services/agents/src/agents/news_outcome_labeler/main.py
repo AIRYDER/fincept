@@ -7,9 +7,6 @@ import signal
 from decimal import Decimal
 from typing import Any
 
-from redis.asyncio import Redis
-
-from agents.news_outcome_labeler.store import NewsOutcomeStore
 from fincept_bus.consumer import Consumer
 from fincept_bus.streams import STREAM_FEATURES_ONLINE, STREAM_MD_TRADES
 from fincept_core.clock import now_ns
@@ -19,6 +16,9 @@ from fincept_core.heartbeat import beat_periodically
 from fincept_core.logging import configure_logging, get_logger
 from fincept_core.schemas import FeatureFrame, TradeEvent
 from fincept_core.tracing import configure_tracing
+from redis.asyncio import Redis
+
+from agents.news_outcome_labeler.store import NewsOutcomeStore
 
 log = get_logger(__name__)
 SERVICE_NAME = "news_outcome_labeler"

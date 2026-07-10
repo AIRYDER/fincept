@@ -20,13 +20,14 @@ on startup and closes it on shutdown.
 from __future__ import annotations
 
 from fastapi import Request
-from redis.asyncio import Redis
-
 from fincept_core.strategy_config import (
     StrategyConfigStore,
+)
+from fincept_core.strategy_config import (
     get_strategy_config_store as _get_strategy_config_store_singleton,
 )
 from portfolio.store import PositionStore
+from redis.asyncio import Redis
 
 
 async def get_redis(request: Request) -> Redis:  # type: ignore[type-arg]

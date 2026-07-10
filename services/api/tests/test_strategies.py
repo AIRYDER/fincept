@@ -19,15 +19,13 @@ from decimal import Decimal
 
 import fakeredis.aioredis
 import pytest
-from httpx import AsyncClient
-
 from fincept_core.schemas import Position
 from fincept_core.strategy_config import (
     StrategyConfigStore,
     reset_strategy_config_store,
 )
+from httpx import AsyncClient
 from portfolio.store import PositionStore
-
 
 # --------------------------------------------------------------------------- #
 # Runtime view                                                                #

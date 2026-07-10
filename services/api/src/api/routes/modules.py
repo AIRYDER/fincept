@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fincept_core.heartbeat import read_all
 from redis.asyncio import Redis
 
 from api.auth import require_user
@@ -51,7 +52,6 @@ from api.routes.control import (
     _run_feature_script,
     _stop_feature_script_path,
 )
-from fincept_core.heartbeat import read_all
 
 router = APIRouter()
 

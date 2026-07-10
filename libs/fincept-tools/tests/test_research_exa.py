@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-import fincept_tools  # noqa: F401 - side-effect: registers built-in tools
 from fincept_tools.registry import REGISTRY
 
 

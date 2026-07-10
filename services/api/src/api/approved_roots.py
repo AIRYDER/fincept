@@ -21,7 +21,6 @@ from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-
 from fincept_core.datasets import (
     ApprovedRoots,
     ApprovedRootsError,

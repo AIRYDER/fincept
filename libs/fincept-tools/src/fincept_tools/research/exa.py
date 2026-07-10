@@ -120,9 +120,9 @@ async def _post_json(
     def send() -> dict[str, object]:
         if not url.startswith("https://"):
             raise ToolBackendError("Exa search URL must use HTTPS")
-        req = request.Request(url, data=payload, headers=headers, method="POST")  # noqa: S310
+        req = request.Request(url, data=payload, headers=headers, method="POST")  # noqa: S310 - HTTPS-validated API URL
         try:
-            with request.urlopen(req, timeout=45) as response:  # noqa: S310
+            with request.urlopen(req, timeout=45) as response:  # noqa: S310 - HTTPS-validated API URL
                 response_body = response.read().decode("utf-8")
         except error.URLError as exc:
             raise ToolBackendError(f"Exa search request failed: {exc}") from exc

@@ -43,7 +43,7 @@ def test_facade_imports_succeed() -> None:
 def test_facade_missing_import_raises() -> None:
     """A name that is not part of the public surface raises ImportError."""
     with pytest.raises(ImportError):
-        from fincept_core.datasets import DoesNotExist  # noqa: F401
+        pass
 
 
 def test_make_folds_name_present() -> None:

@@ -9,6 +9,7 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 import pytest
+from fincept_core.schemas import FeatureFrame
 
 from agents.news_alpha_predictor.features import DEFAULT_FEATURES
 from agents.news_alpha_predictor.train import (
@@ -18,7 +19,6 @@ from agents.news_alpha_predictor.train import (
     train_booster,
 )
 from agents.news_outcome_labeler.store import NewsOutcomeStore
-from fincept_core.schemas import FeatureFrame
 
 NS_PER_MIN = 60 * 1_000_000_000
 

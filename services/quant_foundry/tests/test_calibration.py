@@ -36,7 +36,7 @@ from quant_foundry.calibration import (
 )
 
 try:
-    import sklearn  # noqa: F401
+    import sklearn  # noqa: F401 - availability check
 
     _HAS_SKLEARN = True
 except ImportError:

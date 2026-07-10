@@ -143,7 +143,7 @@ def probability_of_backtest_overfitting(
     if half == 0:
         half = 1
 
-    rng = random.Random(seed)  # noqa: S311 - statistical, not crypto
+    rng = random.Random(seed)
 
     # Sample combinations (full enumeration is exponential).
     max_combos = 1000

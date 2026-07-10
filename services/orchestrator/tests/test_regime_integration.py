@@ -6,9 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-
 from fincept_core.events import Event
 from fincept_core.schemas import Prediction, RegimeSignal
+
 from orchestrator.main import (
     REGIME_HORIZON_NS,
     _make_regime_handler,

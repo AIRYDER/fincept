@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import fakeredis.aioredis
-
-from agents.information_enricher.enrich import enrich_information_event
-from agents.information_enricher.main import handle_information_event
 from fincept_bus.producer import Producer
 from fincept_bus.streams import STREAM_INFO_ENRICHED
 from fincept_core.events import Event, deserialize
 from fincept_core.schemas import InformationEvent
+
+from agents.information_enricher.enrich import enrich_information_event
+from agents.information_enricher.main import handle_information_event
 
 
 def _event(**overrides: object) -> InformationEvent:

@@ -589,9 +589,7 @@ class TestFeatureSetVersionPin:
         result = handler_module.handler(inp)
         assert result.get("error_code") != "feature_set_version_mismatch"
 
-    def test_canary_feature_pin_advisory(
-        self, handler_module, tmp_path: pathlib.Path
-    ) -> None:
+    def test_canary_feature_pin_advisory(self, handler_module, tmp_path: pathlib.Path) -> None:
         """Canary mode + feature_set_version mismatch → advisory, does NOT fail.
 
         Canary mode is permissive by design. A feature_set_version mismatch

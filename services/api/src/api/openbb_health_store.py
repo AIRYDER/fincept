@@ -79,7 +79,7 @@ async def record_health(redis: Redis[Any], result: dict[str, Any]) -> None:
             maxlen=LOG_MAXLEN,
             approximate=True,
         )
-    except Exception:  # noqa: BLE001 — persistence is best-effort
+    except Exception:
         logger.warning("openbb_health_persist_failed", exc_info=True)
 
 
@@ -127,7 +127,7 @@ async def fetch_history(
     """
     try:
         raw = await redis.xrevrange(LOG_KEY, count=limit)
-    except Exception:  # noqa: BLE001 — persistence is best-effort
+    except Exception:
         logger.warning("openbb_health_fetch_failed", exc_info=True)
         return []
     entries = [_parse_entry(entry_id, fields) for entry_id, fields in raw]

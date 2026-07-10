@@ -35,11 +35,6 @@ import asyncio
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-
-from api.approved_roots import ApprovedRoots, get_approved_roots
-from api.auth import require_user
 from backtester.report import report_to_dict
 from backtester.runner import (
     REPORTS_ROOT,
@@ -48,7 +43,12 @@ from backtester.runner import (
     run_backtest,
 )
 from backtester.strategies import STRATEGY_REGISTRY
+from fastapi import APIRouter, Depends, HTTPException
 from fincept_core.schemas import AssetClass, Venue
+from pydantic import BaseModel, Field
+
+from api.approved_roots import ApprovedRoots, get_approved_roots
+from api.auth import require_user
 
 router = APIRouter()
 
