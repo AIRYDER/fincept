@@ -159,3 +159,4 @@ session-db.md
 
 # --- Env-var expansion failure artifact --------------------------------------
 /%TMPDIR%/
+/reports/s2-live-gpu-proof/gpu_output.json
