@@ -33,9 +33,9 @@ import importlib.util
 import os
 import pickle
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
 

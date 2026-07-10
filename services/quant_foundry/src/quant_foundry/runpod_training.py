@@ -71,6 +71,8 @@ from quant_foundry.schemas import (
 from quant_foundry.signatures import sign_callback
 from quant_foundry.training_manifest import (
     MODE_RULES,
+)
+from quant_foundry.training_manifest import (
     TrainingMode as TrainingMode,  # re-export for verification_matrix
 )
 

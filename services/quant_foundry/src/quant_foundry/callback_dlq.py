@@ -42,11 +42,12 @@ Retry policy:
 
 from __future__ import annotations
 
+import builtins
 import json
 import pathlib
 import time
 from enum import StrEnum
-from typing import Any, List
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -422,7 +423,7 @@ class CallbackDLQ:
             records = records[:limit]
         return records
 
-    def get_retryable_due(self) -> List[DLQRecord]:
+    def get_retryable_due(self) -> builtins.list[DLQRecord]:
         """Return retryable entries whose next retry is due now.
 
         An entry is due if ``next_retry_at_ns`` is set and

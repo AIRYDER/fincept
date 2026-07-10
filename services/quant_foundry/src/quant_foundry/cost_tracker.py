@@ -36,8 +36,9 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert

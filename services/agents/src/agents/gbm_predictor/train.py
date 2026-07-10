@@ -288,7 +288,9 @@ def walk_forward_cv(
             )
             continue
         if resume_from_fold is not None and fold_idx < resume_from_fold:
-            assert checkpoint_dir is not None  # resume_from_fold implies checkpoint_dir is set
+            assert (
+                checkpoint_dir is not None
+            )  # resume_from_fold implies checkpoint_dir is set
             ckpt_path = checkpoint_dir / f"fold_{fold_idx}_model.txt"
             if ckpt_path.exists():
                 booster = lgb.Booster(model_file=str(ckpt_path))

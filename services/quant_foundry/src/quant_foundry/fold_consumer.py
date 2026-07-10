@@ -30,9 +30,10 @@ Fail-closed behaviour:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from datetime import date as _date
-from typing import Any, Iterator
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 

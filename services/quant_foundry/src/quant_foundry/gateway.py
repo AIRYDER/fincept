@@ -271,8 +271,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # CallbackProcessor accepts any object implementing the sink protocols,
         # so no change to the processor is needed — just pass the DB sinks.
         if self.sink_backend == "db":
-            self.shadow_ledger: DbShadowLedgerStore | DurableShadowLedgerStore = DbShadowLedgerStore(
-                engine=self._db_engine
+            self.shadow_ledger: DbShadowLedgerStore | DurableShadowLedgerStore = (
+                DbShadowLedgerStore(engine=self._db_engine)
             )
             self.dossier_store: DbDossierStore | DurableDossierStore = DbDossierStore(
                 engine=self._db_engine

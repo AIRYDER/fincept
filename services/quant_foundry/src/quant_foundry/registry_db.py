@@ -37,7 +37,8 @@ Idempotency:
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
