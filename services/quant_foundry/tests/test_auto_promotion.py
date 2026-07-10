@@ -14,34 +14,151 @@ from the e2e product loop tests.
 from __future__ import annotations
 
 import time
+from typing import Any
 
-from helpers.product_loop_helpers import (
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _make_engine,
-    _make_gateway,
-)
 from quant_foundry.auto_promotion import (
     AutoPromotionOrchestrator,
     PromotionTarget,
 )
+from quant_foundry.budget import BudgetGuard
 from quant_foundry.champion_challenger import (
     ChampionChallengerConfig,
     ComparisonInput,
 )
+from quant_foundry.cost_tracker import CostTracker
 from quant_foundry.dossier import DossierStatus
+from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.promotion import (
     PromotionGate,
     ReviewDecision,
 )
 from quant_foundry.registry_db import ModelRegistryDB
+from quant_foundry.runpod_client import MockRunPodClient
+from quant_foundry.schemas import (
+    ArtifactManifest,
+    Authority,
+    ModelDossier,
+    RunPodCallbackEnvelope,
+)
+from quant_foundry.signatures import sign_callback
+
+
+def _signed_callback_with_artifact(
+    job_id: str,
+    *,
+    secret: str,
+    artifact_id: str,
+    sha256: str,
+) -> tuple[bytes, str, int]:
+    """Build a signed callback with a custom artifact_id + sha256.
+
+    This allows creating multiple versions under the same model
+    (the default _signed_training_callback uses a fixed artifact hash
+    which causes deduplication).
+    """
+    artifact = ArtifactManifest(
+        artifact_id=artifact_id,
+        sha256=sha256,
+        size_bytes=2048,
+        uri="file:///durable/artifact.zip",
+        model_family="gbm",
+        created_at_ns=time.time_ns(),
+        feature_schema_hash="feature-hash-e2e",
+        label_schema_hash="label-hash-e2e",
+        code_git_sha="git-sha-e2e",
+        lockfile_hash="lock-hash-e2e",
+        container_image_digest="sha256:container-digest-e2e",
+    )
+    dossier = ModelDossier(
+        model_id=_MODEL_ID,
+        artifact_manifest_id=artifact.artifact_id,
+        dataset_manifest_id="dataset:training:e2e",
+        code_git_sha="git-sha-e2e",
+        lockfile_hash="lock-hash-e2e",
+        container_image_digest="sha256:container-digest-e2e",
+        random_seed=7,
+        hardware_class="runpod-gpu",
+        training_metrics={"accuracy": 0.62, "logloss": 0.49},
+        pbo=0.12,
+        deflated_sharpe=1.1,
+        authority=Authority.SHADOW_ONLY,
+        metadata={"model_family": "gbm"},
+    )
+    envelope = RunPodCallbackEnvelope(
+        job_id=job_id,
+        worker_id="runpod-training-e2e",
+        result_type="training_complete",
+        payload={
+            "model_family": "gbm",
+            "dossier": dossier.model_dump(mode="json"),
+            "artifact_manifest": artifact.model_dump(mode="json"),
+        },
+    )
+    payload = envelope.model_dump_json().encode("utf-8")
+    ts = int(time.time())
+    signature = sign_callback(payload, secret=secret, ts=ts, job_id=job_id)
+    return payload, signature, ts
+
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+# Re-use the engine + callback helpers from the e2e test module.
+# --------------------------------------------------------------------------- #
+# Helpers                                                                      #
+# --------------------------------------------------------------------------- #
+# Use the same model_id as the e2e helpers (hardcoded in _signed_training_callback).
+from test_e2e_product_loop import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
 
 from fincept_db.registry_tables import (
     ModelVersionRow,
     ShadowEvaluationRow,
 )
+
+
+def _dispatch_and_callback(
+    gateway: QuantFoundryGateway,
+    engine: Any,
+    secret: str,
+    job_id: str,
+    model_id: str = _MODEL_ID,
+    artifact_id: str = _ARTIFACT_ID,
+    sha256: str = "a" * 64,
+) -> str:
+    """Dispatch a training job, receive the callback, return version_id.
+
+    Pass a unique ``artifact_id`` + ``sha256`` to create distinct
+    versions under the same model.
+    """
+    gateway.create_job(
+        job_id=job_id,
+        job_type="training",
+        idempotency_key=f"idem-{job_id}",
+        request_payload=_training_payload(job_id),
+    )
+    payload, signature, ts = _signed_callback_with_artifact(
+        job_id,
+        secret=secret,
+        artifact_id=artifact_id,
+        sha256=sha256,
+    )
+    gateway.receive_callback(
+        job_id=job_id,
+        payload=payload,
+        signature=signature,
+        ts=ts,
+        worker_id="test-worker",
+    )
+
+    with Session(engine) as session:
+        version_row = session.scalars(
+            select(ModelVersionRow).where(
+                ModelVersionRow.model_id == model_id,
+                ModelVersionRow.artifact_id == artifact_id,
+            )
+        ).first()
+        assert version_row is not None, f"no version row for artifact {artifact_id}"
+        return version_row.version_id
 
 
 def _record_tournament_metrics(
@@ -87,6 +204,59 @@ def _record_sentinel_metrics(
             "pbo": 0.12,
             "pbo_flagged": False,
         },
+    )
+
+
+def _record_c7_metrics(
+    registry: ModelRegistryDB,
+    version_id: str,
+) -> None:
+    """Record C7 evidence chain metrics for a version."""
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="selfcheck",
+        metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="pit_evidence",
+        metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="feature_set",
+        metrics_dict={"feature_set_version": "fs-v1"},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="backend",
+        metrics_dict={"production_eligible": True},
+    )
+
+
+def _make_gateway(
+    engine: Any,
+    secret: str,
+    registry: ModelRegistryDB,
+    tmp_path: Any,
+) -> QuantFoundryGateway:
+    """Create a gateway with DB sinks + CostTracker."""
+    training_client = MockRunPodClient(api_key="test-key", cost_per_dispatch_cents=25)
+    return QuantFoundryGateway(
+        enabled=True,
+        mode="runpod",
+        shadow_only=True,
+        callback_secret=secret,
+        base_dir=tmp_path / "qf-auto",
+        runpod_clients={"training": training_client},
+        cost_tracker=CostTracker(engine=engine),
+        sink_backend="db",
+        db_engine=engine,
+        registry=registry,
+        budget_guard=BudgetGuard(
+            base_dir=tmp_path / "qf-auto" / "budget",
+            monthly_budget_cents=1_000_000,
+        ),
     )
 
 
@@ -142,7 +312,7 @@ class TestPromotionTarget:
 
 
 # --------------------------------------------------------------------------- #
-# Tests: AutoPromotionOrchestrator — target finding                           #
+# Tests: AutoPromotionOrchestrator â€” target finding                           #
 # --------------------------------------------------------------------------- #
 
 
@@ -180,6 +350,7 @@ class TestFindPromotionTargets:
         # Manually promote to paper_approved via the gate.
         _record_tournament_metrics(registry, version_id)
         _record_sentinel_metrics(registry, version_id)
+        _record_c7_metrics(registry, version_id)
         registry.promote(
             version_id=version_id,
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -206,13 +377,13 @@ class TestFindPromotionTargets:
 
 
 # --------------------------------------------------------------------------- #
-# Tests: AutoPromotionOrchestrator — full run                                 #
+# Tests: AutoPromotionOrchestrator â€” full run                                 #
 # --------------------------------------------------------------------------- #
 
 
 class TestAutoPromotionRun:
     def test_auto_promotes_first_model(self, tmp_path) -> None:
-        """Auto-promote a candidate → research_approved (no champion).
+        """Auto-promote a candidate â†’ research_approved (no champion).
 
         The orchestrator should:
         1. Find the candidate version as a target.
@@ -232,6 +403,7 @@ class TestAutoPromotionRun:
         # Record evidence so the gate can approve.
         _record_tournament_metrics(registry, version_id)
         _record_sentinel_metrics(registry, version_id)
+        _record_c7_metrics(registry, version_id)
 
         orchestrator = AutoPromotionOrchestrator(
             registry=registry,
@@ -260,7 +432,7 @@ class TestAutoPromotionRun:
         engine.dispose()
 
     def test_skips_when_no_provider(self, tmp_path) -> None:
-        """No comparison_input_provider → all targets skipped."""
+        """No comparison_input_provider â†’ all targets skipped."""
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
@@ -280,7 +452,7 @@ class TestAutoPromotionRun:
         engine.dispose()
 
     def test_skips_when_comparison_rejects(self, tmp_path) -> None:
-        """Comparison decision != 'promote' → skipped, no promotion."""
+        """Comparison decision != 'promote' â†’ skipped, no promotion."""
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
@@ -288,9 +460,9 @@ class TestAutoPromotionRun:
             gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
-        _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
+        version_id = _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
 
-        # Provider returns None → no comparison input → skipped.
+        # Provider returns None â†’ no comparison input â†’ skipped.
         orchestrator = AutoPromotionOrchestrator(
             registry=registry,
             comparison_input_provider=lambda vid: None,
@@ -323,7 +495,7 @@ class TestAutoPromotionRun:
         engine.dispose()
 
     def test_empty_registry_no_targets(self, tmp_path) -> None:
-        """Empty registry → no targets, empty receipt."""
+        """Empty registry â†’ no targets, empty receipt."""
         engine = _make_engine()
         registry = ModelRegistryDB(
             engine=engine,
@@ -340,13 +512,13 @@ class TestAutoPromotionRun:
 
 
 # --------------------------------------------------------------------------- #
-# Tests: AutoPromotionOrchestrator — with champion                            #
+# Tests: AutoPromotionOrchestrator â€” with champion                            #
 # --------------------------------------------------------------------------- #
 
 
 class TestAutoPromotionWithChampion:
     def test_champion_challenger_comparison_promotes(self, tmp_path) -> None:
-        """Full champion/challenger comparison → auto-promotion.
+        """Full champion/challenger comparison â†’ auto-promotion.
 
         Setup:
         1. Dispatch + callback for version 1 (becomes champion).
@@ -376,6 +548,7 @@ class TestAutoPromotionWithChampion:
         )
         _record_tournament_metrics(registry, v1_id)
         _record_sentinel_metrics(registry, v1_id)
+        _record_c7_metrics(registry, v1_id)
         registry.promote(
             version_id=v1_id,
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -383,7 +556,7 @@ class TestAutoPromotionWithChampion:
             decided_by="test",
         )
 
-        # Version 2 (challenger) — different artifact hash.
+        # Version 2 (challenger) â€” different artifact hash.
         v2_id = _dispatch_and_callback(
             gateway,
             engine,
@@ -394,6 +567,7 @@ class TestAutoPromotionWithChampion:
         )
         _record_tournament_metrics(registry, v2_id)
         _record_sentinel_metrics(registry, v2_id)
+        _record_c7_metrics(registry, v2_id)
 
         # Provider: champion has mediocre returns, challenger has great returns.
         # Delta must be >= 50 bps (net_edge_threshold).
@@ -447,3 +621,6 @@ class TestAutoPromotionWithChampion:
             assert len(eval_rows) >= 1
 
         engine.dispose()
+
+
+

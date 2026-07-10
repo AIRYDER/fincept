@@ -6,19 +6,75 @@ from real settled shadow predictions in the SettlementLedger.
 
 from __future__ import annotations
 
-from helpers.product_loop_helpers import (
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _FakeSettlementLedger,
-    _make_engine,
-    _make_gateway,
-    _make_settlement_record,
-)
+import time
+
 from quant_foundry.champion_challenger import ComparisonInput
-from quant_foundry.outcomes import SettlementStatus
+from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.settlement_provider import SettledComparisonInputProvider
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def _make_settlement_record(
+    *,
+    prediction_id: str,
+    model_id: str = _MODEL_ID,
+    realized_return_net: float | None = 0.001,
+    brier: float | None = 0.21,
+    status: SettlementStatus = SettlementStatus.SETTLED,
+    ts_event: int | None = None,
+) -> SettlementRecord:
+    """Create a synthetic SettlementRecord for testing."""
+    ts = ts_event or time.time_ns()
+    is_settled = status == SettlementStatus.SETTLED
+    net = realized_return_net if is_settled else None
+    return SettlementRecord(
+        prediction_id=prediction_id,
+        model_id=model_id,
+        symbol="AAPL",
+        ts_event=ts,
+        horizon_ns=86_400_000_000_000,  # 1 day
+        status=status,
+        settled_at_ns=ts + 86_400_000_000_000 if is_settled else None,
+        realized_return_gross=(net + 0.0001) if net is not None else None,
+        realized_return_net=net,
+        abnormal_return=(net * 0.9) if net is not None else None,
+        brier=brier if is_settled else None,
+        calibration_bucket="bucket_0.5_0.6" if is_settled else None,
+        cost_model_version="cm-v1",
+        decision_window_start=ts,
+        decision_window_end=ts + 86_400_000_000_000,
+    )
+
+
+class _FakeSettlementLedger:
+    """In-memory settlement ledger for testing.
+
+    Implements the read_all() method that SettledComparisonInputProvider
+    needs. Does not write to disk.
+    """
+
+    def __init__(self, records: list[SettlementRecord] | None = None) -> None:
+        self._records = records or []
+
+    def read_all(self) -> list[SettlementRecord]:
+        return list(self._records)
+
+    def add(self, record: SettlementRecord) -> None:
+        self._records.append(record)
+
 
 # --------------------------------------------------------------------------- #
 # Tests: SettledComparisonInputProvider                                       #
@@ -76,7 +132,7 @@ class TestSettledComparisonInputProvider:
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:settle:2")
 
-        # Only 10 settled records — min is 30.
+        # Only 10 settled records â€” min is 30.
         ledger = _FakeSettlementLedger()
         for i in range(10):
             ledger.add(
@@ -263,7 +319,7 @@ class TestSettledComparisonInputProvider:
         engine.dispose()
 
     def test_empty_ledger_returns_none(self, tmp_path) -> None:
-        """Empty settlement ledger → None."""
+        """Empty settlement ledger â†’ None."""
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
@@ -293,14 +349,14 @@ class TestSettledComparisonInputProvider:
 
 class TestSettledProviderWithOrchestrator:
     def test_orchestrator_with_settled_provider(self, tmp_path) -> None:
-        """Full integration: settled provider → orchestrator → promotion.
+        """Full integration: settled provider â†’ orchestrator â†’ promotion.
 
         1. Dispatch + callback for version 1 (champion).
         2. Promote v1 to research_approved manually.
         3. Dispatch + callback for version 2 (challenger).
         4. Record tournament + sentinel metrics for v2.
         5. Create a settlement ledger with 50 settled records for
-           the model — champion has mediocre returns, challenger
+           the model â€” champion has mediocre returns, challenger
            has great returns (we simulate this by using different
            model_ids for the settlement records).
         6. Run orchestrator with the settled provider.
@@ -358,6 +414,27 @@ class TestSettledProviderWithOrchestrator:
                 "pbo_flagged": False,
             },
         )
+        # C7 evidence chain metrics for v1 (champion).
+        registry.record_metrics(
+            version_id=v1_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=v1_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=v1_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=v1_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
         registry.promote(
             version_id=v1_id,
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -405,11 +482,33 @@ class TestSettledProviderWithOrchestrator:
                 "pbo_flagged": False,
             },
         )
+        # C7 evidence chain metrics for v2 (challenger).
+        registry.record_metrics(
+            version_id=v2_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=v2_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=v2_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=v2_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
+
         # Create a settlement ledger with settled records.
         # Since both versions share the same model_id, the provider
         # returns the same records for both. The comparison will
         # show no edge (same data). This test proves the provider
-        # wiring works end-to-end — the comparison may or may not
+        # wiring works end-to-end â€” the comparison may or may not
         # pass, but the orchestrator should run without errors.
         ledger = _FakeSettlementLedger()
         for i in range(50):

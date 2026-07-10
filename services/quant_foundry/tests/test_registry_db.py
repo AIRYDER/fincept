@@ -1,4 +1,4 @@
-"""Tests for quant_foundry.registry_db — DB-backed model registry with promotion workflow.
+"""Tests for quant_foundry.registry_db â€” DB-backed model registry with promotion workflow.
 
 Tests the ``ModelRegistryDB`` against an in-memory SQLite database (no Postgres
 required). The registry uses ``INSERT ... ON CONFLICT DO NOTHING`` for
@@ -6,14 +6,14 @@ idempotency on model/version registration, which works on both SQLite and
 Postgres (the registry code picks the right dialect-specific insert at runtime).
 
 Test coverage:
-  - Model registration (idempotent — same model_id is a no-op)
-  - Version registration (idempotent — same version_id is a no-op)
+  - Model registration (idempotent â€” same model_id is a no-op)
+  - Version registration (idempotent â€” same version_id is a no-op)
   - Metrics recording (training, tournament, sentinel, settlement)
   - Shadow evaluation recording
   - Promotion workflow: approved path (status changes, receipt persisted)
   - Promotion workflow: rejected path (status does NOT change, receipt persisted)
   - Promotion history query (lists all attempts with decision receipts)
-  - State machine enforcement (gate enforces — no skipping levels)
+  - State machine enforcement (gate enforces â€” no skipping levels)
   - No secrets in DB (no signature bytes, no raw payloads)
   - CHECK constraint enforcement (bad status, bad decision, bad metric_type)
   - Idempotency (ON CONFLICT DO NOTHING for models and versions)
@@ -98,7 +98,7 @@ def registry(engine):
 
 
 # ---------------------------------------------------------------------------
-# Helpers — create FK parent rows needed by version registration
+# Helpers â€” create FK parent rows needed by version registration
 # ---------------------------------------------------------------------------
 
 
@@ -520,7 +520,8 @@ def _setup_full_evidence_chain(registry, engine, settled_count=50, sentinel_pass
 
     Creates: artifact, callback receipt, dossier (no blocking issues),
     model, version, tournament metrics (settled_count >= min), sentinel
-    metrics (passed=True).
+    metrics (passed=True), and C7 evidence chain metrics (selfcheck,
+    pit_evidence, feature_set, backend).
     """
     _seed_parents(engine)
     registry.register_model(model_id="model-001", name="Test", model_family="lightgbm")
@@ -546,7 +547,7 @@ def _setup_full_evidence_chain(registry, engine, settled_count=50, sentinel_pass
             "trial_count": 1,
         },
     )
-    # Sentinel metrics — passing.
+    # Sentinel metrics â€” passing.
     registry.record_metrics(
         version_id="ver-001",
         metric_type="sentinel",
@@ -556,6 +557,45 @@ def _setup_full_evidence_chain(registry, engine, settled_count=50, sentinel_pass
             "issues": [],
             "checks_run": [],
             "ts_ns": time.time_ns(),
+        },
+    )
+    # C7: selfcheck metrics â€” passing.
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="selfcheck",
+        metrics_dict={
+            "passed": True,
+            "n_rows_scored": 10,
+            "output_sha256": "o" * 64,
+            "bundle_sha256": "a" * 64,
+            "loader_version": "v1",
+            "duration_ms": 100.0,
+        },
+    )
+    # C7: PIT evidence metrics â€” verified.
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="pit_evidence",
+        metrics_dict={
+            "verified": True,
+            "evidence_sha256": "e" * 64,
+            "manifest_hash": "m" * 64,
+        },
+    )
+    # C7: feature_set version pin.
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="feature_set",
+        metrics_dict={
+            "feature_set_version": "fs-v1",
+        },
+    )
+    # C7: backend eligibility â€” production eligible.
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="backend",
+        metrics_dict={
+            "production_eligible": True,
         },
     )
 
@@ -655,6 +695,31 @@ class TestPromotionApproved:
                 "ts_ns": time.time_ns(),
             },
         )
+        # C7: selfcheck, PIT evidence, feature_set, backend metrics.
+        registry.record_metrics(
+            version_id="ver-001",
+            metric_type="selfcheck",
+            metrics_dict={
+                "passed": True,
+                "n_rows_scored": 10,
+                "bundle_sha256": "a" * 64,
+            },
+        )
+        registry.record_metrics(
+            version_id="ver-001",
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id="ver-001",
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id="ver-001",
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
 
         waiver = PromotionWaiver(
             issue_code="HIGH_TRIAL_COUNT",
@@ -675,7 +740,7 @@ class TestPromotionRejected:
     def test_fk_prevents_version_without_dossier(self, registry, engine) -> None:
         """The FK on model_versions.dossier_content_hash -> model_dossiers.content_hash
         prevents creating a version without a dossier. The NO_DOSSIER rejection
-        path in the gate is defense-in-depth — the DB makes it unreachable
+        path in the gate is defense-in-depth â€” the DB makes it unreachable
         through normal operations.
         """
         with Session(engine) as session:
@@ -749,7 +814,7 @@ class TestPromotionHistory:
     def test_history_lists_multiple_attempts(self, registry, engine) -> None:
         _setup_full_evidence_chain(registry, engine, settled_count=5)  # will reject
 
-        # First attempt — rejected (insufficient evidence).
+        # First attempt â€” rejected (insufficient evidence).
         registry.promote(
             version_id="ver-001",
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -772,7 +837,7 @@ class TestPromotionHistory:
             },
         )
 
-        # Second attempt — approved.
+        # Second attempt â€” approved.
         registry.promote(
             version_id="ver-001",
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -895,7 +960,7 @@ class TestCheckConstraints:
         with Session(engine) as session:
             row = ModelVersionRow(
                 version_id="bad-ver",
-                model_id="needs_model",  # no FK to models — will fail on FK first
+                model_id="needs_model",  # no FK to models â€” will fail on FK first
                 dossier_content_hash="h" * 64,
                 artifact_id="art-001",
                 callback_receipt_id="cb-001",
@@ -1047,7 +1112,7 @@ class TestNoSecretsInDB:
         )
         with Session(engine) as session:
             row = session.scalars(select(PromotionDecisionRow)).one()
-            # The waivers field is a list of {issue_code, waived_by, reason} — no secrets.
+            # The waivers field is a list of {issue_code, waived_by, reason} â€” no secrets.
             assert isinstance(row.waivers, list)
             for w in row.waivers:
                 assert "secret" not in str(w).lower()

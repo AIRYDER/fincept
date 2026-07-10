@@ -1,7 +1,7 @@
 """
 Tests for TASK-0702: Build Promotion Review Queue.
 
-TDD red phase — these tests are written BEFORE the implementation and must
+TDD red phase â€” these tests are written BEFORE the implementation and must
 fail with ModuleNotFoundError / ImportError until `promotion.py` exists.
 
 Acceptance criteria covered:
@@ -15,7 +15,7 @@ Additional checks from the spec:
   a clean leakage/overfit sentinel result (TASK-0406), an empty (or
   explicitly human-waived) blocking issues list, and a human review note.
 - A non-empty blocking issue cannot be promoted past without a recorded,
-  named waiver — the gate fails closed.
+  named waiver â€” the gate fails closed.
 - Enforce a minimum settled-evidence bar server-side.
 - Add rejection reasons.
 - Add immutable promotion receipt.
@@ -31,9 +31,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.promotion import (
     BlockingIssue,
+    CallbackReceiptRef,
+    PITEvidenceRef,
     PromotionEvidence,
     PromotionGate,
     PromotionReceipt,
@@ -108,17 +111,46 @@ def _make_evidence(
     tournament_result: TournamentResult | None = None,
     sentinel_receipt: SentinelReceipt | None = None,
     blocking_issues: list[BlockingIssue] | None = None,
+    selfcheck: TrainingSelfCheck | None = "default",
+    callback_receipt: CallbackReceiptRef | None = "default",
+    artifact_uri: str | None = "default",
+    dossier_hash: str | None = "default",
+    feature_set_version: str | None = "default",
+    pit_evidence: PITEvidenceRef | None = "default",
+    backend_eligible: bool = True,
 ) -> PromotionEvidence:
-    """Build a minimal promotion evidence packet.
+    """Build a complete C7 promotion evidence packet.
 
     Pass ``dossier=None`` to explicitly omit the dossier. Pass
     ``dossier="default"`` (the default) to use a default dossier.
+    New C7 fields default to ``"default"`` sentinel which is replaced
+    with a valid value; pass ``None`` to explicitly omit any field.
     """
+    d = _make_dossier() if dossier == "default" else dossier
     return PromotionEvidence(
-        dossier=_make_dossier() if dossier == "default" else dossier,
+        dossier=d,
         tournament_result=tournament_result or _make_tournament_result(),
         sentinel_receipt=sentinel_receipt or _make_sentinel_receipt(),
         blocking_issues=blocking_issues or [],
+        selfcheck=(
+            TrainingSelfCheck(passed=True, bundle_sha256="a" * 64, n_rows_scored=10)
+            if selfcheck == "default"
+            else selfcheck
+        ),
+        callback_receipt=(
+            CallbackReceiptRef(status="processed", receipt_id="cb-1")
+            if callback_receipt == "default"
+            else callback_receipt
+        ),
+        artifact_uri="file:///durable/artifact.zip" if artifact_uri == "default" else artifact_uri,
+        dossier_hash=(d.content_hash if d is not None else "h" * 64) if dossier_hash == "default" else dossier_hash,
+        feature_set_version="fs-v1" if feature_set_version == "default" else feature_set_version,
+        pit_evidence=(
+            PITEvidenceRef(verified=True, evidence_sha256="e" * 64, manifest_hash="m" * 64)
+            if pit_evidence == "default"
+            else pit_evidence
+        ),
+        backend_eligible=backend_eligible,
     )
 
 
@@ -213,7 +245,7 @@ class TestPromotionRequest:
 
 
 # ---------------------------------------------------------------------------
-# PromotionGate — no model can be promoted without a dossier
+# PromotionGate â€” no model can be promoted without a dossier
 # ===========================================================================
 
 

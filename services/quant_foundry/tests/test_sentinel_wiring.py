@@ -9,18 +9,20 @@ from __future__ import annotations
 
 import time
 
-from helpers.product_loop_helpers import (
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _make_engine,
-    _make_gateway,
-)
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.promotion import PromotionGate
 from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.sentinel import SentinelReceipt
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
 
 # --------------------------------------------------------------------------- #
 # Tests: _find_sentinel_receipt                                               #
@@ -107,7 +109,7 @@ class TestFindSentinelReceipt:
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         version_id = _dispatch_and_callback(gateway, engine, secret, "qf:sentinel:3")
 
-        # Record two sentinel metrics — the second one should be returned.
+        # Record two sentinel metrics â€” the second one should be returned.
         registry.record_metrics(
             version_id=version_id,
             metric_type="sentinel",
@@ -268,6 +270,30 @@ class TestSentinelWiringWithPromotion:
             },
         )
 
+        # C7 evidence chain metrics (passing selfcheck so the gate
+        # reaches the sentinel check at step 16 and rejects with
+        # SENTINEL_FAILED, not a C7 reason).
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
+
         receipt = registry.promote(
             version_id=version_id,
             target_status=DossierStatus.RESEARCH_APPROVED,
@@ -324,6 +350,28 @@ class TestSentinelWiringWithPromotion:
                 "pbo": 0.12,
                 "pbo_flagged": False,
             },
+        )
+
+        # C7 evidence chain metrics.
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
         )
 
         receipt = registry.promote(

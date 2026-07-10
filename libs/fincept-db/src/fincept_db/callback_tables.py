@@ -105,7 +105,7 @@ class ModelDossierRow(Base):
         CheckConstraint("trial_count >= 0", name="ck_model_dossiers_trial_count_nonneg"),
         CheckConstraint(
             "status IN ('candidate','research_approved','shadow_approved',"
-            "'paper_approved','limited_live_approved','rejected')",
+            "'paper_approved','limited_live_approved','rejected','retired')",
             name="ck_model_dossiers_status_domain",
         ),
         Index("ix_model_dossiers_model_id", "model_id"),

@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from helpers.product_loop_helpers import _MODEL_ID, _dispatch_and_callback, _make_engine
 from quant_foundry.auto_shadow_dispatch import (
     AutoShadowDispatcher,
 )
@@ -23,6 +22,8 @@ from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import MockRunPodClient
 from quant_foundry.schemas import Authority
 from quant_foundry.shadow_ledger import ShadowLedgerRecord
+from test_auto_promotion import _dispatch_and_callback
+from test_e2e_product_loop import _MODEL_ID, _make_engine
 
 
 def _make_shadow_gateway(
@@ -132,6 +133,27 @@ def _record_evidence_and_promote(
             "pbo_flagged": False,
         },
     )
+    # C7 evidence chain metrics.
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="selfcheck",
+        metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="pit_evidence",
+        metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="feature_set",
+        metrics_dict={"feature_set_version": "fs-v1"},
+    )
+    registry.record_metrics(
+        version_id=version_id,
+        metric_type="backend",
+        metrics_dict={"production_eligible": True},
+    )
     registry.promote(
         version_id=version_id,
         target_status=target,
@@ -201,7 +223,7 @@ class TestAutoShadowDispatcher:
         )
         receipt = dispatcher.run()
 
-        # No versions to dispatch — already has shadow predictions.
+        # No versions to dispatch â€” already has shadow predictions.
         assert receipt.dispatched == 0
         assert receipt.total == 0
         engine.dispose()
@@ -216,7 +238,7 @@ class TestAutoShadowDispatcher:
         )
         gateway = _make_shadow_gateway(engine, secret, registry, tmp_path)
         _dispatch_and_callback(gateway, engine, secret, "qf:shadow:3")
-        # Version is still candidate — not promoted.
+        # Version is still candidate â€” not promoted.
 
         shadow_ledger = _FakeShadowLedger()
 
@@ -308,7 +330,7 @@ class TestAutoShadowDispatcher:
         engine.dispose()
 
     def test_empty_registry_no_dispatches(self, tmp_path) -> None:
-        """Empty registry → no dispatches."""
+        """Empty registry â†’ no dispatches."""
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
@@ -351,9 +373,9 @@ class TestAutoShadowDispatcher:
 
         try:
             receipt.dispatched = 999
-            raise AssertionError("should have raised")
+            assert False, "should have raised"
         except Exception:
-            pass  # expected — frozen model
+            pass  # expected â€” frozen model
         engine.dispose()
 
     def test_dispatched_job_is_in_outbox(self, tmp_path) -> None:
@@ -389,24 +411,24 @@ class TestAutoShadowDispatcher:
 
 
 # --------------------------------------------------------------------------- #
-# Tests: Integration — full automated product loop                            #
+# Tests: Integration â€” full automated product loop                            #
 # --------------------------------------------------------------------------- #
 
 
 class TestFullAutomatedProductLoop:
     def test_full_loop_dispatch_to_shadow_dispatch(self, tmp_path) -> None:
-        """Full automated product loop: dispatch → callback → promote → shadow dispatch.
+        """Full automated product loop: dispatch â†’ callback â†’ promote â†’ shadow dispatch.
 
-        1. Dispatch training + callback → version registered.
+        1. Dispatch training + callback â†’ version registered.
         2. Record tournament + sentinel metrics.
         3. Auto-promote to research_approved.
         4. Auto-shadow-dispatch dispatches shadow inference for the version.
         5. Verify the shadow inference job is in the outbox.
         """
-        from helpers.product_loop_helpers import _FakeSettlementLedger, _make_settlement_record
         from quant_foundry.auto_promotion import AutoPromotionOrchestrator
         from quant_foundry.champion_challenger import ChampionChallengerConfig
         from quant_foundry.settlement_provider import SettledComparisonInputProvider
+        from test_settlement_provider import _FakeSettlementLedger, _make_settlement_record
 
         engine = _make_engine()
         secret = "test-secret"
@@ -449,7 +471,29 @@ class TestFullAutomatedProductLoop:
                 "pbo_flagged": False,
             },
         )
-        # Auto-promote: candidate → research_approved.
+        # C7 evidence chain metrics.
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
+
+        # Auto-promote: candidate â†’ research_approved.
         settlement_ledger = _FakeSettlementLedger()
         import random
 
@@ -481,7 +525,7 @@ class TestFullAutomatedProductLoop:
         promo_receipt = orchestrator.run()
         assert any(r.promoted for r in promo_receipt.results)
 
-        # Auto-shadow-dispatch: research_approved → shadow inference job.
+        # Auto-shadow-dispatch: research_approved â†’ shadow inference job.
         shadow_ledger = _FakeShadowLedger()
         dispatcher = AutoShadowDispatcher(
             gateway=gateway,

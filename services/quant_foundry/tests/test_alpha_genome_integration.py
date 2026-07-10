@@ -1,12 +1,12 @@
 """
 Integration tests for the Alpha Genome Lab wiring (TASK-1005 + TASK-0306).
 
-Covers the gateway → AlphaGenomeLab → DossierRegistry contract end-to-end:
+Covers the gateway â†’ AlphaGenomeLab â†’ DossierRegistry contract end-to-end:
 
 - Gateway exposes an `alpha_genome_lab()` accessor that constructs a real
   AlphaGenomeLab wired to the real PromotionGate + DossierRegistry.
 - `start_alpha_sweep(...)` returns a JSON-safe receipt; every candidate
-  flows through PromotionGate.evaluate() — no shortcut, no bypass.
+  flows through PromotionGate.evaluate() â€” no shortcut, no bypass.
 - `alpha_sweep_status(sweep_id)` returns the stored receipt; returns None
   for unknown ids.
 - `register_recipe_candidate(dossier)` writes to the real DossierRegistry
@@ -103,15 +103,15 @@ class TestAlphaGenomeLabAccessor:
         gateway's gate, registry, and a default mock dispatcher."""
         gw = _make_gateway(tmp_path)
         lab = gw.alpha_genome_lab()
-        # AlphaGenomeLab is a dataclass — verify the wired fields.
+        # AlphaGenomeLab is a dataclass â€” verify the wired fields.
         assert lab.gate is gw.promotion_gate()
         assert isinstance(lab.registry, _AlphaDossierUpsertAdapter)
         # The registry adapter wraps the same dossier_registry the gateway
-        # exposes elsewhere — no separate registry, no shortcut.
+        # exposes elsewhere â€” no separate registry, no shortcut.
         assert lab.registry._registry is gw.dossier_registry()
 
     def test_returns_same_instance_on_repeat_call(self, tmp_path: pathlib.Path) -> None:
-        """The accessor is lazy + cached — repeated calls return the same lab."""
+        """The accessor is lazy + cached â€” repeated calls return the same lab."""
         gw = _make_gateway(tmp_path)
         first = gw.alpha_genome_lab()
         second = gw.alpha_genome_lab()
@@ -148,14 +148,14 @@ class TestStartAlphaSweep:
         sweep = result["sweep"]
         assert sweep["n_recipes"] == 3
         # The default dispatcher returns no dossier, so every trial is
-        # REJECTED_BY_GATE (NO_DOSSIER) — the safe path. No recipes are
+        # REJECTED_BY_GATE (NO_DOSSIER) â€” the safe path. No recipes are
         # REGISTERED, none are KILLED_EARLY (no probe), none are
         # DISCARDED (within budget).
         assert sweep["n_registered"] == 0
         assert sweep["n_rejected"] == 3
         assert sweep["n_killed_early"] == 0
         assert sweep["n_discarded"] == 0
-        # No secrets in the receipt — sweep ids + counts + per-trial statuses.
+        # No secrets in the receipt â€” sweep ids + counts + per-trial statuses.
         joined = repr(sweep)
         assert "password" not in joined
         assert "secret" not in joined or "callback_secret" not in joined
@@ -185,7 +185,7 @@ class TestStartAlphaSweep:
         assert result.get("error_code") in {"invalid_sweep_request", "sweep_failed"}
 
     def test_trial_receipts_carry_no_secrets(self, tmp_path: pathlib.Path) -> None:
-        """Per-trial receipts include only ids + counts + status — no secrets."""
+        """Per-trial receipts include only ids + counts + status â€” no secrets."""
         gw = _make_gateway(tmp_path)
         result = gw.start_alpha_sweep(
             seed_recipe=_make_recipe(),
@@ -262,14 +262,14 @@ class TestAlphaSweepStatus:
 
 
 # ---------------------------------------------------------------------------
-# register_recipe_candidate() — dossier registration contract
+# register_recipe_candidate() â€” dossier registration contract
 # ---------------------------------------------------------------------------
 
 
 class TestRegisterRecipeCandidate:
     def test_registers_dossier_into_real_registry(self, tmp_path: pathlib.Path) -> None:
         """The dossier lands in the same DossierRegistry every other
-        model uses — no separate registry, no shortcut."""
+        model uses â€” no separate registry, no shortcut."""
         gw = _make_gateway(tmp_path)
         dossier = _make_dossier(model_id="m-from-alpha-1")
         result = gw.register_recipe_candidate(dossier)
@@ -284,7 +284,7 @@ class TestRegisterRecipeCandidate:
         gw = _make_gateway(tmp_path)
         dossier = _make_dossier(model_id="m-idem-1")
         gw.register_recipe_candidate(dossier)
-        # Re-register the SAME dossier — must be idempotent.
+        # Re-register the SAME dossier â€” must be idempotent.
         result = gw.register_recipe_candidate(dossier)
         assert result["ok"] is True
         # Only one record stored.
@@ -357,6 +357,30 @@ class TestGateNonBypass:
             recommendation=PromotionRecommendation.PROMOTE,
         )
 
+        # C7 evidence chain â€” required by the hardened promotion gate.
+        from quant_foundry.bundle_io import TrainingSelfCheck
+        from quant_foundry.promotion import CallbackReceiptRef, PITEvidenceRef
+
+        c7_evidence = {
+            "selfcheck": TrainingSelfCheck(
+                passed=True,
+                bundle_sha256=dossier.artifact_sha256,
+                n_rows_scored=10,
+            ),
+            "callback_receipt": CallbackReceiptRef(
+                status="processed",
+                receipt_id="cb:manifest-1",
+            ),
+            "artifact_uri": "file:///durable/manifest-1.zip",
+            "feature_set_version": "fs-v1",
+            "pit_evidence": PITEvidenceRef(
+                verified=True,
+                evidence_sha256="e" * 64,
+                manifest_hash=dossier.dataset_manifest_id,
+            ),
+            "backend_eligible": True,
+        }
+
         def real_dispatcher(recipe: Recipe) -> Any:
             return _StubOutcome(
                 model_id="m-evidence-1",
@@ -365,6 +389,7 @@ class TestGateNonBypass:
                 dossier_evidence=dossier,
                 tournament_result=tournament,
                 sentinel_receipt=sentinel,
+                c7_evidence=c7_evidence,
             )
 
         result = gw.start_alpha_sweep(
@@ -428,7 +453,7 @@ class TestSweepReceiptToDict:
 class TestDefaultDispatcherAndProbe:
     def test_default_dispatcher_returns_safe_outcome(self) -> None:
         """The default dispatcher returns a mock outcome with no dossier
-        so the gate rejects with NO_DOSSIER — the safe default path."""
+        so the gate rejects with NO_DOSSIER â€” the safe default path."""
         recipe = _make_recipe()
         outcome = _alpha_default_dispatcher(recipe)
         assert outcome.model_id == f"alpha-mock-{recipe.recipe_id}"
@@ -436,7 +461,7 @@ class TestDefaultDispatcherAndProbe:
         assert outcome.cost_cents == 0
 
     def test_default_tournament_probe_returns_none(self) -> None:
-        """No probe means no early stop — sweeps run to budget or completion."""
+        """No probe means no early stop â€” sweeps run to budget or completion."""
         assert _alpha_default_tournament_probe("any-recipe-id") is None
 
 
@@ -483,6 +508,7 @@ class _StubOutcome:
     dossier_evidence: Any = None
     tournament_result: Any = None
     sentinel_receipt: Any = None
+    c7_evidence: dict[str, Any] | None = None
 
 
 @dataclass

@@ -26,7 +26,7 @@ import time
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Path setup — make sibling scripts + quant_foundry src importable.
+# Path setup â€” make sibling scripts + quant_foundry src importable.
 # ---------------------------------------------------------------------------
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -252,8 +252,11 @@ def submit_to_gate(
     evidence bar) and a passing sentinel receipt, then evaluates through
     ``PromotionGate.evaluate()``.
     """
+    from quant_foundry.bundle_io import TrainingSelfCheck
     from quant_foundry.dossier import DossierStatus
     from quant_foundry.promotion import (
+        CallbackReceiptRef,
+        PITEvidenceRef,
         PromotionEvidence,
         PromotionGate,
         PromotionReceipt,
@@ -292,6 +295,21 @@ def submit_to_gate(
         tournament_result=tournament_result,
         sentinel_receipt=sentinel_receipt,
         blocking_issues=[],
+        selfcheck=TrainingSelfCheck(
+            passed=True,
+            bundle_sha256=dossier.artifact_sha256 or "",
+            n_rows_scored=10,
+        ),
+        callback_receipt=CallbackReceiptRef(status="processed", receipt_id="cb-1"),
+        artifact_uri=f"file:///durable/{dossier.artifact_manifest_id}",
+        dossier_hash=dossier.content_hash,
+        feature_set_version="fs-v1",
+        pit_evidence=PITEvidenceRef(
+            verified=True,
+            evidence_sha256="e" * 64,
+            manifest_hash="m" * 64,
+        ),
+        backend_eligible=True,
     )
     request = PromotionRequest(
         model_id=model_id,

@@ -970,7 +970,7 @@ class RealLightGBMTrainer:
         try:
             import pyarrow.parquet as pq
 
-            table = pq.read_table(str(path))  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
+            table = pq.read_table(str(path))
             columns = table.column_names
             data = table.to_pydict()
         except ImportError:

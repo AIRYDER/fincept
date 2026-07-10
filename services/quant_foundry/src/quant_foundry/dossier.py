@@ -1,22 +1,22 @@
 """
-quant_foundry.dossier — model dossier record + builder (TASK-0403).
+quant_foundry.dossier â€” model dossier record + builder (TASK-0403).
 
 A "dossier" is the complete reproducibility + evaluation record for a candidate
 model. It is the core of the promotion decision: without a dossier, a model
 artifact is an opaque file. With a dossier, every model is reviewable and
 promotable only with evidence.
 
-What a dossier carries (cross-cutting rigor §3 — reproducibility):
+What a dossier carries (cross-cutting rigor Â§3 â€” reproducibility):
 - dataset / feature / label schema hashes
 - code git SHA, lockfile hash, container image digest
 - random seed(s), hardware class
 - the artifact manifest id + artifact sha256 it was built from
 - training metrics (accuracy, brier, etc.)
-- **trial_count** for the model family (so the tournament can deflate Sharpe —
-  cross-cutting rigor §2)
+- **trial_count** for the model family (so the tournament can deflate Sharpe â€”
+  cross-cutting rigor Â§2)
 - **blocking_issues** list that the sentinel (TASK-0406) and tournament
   (TASK-0404) write into; a blocking issue is a hard gate on promotion
-- **status** — the promotion lifecycle state
+- **status** â€” the promotion lifecycle state
 
 Invariants:
 - ``DossierRecord`` is frozen + extra='forbid' (audit integrity).
@@ -47,8 +47,8 @@ class DossierStatus(StrEnum):
 
     A model moves candidate -> research_approved -> shadow_approved -> paper_approved
     -> limited_live_approved only with dossiers, settlement evidence, tournament
-    scores, receipts, and human approval. ``rejected`` is terminal-reachable
-    from any state.
+    scores, receipts, and human approval. ``rejected`` and ``retired`` are
+    terminal â€” no promotion path out of either.
     """
 
     CANDIDATE = "candidate"
@@ -57,6 +57,8 @@ class DossierStatus(StrEnum):
     PAPER_APPROVED = "paper_approved"
     LIMITED_LIVE_APPROVED = "limited_live_approved"
     REJECTED = "rejected"
+    # C7: retired is terminal â€” no promotion path out of retired.
+    RETIRED = "retired"
 
 
 class DossierRecord(BaseModel):
@@ -92,7 +94,7 @@ class DossierRecord(BaseModel):
     # Registry-managed (set by DossierRegistry, not by the builder):
     blocking_issues: list[dict[str, Any]] = Field(default_factory=list)
     registered_at_ns: int | None = None
-    # Immutability key — computed from the canonical content (see _compute_content_hash).
+    # Immutability key â€” computed from the canonical content (see _compute_content_hash).
     content_hash: str = ""
 
     @field_validator("model_id")
@@ -113,7 +115,7 @@ class DossierRecord(BaseModel):
         """Always (re)compute ``content_hash`` from the canonical content.
 
         Uses ``object.__setattr__`` because the model is frozen. The content hash
-        is ALWAYS derived from the record's content — never trusted from input —
+        is ALWAYS derived from the record's content â€” never trusted from input â€”
         so a ``model_copy`` that changes content fields produces a new hash, and a
         reload from JSON recomputes the same hash (content is unchanged). The hash
         excludes ``content_hash`` (self), ``blocking_issues``, and
@@ -130,7 +132,7 @@ class DossierRecord(BaseModel):
 
         Pydantic v2's ``model_copy`` does NOT re-run ``model_post_init``, so without
         this override a copy that changes content fields would carry the stale
-        ``content_hash`` — breaking the immutability invariant. We recompute it here.
+        ``content_hash`` â€” breaking the immutability invariant. We recompute it here.
         """
         copied = super().model_copy(update=update, deep=deep)
         ch = _compute_content_hash(copied)

@@ -118,7 +118,7 @@ def client_with_registry(registry: ModelRegistryDB) -> TestClient:
 
 @pytest.fixture()
 def client_without_registry() -> TestClient:
-    """TestClient with NO registry on app.state (disabled state → 503)."""
+    """TestClient with NO registry on app.state (disabled state â†’ 503)."""
     from api.routes.quant_foundry import router
 
     app = FastAPI()
@@ -128,7 +128,7 @@ def client_without_registry() -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# Helpers — seed FK parent rows + full evidence chain
+# Helpers â€” seed FK parent rows + full evidence chain
 # ---------------------------------------------------------------------------
 
 
@@ -231,6 +231,31 @@ def _setup_full_evidence_chain(registry, engine, settled_count=50):
             "pbo": None,
             "pbo_flagged": False,
         },
+    )
+    # C7: selfcheck, PIT evidence, feature_set, backend metrics.
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="selfcheck",
+        metrics_dict={
+            "passed": True,
+            "n_rows_scored": 10,
+            "bundle_sha256": "a" * 64,
+        },
+    )
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="pit_evidence",
+        metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+    )
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="feature_set",
+        metrics_dict={"feature_set_version": "fs-v1"},
+    )
+    registry.record_metrics(
+        version_id="ver-001",
+        metric_type="backend",
+        metrics_dict={"production_eligible": True},
     )
 
 
@@ -447,7 +472,7 @@ class TestRegistryPromote:
         engine,
         auth_headers: dict[str, str],
     ) -> None:
-        # settled_count=3 is below min_settled_count=10 → gate rejects.
+        # settled_count=3 is below min_settled_count=10 â†’ gate rejects.
         _setup_full_evidence_chain(registry, engine, settled_count=3)
         response = client_with_registry.post(
             "/quant-foundry/registry/promote",

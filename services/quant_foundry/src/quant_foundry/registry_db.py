@@ -1,4 +1,4 @@
-"""quant_foundry.registry_db — DB-backed model registry with promotion workflow.
+"""quant_foundry.registry_db â€” DB-backed model registry with promotion workflow.
 
 The ``ModelRegistryDB`` is the durable, Postgres-backed home for model identity,
 versions, metrics, promotion decisions, and shadow evaluations. It mirrors the
@@ -7,11 +7,11 @@ JSONL-backed ``DossierRegistry`` (TASK-0403) but writes to fincept-db via a
 
 Why sync, not async:
   The ``PromotionGate.evaluate`` is sync, and the promotion workflow is a
-  synchronous request-response cycle (assemble evidence → evaluate → persist
-  receipt → update status). The DB-backed registry uses a sync SQLAlchemy
+  synchronous request-response cycle (assemble evidence â†’ evaluate â†’ persist
+  receipt â†’ update status). The DB-backed registry uses a sync SQLAlchemy
   engine + sync sessions (``sync_session_scope`` from ``fincept_db.engine``).
 
-CRITICAL — the registry persists, the gate enforces:
+CRITICAL â€” the registry persists, the gate enforces:
   The registry's ``promote()`` method does NOT duplicate PromotionGate logic.
   It:
     1. Queries the registry tables to assemble ``PromotionEvidence``.
@@ -45,7 +45,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from fincept_db.callback_tables import ModelDossierRow
+from fincept_db.callback_tables import (
+    ArtifactManifestRow,
+    CallbackReceiptRow,
+    ModelDossierRow,
+)
 from fincept_db.registry_tables import (
     ModelMetricRow,
     ModelRow,
@@ -54,9 +58,12 @@ from fincept_db.registry_tables import (
     PromotionRow,
     ShadowEvaluationRow,
 )
+from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.promotion import (
     BlockingIssue,
+    CallbackReceiptRef,
+    PITEvidenceRef,
     PromotionEvidence,
     PromotionGate,
     PromotionReceipt,
@@ -252,9 +259,19 @@ class ModelRegistryDB:
         """Write a metrics row. Returns the metric_id.
 
         ``metric_type`` must be one of ``training``, ``tournament``,
-        ``sentinel``, ``settlement`` (enforced by DB CHECK constraint).
+        ``sentinel``, ``settlement``, ``selfcheck``, ``pit_evidence``,
+        ``feature_set``, ``backend`` (enforced by DB CHECK constraint).
         """
-        valid_types = {"training", "tournament", "sentinel", "settlement"}
+        valid_types = {
+            "training",
+            "tournament",
+            "sentinel",
+            "settlement",
+            "selfcheck",
+            "pit_evidence",
+            "feature_set",
+            "backend",
+        }
         if metric_type not in valid_types:
             raise ValueError(
                 f"metric_type must be one of {sorted(valid_types)}; got {metric_type!r}"
@@ -380,7 +397,7 @@ class ModelRegistryDB:
         This method:
           1. Queries the registry tables to assemble ``PromotionEvidence``.
           2. Calls ``PromotionGate.evaluate(request, evidence)``.
-          3. Persists the ``promotions`` row (always — approved or rejected).
+          3. Persists the ``promotions`` row (always â€” approved or rejected).
           4. Persists the ``PromotionReceipt`` into ``promotion_decisions``.
           5. Only if approved: updates ``model_versions.status`` and
              ``models.current_status``.
@@ -418,7 +435,7 @@ class ModelRegistryDB:
         # --- 4. Call the gate (the gate enforces; the registry persists) ---
         receipt = self._gate.evaluate(request=request, evidence=evidence)
 
-        # --- 5. Persist the promotions row (always — audit trail) ---
+        # --- 5. Persist the promotions row (always â€” audit trail) ---
         promotion_id = f"promo:{version_id}:{now_ns}"
         decided_at_ns = receipt.decided_at_ns or time.time_ns()
         with Session(engine) as session:
@@ -485,11 +502,25 @@ class ModelRegistryDB:
           - ``model_metrics`` (metric_type='sentinel') to build a
             ``SentinelReceipt``.
           - ``model_dossiers.blocking_issues`` for the blocking issues list.
+          - ``artifact_manifests`` (via the version's ``artifact_id``) for
+            the durable artifact URI (C7).
+          - ``callback_receipts`` (via the version's ``callback_receipt_id``)
+            for the callback receipt status (C7).
+          - ``model_metrics`` (metric_type='selfcheck') to build a
+            ``TrainingSelfCheck`` (C7).
+          - ``model_metrics`` (metric_type='pit_evidence') for PIT evidence
+            verification status (C7).
+          - ``model_metrics`` (metric_type='feature_set') for the
+            feature_set_version pin (C7).
+          - ``model_metrics`` (metric_type='backend') for backend
+            eligibility (C7).
 
         If the dossier is missing, evidence.dossier is None (the gate will
         reject with NO_DOSSIER). If tournament/sentinel metrics are missing,
         those evidence fields are None (the gate will reject with
-        INSUFFICIENT_EVIDENCE / SENTINEL_FAILED).
+        INSUFFICIENT_EVIDENCE / SENTINEL_FAILED). C7 fields default to
+        None/False when the corresponding metrics are absent (the gate
+        rejects with the appropriate C7 reason).
         """
         engine = self.engine
 
@@ -560,11 +591,115 @@ class ModelRegistryDB:
                         )
                     )
 
+            # --- C7: Query artifact_manifests for the durable artifact URI ---
+            artifact_uri: str | None = None
+            if version_row.artifact_id:
+                artifact_row = session.scalars(
+                    select(ArtifactManifestRow).where(
+                        ArtifactManifestRow.artifact_id == version_row.artifact_id
+                    )
+                ).first()
+                if artifact_row is not None:
+                    artifact_uri = artifact_row.uri
+
+            # --- C7: Query callback_receipts for the callback receipt status ---
+            callback_receipt: CallbackReceiptRef | None = None
+            if version_row.callback_receipt_id:
+                cb_row = session.scalars(
+                    select(CallbackReceiptRow).where(
+                        CallbackReceiptRow.callback_id == version_row.callback_receipt_id
+                    )
+                ).first()
+                if cb_row is not None:
+                    callback_receipt = CallbackReceiptRef(
+                        status=cb_row.status,
+                        receipt_id=cb_row.callback_id,
+                    )
+
+            # --- C7: Query selfcheck metrics ---
+            selfcheck: TrainingSelfCheck | None = None
+            selfcheck_row = session.scalars(
+                select(ModelMetricRow)
+                .where(
+                    ModelMetricRow.version_id == version_id,
+                    ModelMetricRow.metric_type == "selfcheck",
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if selfcheck_row is not None:
+                m = selfcheck_row.metrics
+                selfcheck = TrainingSelfCheck(
+                    passed=bool(m.get("passed", False)),
+                    n_rows_scored=int(m.get("n_rows_scored", 0)),
+                    output_sha256=str(m.get("output_sha256", "")),
+                    bundle_sha256=str(m.get("bundle_sha256", "")),
+                    loader_version=str(m.get("loader_version", "v1")),
+                    duration_ms=float(m.get("duration_ms", 0.0)),
+                    error_detail=m.get("error_detail"),
+                )
+
+            # --- C7: Query PIT evidence metrics ---
+            pit_evidence: PITEvidenceRef | None = None
+            pit_row = session.scalars(
+                select(ModelMetricRow)
+                .where(
+                    ModelMetricRow.version_id == version_id,
+                    ModelMetricRow.metric_type == "pit_evidence",
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if pit_row is not None:
+                m = pit_row.metrics
+                pit_evidence = PITEvidenceRef(
+                    verified=bool(m.get("verified", False)),
+                    evidence_sha256=str(m.get("evidence_sha256", "")),
+                    manifest_hash=str(m.get("manifest_hash", "")),
+                )
+
+            # --- C7: Query feature_set metrics for the version pin ---
+            feature_set_version: str | None = None
+            fs_row = session.scalars(
+                select(ModelMetricRow)
+                .where(
+                    ModelMetricRow.version_id == version_id,
+                    ModelMetricRow.metric_type == "feature_set",
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if fs_row is not None:
+                feature_set_version = fs_row.metrics.get("feature_set_version")
+
+            # --- C7: Query backend eligibility metrics ---
+            backend_eligible: bool = False
+            backend_row = session.scalars(
+                select(ModelMetricRow)
+                .where(
+                    ModelMetricRow.version_id == version_id,
+                    ModelMetricRow.metric_type == "backend",
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if backend_row is not None:
+                backend_eligible = bool(backend_row.metrics.get("production_eligible", False))
+
         return PromotionEvidence(
             dossier=dossier,
             tournament_result=tournament_result,
             sentinel_receipt=sentinel_receipt,
             blocking_issues=blocking_issues,
+            selfcheck=selfcheck,
+            callback_receipt=callback_receipt,
+            artifact_uri=artifact_uri,
+            # Use the DossierRecord's recomputed content_hash as the
+            # dossier_hash. The gate checks that dossier_hash matches
+            # dossier.content_hash â€” this ensures the dossier row's content
+            # matches the recomputed hash (tamper detection). The
+            # version_row.dossier_content_hash FK ensures the version
+            # points to the correct dossier row.
+            dossier_hash=dossier.content_hash if dossier else None,
+            feature_set_version=feature_set_version,
+            pit_evidence=pit_evidence,
+            backend_eligible=backend_eligible,
         )
 
     # ------------------------------------------------------------------

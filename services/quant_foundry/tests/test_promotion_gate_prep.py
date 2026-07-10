@@ -1,17 +1,19 @@
 """
-C7 Promotion Gate Prep — draft tests (PREP-ONLY).
+C7 Promotion Gate Hardening â€” tests for the hardened promotion gate.
 
-These tests describe the *target* behavior of the hardened promotion gate
-that C7 will eventually implement. They are marked ``xfail`` with
-``strict=True`` and reason ``"C7 prep — gate not yet hardened"`` so they:
+These tests verify the C7 evidence chain: no model can advance unless the
+full receipt chain is complete.
 
-  - do NOT break the live test suite,
-  - do NOT flip gate behavior globally,
-  - do NOT add DB migrations,
-  - document the exact contract C7 must satisfy.
-
-When C7 is implemented, remove the ``xfail`` markers and these tests must
-pass. Until then, they serve as executable specification.
+  - durable artifact URI exists
+  - artifact sha256 exists
+  - callback receipt exists and is processed
+  - dossier hash is consistent
+  - bundle selfcheck exists
+  - selfcheck.passed == true
+  - backend is production eligible
+  - feature_set_version is present and verified
+  - PIT evidence exists and is verified
+  - retired is terminal (no promotion out of retired)
 
 Non-goals: do not touch the scheduler, live promotion automation, or
 RunPod live probes from this file.
@@ -20,8 +22,11 @@ RunPod live probes from this file.
 from __future__ import annotations
 
 import pytest
+from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.promotion import (
+    CallbackReceiptRef,
+    PITEvidenceRef,
     PromotionEvidence,
     PromotionGate,
     PromotionRejectionReason,
@@ -35,22 +40,16 @@ from quant_foundry.tournament import (
     TournamentStatus,
 )
 
-# Mark every test in this module as prep-only. strict=True means an
-# unexpected PASS is a failure (so we notice when C7 lands).
-_PREP = pytest.mark.xfail(
-    reason="C7 prep — gate not yet hardened",
-    strict=True,
-)
-
 
 # ---------------------------------------------------------------------------
-# Helpers — minimal evidence factory
+# Helpers â€” minimal evidence factory
 # ---------------------------------------------------------------------------
 
 
 def _make_dossier(
     model_id: str = "m1",
     artifact_sha256: str = "a" * 64,
+    status: DossierStatus = DossierStatus.CANDIDATE,
 ) -> DossierRecord:
     return DossierRecord(
         model_id=model_id,
@@ -62,7 +61,7 @@ def _make_dossier(
         container_image_digest="digest",
         feature_schema_hash="f" * 64,
         label_schema_hash="l" * 64,
-        status=DossierStatus.CANDIDATE,
+        status=status,
         trial_count=1,
     )
 
@@ -90,47 +89,81 @@ def _make_sentinel_receipt(model_id: str = "m1") -> SentinelReceipt:
     )
 
 
+def _make_selfcheck(passed: bool = True) -> TrainingSelfCheck:
+    return TrainingSelfCheck(
+        passed=passed,
+        bundle_sha256="a" * 64,
+        n_rows_scored=10,
+    )
+
+
+def _make_callback_receipt(status: str = "processed") -> CallbackReceiptRef:
+    return CallbackReceiptRef(status=status, receipt_id="cb-1")
+
+
+def _make_pit_evidence_ref(verified: bool = True) -> PITEvidenceRef:
+    return PITEvidenceRef(verified=verified, evidence_sha256="e" * 64, manifest_hash="m" * 64)
+
+
 def _make_request(
     target_level: DossierStatus = DossierStatus.SHADOW_APPROVED,
 ) -> PromotionRequest:
     return PromotionRequest(
         model_id="m1",
         target_level=target_level,
-        review_note="C7 prep",
+        review_note="C7 test",
         waivers=[],
     )
 
 
+def _make_evidence_complete(
+    dossier: DossierRecord | None = None,
+    selfcheck: TrainingSelfCheck | None = "default",
+    callback_receipt: CallbackReceiptRef | None = "default",
+    artifact_uri: str | None = "default",
+    dossier_hash: str | None = "default",
+    feature_set_version: str | None = "default",
+    pit_evidence: PITEvidenceRef | None = "default",
+    backend_eligible: bool = True,
+) -> PromotionEvidence:
+    """Build evidence with the full C7 receipt chain.
+
+    Any field set to ``None`` is omitted from the evidence, allowing
+    tests to verify individual rejection reasons.
+    """
+    d = dossier or _make_dossier()
+    return PromotionEvidence(
+        dossier=d,
+        tournament_result=_make_tournament_result(),
+        sentinel_receipt=_make_sentinel_receipt(),
+        blocking_issues=[],
+        selfcheck=_make_selfcheck() if selfcheck == "default" else selfcheck,
+        callback_receipt=_make_callback_receipt() if callback_receipt == "default" else callback_receipt,
+        artifact_uri="file:///durable/artifact.zip" if artifact_uri == "default" else artifact_uri,
+        dossier_hash=d.content_hash if dossier_hash == "default" else dossier_hash,
+        feature_set_version="fs-v1" if feature_set_version == "default" else feature_set_version,
+        pit_evidence=_make_pit_evidence_ref() if pit_evidence == "default" else pit_evidence,
+        backend_eligible=backend_eligible,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Draft tests — selfcheck
+# Tests â€” selfcheck
 # ===========================================================================
 
 
-@_PREP
 def test_promotion_rejects_missing_selfcheck() -> None:
-    """The gate must reject when no selfcheck receipt is present.
-
-    Target: PromotionEvidence gains a ``selfcheck`` field; a None value
-    rejects with ``MISSING_SELFCHECK``.
-    """
-    ev = _make_evidence_complete()
-    # Simulate the missing-selfcheck case by evidence lacking the field.
-    # When C7 lands, PromotionEvidence.selfcheck will exist and default to
-    # None — the gate must reject.
+    """The gate must reject when no selfcheck receipt is present."""
+    ev = _make_evidence_complete(selfcheck=None)
     gate = PromotionGate()
     receipt = gate.evaluate(request=_make_request(), evidence=ev)
     assert receipt.decision == ReviewDecision.REJECTED
     assert receipt.rejection_reason == PromotionRejectionReason.MISSING_SELFCHECK
 
 
-@_PREP
 def test_promotion_rejects_selfcheck_failed() -> None:
-    """The gate must reject when selfcheck.passed is False.
-
-    Target: a failed TrainingSelfCheck rejects with ``SELFCHECK_FAILED``
-    (distinct from the existing ``SENTINEL_FAILED``).
-    """
-    ev = _make_evidence_complete()
+    """The gate must reject when selfcheck.passed is False."""
+    ev = _make_evidence_complete(selfcheck=_make_selfcheck(passed=False))
     gate = PromotionGate()
     receipt = gate.evaluate(request=_make_request(), evidence=ev)
     assert receipt.decision == ReviewDecision.REJECTED
@@ -138,17 +171,12 @@ def test_promotion_rejects_selfcheck_failed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Draft tests — bundle sha256
+# Tests â€” bundle sha256
 # ===========================================================================
 
 
-@_PREP
 def test_promotion_rejects_missing_bundle_sha256() -> None:
-    """The gate must reject when the dossier has no artifact_sha256.
-
-    Target: an empty/None ``artifact_sha256`` rejects with
-    ``MISSING_BUNDLE_SHA256``.
-    """
+    """The gate must reject when the dossier has no artifact_sha256."""
     dossier = _make_dossier(artifact_sha256="")
     ev = _make_evidence_complete(dossier=dossier)
     gate = PromotionGate()
@@ -158,45 +186,27 @@ def test_promotion_rejects_missing_bundle_sha256() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Draft tests — backend production eligibility
+# Tests â€” backend production eligibility
 # ===========================================================================
 
 
-@_PREP
 def test_promotion_rejects_backend_not_production_eligible() -> None:
-    """The gate must reject when the training backend is not production-eligible.
-
-    Target: the dataset manifest's readiness_level < L3 (or quality gate
-    not passed) rejects with ``BACKEND_NOT_PRODUCTION_ELIGIBLE``.
-    """
-    ev = _make_evidence_complete()
+    """The gate must reject when the training backend is not production-eligible."""
+    ev = _make_evidence_complete(backend_eligible=False)
     gate = PromotionGate()
     receipt = gate.evaluate(request=_make_request(), evidence=ev)
     assert receipt.decision == ReviewDecision.REJECTED
-    assert receipt.rejection_reason == (PromotionRejectionReason.BACKEND_NOT_PRODUCTION_ELIGIBLE)
+    assert receipt.rejection_reason == PromotionRejectionReason.BACKEND_NOT_PRODUCTION_ELIGIBLE
 
 
 # ---------------------------------------------------------------------------
-# Draft tests — complete receipt chain (positive path)
+# Tests â€” complete receipt chain (positive path)
 # ===========================================================================
 
 
-@_PREP
 def test_promotion_accepts_complete_receipt_chain() -> None:
-    """The gate must APPROVE when the full receipt chain is present + valid.
-
-    Target: with durable artifact URI, processed callback receipt,
-    selfcheck.passed=True, dossier hash consistent, backend
-    production-eligible, feature_set_version pinned, and PIT evidence
-    verified, the gate approves with rejection_reason=None.
-
-    Today this fails because ``PromotionEvidence`` does not accept the
-    new fields (``selfcheck``, ``callback_receipt``, ``artifact_uri``,
-    ``dossier_hash``, ``feature_set_version``, ``pit_evidence``,
-    ``backend_eligible``) — constructing evidence with them raises
-    ``TypeError`` / ``ValidationError``, which the xfail captures.
-    """
-    ev = _make_evidence_complete_with_chain()
+    """The gate must APPROVE when the full receipt chain is present + valid."""
+    ev = _make_evidence_complete()
     gate = PromotionGate()
     receipt = gate.evaluate(request=_make_request(), evidence=ev)
     assert receipt.decision == ReviewDecision.APPROVED
@@ -204,77 +214,140 @@ def test_promotion_accepts_complete_receipt_chain() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Draft tests — retired terminal status
+# Tests â€” retired terminal status
 # ===========================================================================
 
 
-@_PREP
 def test_retired_is_terminal_status() -> None:
-    """``retired`` must be a terminal DossierStatus with no outgoing transitions.
-
-    Target: DossierStatus gains a ``RETIRED`` member; the promotion gate
-    refuses to promote FROM retired (retired is terminal) and the level
-    order treats retired as a sink.
-    """
-    # The RETIRED member does not exist yet — this attribute access fails
-    # today, which is the expected xfail.
-    retired = DossierStatus.RETIRED  # type: ignore[attr-defined]
+    """``retired`` must be a terminal DossierStatus with no outgoing transitions."""
+    retired = DossierStatus.RETIRED
     assert retired.value == "retired"
     # A retired version cannot be promoted to any other level.
-    ev = _make_evidence_complete()
+    dossier = _make_dossier(status=DossierStatus.RETIRED)
+    ev = _make_evidence_complete(dossier=dossier)
     gate = PromotionGate()
     receipt = gate.evaluate(
         request=_make_request(target_level=DossierStatus.RESEARCH_APPROVED),
         evidence=ev,
     )
-    # The gate must reject promotion out of a terminal retired state.
     assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.RETIRED_IS_TERMINAL
+
+
+def test_rejected_is_terminal_status() -> None:
+    """``rejected`` is also terminal â€” no promotion out of rejected."""
+    dossier = _make_dossier(status=DossierStatus.REJECTED)
+    ev = _make_evidence_complete(dossier=dossier)
+    gate = PromotionGate()
+    receipt = gate.evaluate(
+        request=_make_request(target_level=DossierStatus.RESEARCH_APPROVED),
+        evidence=ev,
+    )
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.RETIRED_IS_TERMINAL
 
 
 # ---------------------------------------------------------------------------
-# Internal helper — build "complete" evidence (target shape)
+# Tests â€” callback receipt
+# ===========================================================================
+
+
+def test_promotion_rejects_missing_callback_receipt() -> None:
+    """The gate must reject when no callback receipt is present."""
+    ev = _make_evidence_complete(callback_receipt=None)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.MISSING_CALLBACK_RECEIPT
+
+
+def test_promotion_rejects_callback_not_processed() -> None:
+    """The gate must reject when the callback receipt status is not 'processed'."""
+    ev = _make_evidence_complete(callback_receipt=_make_callback_receipt(status="pending"))
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.CALLBACK_NOT_PROCESSED
+
+
 # ---------------------------------------------------------------------------
+# Tests â€” artifact URI
+# ===========================================================================
 
 
-def _make_evidence_complete(
-    dossier: DossierRecord | None = None,
-) -> PromotionEvidence:
-    """Build evidence that *would* be complete under the hardened gate.
-
-    NOTE: PromotionEvidence today does not carry selfcheck, callback
-    receipt, artifact URI, dossier hash, feature_set_version, PIT
-    evidence, or backend eligibility. This helper builds the closest
-    current-shape evidence; the xfail tests above assert the *future*
-    rejection reasons that do not exist yet, so they fail as expected.
-    """
-    return PromotionEvidence(
-        dossier=dossier or _make_dossier(),
-        tournament_result=_make_tournament_result(),
-        sentinel_receipt=_make_sentinel_receipt(),
-        blocking_issues=[],
-    )
+def test_promotion_rejects_missing_artifact_uri() -> None:
+    """The gate must reject when no durable artifact URI is present."""
+    ev = _make_evidence_complete(artifact_uri=None)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.MISSING_ARTIFACT_URI
 
 
-def _make_evidence_complete_with_chain() -> PromotionEvidence:
-    """Build evidence carrying the full C7 receipt chain.
+# ---------------------------------------------------------------------------
+# Tests â€” dossier hash
+# ===========================================================================
 
-    Attempts to pass the new fields (``selfcheck``, ``callback_receipt``,
-    ``artifact_uri``, ``dossier_hash``, ``feature_set_version``,
-    ``pit_evidence``, ``backend_eligible``) to ``PromotionEvidence``.
-    Today the model is ``extra="forbid"`` so this raises — the xfail in
-    ``test_promotion_accepts_complete_receipt_chain`` captures that.
-    """
-    return PromotionEvidence(
-        dossier=_make_dossier(),
-        tournament_result=_make_tournament_result(),
-        sentinel_receipt=_make_sentinel_receipt(),
-        blocking_issues=[],
-        # New C7 fields — rejected by extra="forbid" today.
-        selfcheck={"passed": True, "bundle_sha256": "a" * 64},
-        callback_receipt={"status": "processed"},
-        artifact_uri="file:///durable/artifact.zip",
-        dossier_hash="h" * 64,
-        feature_set_version="fs-v1",
-        pit_evidence={"pit_proof_verified": True},
-        backend_eligible=True,
-    )
+
+def test_promotion_rejects_dossier_hash_mismatch() -> None:
+    """The gate must reject when the dossier hash does not match the dossier content_hash."""
+    ev = _make_evidence_complete(dossier_hash="b" * 64)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.DOSSIER_HASH_MISMATCH
+
+
+def test_promotion_rejects_missing_dossier_hash() -> None:
+    """The gate must reject when no dossier hash is present."""
+    ev = _make_evidence_complete(dossier_hash=None)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.DOSSIER_HASH_MISMATCH
+
+
+# ---------------------------------------------------------------------------
+# Tests â€” feature set version
+# ===========================================================================
+
+
+def test_promotion_rejects_unverified_feature_set_version() -> None:
+    """The gate must reject when feature_set_version is missing or empty."""
+    ev = _make_evidence_complete(feature_set_version=None)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.FEATURE_SET_VERSION_NOT_VERIFIED
+
+
+def test_promotion_rejects_empty_feature_set_version() -> None:
+    """The gate must reject when feature_set_version is an empty string."""
+    ev = _make_evidence_complete(feature_set_version="")
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.FEATURE_SET_VERSION_NOT_VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# Tests â€” PIT evidence
+# ===========================================================================
+
+
+def test_promotion_rejects_missing_pit_evidence() -> None:
+    """The gate must reject when no PIT evidence is present."""
+    ev = _make_evidence_complete(pit_evidence=None)
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.PIT_EVIDENCE_MISSING
+
+
+def test_promotion_rejects_unverified_pit_evidence() -> None:
+    """The gate must reject when PIT evidence.verified is False."""
+    ev = _make_evidence_complete(pit_evidence=_make_pit_evidence_ref(verified=False))
+    gate = PromotionGate()
+    receipt = gate.evaluate(request=_make_request(), evidence=ev)
+    assert receipt.decision == ReviewDecision.REJECTED
+    assert receipt.rejection_reason == PromotionRejectionReason.PIT_EVIDENCE_NOT_VERIFIED

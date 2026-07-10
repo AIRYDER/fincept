@@ -27,7 +27,6 @@ import pathlib
 import time
 from typing import Any, ClassVar
 
-from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.market_data_adapter import BarDataAdapter, PricePoint
@@ -41,8 +40,6 @@ from quant_foundry.paper_bridge import (
     convert_shadow_to_paper,
 )
 from quant_foundry.promotion import (
-    CallbackReceiptRef,
-    PITEvidenceRef,
     PromotionEvidence,
 )
 from quant_foundry.sentinel import SentinelReceipt
@@ -173,27 +170,11 @@ def _make_evidence(
     model_id: str = "bridge-model-1",
     dossier_status: DossierStatus = DossierStatus.PAPER_APPROVED,
 ) -> PromotionEvidence:
-    dossier = _make_dossier(model_id=model_id, status=dossier_status)
     return PromotionEvidence(
-        dossier=dossier,
+        dossier=_make_dossier(model_id=model_id, status=dossier_status),
         tournament_result=_make_tournament_result(model_id=model_id),
         sentinel_receipt=_make_sentinel_receipt(model_id=model_id),
         blocking_issues=[],
-        # C7 evidence chain.
-        selfcheck=TrainingSelfCheck(
-            passed=True,
-            n_rows_scored=100,
-            output_sha256="b" * 64,
-            bundle_sha256=dossier.artifact_sha256,
-            loader_version="v1",
-            duration_ms=42.0,
-        ),
-        callback_receipt=CallbackReceiptRef(status="processed"),
-        artifact_uri="file:///durable/artifact.zip",
-        dossier_hash=dossier.content_hash,
-        feature_set_version="fs-v1",
-        pit_evidence=PITEvidenceRef(verified=True, evidence_sha256="e" * 64),
-        backend_eligible=True,
     )
 
 
@@ -558,21 +539,6 @@ class TestPaperBridgePublish:
             tournament_result=_make_tournament_result(model_id="flow-model"),
             sentinel_receipt=_make_sentinel_receipt(model_id="flow-model"),
             blocking_issues=[],
-            # C7 evidence chain.
-            selfcheck=TrainingSelfCheck(
-                passed=True,
-                n_rows_scored=100,
-                output_sha256="b" * 64,
-                bundle_sha256=dossier.artifact_sha256,
-                loader_version="v1",
-                duration_ms=42.0,
-            ),
-            callback_receipt=CallbackReceiptRef(status="processed"),
-            artifact_uri="file:///durable/artifact.zip",
-            dossier_hash=dossier.content_hash,
-            feature_set_version="fs-v1",
-            pit_evidence=PITEvidenceRef(verified=True, evidence_sha256="e" * 64),
-            backend_eligible=True,
         )
         bridge = PaperBridge(
             config=BridgeConfig(

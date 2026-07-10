@@ -23,6 +23,7 @@ from typing import Any
 # Re-export PromotionRecommendation so callers can import everything from
 # the leaderboard module without reaching into tournament.py.
 from quant_foundry.tournament import (
+    PromotionRecommendation,  # noqa: F401
     TournamentResult,
     TournamentStatus,
 )

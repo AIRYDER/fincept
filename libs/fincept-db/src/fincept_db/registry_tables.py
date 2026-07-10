@@ -24,7 +24,7 @@ Security invariants mirrored from the Pydantic layer:
     ``'training'``, ``'tournament'``, ``'sentinel'``, ``'settlement'``.
   - No column stores the callback secret, the HMAC signature bytes, or the
     raw payload. ``promotion_decisions.waivers`` is a JSONB list of
-    ``{issue_code, waived_by, reason}`` dicts — never secrets.
+    ``{issue_code, waived_by, reason}`` dicts â€” never secrets.
 """
 
 from __future__ import annotations
@@ -49,11 +49,11 @@ from .models import Base
 JSONDict = dict[str, Any]
 JSONList = list[dict[str, Any]]
 
-# Shared status domain CHECK (matches DossierStatus enum values).
+# Shared status domain CHECK (matches DossierStatus enum values, including C7 'retired').
 _STATUS_CHECK = (
     CheckConstraint(
         "current_status IN ('candidate','research_approved','shadow_approved',"
-        "'paper_approved','limited_live_approved','rejected')",
+        "'paper_approved','limited_live_approved','rejected','retired')",
         name="ck_models_current_status_domain",
     ),
 )
@@ -79,7 +79,7 @@ class ModelRow(Base):
     __table_args__ = (
         CheckConstraint(
             "current_status IN ('candidate','research_approved','shadow_approved',"
-            "'paper_approved','limited_live_approved','rejected')",
+            "'paper_approved','limited_live_approved','rejected','retired')",
             name="ck_models_current_status_domain",
         ),
         Index("ix_models_model_family", "model_family"),
@@ -121,7 +121,7 @@ class ModelVersionRow(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('candidate','research_approved','shadow_approved',"
-            "'paper_approved','limited_live_approved','rejected')",
+            "'paper_approved','limited_live_approved','rejected','retired')",
             name="ck_model_versions_status_domain",
         ),
         Index("ix_model_versions_model_id", "model_id"),
@@ -146,7 +146,8 @@ class ModelMetricRow(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "metric_type IN ('training','tournament','sentinel','settlement')",
+            "metric_type IN ('training','tournament','sentinel','settlement',"
+            "'selfcheck','pit_evidence','feature_set','backend')",
             name="ck_model_metrics_metric_type_domain",
         ),
         Index("ix_model_metrics_version_id", "version_id"),
@@ -174,12 +175,12 @@ class PromotionRow(Base):
     __table_args__ = (
         CheckConstraint(
             "from_status IN ('candidate','research_approved','shadow_approved',"
-            "'paper_approved','limited_live_approved','rejected')",
+            "'paper_approved','limited_live_approved','rejected','retired')",
             name="ck_promotions_from_status_domain",
         ),
         CheckConstraint(
             "to_status IN ('candidate','research_approved','shadow_approved',"
-            "'paper_approved','limited_live_approved','rejected')",
+            "'paper_approved','limited_live_approved','rejected','retired')",
             name="ck_promotions_to_status_domain",
         ),
         CheckConstraint(
@@ -198,7 +199,7 @@ class PromotionDecisionRow(Base):
     ``decision`` is ``'approved'`` or ``'rejected'``; ``rejection_reason`` is
     NULL on approval and one of the ``PromotionRejectionReason`` values on
     rejection. ``waivers`` is a JSONB list of
-    ``{issue_code, waived_by, reason}`` dicts — never secrets.
+    ``{issue_code, waived_by, reason}`` dicts â€” never secrets.
     """
 
     __tablename__ = "promotion_decisions"
@@ -226,7 +227,13 @@ class PromotionDecisionRow(Base):
         CheckConstraint(
             "rejection_reason IS NULL OR rejection_reason IN "
             "('no_dossier','insufficient_evidence','sentinel_failed',"
-            "'blocking_issue','mvp_level_limit')",
+            "'blocking_issue','mvp_level_limit',"
+            "'missing_selfcheck','selfcheck_failed','missing_bundle_sha256',"
+            "'missing_callback_receipt','callback_not_processed',"
+            "'missing_artifact_uri','dossier_hash_mismatch',"
+            "'backend_not_production_eligible','feature_set_version_not_verified',"
+            "'pit_evidence_missing','pit_evidence_not_verified',"
+            "'retired_is_terminal')",
             name="ck_promotion_decisions_rejection_reason_domain",
         ),
         Index("ix_promotion_decisions_promotion_id", "promotion_id"),
@@ -259,7 +266,7 @@ class ShadowEvaluationRow(Base):
 class DatasetManifestRow(Base):
     """ORM row for the ``dataset_manifests`` table (migration 0006).
 
-    Persists the point-in-time dataset manifest — the immutable record that a
+    Persists the point-in-time dataset manifest â€” the immutable record that a
     training worker references instead of DB credentials. Each row mirrors the
     ``FeatureLakeManifest`` fields that affect reproducibility:
 
@@ -272,7 +279,7 @@ class DatasetManifestRow(Base):
         after loading so a column drift is detected.
       - ``readiness_level``: the dataset readiness level (L1-L4) that gates
         production dispatch (L3+ required).
-      - ``pit_proof_verified``: point-in-time proof flag — only True after the
+      - ``pit_proof_verified``: point-in-time proof flag â€” only True after the
         builder has asserted every feature value's ``observed_at <= decision_time``.
       - ``purged_fold_spec``: the leakage-safe purged-k-fold specification as
         JSON (folds + embargo + max label horizon).

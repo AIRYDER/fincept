@@ -8,14 +8,6 @@ from __future__ import annotations
 
 import time
 
-from helpers.product_loop_helpers import (
-    _MODEL_ID,
-    _dispatch_and_callback,
-    _FakeSettlementLedger,
-    _make_engine,
-    _make_gateway,
-    _make_settlement_record,
-)
 from quant_foundry.auto_tournament import (
     AutoTournamentConsumer,
 )
@@ -29,6 +21,15 @@ from quant_foundry.tournament import Tournament
 from quant_foundry.tournament_sweep import TournamentSweep
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from test_auto_promotion import (
+    _dispatch_and_callback,
+    _make_gateway,
+)
+from test_e2e_product_loop import (
+    _MODEL_ID,
+    _make_engine,
+)
+from test_settlement_provider import _FakeSettlementLedger, _make_settlement_record
 
 from fincept_db.registry_tables import ModelMetricRow
 
@@ -272,7 +273,7 @@ class TestAutoTournamentConsumer:
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         # Create two versions under the same model.
-        _dispatch_and_callback(
+        v1 = _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -280,7 +281,7 @@ class TestAutoTournamentConsumer:
             artifact_id="artifact:tourn:multi:1",
             sha256="f" * 64,
         )
-        _dispatch_and_callback(
+        v2 = _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -322,7 +323,7 @@ class TestAutoTournamentConsumer:
         engine.dispose()
 
     def test_empty_ledger_no_scores(self, tmp_path) -> None:
-        """Empty settlement ledger → no scores."""
+        """Empty settlement ledger â†’ no scores."""
         engine = _make_engine()
         secret = "test-secret"
         registry = ModelRegistryDB(
@@ -371,9 +372,9 @@ class TestAutoTournamentConsumer:
 
         try:
             receipt.scored = 999
-            raise AssertionError("should have raised")
+            assert False, "should have raised"
         except Exception:
-            pass  # expected — frozen model
+            pass  # expected â€” frozen model
         engine.dispose()
 
 
@@ -384,7 +385,7 @@ class TestAutoTournamentConsumer:
 
 class TestAutoTournamentWithAutoPromotion:
     def test_auto_tournament_then_auto_promotion(self, tmp_path) -> None:
-        """Full flow: auto-tournament → auto-promotion.
+        """Full flow: auto-tournament â†’ auto-promotion.
 
         1. Dispatch + callback for version 1.
         2. Auto-tournament consumer scores it from settled records.
@@ -419,6 +420,28 @@ class TestAutoTournamentWithAutoPromotion:
                 "pbo_flagged": False,
             },
         )
+        # C7 evidence chain metrics.
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="selfcheck",
+            metrics_dict={"passed": True, "n_rows_scored": 10, "bundle_sha256": "a" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="pit_evidence",
+            metrics_dict={"verified": True, "evidence_sha256": "e" * 64},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="feature_set",
+            metrics_dict={"feature_set_version": "fs-v1"},
+        )
+        registry.record_metrics(
+            version_id=version_id,
+            metric_type="backend",
+            metrics_dict={"production_eligible": True},
+        )
+
         # Auto-tournament: score from settled records.
         # Use varied returns so the Sharpe ratio is meaningful.
         ledger = _FakeSettlementLedger()

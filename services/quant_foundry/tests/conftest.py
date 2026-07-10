@@ -15,16 +15,9 @@ catches any loop that GCs before the fixture runs.
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 import warnings
 
 import pytest
-
-# Make the helpers/ subpackage importable under pytest's importlib import mode.
-_TESTS_DIR = os.path.dirname(__file__)
-if _TESTS_DIR not in sys.path:
-    sys.path.insert(0, _TESTS_DIR)
 
 
 @pytest.fixture(autouse=True)
