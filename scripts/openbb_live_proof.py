@@ -106,7 +106,9 @@ async def prove(
     started_unix = time.time()
     async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=request_timeout) as client:
         results = [
-            await request_json(client, "GET", "/research/openbb/health", headers=headers, expected=(200,)),
+            await request_json(
+                client, "GET", "/research/openbb/health", headers=headers, expected=(200,)
+            ),
             await request_json(
                 client,
                 "GET",
@@ -129,7 +131,12 @@ async def prove(
                 headers=headers,
                 body={
                     "path": "/api/v1/equity/fundamental/income",
-                    "params": {"symbol": symbol, "provider": provider, "period": "annual", "limit": "2"},
+                    "params": {
+                        "symbol": symbol,
+                        "provider": provider,
+                        "period": "annual",
+                        "limit": "2",
+                    },
                 },
                 expected=(200,),
             ),
@@ -174,7 +181,9 @@ def main() -> int:
     print(f"passed: {receipt['passed']}/{receipt['probe_count']}")
     for result in receipt["results"]:
         marker = "OK" if result["passed"] else "FAIL"
-        print(f"  {marker:4} {result['method']} {result['path']} -> {result.get('status_code')} ({result['latency_ms']}ms)")
+        print(
+            f"  {marker:4} {result['method']} {result['path']} -> {result.get('status_code')} ({result['latency_ms']}ms)"
+        )
     return 0 if receipt["all_passed"] else 1
 
 

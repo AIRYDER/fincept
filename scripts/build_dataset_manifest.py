@@ -52,11 +52,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import pathlib
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # scripts/ are not packaged; prepend the quant_foundry src dir so we can
@@ -103,9 +102,17 @@ def feature_schema_hash() -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def label_schema_hash(horizon_days: int) -> str:
-    """SHA-256 over the label description (binary forward-return direction)."""
-    payload = f"binary_forward_return_direction_{horizon_days}d"
+def label_schema_hash(horizon_days: int, label_method: str = "binary_forward_return") -> str:
+    """SHA-256 over the label description.
+
+    The hash includes the label method so that datasets with different
+    labeling schemes (simple forward return vs triple-barrier) get
+    different hashes — preventing accidental mixing.
+    """
+    if label_method == "triple_barrier":
+        payload = f"triple_barrier_{horizon_days}d"
+    else:
+        payload = f"binary_forward_return_direction_{horizon_days}d"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -118,13 +125,13 @@ def _date_to_ns(date_str: str) -> int:
     """Parse a YYYY-MM-DD date string to nanoseconds since epoch (UTC midnight)."""
     dt = datetime.fromisoformat(date_str)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp()) * 1_000_000_000
 
 
 def _ns_to_date_str(ns: int) -> str:
     """Format nanoseconds since epoch as a YYYY-MM-DD string (UTC)."""
-    return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).strftime(
+    return datetime.fromtimestamp(ns / 1_000_000_000, tz=UTC).strftime(
         "%Y-%m-%d",
     )
 
@@ -171,7 +178,11 @@ def load_bars_from_parquet(
     for path in candidates:
         df = pl.read_parquet(str(path))
         # Normalise: only keep the columns we need.
-        keep = [c for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume") if c in df.columns]
+        keep = [
+            c
+            for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume")
+            if c in df.columns
+        ]
         df = df.select(keep)
         frames.append(df)
 
@@ -247,13 +258,34 @@ async def load_bars_from_db(
 def compute_features_and_labels(
     bars: list[dict[str, float]],
     label_horizon_days: int,
+    *,
+    label_method: str = "binary_forward_return",
+    profit_take_width: float = 0.02,
+    stop_loss_width: float = 0.02,
+    vol_scale_widths: bool = False,
 ) -> list[dict[str, Any]]:
-    """Compute PIT features + forward-return labels from a single symbol's bars.
+    """Compute PIT features + labels from a single symbol's bars.
+
+    Args:
+        bars: OHLCV bar dicts (must have ``high``, ``low``, ``close``,
+            ``volume``, ``ts_event``).
+        label_horizon_days: forward horizon for the label (also the
+            vertical barrier timeout for triple-barrier).
+        label_method: ``"binary_forward_return"`` (default, legacy) or
+            ``"triple_barrier"`` (Tier 2.3, AFML Ch. 3).
+        profit_take_width: upper barrier width as fraction of entry
+            price (triple-barrier only).
+        stop_loss_width: lower barrier width as fraction of entry
+            price (triple-barrier only).
+        vol_scale_widths: if True, scale barrier widths by rolling
+            volatility (triple-barrier only).
 
     Returns a list of row dicts, each with:
       - ``decision_time`` (ns)  — the bar close (== observed_at for all feats)
       - ``ret_1d``, ``ret_5d``, ``vol_20d``, ``mom_10d``, ``vol_ratio``
-      - ``label`` (0.0 or 1.0)   — 1 if forward ``label_horizon_days`` return > 0
+      - ``label`` — 0.0/1.0 (binary_forward_return) or -1.0/+1.0
+        (triple_barrier, where +1 = profit-take, -1 = stop-loss,
+        sign of return at timeout for vertical barrier)
 
     Rows without enough history (warmup) or forward data (label) are dropped.
     No look-ahead: every feature uses only data at or before ``decision_time``.
@@ -273,6 +305,46 @@ def compute_features_and_labels(
     log_ret = np.zeros(n, dtype=np.float64)
     log_ret[1:] = np.diff(log_close)
 
+    # --- triple-barrier labels (Tier 2.3) --------------------------------
+    tb_label_map: dict[int, float] = {}  # bar index → label
+    if label_method == "triple_barrier":
+        from fincept_core.datasets import (
+            BarrierConfig,
+            triple_barrier_labels,
+            volatility_scaled_widths,
+        )
+
+        highs = [float(b["high"]) for b in bars]
+        lows = [float(b["low"]) for b in bars]
+        closes = [float(b["close"]) for b in bars]
+
+        per_bar_widths = None
+        if vol_scale_widths:
+            per_bar_widths = volatility_scaled_widths(
+                closes,
+                window=20,
+                profit_take_sigma=profit_take_width / 0.02,  # normalize
+                stop_loss_sigma=stop_loss_width / 0.02,
+            )
+
+        cfg = BarrierConfig(
+            profit_take_width=profit_take_width,
+            stop_loss_width=stop_loss_width,
+            horizon_bars=label_horizon_days,
+        )
+        tb_labels = triple_barrier_labels(
+            highs,
+            lows,
+            closes,
+            cfg,
+            per_bar_widths=per_bar_widths,
+        )
+        for tbl in tb_labels:
+            # Map triple-barrier label to float: +1 → 1.0, -1 → 0.0
+            # (binary classification compatible: 1 = profit-take, 0 = stop-loss/timeout-negative)
+            # Keep the raw -1/+1 in a separate column for meta-labeling.
+            tb_label_map[tbl.index] = float(tbl.label)
+
     rows: list[dict[str, Any]] = []
     for i in range(n):
         # Warmup: need 20 days of history for vol_20d.
@@ -291,8 +363,15 @@ def compute_features_and_labels(
         vol_ratio = float(volume[i] / vol_mean_20) if vol_mean_20 > 0 else 1.0
 
         # --- label (uses future data — this is the target, not a feature) --
-        fwd_ret = float(log_close[i + label_horizon_days] - log_close[i])
-        label = 1.0 if fwd_ret > 0.0 else 0.0
+        if label_method == "triple_barrier":
+            raw_label = tb_label_map.get(i)
+            if raw_label is None:
+                continue  # bar was excluded by triple-barrier (insufficient data)
+            # Convert to binary: +1 (profit-take) → 1.0, else 0.0
+            label = 1.0 if raw_label > 0 else 0.0
+        else:
+            fwd_ret = float(log_close[i + label_horizon_days] - log_close[i])
+            label = 1.0 if fwd_ret > 0.0 else 0.0
 
         rows.append(
             {
@@ -328,8 +407,7 @@ def rows_to_feature_rows(
     for r in data_rows:
         dt = int(r["decision_time"])
         features = tuple(
-            FeatureValue(name=name, value=float(r[name]), observed_at=dt)
-            for name in FEATURE_NAMES
+            FeatureValue(name=name, value=float(r[name]), observed_at=dt) for name in FEATURE_NAMES
         )
         out.append(
             FeatureRow(
@@ -346,8 +424,7 @@ def rows_to_feature_rows(
 def build_universe(symbols: Sequence[str]) -> tuple[UniverseEntry, ...]:
     """Build an as-of universe with all symbols still listed (no delistings)."""
     return tuple(
-        UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-        for s in sorted(symbols)
+        UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in sorted(symbols)
     )
 
 
@@ -417,12 +494,19 @@ def build_dataset_manifest(
     n_folds: int,
     dataset_id: str,
     source_vintage_refs: list[str] | None = None,
+    label_method: str = "binary_forward_return",
+    profit_take_width: float = 0.02,
+    stop_loss_width: float = 0.02,
+    vol_scale_widths: bool = False,
 ) -> tuple[Any, FeatureAvailabilityReport, tuple[FeatureRow, ...], list[dict[str, Any]]]:
     """Build a FeatureLakeManifest from bars grouped by symbol.
 
     Returns ``(manifest, availability, feature_rows, data_rows)`` where
     *data_rows* is the flat list of row dicts (with ``__symbol``) ready for
     parquet export.
+
+    Tier 2.3: ``label_method`` selects between simple binary forward-return
+    labels (default, legacy) and triple-barrier labels (AFML Ch. 3).
     """
     symbols = sorted(bars_by_symbol.keys())
     universe = build_universe(symbols)
@@ -430,7 +514,12 @@ def build_dataset_manifest(
     all_data_rows: list[dict[str, Any]] = []
     for sym in symbols:
         sym_rows = compute_features_and_labels(
-            bars_by_symbol[sym], label_horizon_days,
+            bars_by_symbol[sym],
+            label_horizon_days,
+            label_method=label_method,
+            profit_take_width=profit_take_width,
+            stop_loss_width=stop_loss_width,
+            vol_scale_widths=vol_scale_widths,
         )
         for r in sym_rows:
             r["__symbol"] = sym
@@ -439,7 +528,7 @@ def build_dataset_manifest(
     feature_rows = rows_to_feature_rows(all_data_rows, label_horizon_days)
 
     f_hash = feature_schema_hash()
-    l_hash = label_schema_hash(label_horizon_days)
+    l_hash = label_schema_hash(label_horizon_days, label_method)
     horizon_ns = label_horizon_days * NS_PER_DAY
 
     builder = FeatureLakeBuilder(
@@ -454,7 +543,8 @@ def build_dataset_manifest(
     )
     manifest = builder.build_manifest()
     availability = FeatureAvailabilityReport.from_rows(
-        feature_rows, FEATURE_NAMES,
+        feature_rows,
+        FEATURE_NAMES,
     )
     return manifest, availability, feature_rows, all_data_rows
 
@@ -539,6 +629,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Load bars from fincept_db instead of parquet files.",
     )
+    # Tier 2.3: triple-barrier labeling options
+    parser.add_argument(
+        "--label-method",
+        choices=["binary_forward_return", "triple_barrier"],
+        default="binary_forward_return",
+        help=(
+            "Label method: 'binary_forward_return' (default, legacy) or "
+            "'triple_barrier' (AFML Ch. 3)."
+        ),
+    )
+    parser.add_argument(
+        "--profit-take-width",
+        type=float,
+        default=0.02,
+        help="Triple-barrier upper barrier width as fraction (default: 0.02 = 2%%).",
+    )
+    parser.add_argument(
+        "--stop-loss-width",
+        type=float,
+        default=0.02,
+        help="Triple-barrier lower barrier width as fraction (default: 0.02 = 2%%).",
+    )
+    parser.add_argument(
+        "--vol-scale-widths",
+        action="store_true",
+        help="Scale triple-barrier widths by rolling volatility (AFML recommendation).",
+    )
     args = parser.parse_args(argv)
 
     symbols = _parse_symbols(args.symbols)
@@ -558,7 +675,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     else:
         bars_by_symbol = load_bars_from_parquet(
-            pathlib.Path(args.bars_dir), symbols, start_ns, end_ns,
+            pathlib.Path(args.bars_dir),
+            symbols,
+            start_ns,
+            end_ns,
         )
 
     if not bars_by_symbol:
@@ -574,19 +694,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         + "_".join(symbols[:3])
         + f"_{args.start_date}_{args.end_date}_h{args.label_horizon_days}d"
     )
+    if args.label_method == "triple_barrier":
+        dataset_id += "_tb"
 
     source_refs = [
         f"bars_dir:{pathlib.Path(args.bars_dir).resolve()}",
         f"start:{args.start_date}",
         f"end:{args.end_date}",
+        f"label_method:{args.label_method}",
     ]
 
-    manifest, availability, feature_rows, data_rows = build_dataset_manifest(
+    manifest, availability, _feature_rows, data_rows = build_dataset_manifest(
         bars_by_symbol,
         label_horizon_days=args.label_horizon_days,
         n_folds=args.n_folds,
         dataset_id=dataset_id,
         source_vintage_refs=source_refs,
+        label_method=args.label_method,
+        profit_take_width=args.profit_take_width,
+        stop_loss_width=args.stop_loss_width,
+        vol_scale_widths=args.vol_scale_widths,
     )
 
     if not data_rows:

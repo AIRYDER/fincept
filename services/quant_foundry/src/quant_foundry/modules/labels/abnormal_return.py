@@ -158,15 +158,15 @@ class AbnormalReturnLabel:
         for row in rows:
             sym = row.symbol
             dt = row.decision_time
-            bars = asset_sorted.get(sym)
-            if not bars:
+            sym_bars = asset_sorted.get(sym)
+            if not sym_bars:
                 continue
 
             # --- base bar (last at or before decision_time) ------------
-            base_idx = _last_idx_at_or_before([b.ts_ns for b in bars], dt)
+            base_idx = _last_idx_at_or_before([b.ts_ns for b in sym_bars], dt)
             if base_idx is None:
                 continue
-            base_asset = bars[base_idx]
+            sym_bars[base_idx]
 
             base_bench_idx = _last_idx_at_or_before(bench_ts, dt)
             if base_bench_idx is None:
@@ -174,7 +174,7 @@ class AbnormalReturnLabel:
 
             # --- β estimation (trailing window, no look-ahead) ----------
             beta = _estimate_beta_v2(
-                bars,
+                sym_bars,
                 bench_sorted,
                 dt,
                 window=self.beta_window,
@@ -190,8 +190,12 @@ class AbnormalReturnLabel:
             primary_label: float | None = None
             for h in self.horizon_days:
                 ar = self._compute_ar_for_horizon(
-                    bars, bench_sorted, base_idx, base_bench_idx,
-                    h, beta,
+                    bars,
+                    bench_sorted,
+                    base_idx,
+                    base_bench_idx,
+                    h,
+                    beta,
                 )
                 if ar is None:
                     continue
@@ -204,12 +208,14 @@ class AbnormalReturnLabel:
 
             # Merge AR columns into features and set label.
             new_features = {**row.features, **ar_values}
-            labeled.append(FeatureRowData(
-                symbol=row.symbol,
-                decision_time=row.decision_time,
-                features=new_features,
-                label=primary_label,
-            ))
+            labeled.append(
+                FeatureRowData(
+                    symbol=row.symbol,
+                    decision_time=row.decision_time,
+                    features=new_features,
+                    label=primary_label,
+                )
+            )
 
         return labeled
 
@@ -235,20 +241,30 @@ class AbnormalReturnLabel:
         # Find benchmark bar at or after the future asset bar's timestamp.
         future_asset_ts = bars[future_idx].ts_ns
         future_bench_idx = _first_idx_at_or_after(
-            [b.ts_ns for b in bench_sorted], future_asset_ts,
+            [b.ts_ns for b in bench_sorted],
+            future_asset_ts,
         )
         if future_bench_idx is None:
             return None
 
         if self.ar_method == "car":
             return self._compute_car(
-                bars, bench_sorted, base_idx,
-                base_bench_idx, beta, horizon,
+                bars,
+                bench_sorted,
+                base_idx,
+                base_bench_idx,
+                beta,
+                horizon,
             )
         else:
             return self._compute_endpoint_ar(
-                bars, bench_sorted, base_idx, future_idx,
-                base_bench_idx, future_bench_idx, beta,
+                bars,
+                bench_sorted,
+                base_idx,
+                future_idx,
+                base_bench_idx,
+                future_bench_idx,
+                beta,
             )
 
     def _compute_endpoint_ar(
@@ -308,7 +324,8 @@ class AbnormalReturnLabel:
             # Match benchmark daily return
             curr_asset_ts = bars[curr_asset_idx].ts_ns
             curr_bench_idx = _first_idx_at_or_after(
-                [b.ts_ns for b in bench_sorted], curr_asset_ts,
+                [b.ts_ns for b in bench_sorted],
+                curr_asset_ts,
             )
             if curr_bench_idx is None or curr_bench_idx < 1:
                 continue
@@ -319,7 +336,7 @@ class AbnormalReturnLabel:
                 continue
             bench_ret = math.log(curr_bench.close / prev_bench.close)
 
-            car += (asset_ret - beta * bench_ret)
+            car += asset_ret - beta * bench_ret
 
         return round(car, 12)
 
@@ -403,19 +420,23 @@ class AbnormalReturnLabelV1:
         for row in rows:
             sym = row.symbol
             dt = row.decision_time
-            bars = asset_sorted.get(sym)
-            if not bars:
+            sym_bars = asset_sorted.get(sym)
+            if not sym_bars:
                 continue
 
-            base_asset = _last_at_or_before(bars, dt)
+            base_asset = _last_at_or_before(sym_bars, dt)
             base_bench_idx = _last_idx_at_or_before(bench_ts, dt)
             if base_asset is None or base_bench_idx is None:
                 continue
             base_bench_price = bench_close[base_bench_idx]
 
             beta = _estimate_beta_v1(
-                bars, bench_ts, bench_close, dt,
-                window=self.beta_window, min_window=self.min_beta_window,
+                sym_bars,
+                bench_ts,
+                bench_close,
+                dt,
+                window=self.beta_window,
+                min_window=self.min_beta_window,
             )
             if beta is None:
                 continue
@@ -439,12 +460,14 @@ class AbnormalReturnLabelV1:
                 continue
 
             new_features = {**row.features, **ar_values}
-            labeled.append(FeatureRowData(
-                symbol=row.symbol,
-                decision_time=row.decision_time,
-                features=new_features,
-                label=primary_label,
-            ))
+            labeled.append(
+                FeatureRowData(
+                    symbol=row.symbol,
+                    decision_time=row.decision_time,
+                    features=new_features,
+                    label=primary_label,
+                )
+            )
 
         return labeled
 
@@ -518,10 +541,10 @@ def _estimate_beta_v2(
     n = len(asset_returns)
     mean_a = sum(asset_returns) / n
     mean_b = sum(bench_returns) / n
-    cov = sum(
-        (a - mean_a) * (b - mean_b)
-        for a, b in zip(asset_returns, bench_returns, strict=True)
-    ) / n
+    cov = (
+        sum((a - mean_a) * (b - mean_b) for a, b in zip(asset_returns, bench_returns, strict=True))
+        / n
+    )
     var_b = sum((b - mean_b) ** 2 for b in bench_returns) / n
     if var_b <= 0:
         return None
@@ -584,10 +607,10 @@ def _estimate_beta_v1(
     n = len(asset_returns)
     mean_a = sum(asset_returns) / n
     mean_b = sum(bench_returns) / n
-    cov = sum(
-        (a - mean_a) * (b - mean_b)
-        for a, b in zip(asset_returns, bench_returns, strict=True)
-    ) / n
+    cov = (
+        sum((a - mean_a) * (b - mean_b) for a, b in zip(asset_returns, bench_returns, strict=True))
+        / n
+    )
     var_b = sum((b - mean_b) ** 2 for b in bench_returns) / n
     if var_b <= 0:
         return None
@@ -641,4 +664,4 @@ def _simple_return(start: float, end: float) -> float:
     return (end / start) - 1.0
 
 
-__all__ = ["AbnormalReturnLabel", "AbnormalReturnLabelV1", "DEFAULT_HORIZON_DAYS"]
+__all__ = ["DEFAULT_HORIZON_DAYS", "AbnormalReturnLabel", "AbnormalReturnLabelV1"]

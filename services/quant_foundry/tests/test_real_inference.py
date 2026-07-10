@@ -25,6 +25,7 @@ import pytest
 from quant_foundry.real_inference import (
     ModelLoader,
     RealInferenceEngine,
+    load_bundle_scorer,
     run_real_inference,
 )
 from quant_foundry.schemas import (
@@ -701,3 +702,87 @@ class TestModelLoaderUriResolution:
         scorer = loader.load("s3://bucket/model.txt")
         out = scorer.predict([[0.1, 0.2]])
         assert len(out) == 1
+
+
+# ---------------------------------------------------------------------------
+# C2: load_bundle_scorer — explicit bundle loading for shadow scoring
+# ===========================================================================
+
+
+class TestLoadBundleScorer:
+    """C2: load_bundle_scorer loads a C1 bundle and returns a BundleScorer
+    with .score() for full Decision objects."""
+
+    def test_load_bundle_scorer_returns_scorer_with_score_method(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """load_bundle_scorer returns an object with .score() (BundleScorer)."""
+        lgb = pytest.importorskip("lightgbm")
+        np = pytest.importorskip("numpy")
+        from quant_foundry.bundle_io import write_bundle
+
+        rng = np.random.RandomState(42)
+        X = rng.randn(60, 3)
+        y = (X[:, 0] > 0).astype(float)
+        model = lgb.train(
+            {"objective": "binary", "verbosity": -1, "num_leaves": 8, "seed": 42},
+            lgb.Dataset(X, label=y),
+            num_boost_round=10,
+        )
+        bundle_bytes = write_bundle(
+            primary_model=model,
+            feature_names=["f1", "f2", "f3"],
+            feature_schema_hash="hash-f",
+            label_schema_hash="hash-l",
+            model_family="gbm",
+        )
+        path = tmp_path / "test.bundle"
+        path.write_bytes(bundle_bytes)
+
+        scorer = load_bundle_scorer(str(path))
+        # BundleScorer exposes .score() -> list[Decision].
+        assert hasattr(scorer, "score")
+        decisions = scorer.score([[0.1, 0.2, 0.3]])
+        assert len(decisions) == 1
+        # Decision carries bundle_sha256.
+        assert len(decisions[0].bundle_sha256) == 64
+
+    def test_load_bundle_scorer_fails_closed_on_corrupt_bundle(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """load_bundle_scorer raises on a corrupt bundle (no stub fallback)."""
+        bad_path = tmp_path / "corrupt.bundle"
+        bad_path.write_bytes(b"not a valid bundle")
+        with pytest.raises(Exception):
+            load_bundle_scorer(str(bad_path))
+
+    def test_model_loader_load_bundle_returns_scorer_with_score(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """ModelLoader.load() on a C1 bundle returns a BundleScorer with
+        .score() — the C1 work already added this; this test confirms the
+        contract for C2 shadow use."""
+        lgb = pytest.importorskip("lightgbm")
+        np = pytest.importorskip("numpy")
+        from quant_foundry.bundle_io import write_bundle
+
+        rng = np.random.RandomState(7)
+        X = rng.randn(40, 2)
+        y = (X[:, 0] > 0).astype(float)
+        model = lgb.train(
+            {"objective": "binary", "verbosity": -1, "num_leaves": 4, "seed": 7},
+            lgb.Dataset(X, label=y),
+            num_boost_round=5,
+        )
+        bundle_bytes = write_bundle(
+            primary_model=model,
+            feature_names=["a", "b"],
+            feature_schema_hash="hf",
+            label_schema_hash="hl",
+            model_family="gbm",
+        )
+        path = tmp_path / "m.bundle"
+        path.write_bytes(bundle_bytes)
+
+        loader = ModelLoader()
+        scorer = loader.load(str(path))
+        assert hasattr(scorer, "score")
+        decisions = scorer.score([[0.1, 0.2]])
+        assert len(decisions) == 1
+        assert hasattr(decisions[0], "bundle_sha256")
+        assert hasattr(decisions[0], "abstained")
+        assert hasattr(decisions[0], "policy_version")

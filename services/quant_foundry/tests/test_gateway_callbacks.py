@@ -315,9 +315,7 @@ def test_callback_cleans_up_worker_status_file(tmp_path) -> None:
     # Write a worker status file as the worker would.
     status_path = status_dir / f"{job_id}.json"
     status_path.write_text(
-        _json.dumps(
-            {"job_id": job_id, "status": "running", "heartbeat_at": time.time()}
-        ),
+        _json.dumps({"job_id": job_id, "status": "running", "heartbeat_at": time.time()}),
         encoding="utf-8",
     )
     assert status_path.is_file()

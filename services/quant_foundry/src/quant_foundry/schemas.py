@@ -62,6 +62,30 @@ class RunPodTrainingRequest(BaseModel):
     random_seed: int | None = None
     hardware_class: str | None = None
     extra_constraints: dict[str, str] = Field(default_factory=dict)
+    # Tier 1A: presigned S3/R2 PUT URL for the trained model artifact.
+    # When present, the RunPod worker's handler.py pops this field from
+    # the job input and uses PresignedUploadArtifactWriter to upload the
+    # artifact via HTTP PUT (TLS required — http:// is rejected). When
+    # absent, the handler falls back to VolumeArtifactWriter (if
+    # output_prefix is set) or FakeArtifactWriter (canary). This field
+    # satisfies the /tmp deny gate in handler.py which requires a durable
+    # output_prefix or a presigned URL.
+    presigned_artifact_url: str | None = None
+    # Tier 2.6: feature-set version pin. When present, the training
+    # worker verifies that the dataset manifest's feature_set_version
+    # matches this value before training. This ensures two training
+    # runs that reference the same feature_set_version use the same
+    # feature definitions (the feature_schema_hash is the cryptographic
+    # guarantee; this is the human-readable version string).
+    feature_set_version: str | None = None
+    # Tier 2.7: checkpoint/resume configuration for spot-fleet training.
+    # When present, the training worker saves per-fold checkpoints to
+    # this directory (expected to be on a RunPod network volume). On
+    # resume (same job_id), the worker checks for existing checkpoints
+    # and skips already-completed folds. This turns spot-price GPUs
+    # into reliable capacity for longer jobs.
+    checkpoint_dir: str | None = None
+    resume_from_checkpoint: str | None = None
 
 
 class RunPodInferenceRequest(BaseModel):
@@ -107,6 +131,19 @@ class ArtifactManifest(BaseModel):
     code_git_sha: str | None = None
     lockfile_hash: str | None = None
     container_image_digest: str | None = None
+    # Tier 1.3: records whether training was deterministic (CPU) or
+    # non-deterministic (GPU). GPU floating-point summation order differs
+    # from CPU, so GPU backends (xgboost_gpu, catboost GPU) are flagged
+    # non_deterministic. CPU backends (lightgbm, xgboost) are deterministic.
+    # None = not set (backward compatible with pre-existing manifests).
+    determinism_status: str | None = None
+    # Tier 1.3: the GPU model used for training (e.g. "NVIDIA GeForce RTX
+    # 4090"), from nvidia-smi. None for CPU training. The registry/gate
+    # uses this to group "deterministic within this GPU family" vs
+    # "non-deterministic across GPU families" for XGBoost GPU, and to
+    # distinguish "ran on CPU because no GPU was requested" from "ran on
+    # CPU because the GPU was requested but unavailable".
+    gpu_model: str | None = None
 
 
 class DatasetManifest(BaseModel):

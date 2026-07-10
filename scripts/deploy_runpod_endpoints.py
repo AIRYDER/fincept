@@ -22,6 +22,7 @@ Optional env vars:
     RUNPOD_TRAINING_IMAGE    — override training image (default: ghcr.io/airyder/fincept/quant-foundry-training:latest)
     RUNPOD_INFERENCE_IMAGE   — override inference image (default: ghcr.io/airyder/fincept/quant-foundry-inference:latest)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +32,7 @@ import sys
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import (  # noqa: E402
+from runpod_config import (
     INFERENCE_ENDPOINT_ID,
     TRAINING_ENDPOINT_ID,
 )
@@ -129,9 +130,7 @@ def _graphql_request(api_key: str, query: str, variables: dict[str, Any]) -> dic
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, json=payload, headers=headers)
     if resp.status_code != 200:
-        raise RuntimeError(
-            f"GraphQL request failed: HTTP {resp.status_code}: {resp.text[:500]}"
-        )
+        raise RuntimeError(f"GraphQL request failed: HTTP {resp.status_code}: {resp.text[:500]}")
     data = resp.json()
     if "errors" in data:
         raise RuntimeError(f"GraphQL errors: {json.dumps(data['errors'], indent=2)}")
@@ -152,9 +151,7 @@ def fetch_endpoint_template(api_key: str, endpoint_id: str) -> dict[str, Any]:
     return endpoint
 
 
-def _merge_env(
-    existing: list[dict[str, str]], updates: dict[str, str]
-) -> list[dict[str, str]]:
+def _merge_env(existing: list[dict[str, str]], updates: dict[str, str]) -> list[dict[str, str]]:
     """Merge env updates into existing env list (preserving non-updated keys)."""
     env_map = {e["key"]: e["value"] for e in existing}
     env_map.update(updates)
@@ -220,7 +217,12 @@ def update_template(
         print(f"    name: {template_input['name']}")
         print(f"    imageName: {template_input['imageName']}")
         print(f"    env: {json.dumps(_redact_env(merged_env), indent=6)}")
-        return {"id": template["id"], "name": template["name"], "imageName": new_image, "dry_run": True}
+        return {
+            "id": template["id"],
+            "name": template["name"],
+            "imageName": new_image,
+            "dry_run": True,
+        }
 
     result = _graphql_request(api_key, SAVE_TEMPLATE, {"input": template_input})
     return result["saveTemplate"]
@@ -252,8 +254,10 @@ def deploy_endpoint(
     print(f"  Current env keys: {sorted(current_env.keys())}")
 
     # 2. Check if update is needed.
-    if not force and template["imageName"] == new_image and all(
-        current_env.get(k) == v for k, v in env_updates.items()
+    if (
+        not force
+        and template["imageName"] == new_image
+        and all(current_env.get(k) == v for k, v in env_updates.items())
     ):
         print("  Already up-to-date — no changes needed.")
         return
@@ -272,7 +276,9 @@ def deploy_endpoint(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy RunPod endpoint templates")
     parser.add_argument("--dry-run", action="store_true", help="Print changes without sending")
-    parser.add_argument("--force", action="store_true", help="Force template update even if image tag is unchanged")
+    parser.add_argument(
+        "--force", action="store_true", help="Force template update even if image tag is unchanged"
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("RUNPOD_API_KEY", "")
@@ -292,14 +298,22 @@ def main() -> int:
 
     try:
         deploy_endpoint(
-            api_key, training_endpoint, training_image, TRAINING_ENV,
+            api_key,
+            training_endpoint,
+            training_image,
+            TRAINING_ENV,
             docker_cmd="/worker/handler.py",
-            dry_run=args.dry_run, force=args.force,
+            dry_run=args.dry_run,
+            force=args.force,
         )
         deploy_endpoint(
-            api_key, inference_endpoint, inference_image, INFERENCE_ENV,
+            api_key,
+            inference_endpoint,
+            inference_image,
+            INFERENCE_ENV,
             docker_cmd="/app/handler.py",
-            dry_run=args.dry_run, force=args.force,
+            dry_run=args.dry_run,
+            force=args.force,
         )
     except Exception as exc:
         print(f"\nERROR: {type(exc).__name__}: {exc}", file=sys.stderr)

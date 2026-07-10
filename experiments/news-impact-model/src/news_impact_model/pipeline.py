@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from news_impact_model.analogs import HistoricalAnalogIndex
 from news_impact_model.model import NewsImpactModel
-from news_impact_model.schema import HistoricalOutcome, MarketContext, NewsEvent, NewsImpactPrediction
+from news_impact_model.schema import (
+    HistoricalOutcome,
+    MarketContext,
+    NewsEvent,
+    NewsImpactPrediction,
+)
 
 
 class NewsImpactPipeline:

@@ -383,6 +383,7 @@ def _make_csv_dataset(tmp_path: Path, n: int = 300, seed: int = 7) -> Path:
     return path
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestTrainerIntegrationLocalStorage:
     def test_trainer_loads_dataset_via_local_backend(self, tmp_path: Path) -> None:
         from quant_foundry.real_trainer import RealLightGBMTrainer

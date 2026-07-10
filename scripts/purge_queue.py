@@ -1,8 +1,9 @@
 """Cancel all queued jobs for both endpoints."""
-import httpx
-import json
+
 import os
 import time
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 

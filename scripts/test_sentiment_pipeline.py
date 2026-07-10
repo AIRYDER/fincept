@@ -120,8 +120,10 @@ async def smoke_test(symbol: str) -> int:
         print(f"      rationale  : {score.rationale}")
         if router.exhausted_providers():
             print()
-            print("Note: the following providers were exhausted during this run "
-                  "(billing/auth failure) and skipped:")
+            print(
+                "Note: the following providers were exhausted during this run "
+                "(billing/auth failure) and skipped:"
+            )
             for prov, why in router.exhausted_providers().items():
                 print(f"  - {prov}: {why}")
 

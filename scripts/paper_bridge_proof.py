@@ -25,6 +25,7 @@ Usage:
     $env:UV_CACHE_DIR = "$PWD\.uv-cache"
     uv run --package quant-foundry python scripts/paper_bridge_proof.py
 """
+
 from __future__ import annotations
 
 import json
@@ -41,27 +42,14 @@ from quant_foundry.outcomes import SettlementRecord, SettlementStatus
 from quant_foundry.paper_bridge import (
     BridgeCircuitBreaker,
     BridgeConfig,
-    BridgeReceipt,
     BridgeStatus,
     PaperBridge,
-    PaperPrediction,
-    RollbackPointer,
-    convert_shadow_to_paper,
 )
 from quant_foundry.promotion import (
     PromotionEvidence,
-    PromotionReceipt,
-    ReviewDecision,
 )
-from quant_foundry.sentinel import SentinelReceipt
 from quant_foundry.settlement_sweep import SettlementSweep, default_cost_model
-from quant_foundry.shadow_ledger import ShadowLedger, compute_batch_hash
-from quant_foundry.tournament import (
-    PromotionRecommendation,
-    TournamentResult,
-    TournamentStatus,
-)
-
+from quant_foundry.shadow_ledger import compute_batch_hash
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -74,17 +62,38 @@ T_EVENT = 1_000_000_000_000_000_000
 HORIZON_NS = 60_000_000_000
 WINDOW_END = T_EVENT + HORIZON_NS
 
-ORDER_FIELDS = frozenset({
-    "order", "signal", "trade", "position", "allocation",
-    "quantity", "side", "broker", "order_type", "order_id",
-    "client_order_id", "time_in_force", "leverage", "margin_type",
-    "account_id", "sig_predict", "size",
-})
+ORDER_FIELDS = frozenset(
+    {
+        "order",
+        "signal",
+        "trade",
+        "position",
+        "allocation",
+        "quantity",
+        "side",
+        "broker",
+        "order_type",
+        "order_id",
+        "client_order_id",
+        "time_in_force",
+        "leverage",
+        "margin_type",
+        "account_id",
+        "sig_predict",
+        "size",
+    }
+)
 
 SECRET_NAMES = {
-    "api_key", "token", "secret", "password",
-    "broker_account", "credential", "private_key",
-    "access_key", "session_token",
+    "api_key",
+    "token",
+    "secret",
+    "password",
+    "broker_account",
+    "credential",
+    "private_key",
+    "access_key",
+    "session_token",
 }
 
 
@@ -125,6 +134,7 @@ def _make_prediction(
 def _make_bar_reader(bars: dict[str, list[PricePoint]]):
     def reader(symbol: str, start_ns: int, end_ns: int) -> list[PricePoint]:
         return [p for p in bars.get(symbol, []) if start_ns <= p.ts_ns < end_ns]
+
     return reader
 
 
@@ -191,9 +201,7 @@ def _build_evidence(gw: QuantFoundryGateway, model_id: str) -> PromotionEvidence
     dossier = gw.dossier_registry().get(model_id)
     tournament_result = gw._find_tournament_result(model_id)
     sentinel_receipt = gw._find_sentinel_receipt(model_id)
-    blocking_issues = gw._build_blocking_issues(
-        dossier, tournament_result, sentinel_receipt
-    )
+    blocking_issues = gw._build_blocking_issues(dossier, tournament_result, sentinel_receipt)
     return PromotionEvidence(
         dossier=dossier,
         tournament_result=tournament_result,
@@ -235,16 +243,18 @@ def main() -> None:
 
     # --- Step 2: Create and store shadow prediction ---
     _print_step(2, "Create and store shadow prediction")
-    gw.dossier_registry().register(DossierRecord(
-        model_id=MODEL_ID,
-        artifact_manifest_id=f"artifact-{MODEL_ID}",
-        artifact_sha256=f"sha256-{MODEL_ID}",
-        dataset_manifest_id="dataset-proof",
-        feature_schema_hash="fs-hash",
-        label_schema_hash="ls-hash",
-        trial_count=1,
-        status=DossierStatus.PAPER_APPROVED,
-    ))
+    gw.dossier_registry().register(
+        DossierRecord(
+            model_id=MODEL_ID,
+            artifact_manifest_id=f"artifact-{MODEL_ID}",
+            artifact_sha256=f"sha256-{MODEL_ID}",
+            dataset_manifest_id="dataset-proof",
+            feature_schema_hash="fs-hash",
+            label_schema_hash="ls-hash",
+            trial_count=1,
+            status=DossierStatus.PAPER_APPROVED,
+        )
+    )
     prediction = _make_prediction()
     batch_hash = compute_batch_hash([prediction])
     receipt = gw.shadow_ledger_real().store_batch(
@@ -288,7 +298,7 @@ def main() -> None:
     # Also write additional settlement records for tournament scoring
     # (need >= 10 settled records for the tournament to score the model).
     _write_settlements(proof_dir, MODEL_ID, 12)
-    print(f"  Wrote 12 additional settlement records for tournament scoring")
+    print("  Wrote 12 additional settlement records for tournament scoring")
 
     # --- Step 4: Run tournament sweep ---
     _print_step(4, "Run tournament sweep")
@@ -325,8 +335,8 @@ def main() -> None:
     print(f"  Decision: {decision}")
     if rejection_reason:
         print(f"  Rejection reason: {rejection_reason}")
-        print(f"  NOTE: The MVP level limit blocks paper_approved promotions.")
-        print(f"  The paper bridge checks dossier status, not the receipt.")
+        print("  NOTE: The MVP level limit blocks paper_approved promotions.")
+        print("  The paper bridge checks dossier status, not the receipt.")
     ok = process_result.get("ok") is True
     _print_result(ok, f"Promotion processed (decision={decision})")
     results.append(("process_promotion", ok, f"Promotion processed: {decision}"))
@@ -334,8 +344,8 @@ def main() -> None:
     # --- Step 7: Set env vars for paper bridge ---
     _print_step(7, "Set QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true, runtime_mode=paper")
     os.environ["QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE"] = "true"
-    print(f"  QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true")
-    print(f"  runtime_mode=paper")
+    print("  QUANT_FOUNDRY_ALLOW_PAPER_BRIDGE=true")
+    print("  runtime_mode=paper")
     _print_result(True, "Env vars set")
     results.append(("set_env_vars", True, "Bridge env vars set"))
 
@@ -343,12 +353,16 @@ def main() -> None:
     _print_step(8, "Create PaperBridge and publish")
     evidence = _build_evidence(gw, MODEL_ID)
     print(f"  Dossier status: {evidence.dossier.status.value}")
-    print(f"  Tournament result settled_count: {evidence.tournament_result.settled_count if evidence.tournament_result else 'None'}")
+    print(
+        f"  Tournament result settled_count: {evidence.tournament_result.settled_count if evidence.tournament_result else 'None'}"
+    )
 
-    bridge = PaperBridge(config=BridgeConfig(
-        allow_paper_bridge=True,
-        runtime_mode="paper",
-    ))
+    bridge = PaperBridge(
+        config=BridgeConfig(
+            allow_paper_bridge=True,
+            runtime_mode="paper",
+        )
+    )
     print(f"  Bridge status: {bridge.status.value}")
 
     bridge_receipt = bridge.publish(
@@ -369,11 +383,7 @@ def main() -> None:
     if rb is not None:
         print(f"  RollbackPointer: model_id={rb.model_id}, pointer_id={rb.pointer_id}")
         print(f"  created_at_ns={rb.created_at_ns}, reason={rb.reason}")
-        ok = (
-            rb.model_id == MODEL_ID
-            and rb.pointer_id.startswith("rb-")
-            and rb.created_at_ns > 0
-        )
+        ok = rb.model_id == MODEL_ID and rb.pointer_id.startswith("rb-") and rb.created_at_ns > 0
     else:
         ok = False
     _print_result(ok, "Rollback pointer exists and is valid")
@@ -411,7 +421,7 @@ def main() -> None:
     bad_prediction = {"prediction_id": "bad", "model_id": "bad-model"}
     for i in range(5):
         r = tripped_bridge.publish(prediction=bad_prediction, evidence=None)
-        print(f"  Failure {i+1}: status={r.status.value}")
+        print(f"  Failure {i + 1}: status={r.status.value}")
     print(f"  Circuit breaker tripped: {breaker.is_tripped()}")
     ok = breaker.is_tripped()
     _print_result(ok, "Circuit breaker tripped after 5 failures")

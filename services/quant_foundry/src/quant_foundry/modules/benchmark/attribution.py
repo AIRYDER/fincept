@@ -125,10 +125,7 @@ class AttributionReport:
 
         df = pl.read_parquet(str(parquet_path))
         # Feature columns = all columns except decision_time, symbol, label
-        feature_names = [
-            c for c in df.columns
-            if c not in ("decision_time", "symbol", "label")
-        ]
+        feature_names = [c for c in df.columns if c not in ("decision_time", "symbol", "label")]
 
         importances = list(model.feature_importances_)
         # Ensure lengths match (LightGBM may have different ordering)
@@ -138,9 +135,7 @@ class AttributionReport:
                 model_feature_names = model.feature_name()
                 if len(model_feature_names) == len(importances):
                     # Reorder importances to match parquet column order
-                    idx_map = {
-                        name: i for i, name in enumerate(model_feature_names)
-                    }
+                    idx_map = {name: i for i, name in enumerate(model_feature_names)}
                     importances = [
                         importances[idx_map[name]] if name in idx_map else 0.0
                         for name in feature_names
@@ -178,17 +173,28 @@ class AttributionReport:
 
         # --- Sentiment provider attribution -----------------------------
         # Per-provider features from the LLM ensemble (if present)
-        for provider in ("naive", "finbert", "openai", "anthropic", "xai", "minimax", "llm_ensemble"):
+        for provider in (
+            "naive",
+            "finbert",
+            "openai",
+            "anthropic",
+            "xai",
+            "minimax",
+            "llm_ensemble",
+        ):
             # Check for per-provider feature columns
             provider_features = [
-                imp for name, imp in importance_map.items()
+                imp
+                for name, imp in importance_map.items()
                 if name.startswith(f"sent_{provider}") or f"_{provider}_" in name
             ]
             self.sentiment_provider_attribution_data[provider] = sum(provider_features)
 
         # Also check for the aggregate sentiment features
         self.sentiment_provider_attribution_data["sent_mean"] = importance_map.get("sent_mean", 0.0)
-        self.sentiment_provider_attribution_data["sent_count"] = importance_map.get("sent_count", 0.0)
+        self.sentiment_provider_attribution_data["sent_count"] = importance_map.get(
+            "sent_count", 0.0
+        )
 
         # --- Year attribution -------------------------------------------
         for year in range(2018, 2026):
@@ -205,19 +211,20 @@ class AttributionReport:
             reverse=True,
         )
         self.top_features = [
-            {"feature": name, "importance": float(imp)}
-            for name, imp in sorted_features[:20]
+            {"feature": name, "importance": float(imp)} for name, imp in sorted_features[:20]
         ]
 
     # --- Public accessors --------------------------------------------------
 
     def event_type_attribution(self) -> dict[str, float]:
         """Return event type → importance mapping, sorted by importance."""
-        return dict(sorted(
-            self.event_type_attribution_data.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        ))
+        return dict(
+            sorted(
+                self.event_type_attribution_data.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+        )
 
     def source_attribution(self) -> dict[str, float]:
         """Return source category → importance mapping."""
@@ -225,18 +232,22 @@ class AttributionReport:
 
     def sentiment_provider_attribution(self) -> dict[str, float]:
         """Return sentiment provider → importance mapping, sorted by importance."""
-        return dict(sorted(
-            self.sentiment_provider_attribution_data.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        ))
+        return dict(
+            sorted(
+                self.sentiment_provider_attribution_data.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+        )
 
     def year_attribution(self) -> dict[str, float]:
         """Return year → importance mapping (chronological order)."""
-        return dict(sorted(
-            self.year_attribution_data.items(),
-            key=lambda x: x[0],
-        ))
+        return dict(
+            sorted(
+                self.year_attribution_data.items(),
+                key=lambda x: x[0],
+            )
+        )
 
     def horizon_attribution(self) -> dict[str, float]:
         """Return horizon → importance mapping (chronological order)."""

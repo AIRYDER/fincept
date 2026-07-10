@@ -1,0 +1,14 @@
+# trainer-gpu-graph — Python package requirements (T-12.6)
+#
+# Source of truth: GraphImageSpec.packages in
+#   src/quant_foundry/graph_runtime.py
+#
+# torch is provided by the base image (pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime),
+# so it is NOT reinstalled here to avoid pulling the CPU-only wheel and
+# clobbering the CUDA build. The pins below match GraphImageSpec.packages.
+
+torch-geometric>=2.4
+numpy>=1.26
+pandas>=2.1
+pydantic>=2.7
+scipy>=1.11

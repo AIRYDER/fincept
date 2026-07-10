@@ -98,7 +98,8 @@ class RedditSource:
         self.max_pages: int = self.config.get("max_pages", DEFAULT_MAX_PAGES)
         self.fetch_comments: bool = self.config.get("fetch_comments", False)
         self.max_comments_per_post: int = self.config.get(
-            "max_comments_per_post", DEFAULT_MAX_COMMENTS_PER_POST,
+            "max_comments_per_post",
+            DEFAULT_MAX_COMMENTS_PER_POST,
         )
 
     def _get_user_agent(self) -> str:
@@ -170,8 +171,12 @@ class RedditSource:
 
             # Post ID
             post_id = post.get("id", "")
-            item_id = f"reddit:{post_id}" if post_id else (
-                f"reddit:{hashlib.sha256((title + str(available_at_ns)).encode()).hexdigest()[:20]}"
+            item_id = (
+                f"reddit:{post_id}"
+                if post_id
+                else (
+                    f"reddit:{hashlib.sha256((title + str(available_at_ns)).encode()).hexdigest()[:20]}"
+                )
             )
 
             # Extract symbols via cashtag matching
@@ -236,4 +241,4 @@ class RedditSource:
         return tuple(found)
 
 
-__all__ = ["RedditSource", "DEFAULT_SUBREDDITS", "REDDIT_BASE_URL"]
+__all__ = ["DEFAULT_SUBREDDITS", "REDDIT_BASE_URL", "RedditSource"]

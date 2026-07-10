@@ -32,16 +32,30 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import time
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 from quant_foundry.budget import BudgetGuard
 from quant_foundry.budget import from_env as budget_from_env
+from quant_foundry.callback_dlq import CallbackDLQ, DLQRecord
 from quant_foundry.callback_metrics import CallbackMetricsStore
 from quant_foundry.callbacks import (
     CallbackProcessor,
     DurableDossierStore,
     DurableShadowLedgerStore,
+)
+from quant_foundry.cost_tracker import CostTracker
+from quant_foundry.dataset_manifest import DatasetRegistry
+from quant_foundry.db_sinks import (
+    CallbackDlqDbStore,
+    CallbackMetricsDbStore,
+    CallbackReceiptDbStore,
+    DbDossierStore,
+    DbShadowLedgerStore,
 )
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.feature_lake import FeatureRow
@@ -97,6 +111,7 @@ from quant_foundry.outbox import JobOutbox, JobStatus
 from quant_foundry.paper_bridge import PaperBridge
 from quant_foundry.promotion import PromotionReviewQueue
 from quant_foundry.registry import DossierRegistry
+from quant_foundry.registry_db import ModelRegistryDB
 from quant_foundry.runpod_client import (
     BudgetGuard as DispatchBudgetGuard,
 )
@@ -136,6 +151,36 @@ _RUNPOD_BASE_URL_ENV = "RUNPOD_BASE_URL"
 _RUNPOD_TIMEOUT_ENV = "RUNPOD_TIMEOUT_SECONDS"
 _RUNPOD_COST_ENV = "RUNPOD_COST_PER_DISPATCH_CENTS"
 _CALLBACK_SECRET_ENV = "QUANT_FOUNDRY_CALLBACK_SECRET"
+_SINK_BACKEND_ENV = "QUANT_FOUNDRY_SINK_BACKEND"
+# Tier 0.2: default output_prefix for training dispatch. When set, the
+# gateway injects this into every training job payload that doesn't
+# already specify one. Should be a /runpod-volume/ or /workspace/ path
+# so artifacts survive worker shutdown (durable artifacts).
+_OUTPUT_PREFIX_ENV = "QUANT_FOUNDRY_OUTPUT_PREFIX"
+
+
+class _DbCallbackDLQ(CallbackDLQ):
+    """DB-backed callback DLQ adapter.
+
+    Subclasses :class:`CallbackDLQ` but overrides ``_store`` and ``__init__``
+    so records are written to the DB via :class:`CallbackDlqDbStore` instead
+    of to a JSONL file. The ``enqueue`` interface (used by
+    :class:`GatewayCallbackMixin`) is unchanged — only the persistence layer
+    is swapped.
+    """
+
+    def __init__(self, db_store: CallbackDlqDbStore) -> None:
+        # Skip CallbackDLQ.__init__ (which creates a JSONL file + reloads).
+        self._db_store = db_store
+        self._records: dict[str, DLQRecord] = {}
+        self._by_idempotency: dict[str, DLQRecord] = {}
+
+    def _store(self, rec: DLQRecord) -> DLQRecord:
+        """Persist a record to the DB and update in-memory indexes."""
+        self._db_store.write(rec)
+        self._records[rec.dlq_id] = rec
+        self._by_idempotency[rec.idempotency_key] = rec
+        return rec
 
 
 class QuantFoundryGateway(GatewayCallbackMixin):
@@ -160,6 +205,12 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         prediction_publisher: Any | None = None,
         worker_status_dir: pathlib.Path | str | None = None,
         stale_threshold_seconds: float = 60.0,
+        cost_tracker: CostTracker | None = None,
+        sink_backend: str = "jsonl",
+        db_engine: Engine | None = None,
+        registry: ModelRegistryDB | None = None,
+        dataset_registry: DatasetRegistry | None = None,
+        output_prefix: str | None = None,
     ) -> None:
         self.enabled = enabled
         self.mode = mode
@@ -174,6 +225,27 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             pathlib.Path(worker_status_dir) if worker_status_dir is not None else None
         )
         self._stale_threshold_seconds = stale_threshold_seconds
+        # --- CostTracker + sink backend (Phase A integration) ---
+        self._cost_tracker: CostTracker | None = cost_tracker
+        self.sink_backend: str = sink_backend
+        self._db_engine: Engine | None = db_engine
+        self._callback_receipt_db_store: CallbackReceiptDbStore | None = None
+        self._callback_metrics_db_store: CallbackMetricsDbStore | None = None
+        # Tier 1.2: optional DB-backed model registry. When provided,
+        # successful training_complete callbacks auto-register a model
+        # version (model_id + dossier_content_hash + artifact_id +
+        # callback_receipt_id) so the product loop is fully wired
+        # without a manual register_version() call.
+        self._registry: ModelRegistryDB | None = registry
+        # Tier 1.5: optional dataset registry. When provided, production
+        # training jobs must pass dispatch_training() — which enforces
+        # that the dataset is registered, L3+ readiness, not stale, and
+        # not deprecated/rejected. Canary/research are permissive.
+        self._dataset_registry: DatasetRegistry | None = dataset_registry
+        # Tier 0.2: default output_prefix for training jobs. When set,
+        # injected into every training dispatch payload that doesn't
+        # already specify one. Should be a /runpod-volume/ path.
+        self._default_output_prefix: str | None = output_prefix
 
         self.outbox = JobOutbox(base_dir=self.base_dir / "outbox")
         self.inbox = CallbackInbox(base_dir=self.base_dir / "inbox")
@@ -193,8 +265,46 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # --- Shadow dispatch loop (Agent C) ---
         self._shadow_dispatch_count: int = 0
         self._last_shadow_dispatch_ns: int = 0
-        self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
-        self.dossier_store = DurableDossierStore(self.dossier_registry())
+        # --- Sink backend selection ---
+        # When sink_backend == "db", construct DB-backed sinks instead of the
+        # JSONL-backed DurableDossierStore / DurableShadowLedgerStore. The
+        # CallbackProcessor accepts any object implementing the sink protocols,
+        # so no change to the processor is needed — just pass the DB sinks.
+        if self.sink_backend == "db":
+            self.shadow_ledger: DbShadowLedgerStore | DurableShadowLedgerStore = (
+                DbShadowLedgerStore(engine=self._db_engine)
+            )
+            self.dossier_store: DbDossierStore | DurableDossierStore = DbDossierStore(
+                engine=self._db_engine
+            )
+            # DB-backed DLQ: wrap CallbackDlqDbStore in the _DbCallbackDLQ
+            # adapter so the mixin's enqueue() interface is preserved.
+            self._callback_receipt_db_store = CallbackReceiptDbStore(
+                engine=self._db_engine,
+            )
+            self._dlq_db_store = CallbackDlqDbStore(engine=self._db_engine)
+            self.dlq = _DbCallbackDLQ(self._dlq_db_store)
+            # DB-backed callback metrics store (replaces the JSONL store).
+            self._callback_metrics_db_store = CallbackMetricsDbStore(
+                engine=self._db_engine,
+            )
+        else:
+            self.shadow_ledger = DurableShadowLedgerStore(self.shadow_ledger_real())
+            self.dossier_store = DurableDossierStore(self.dossier_registry())
+            # When a CostTracker is injected in jsonl mode, we still need a
+            # CallbackReceiptDbStore so callback receipts are mirrored to the
+            # DB — the training_jobs.callback_receipt_id FK references
+            # callback_receipts.callback_id, so the parent row must exist for
+            # CostTracker.link_callback() to succeed. Use the CostTracker's
+            # engine (which may be the same injected engine or a lazy-init
+            # production engine).
+            if self._cost_tracker is not None:
+                receipt_engine = self._db_engine
+                if receipt_engine is None:
+                    receipt_engine = self._cost_tracker.engine
+                self._callback_receipt_db_store = CallbackReceiptDbStore(
+                    engine=receipt_engine,
+                )
         self._runpod_client = runpod_client
         self._runpod_dispatcher: RunPodDispatcher | None = None
         self._runpod_clients: dict[str, Any] = {}
@@ -373,12 +483,30 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # and detect stale/crashed workers. Defaults to None (disabled).
         worker_status_dir = os.environ.get("QUANT_FOUNDRY_WORKER_STATUS_DIR", "")
         stale_threshold_str = os.environ.get(
-            "QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS", "60",
+            "QUANT_FOUNDRY_STALE_THRESHOLD_SECONDS",
+            "60",
         )
         try:
             stale_threshold = float(stale_threshold_str)
         except ValueError:
             stale_threshold = 60.0
+
+        # Sink backend selection: "jsonl" (default, backward compatible) or
+        # "db" (DB-backed sinks via db_sinks.py + CostTracker). When "db",
+        # the gateway constructs DbDossierStore, DbShadowLedgerStore,
+        # CallbackReceiptDbStore, CallbackDlqDbStore, and
+        # CallbackMetricsDbStore from db_sinks.py and passes them to the
+        # CallbackProcessor. The DB sinks lazy-init their engines from
+        # get_sync_engine() when no engine is injected.
+        sink_backend = os.environ.get(_SINK_BACKEND_ENV, "jsonl").lower()
+        if sink_backend not in ("jsonl", "db"):
+            sink_backend = "jsonl"
+
+        # Tier 0.2: default output_prefix for training jobs. When set,
+        # the gateway injects this into every training dispatch payload
+        # that doesn't already specify one. Should be a /runpod-volume/
+        # path so artifacts survive worker shutdown.
+        output_prefix = os.environ.get(_OUTPUT_PREFIX_ENV) or None
 
         return cls(
             enabled=enabled,
@@ -391,6 +519,8 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             paper_bridge=paper_bridge,
             worker_status_dir=worker_status_dir or None,
             stale_threshold_seconds=stale_threshold,
+            sink_backend=sink_backend,
+            output_prefix=output_prefix,
         )
 
     # --- health / state ---
@@ -410,6 +540,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 job_type: _client_endpoint_id(client)
                 for job_type, client in self._runpod_clients.items()
             },
+            "output_prefix_configured": self._default_output_prefix is not None,
             "paper_bridge": {
                 "configured": self._paper_bridge is not None,
                 "status": self._paper_bridge.status.value if self._paper_bridge else "disabled",
@@ -584,9 +715,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 }
             # Completed — extract callback fields from the output.
             output = status.get("output")
-            callback_fields = _extract_callback_fields(
-                output if output is not None else status
-            )
+            callback_fields = _extract_callback_fields(output if output is not None else status)
             if callback_fields is None:
                 return {
                     "ok": False,
@@ -781,6 +910,29 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                     "monthly_budget_cents": decision.monthly_budget_cents,
                     "mode": self.mode,
                 }
+        # Tier 1.5: dataset registry dispatch gate. When a dataset
+        # registry is wired in and the training mode is production,
+        # enforce dispatch_training() before enqueueing the job. This
+        # rejects unregistered datasets, L1/L2 readiness, stale receipts,
+        # and deprecated/rejected entries. Canary/research are permissive.
+        if self._dataset_registry is not None and job_type == "training":
+            training_mode = self._extract_training_mode(dispatch_payload)
+            if training_mode == "production":
+                dataset_id = self._extract_dataset_id(dispatch_payload)
+                if dataset_id is not None:
+                    try:
+                        self._dataset_registry.dispatch_training(dataset_id, mode="production")
+                    except ValueError as exc:
+                        return {
+                            "enabled": True,
+                            "ok": False,
+                            "job_id": job_id,
+                            "error_code": "dataset_dispatch_rejected",
+                            "detail": str(exc),
+                            "dataset_id": dataset_id,
+                            "training_mode": training_mode,
+                            "mode": self.mode,
+                        }
         self.outbox.enqueue(
             job_id=job_id,
             job_type=job_type,
@@ -803,6 +955,9 @@ class QuantFoundryGateway(GatewayCallbackMixin):
                 )
             else:
                 dispatcher.dispatch(job_id, request_payload=dispatch_payload)
+        # CostTracker: record the dispatch (creates a training_jobs row).
+        # Best-effort — a tracking failure must not break the dispatch path.
+        self._record_job_dispatch_cost(job_id, job_type, dispatch_payload)
         rec = self.outbox.get(job_id)
         return {
             "enabled": True,
@@ -924,13 +1079,314 @@ class QuantFoundryGateway(GatewayCallbackMixin):
             receipts.append(receipt)
         return receipts
 
+    # --- CostTracker callback wiring (Phase A integration) ------------------
+
+    def receive_callback(
+        self,
+        *,
+        job_id: str,
+        payload: bytes,
+        signature: str,
+        ts: int,
+        worker_id: str = "external",
+    ) -> dict[str, Any]:
+        """Override that wires CostTracker into the callback processing path.
+
+        Delegates to the mixin's ``receive_callback`` (HMAC verification,
+        inbox recording, processor.process()), then — when the callback
+        completes successfully — calls ``CostTracker.update_job_status()``
+        and ``CostTracker.link_callback()`` to update the training_jobs row.
+
+        The callback receipt id is read from the inbox record (the latest
+        record for this job_id). The status is derived from the outbox
+        status in the processing receipt (``completed`` / ``failed``).
+
+        Best-effort: CostTracker write failures are caught and logged via
+        ``contextlib.suppress`` so they do not break the callback path.
+        """
+        receipt = super().receive_callback(
+            job_id=job_id,
+            payload=payload,
+            signature=signature,
+            ts=ts,
+            worker_id=worker_id,
+        )
+        # Mirror the inbox record to the callback_receipts table via
+        # CallbackReceiptDbStore when the store is available. This is the
+        # DB-backed audit trail (the JSONL inbox remains the source of truth
+        # for the processor; the DB store is a durable mirror). The store is
+        # constructed when sink_backend == "db" OR when a CostTracker is
+        # injected (the training_jobs.callback_receipt_id FK references
+        # callback_receipts.callback_id, so the parent row must exist for
+        # CostTracker.link_callback() to succeed).
+        if self._callback_receipt_db_store is not None:
+            in_rec = self.inbox.get_by_job_id(job_id)
+            if in_rec is not None:
+                with contextlib.suppress(Exception):
+                    self._callback_receipt_db_store.write(in_rec)
+        # Only update the CostTracker when the callback was accepted (ok=True).
+        if not receipt.get("ok"):
+            return receipt
+        # Update job status from the outbox status in the receipt.
+        outbox_status = receipt.get("outbox_status")
+        now_ns = time.time_ns()
+        status_map = {
+            "completed": "completed",
+            "failed": "failed",
+            "validating": "running",
+        }
+        ct_status = status_map.get(cast("str", outbox_status), outbox_status)
+        if ct_status is not None:
+            with contextlib.suppress(Exception):
+                self.cost_tracker().update_job_status(
+                    job_id,
+                    status=ct_status,
+                    completed_at_ns=now_ns if ct_status == "completed" else None,
+                )
+        # Link the callback receipt id from the inbox record.
+        in_rec = self.inbox.get_by_job_id(job_id)
+        if in_rec is not None:
+            with contextlib.suppress(Exception):
+                self.cost_tracker().link_callback(
+                    job_id,
+                    callback_receipt_id=in_rec.callback_id,
+                )
+        # Tier 1.6: extract operational metrics from the callback payload
+        # and record them via CostTracker.record_metric(). The handler
+        # emits execution_time_ms, queue_delay_ms, cost_usd, and gpu_model
+        # in the metrics_summary dict inside the callback payload. Best-
+        # effort: failures are caught and logged so they do not break the
+        # callback path.
+        with contextlib.suppress(Exception):
+            self._record_operational_metrics(job_id, payload)
+        # Tier 1.2: auto-register a model version when a registry is
+        # wired in and the callback was a successful training_complete.
+        # Best-effort: registration failures are caught and logged via
+        # contextlib.suppress so they do not break the callback path.
+        if self._registry is not None and in_rec is not None:
+            with contextlib.suppress(Exception):
+                self._maybe_register_version(job_id, payload, in_rec.callback_id)
+        return receipt
+
+    def _maybe_register_version(
+        self,
+        job_id: str,
+        payload: bytes,
+        callback_receipt_id: str,
+    ) -> None:
+        """Auto-register a model version from a training_complete callback.
+
+        Parses the callback envelope to extract model_id + artifact_id,
+        queries the model_dossiers table for the content_hash (written by
+        DbDossierStore), and calls register_model + register_version.
+        Idempotent: both methods use ON CONFLICT DO NOTHING.
+        """
+        import json as _json
+
+        from quant_foundry.schemas import RunPodCallbackEnvelope
+
+        envelope = RunPodCallbackEnvelope.model_validate(_json.loads(payload))
+        if envelope.result_type != "training_complete":
+            return
+        dossier_payload = envelope.payload.get("dossier")
+        artifact_payload = envelope.payload.get("artifact_manifest")
+        if not isinstance(dossier_payload, dict) or not isinstance(artifact_payload, dict):
+            return
+        model_id = dossier_payload.get("model_id")
+        artifact_id = artifact_payload.get("artifact_id")
+        if not model_id or not artifact_id:
+            return
+        # Query the model_dossiers table for the content_hash (written by
+        # DbDossierStore during callback processing).
+        from sqlalchemy import select as _select
+        from sqlalchemy.orm import Session as _Session
+
+        from fincept_db.callback_tables import ModelDossierRow
+
+        with _Session(self._db_engine) as session:
+            dossier_row = session.scalars(
+                _select(ModelDossierRow).where(
+                    ModelDossierRow.model_id == model_id,
+                    ModelDossierRow.artifact_manifest_id == artifact_id,
+                )
+            ).first()
+            if dossier_row is None:
+                return
+            content_hash = dossier_row.content_hash
+            model_family = artifact_payload.get("model_family", "unknown")
+        # Generate a deterministic version_id from the model_id + content_hash.
+        version_id = f"version:{model_id}:{content_hash[:16]}"
+        # Determine the version number (count existing versions for this model).
+        from fincept_db.registry_tables import ModelVersionRow
+
+        with _Session(self._db_engine) as session:
+            existing = session.scalars(
+                _select(ModelVersionRow).where(ModelVersionRow.model_id == model_id)
+            ).all()
+            version_number = len(existing) + 1
+        assert self._registry is not None  # registry required for model registration
+        self._registry.register_model(
+            model_id=model_id,
+            name=model_id,
+            model_family=model_family,
+        )
+        self._registry.register_version(
+            model_id=model_id,
+            version_id=version_id,
+            dossier_content_hash=content_hash,
+            artifact_id=artifact_id,
+            callback_receipt_id=callback_receipt_id,
+            version_number=version_number,
+        )
+
+    def _record_operational_metrics(
+        self,
+        job_id: str,
+        payload: bytes,
+    ) -> None:
+        """Tier 1.6: Extract operational metrics from the callback payload
+        and record them via CostTracker.record_metric().
+
+        The handler emits these metrics in the ``metrics_summary`` dict
+        inside the callback payload:
+        - ``execution_time_ms``: wall-clock training time in milliseconds
+        - ``queue_delay_ms``: time spent in the RunPod queue (0 from worker)
+        - ``cost_usd``: estimated GPU cost in USD
+        - ``gpu_model``: GPU model name (e.g. "RTX 4090")
+
+        Each metric is recorded as a separate ``job_metrics`` row via
+        CostTracker.record_metric(). Best-effort: all exceptions are
+        suppressed by the caller.
+        """
+        import json as _json
+
+        try:
+            payload_dict = _json.loads(payload)
+        except Exception:
+            return
+
+        # The metrics_summary is inside the callback payload under
+        # either "metrics_summary" (flat) or "payload.metrics_summary"
+        # (nested in the callback envelope).
+        metrics_summary = payload_dict.get("metrics_summary")
+        if not isinstance(metrics_summary, dict):
+            nested_payload = payload_dict.get("payload")
+            if isinstance(nested_payload, dict):
+                metrics_summary = nested_payload.get("metrics_summary")
+        if not isinstance(metrics_summary, dict):
+            return
+
+        tracker = self.cost_tracker()
+        now_ns = time.time_ns()
+
+        # Record each operational metric.
+        metric_map = {
+            "execution_time_ms": ("execution_time", "ms"),
+            "queue_delay_ms": ("queue_delay", "ms"),
+            "cost_usd": ("cost_usd", "USD"),
+        }
+        for field, (metric_type, unit) in metric_map.items():
+            value = metrics_summary.get(field)
+            if value is not None:
+                try:
+                    tracker.record_metric(
+                        job_id=job_id,
+                        metric_type=metric_type,
+                        value=float(value),
+                        unit=unit,
+                        recorded_at_ns=now_ns,
+                    )
+                except Exception:
+                    pass
+
+        # Record GPU model as a metric (string → hash to numeric if needed,
+        # but CostTracker accepts float/int/Decimal — store as 1.0 with
+        # the model name in the metric_type).
+        gpu_model = metrics_summary.get("gpu_model")
+        if gpu_model:
+            try:
+                tracker.record_metric(
+                    job_id=job_id,
+                    metric_type=f"gpu_model:{gpu_model}",
+                    value=1.0,
+                    unit="boolean",
+                    recorded_at_ns=now_ns,
+                )
+            except Exception:
+                pass
+
+        # Record a cost event for the GPU cost (so cost_summary rollups
+        # include it). This is the primary cost record — the metric above
+        # is the observability side.
+        cost_usd = metrics_summary.get("cost_usd")
+        execution_time_ms = metrics_summary.get("execution_time_ms")
+        if cost_usd is not None and execution_time_ms is not None:
+            try:
+                tracker.record_cost_event(
+                    job_id=job_id,
+                    event_type="gpu_compute",
+                    amount=float(execution_time_ms) / 1000.0,
+                    unit_cost=float(cost_usd) / max(float(execution_time_ms) / 1000.0, 0.001),
+                    metadata={
+                        "gpu_model": gpu_model or "unknown",
+                        "execution_time_ms": int(execution_time_ms),
+                    },
+                    currency="USD",
+                )
+            except Exception:
+                pass
+
+    @staticmethod
+    def _extract_training_mode(payload: Any) -> str:
+        """Extract training_mode from a dispatch payload.
+
+        Checks (in order): top-level ``training_mode``/``mode`` field,
+        ``extra_constraints.training_mode``. Defaults to ``"canary"``.
+        """
+        if isinstance(payload, dict):
+            for key in ("training_mode", "mode"):
+                val = payload.get(key)
+                if isinstance(val, str) and val:
+                    return val
+            ec = payload.get("extra_constraints")
+            if isinstance(ec, dict):
+                val = ec.get("training_mode")
+                if isinstance(val, str) and val:
+                    return val
+        return "canary"
+
+    @staticmethod
+    def _extract_dataset_id(payload: Any) -> str | None:
+        """Extract the dataset id from a dispatch payload.
+
+        Returns ``dataset_manifest_ref`` if present and a string,
+        otherwise None. For production dispatch, this must be a
+        registered dataset id (not a raw file path).
+        """
+        if isinstance(payload, dict):
+            ref = payload.get("dataset_manifest_ref")
+            if isinstance(ref, str) and ref:
+                return ref
+        return None
+
     def _prepare_dispatch_payload(
         self,
         *,
         job_type: str,
         request_payload: Any,
     ) -> Any:
-        if not self._is_runpod_mode() or _normalize_job_type(job_type) != "inference":
+        if not self._is_runpod_mode():
+            return request_payload
+        # Tier 0.2: inject default output_prefix for training jobs when
+        # the caller hasn't set one. This ensures artifacts go to the
+        # network volume (durable) instead of /tmp (ephemeral).
+        if _normalize_job_type(job_type) == "training":
+            if isinstance(request_payload, dict) and self._default_output_prefix:
+                if not request_payload.get("output_prefix"):
+                    request_payload = dict(request_payload)
+                    request_payload["output_prefix"] = self._default_output_prefix
+            return request_payload
+        if _normalize_job_type(job_type) != "inference":
             return request_payload
         if not isinstance(request_payload, dict):
             raise TypeError("RunPod inference payload must be a JSON object")
@@ -1313,8 +1769,49 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         return sweep.tournament.score(scoring_input)
 
     def _find_sentinel_receipt(self, model_id: str) -> Any:
-        """Find a sentinel receipt for a model (None if not available)."""
-        return None
+        """Find the most recent sentinel receipt for a model.
+
+        Looks up the latest version for the model_id, then queries
+        the model_metrics table for the most recent sentinel metrics
+        row. Builds a SentinelReceipt from the stored metrics dict.
+
+        Returns None if:
+          - No DB engine is wired (non-DB mode).
+          - No version exists for the model_id.
+          - No sentinel metrics have been recorded.
+        """
+        if self._db_engine is None:
+            return None
+
+        from sqlalchemy import select as _select
+        from sqlalchemy.orm import Session as _Session
+
+        from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
+        from quant_foundry.registry_db import _build_sentinel_receipt
+
+        with _Session(self._db_engine) as session:
+            # Find the latest version for this model_id.
+            version_row = session.scalars(
+                _select(ModelVersionRow)
+                .where(ModelVersionRow.model_id == model_id)
+                .order_by(ModelVersionRow.version_number.desc())
+            ).first()
+            if version_row is None:
+                return None
+
+            # Query the most recent sentinel metrics for that version.
+            sentinel_row = session.scalars(
+                _select(ModelMetricRow)
+                .where(
+                    ModelMetricRow.version_id == version_row.version_id,
+                    ModelMetricRow.metric_type == "sentinel",
+                )
+                .order_by(ModelMetricRow.recorded_at_ns.desc())
+            ).first()
+            if sentinel_row is None:
+                return None
+
+            return _build_sentinel_receipt(sentinel_row.metrics)
 
     def _build_blocking_issues(
         self, dossier: Any, tournament_result: Any, sentinel_receipt: Any
@@ -1635,12 +2132,102 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         ``receive_callback`` / ``poll_runpod_results`` to record
         ``received`` / ``accepted`` / ``rejected`` events and by
         ``shadow_health`` to compute a rolling rejection rate.
+
+        When ``sink_backend == "db"``, returns the DB-backed
+        :class:`CallbackMetricsDbStore` instead (constructed in
+        ``__init__``), which writes metric events to the ``callback_metrics``
+        table.
         """
+        if self.sink_backend == "db" and self._callback_metrics_db_store is not None:
+            return self._callback_metrics_db_store  # type: ignore[return-value]
         if self._callback_metrics_store is None:
             self._callback_metrics_store = CallbackMetricsStore(
                 metrics_dir=self.base_dir / "callback_metrics",
             )
         return self._callback_metrics_store
+
+    # --- CostTracker (Phase A integration) ----------------------------------
+
+    def cost_tracker(self) -> CostTracker:
+        """Return the CostTracker, lazy-initializing if not injected.
+
+        When a ``CostTracker`` was passed to the constructor, it is returned
+        as-is. When ``None`` (the default), a new ``CostTracker`` is
+        constructed. If a ``db_engine`` was injected (e.g. a SQLite engine in
+        tests), it is passed to the ``CostTracker``; otherwise the tracker
+        lazy-inits its engine from ``get_sync_engine()`` in production.
+        """
+        if self._cost_tracker is None:
+            self._cost_tracker = CostTracker(engine=self._db_engine)
+        return self._cost_tracker
+
+    def _record_job_dispatch_cost(
+        self,
+        job_id: str,
+        job_type: str,
+        request_payload: Any,
+    ) -> None:
+        """Record a job dispatch in the CostTracker (training_jobs row).
+
+        Called from the dispatch path (``create_job``) right after a
+        successful dispatch. Extracts ``model_family``, ``gpu_type``,
+        ``gpu_count``, ``execution_timeout_ms``, and ``container_image``
+        from the request payload when present (with sensible defaults).
+        ``request_payload_ref`` is a file path to the persisted request
+        payload on disk (never the raw payload itself).
+
+        Best-effort: a CostTracker write failure is caught and logged via
+        ``contextlib.suppress`` so it does not break the dispatch path.
+        The training_jobs row is the source of truth for cost tracking;
+        a missed row means the job is untracked (not a dispatch failure).
+        """
+        payload = request_payload if isinstance(request_payload, dict) else {}
+        model_family = str(payload.get("model_family", job_type))
+        execution_timeout_ms = payload.get("execution_timeout_ms")
+        gpu_type = payload.get("gpu_type")
+        gpu_count = int(payload.get("gpu_count", 1))
+        container_image = payload.get("container_image")
+        # Map the gateway mode to a valid CostTracker mode domain value.
+        # The training_jobs table has a CHECK constraint forcing mode to be
+        # one of 'canary', 'research', 'production'. The gateway mode
+        # ('runpod', 'local_mock') is a transport mode, not a deployment
+        # tier — map it to 'canary' (the default tier for shadow-only
+        # dispatches) unless the payload overrides it.
+        ct_mode = str(payload.get("deployment_mode", "canary"))
+        # Persist the request payload to disk and use the path as the ref.
+        request_payload_ref = self._write_request_payload(job_id, payload)
+        with contextlib.suppress(Exception):
+            self.cost_tracker().record_job_dispatch(
+                job_id=job_id,
+                model_family=model_family,
+                mode=ct_mode,
+                execution_timeout_ms=(
+                    int(execution_timeout_ms) if execution_timeout_ms is not None else None
+                ),
+                gpu_type=str(gpu_type) if gpu_type is not None else None,
+                gpu_count=gpu_count,
+                container_image=(str(container_image) if container_image is not None else None),
+                request_payload_ref=request_payload_ref,
+            )
+
+    def _write_request_payload(self, job_id: str, payload: dict[str, Any]) -> str:
+        """Persist the request payload to disk and return the file path.
+
+        Stored under ``<base_dir>/request_payloads/<job_id>.json``. This is
+        a reference (file path), never the raw payload itself — the
+        CostTracker stores only the path in ``training_jobs.request_payload_ref``.
+        """
+        import json as _json
+
+        payload_dir = self.base_dir / "request_payloads"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = job_id.replace(":", "_").replace("/", "_").replace("\\", "_")
+        payload_path = payload_dir / f"{safe_name}.json"
+        try:
+            payload_path.write_text(_json.dumps(payload, default=str), encoding="utf-8")
+        except (OSError, TypeError):
+            return ""
+        return str(payload_path)
 
     def shadow_health(self) -> dict[str, Any]:
         """Aggregate read-only health for the shadow inference surface.

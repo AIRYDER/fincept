@@ -63,7 +63,7 @@ def test_build_dataset_drops_horizon_tail() -> None:
     """Last horizon_bars rows have null forward returns -> dropped."""
     df = _synthetic_frame(rows=100)
     feature_names = ["ret_1m"]
-    X, y = build_dataset(df, horizon_bars=10, feature_names=feature_names)
+    X, _y = build_dataset(df, horizon_bars=10, feature_names=feature_names)
     assert X.shape[0] == 90  # 100 - 10
 
 
@@ -237,7 +237,7 @@ def test_walk_forward_splits_matches_shared_make_folds() -> None:
         purge_bars=0,
         embargo_bars=0,
     )
-    for fold, (train_slice, val_slice) in zip(folds, delegated):
+    for fold, (train_slice, val_slice) in zip(folds, delegated, strict=False):
         assert val_slice.start == fold.val_start
         assert train_slice.stop == fold.val_start - purge_bars
 

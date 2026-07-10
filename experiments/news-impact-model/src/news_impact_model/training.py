@@ -81,9 +81,7 @@ def fit_source_event_priors(outcomes: list[HistoricalOutcome]) -> list[PriorBuck
     """
     grouped: dict[tuple[str, str], list[HistoricalOutcome]] = {}
     for outcome in outcomes:
-        grouped.setdefault((outcome.source.lower(), outcome.event_type), []).append(
-            outcome
-        )
+        grouped.setdefault((outcome.source.lower(), outcome.event_type), []).append(outcome)
 
     buckets: list[PriorBucket] = []
     for key, rows in sorted(grouped.items()):
@@ -239,9 +237,7 @@ def walk_forward_evaluate_analog_weights(
         n_predictions=n_predictions,
         mae=mean(fold.abs_error for fold in folds) if folds else inf,
         directional_accuracy=(
-            sum(1 for fold in folds if fold.direction_hit) / n_predictions
-            if n_predictions
-            else 0.0
+            sum(1 for fold in folds if fold.direction_hit) / n_predictions if n_predictions else 0.0
         ),
         folds=tuple(folds),
     )

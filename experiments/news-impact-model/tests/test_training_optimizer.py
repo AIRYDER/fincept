@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -152,11 +151,14 @@ def test_optimize_analog_weights_picks_lowest_mae_candidate() -> None:
 
     assert result.weights == event_type_first
     assert result.evaluation.directional_accuracy == 1.0
-    assert result.evaluation.mae < evaluate_analog_weights(
-        outcomes,
-        weights=text_first,
-        horizon="5m",
-    ).mae
+    assert (
+        result.evaluation.mae
+        < evaluate_analog_weights(
+            outcomes,
+            weights=text_first,
+            horizon="5m",
+        ).mae
+    )
 
 
 def test_walk_forward_evaluation_uses_only_prior_events() -> None:
@@ -271,9 +273,12 @@ def test_walk_forward_optimizer_selects_candidate_using_time_ordered_error() -> 
 
     assert result.weights == event_type_first
     assert result.evaluation.n_predictions == 2
-    assert result.evaluation.mae < walk_forward_evaluate_analog_weights(
-        outcomes,
-        weights=text_first,
-        horizon="5m",
-        min_train_events=2,
-    ).mae
+    assert (
+        result.evaluation.mae
+        < walk_forward_evaluate_analog_weights(
+            outcomes,
+            weights=text_first,
+            horizon="5m",
+            min_train_events=2,
+        ).mae
+    )

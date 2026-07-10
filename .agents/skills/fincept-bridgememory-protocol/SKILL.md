@@ -1,6 +1,6 @@
 ---
 name: "fincept-bridgememory-protocol"
-description: "Read, write, and maintain the BridgeMemory hub at C:\\Users\\nolan\\CascadeProjects\\fincept-terminal\\.bridgememory\\. Use this skill whenever the builder asks about prior decisions, project context, the spine plan, audit findings, the value_increase plan, the experimental fork, or anything that might already be captured. Also use before recommending tools, libraries, or patterns the builder may already have opinions on. If the MCP tools fail, fall back to direct .md writes (see Fallback Protocol)."
+description: "Read, write, and maintain the BridgeMemory hub at C:\\Users\\nolan\\CascadeProjects\\fincept-terminal\\.bridgememory\\. Use this skill whenever the builder asks about prior decisions, project context, the spine plan, audit findings, the value_increase plan, the experimental fork, or anything that might already be captured. Also use before recommending tools, libraries, or patterns the builder may already have opinions on. If the MCP tools fail, fall back to direct .md writes (see Fallback Protocol). PRECEDENCE: inside the fincept-terminal repository this project-specific protocol supersedes the global bridgespace-bridge-skill-memory skill — follow this hub's paths and conventions."
 ---
 
 # fincept-bridgememory-protocol

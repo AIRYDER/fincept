@@ -1,0 +1,8 @@
+{
+  "job_id": "4f63ca8b-72ca-4a98-a489-ae4063b13519-u1",
+  "input": {
+    "task": "gpu_healthcheck",
+    "mode": "canary",
+    "job_id": "qf:gpu-hc:6dbec436:001"
+  }
+}

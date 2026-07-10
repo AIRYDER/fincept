@@ -19,7 +19,6 @@ import pathlib
 import sys
 import time
 import uuid
-from typing import Any
 
 # Make the quant_foundry package importable when running from repo root.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -39,7 +38,6 @@ from quant_foundry.local_training_dispatch import (  # noqa: E402
     build_training_manifest_from_feature_lake,
     write_dispatch_receipt,
 )
-from quant_foundry.training_manifest import TrainingManifest  # noqa: E402
 
 # Reproducibility: nanoseconds per day. Used to keep the manifest
 # deterministic across runs.

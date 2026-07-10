@@ -1,0 +1,35 @@
+# CUDA test image using python:3.12-slim + pip-installed PyTorch CUDA.
+#
+# The python:3.12-slim base is proven to work on RunPod serverless (smoke
+# image). We install PyTorch with CUDA support via pip, which downloads
+# the CUDA runtime libraries into the container. This avoids the large
+# CUDA base images that crash on RunPod serverless.
+#
+# Build (from repo root):
+#   DOCKER_BUILDKIT=1 docker build \
+#     -t fincept-qf-cuda-test-slim \
+#     -f runpod/quant-foundry-cuda-test/Dockerfile.slim \
+#     --build-arg GIT_SHA=$(git rev-parse HEAD) .
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /worker
+
+# Install runpod SDK from PyPI, then PyTorch with CUDA 12.4 from pytorch.org
+# The pytorch wheel includes CUDA runtime libraries (~2GB)
+RUN pip install --no-cache-dir "runpod==1.7.13"
+RUN pip install --no-cache-dir "torch==2.4.1" \
+    --index-url https://download.pytorch.org/whl/cu124
+
+COPY runpod/quant-foundry-cuda-test/handler.py /worker/handler.py
+
+ARG GIT_SHA=unknown
+ENV QUANT_FOUNDRY_GIT_SHA=${GIT_SHA} \
+    PYTHONPATH=/worker
+
+ENTRYPOINT ["python", "-u", "/worker/handler.py"]

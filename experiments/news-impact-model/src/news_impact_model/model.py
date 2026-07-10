@@ -41,8 +41,7 @@ class NewsImpactModel:
     ) -> NewsImpactPrediction:
         matches = self._index.search(event, context, top_k=self._top_k)
         horizons = {
-            horizon: self._impact_for_horizon(matches, horizon)
-            for horizon in self._horizons
+            horizon: self._impact_for_horizon(matches, horizon) for horizon in self._horizons
         }
         return NewsImpactPrediction(
             event_id=event.event_id,
@@ -52,9 +51,7 @@ class NewsImpactModel:
             volatility_impact=_weighted_mean(
                 [(m.outcome.volatility_impact, m.score) for m in matches]
             ),
-            volume_impact=_weighted_mean(
-                [(m.outcome.volume_impact, m.score) for m in matches]
-            ),
+            volume_impact=_weighted_mean([(m.outcome.volume_impact, m.score) for m in matches]),
             confidence=self._confidence(matches),
             similar_events=[
                 SimilarEventSummary(

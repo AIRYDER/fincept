@@ -79,8 +79,7 @@ class VectorAnalogIndex:
         )
         event_type_match = event.event_type == outcome.event_type
         regime_match = (
-            context.market_regime != "unknown"
-            and context.market_regime == outcome.market_regime
+            context.market_regime != "unknown" and context.market_regime == outcome.market_regime
         )
         score = (
             0.58 * similarity

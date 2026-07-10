@@ -24,12 +24,13 @@ that may fill hours later.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import time
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
+
+import httpx
 
 from fincept_core.clock import iso_to_ns, now_ns
 from fincept_core.ids import new_id
@@ -114,6 +115,23 @@ async def submit_intent(
             order_id=intent.order_id,
             status=exc.status_code,
             body=exc.body,
+        )
+        rejected = pending_order.model_copy(
+            update={"status": OrderStatus.REJECTED, "updated_at": now_ns()}
+        )
+        states.append(rejected)
+        return IntentResult(order_states=states, fill=None)
+    except (httpx.HTTPError, OSError, TimeoutError) as exc:
+        # Network-level errors (connection reset, DNS failure, timeout)
+        # must not crash the OMS loop.  Map them to REJECTED with a
+        # "network_error" reason so the caller sees a single terminal
+        # state, same as an Alpaca-side rejection.
+        log.error(
+            "alpaca.submit_network_error",
+            order_id=intent.order_id,
+            reason="network_error",
+            error_type=type(exc).__name__,
+            error=str(exc),
         )
         rejected = pending_order.model_copy(
             update={"status": OrderStatus.REJECTED, "updated_at": now_ns()}
@@ -232,8 +250,14 @@ async def poll_pending_orders(
                         "updated_at": now_ns(),
                     }
                 )
-                with contextlib.suppress(Exception):
+                try:
                     await on_terminal(terminal_order)
+                except Exception:
+                    log.warning(
+                        "alpaca.on_terminal_failed",
+                        order_id=order_id,
+                        exc_info=True,
+                    )
                 pending.pop(order_id, None)
 
 

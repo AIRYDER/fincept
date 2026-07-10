@@ -1,0 +1,17 @@
+{
+  "job_id": "1363ef31-c7aa-4e57-acd1-c090a825c6e2-u1",
+  "input": {
+    "job_id": "qf:a7-train:6dbec436:001",
+    "dataset_manifest_ref": "inline://a7-train-model-proof",
+    "model_family": "lightgbm",
+    "random_seed": 42,
+    "extra_constraints": {
+      "training_mode": "canary"
+    },
+    "n_folds": 2,
+    "output_prefix": "/tmp/a7-train-artifacts",
+    "inline_dataset_rows": 300,
+    "inline_dataset_bytes": 15182,
+    "inline_dataset_header": "timestamp,f1,f2,f3,label"
+  }
+}

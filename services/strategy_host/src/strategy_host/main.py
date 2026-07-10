@@ -69,8 +69,10 @@ async def run(stop: asyncio.Event) -> None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        with contextlib.suppress(Exception):
+        try:
             await redis.aclose()  # type: ignore[attr-defined]
+        except Exception:
+            log.warning("strategy_host.redis_close_failed", exc_info=True)
 
 
 async def _main() -> None:

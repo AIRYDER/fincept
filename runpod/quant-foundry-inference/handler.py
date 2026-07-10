@@ -62,11 +62,13 @@ except ImportError:  # pragma: no cover - fallback if shared module missing
     def clear_status(*args, **kwargs):  # type: ignore[no-redef]
         pass
 
+
 from quant_foundry.real_inference import RealInferenceEngine  # noqa: E402
 from quant_foundry.schemas import RunPodInferenceRequest  # noqa: E402
 from quant_foundry.shadow_inference import (  # noqa: E402
     FeatureSnapshot,
     InferenceDisabledError,
+    RealShadowScorer,
     ShadowInferenceEngine,
 )
 from quant_foundry.signatures import sign_callback  # noqa: E402
@@ -126,9 +128,7 @@ def _handle_canary(input_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _heartbeat_during_inference(
-    job_id: str, interval: float = 5.0
-) -> threading.Event:
+def _heartbeat_during_inference(job_id: str, interval: float = 5.0) -> threading.Event:
     """Start a background heartbeat thread. Returns a stop event.
 
     Inference is faster than training, so a shorter interval (5s) is
@@ -214,18 +214,35 @@ def handler(event: dict[str, Any]) -> dict[str, Any]:
     # Check if inference is enabled.
     enabled = os.environ.get("QUANT_FOUNDRY_MODE", "") == "runpod_shadow"
 
-    # Decide whether to use the real model-loading engine or the stub.
-    # Real inference is used when QUANT_FOUNDRY_USE_REAL_INFERENCE=true AND
-    # the request carries an artifact_ref that points at a model artifact
-    # (file:// or s3://). Otherwise we fall back to the stub engine for
-    # backward-compatible testing.
-    use_real = (
-        os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
-        and bool(request.artifact_ref)
-    )
+    # C2: Engine selection — real bundle scoring is the DEFAULT when an
+    # artifact_ref is present. The stub engine is only used behind an
+    # explicit ``engine=stub`` request parameter or the
+    # ``QUANT_FOUNDRY_INFERENCE_ENGINE=stub`` env var.
+    #
+    # Selection priority:
+    #   1. Explicit ``engine=stub`` (request param or env) → stub
+    #   2. artifact_ref present → RealShadowScorer (C1 bundle via
+    #      BundleScorer.score()). Fail closed on bundle error — NO silent
+    #      stub fallback.
+    #   3. No artifact_ref → stub (backward compat for tests without a
+    #      real bundle).
+    #
+    # The legacy ``QUANT_FOUNDRY_USE_REAL_INFERENCE=true`` env var is still
+    # honored: when set to ``true`` it forces RealInferenceEngine (raw
+    # predict() path) for backward compatibility with pre-C2 deployments.
+    engine_param = (
+        input_data.get("engine") or os.environ.get("QUANT_FOUNDRY_INFERENCE_ENGINE", "") or ""
+    ).lower()
 
-    if use_real:
+    legacy_use_real = os.environ.get("QUANT_FOUNDRY_USE_REAL_INFERENCE", "").lower() == "true"
+
+    if engine_param == "stub":
+        engine = ShadowInferenceEngine(enabled=enabled)
+    elif legacy_use_real and request.artifact_ref:
         engine = RealInferenceEngine(enabled=enabled)
+    elif request.artifact_ref:
+        # C2 default: real bundle scoring via BundleScorer.score().
+        engine = RealShadowScorer(enabled=enabled)
     else:
         engine = ShadowInferenceEngine(enabled=enabled)
 

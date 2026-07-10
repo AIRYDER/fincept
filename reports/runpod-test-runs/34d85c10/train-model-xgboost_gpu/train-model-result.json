@@ -1,0 +1,45 @@
+{
+  "artifact_id": "artifact:be7516421fe40de4",
+  "artifact_result": {
+    "artifact_format": "xgboost-ubj",
+    "artifact_id": "artifact:be7516421fe40de4",
+    "artifact_kind": "model",
+    "artifact_sha256": "be7516421fe40de4e1d3c534d89ed351f06c581a0c52b88bac95d3ccd8fb0d07",
+    "artifact_size_bytes": 55212,
+    "artifact_uri": "file:///tmp/a7-train-artifacts/model.pkl",
+    "created_at": 1783383205888816000,
+    "dataset_manifest_hash": "99b23c99ac74cbd846a2873c02846803a7bb75c3fecc8880e9c9adbdbe029c56",
+    "loader_family": "xgboost",
+    "model_family": "xgboost_gpu",
+    "training_manifest_hash": null,
+    "write_receipt": "2a459b0cfc8502c7100e7119fd8f49c481ec76858a58d75b4ea7df97b49d79d9"
+  },
+  "artifact_write_receipt_present": true,
+  "callback_signature_present": true,
+  "dossier_id": "model:qf:a7-train:xgboost_gpu:34d85c10:001",
+  "job_id": "qf:a7-train:xgboost_gpu:34d85c10:001",
+  "metrics_summary": {
+    "accuracy": 0.9533333333333334,
+    "brier_score": 0.03984064435174524,
+    "logloss": 0.15542546145760094,
+    "max_drawdown": -0.6746852397918701,
+    "metric_sanity": {
+      "flagged_metrics": {
+        "sharpe_ratio": {
+          "raw_value": 1735.3283076836303,
+          "reason_code": "sharpe_ratio_implausible:1735.3283076836303",
+          "status": "implausible"
+        }
+      },
+      "promotion_allowed": false,
+      "reason_codes": [
+        "sharpe_ratio_implausible:1735.3283076836303"
+      ],
+      "status": "implausible"
+    },
+    "sharpe_ratio": 1735.3283076836303,
+    "win_rate": 0.9533333333333334
+  },
+  "output_prefix": "/tmp/a7-train-artifacts",
+  "preflight_passed": true
+}

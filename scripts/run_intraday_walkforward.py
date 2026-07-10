@@ -44,7 +44,6 @@ Free-tier caveats:
 from __future__ import annotations
 
 import argparse
-import os
 import pathlib
 import sys
 from datetime import date, timedelta
@@ -60,6 +59,7 @@ for _src in (
 
 # Reuse the existing CLI entrypoints; this keeps a single source of
 # truth for ingest pagination / walk-forward orchestration.
+from ingest_bars import _alpaca_credentials_or_none  # noqa: E402
 from ingest_bars import main as ingest_main  # noqa: E402
 from walk_forward import main as walk_forward_main  # noqa: E402
 
@@ -101,16 +101,10 @@ def _trading_day_offset(reference: date, business_days_back: int) -> date:
     return d
 
 
-def _resolve_dates(
-    *, end: str | None, weeks: int
-) -> tuple[date, date]:
+def _resolve_dates(*, end: str | None, weeks: int) -> tuple[date, date]:
     """Return ``(start, end)`` honouring ``--end`` if supplied, else
     defaulting to T-2 trading days back to clear the free-tier embargo."""
-    end_d = (
-        date.fromisoformat(end)
-        if end is not None
-        else _trading_day_offset(date.today(), 2)
-    )
+    end_d = date.fromisoformat(end) if end is not None else _trading_day_offset(date.today(), 2)
     # weeks * 5 business days = days of intraday history.
     start_d = _trading_day_offset(end_d, max(1, weeks) * 5 - 1)
     return start_d, end_d
@@ -275,13 +269,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Fail fast if creds aren't set so we don't waste time setting up.
-    has_creds = bool(
-        os.environ.get("FINCEPT_ALPACA_API_KEY")
-        and os.environ.get("FINCEPT_ALPACA_API_SECRET")
-    ) or bool(
-        os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_API_SECRET")
-    )
-    if not has_creds:
+    key, secret = _alpaca_credentials_or_none()
+    if not key or not secret:
         print(
             "ERROR: Alpaca credentials not set.\n"
             "  Export FINCEPT_ALPACA_API_KEY + FINCEPT_ALPACA_API_SECRET\n"
@@ -292,8 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.skip_gated and args.skip_ungated:
-        print("ERROR: --skip-gated and --skip-ungated are mutually exclusive",
-              file=sys.stderr)
+        print("ERROR: --skip-gated and --skip-ungated are mutually exclusive", file=sys.stderr)
         return 1
 
     out_dir = pathlib.Path(args.out_dir)

@@ -34,7 +34,6 @@ analytics can attribute them correctly.
 
 from __future__ import annotations
 
-import contextlib
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -200,14 +199,13 @@ async def place_order(
 
     # Audit BEFORE publishing so a crash between the audit write and
     # the stream publish leaves an artifact for forensic recovery.
-    # Suppressed errors match the OMS pattern in main.py.
-    with contextlib.suppress(Exception):
-        await audit.append(
-            actor=f"api.orders.post:{actor}",
-            event_type="api.order_submitted",
-            payload=intent.model_dump(mode="json"),
-            correlation_id=order_id,
-        )
+    # Uses safe_append so failures are logged, not silently dropped.
+    await audit.safe_append(
+        actor=f"api.orders.post:{actor}",
+        event_type="api.order_submitted",
+        payload=intent.model_dump(mode="json"),
+        correlation_id=order_id,
+    )
 
     try:
         producer = Producer(redis)

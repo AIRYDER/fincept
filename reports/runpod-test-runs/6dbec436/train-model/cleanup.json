@@ -1,0 +1,14 @@
+{
+  "endpoint_id": "sj5lj1vxhydaja",
+  "scaled_down": true,
+  "deleted": false,
+  "template_id": "4rzf883f3d",
+  "template_deleted": false,
+  "followup_cleanup": {
+    "note": "endpoint deletion failed transiently (worker still spinning down); a follow-up cleanup pass deleted everything",
+    "endpoint_sj5lj1vxhydaja_deleted": true,
+    "template_qf-a7train-6dbec436-1783160334-tpl_deleted": true,
+    "template_qf-a7train-6dbec436-tpl_deleted": true,
+    "stale_endpoint_8wsrepx5dc6r2a": "deleted during attempt #1's own cleanup (ready-timeout run, no job dispatched)"
+  }
+}

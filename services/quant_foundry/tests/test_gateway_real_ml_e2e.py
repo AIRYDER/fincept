@@ -34,6 +34,10 @@ import pytest
 _LIGHTGBM = pytest.importorskip("lightgbm")
 _NUMPY = pytest.importorskip("numpy")
 
+# Legacy trainer construction (without column_roles) emits a
+# DeprecationWarning; these tests intentionally exercise that path.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 # ---------------------------------------------------------------------------
 # Helpers

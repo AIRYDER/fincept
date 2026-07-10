@@ -92,7 +92,7 @@ async def test_bridge_falls_back_to_get_prices_and_picks_latest_bar() -> None:
 
     assert result == 200.0
     assert len(adapter.calls) == 1
-    symbol, start_ns, end_ns = adapter.calls[0]
+    symbol, _start_ns, end_ns = adapter.calls[0]
     assert symbol == "AAPL"
     # end_ns is exclusive and must include ts2.
     assert end_ns == 101

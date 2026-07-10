@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-from typing import Any
 
 from quant_foundry.modules.registry import MediaItem
 
@@ -34,7 +33,7 @@ def compute_content_hash(item: MediaItem) -> str:
     chars.  This catches the same story syndicated across sources even
     when the ``item_id`` differs.
     """
-    payload = f"{item.headline}{item.body[:500]}".encode("utf-8")
+    payload = f"{item.headline}{item.body[:500]}".encode()
     return hashlib.sha256(payload).hexdigest()[:16]
 
 

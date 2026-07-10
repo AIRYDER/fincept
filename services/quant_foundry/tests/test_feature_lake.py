@@ -25,6 +25,7 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -492,3 +493,143 @@ class TestDeterminism:
         )
         h2 = b2.build_manifest().manifest_hash()
         assert h1 != h2
+
+
+# ---------------------------------------------------------------------------
+# C3: PIT evidence v1 — build + verify + tamper detection
+# ---------------------------------------------------------------------------
+
+
+class TestPitEvidenceV1:
+    """Tests for the signed PIT evidence v1 module (C3)."""
+
+    def test_build_pit_evidence_produces_valid_record(self) -> None:
+        """build_pit_evidence produces a PITEvidence with a valid sha256."""
+        from quant_foundry.pit_evidence import verify_pit_evidence
+
+        rows = _clean_rows()
+        builder = FeatureLakeBuilder(
+            dataset_id="ds-ev",
+            universe=_universe(),
+            rows=rows,
+            feature_schema_hash="fsh",
+            label_schema_hash="lsh",
+            max_label_horizon_ns=NS_PER_DAY,
+        )
+        manifest = builder.build_manifest(feature_set_version="v1.0.0")
+        # The manifest should carry a pit_evidence block.
+        assert manifest.pit_evidence is not None
+        # Verify the evidence tamper seal.
+        verified = verify_pit_evidence(manifest.pit_evidence)
+        assert verified.violation_count == 0
+        assert verified.feature_set_version == "v1.0.0"
+        assert verified.label_window_check_status == "passed"
+        assert verified.sampled_row_count == len(rows)
+
+    def test_verify_pit_evidence_detects_tampering(self) -> None:
+        """verify_pit_evidence raises PitEvidenceTamperedError on tampering."""
+        from quant_foundry.pit_evidence import (
+            PitEvidenceTamperedError,
+            verify_pit_evidence,
+        )
+
+        rows = _clean_rows()
+        builder = FeatureLakeBuilder(
+            dataset_id="ds-ev-tamper",
+            universe=_universe(),
+            rows=rows,
+            feature_schema_hash="fsh",
+            label_schema_hash="lsh",
+            max_label_horizon_ns=NS_PER_DAY,
+        )
+        manifest = builder.build_manifest()
+        evidence_dict = manifest.pit_evidence
+        assert evidence_dict is not None
+
+        # Tamper: change violation_count but keep the old evidence_sha256.
+        tampered = dict(evidence_dict)
+        tampered["violation_count"] = 999
+
+        with pytest.raises(PitEvidenceTamperedError) as exc_info:
+            verify_pit_evidence(tampered)
+        assert exc_info.value.expected != exc_info.value.actual
+
+    def test_valid_pit_evidence_passes_verification(self) -> None:
+        """An untampered PITEvidence passes verification."""
+        from quant_foundry.pit_evidence import PITEvidence, verify_pit_evidence
+
+        ev = PITEvidence(
+            manifest_hash="a" * 64,
+            feature_schema_hash="b" * 64,
+            feature_set_version="v2.0.0",
+            max_observed_at_margin=42,
+            violation_count=0,
+            sampled_row_count=10,
+            label_window_check_status="passed",
+            evidence_sha256="0" * 64,  # placeholder
+        )
+        correct_sha = ev.compute_evidence_sha256()
+        ev = ev.model_copy(update={"evidence_sha256": correct_sha})
+        verified = verify_pit_evidence(ev)
+        assert verified.evidence_sha256 == correct_sha
+
+    def test_pit_evidence_max_observed_at_margin_is_non_negative(self) -> None:
+        """max_observed_at_margin is >= 0 for a valid (no-violation) dataset."""
+
+        rows = _clean_rows()
+        builder = FeatureLakeBuilder(
+            dataset_id="ds-ev-margin",
+            universe=_universe(),
+            rows=rows,
+            feature_schema_hash="fsh",
+            label_schema_hash="lsh",
+            max_label_horizon_ns=NS_PER_DAY,
+        )
+        manifest = builder.build_manifest()
+        evidence_dict = manifest.pit_evidence
+        assert evidence_dict is not None
+        assert evidence_dict["max_observed_at_margin"] >= 0
+        assert evidence_dict["violation_count"] == 0
+
+    def test_pit_evidence_included_in_export_receipt(self) -> None:
+        """The export receipt includes the PIT evidence block."""
+        import tempfile
+
+        from quant_foundry.feature_availability import FeatureAvailabilityReport
+        from quant_foundry.feature_lake import export_receipt
+
+        rows = _clean_rows()
+        builder = FeatureLakeBuilder(
+            dataset_id="ds-ev-receipt",
+            universe=_universe(),
+            rows=rows,
+            feature_schema_hash="fsh",
+            label_schema_hash="lsh",
+            max_label_horizon_ns=NS_PER_DAY,
+        )
+        manifest = builder.build_manifest()
+        availability = FeatureAvailabilityReport.from_rows(
+            rows=rows,
+            expected_features=tuple(fv.name for fv in rows[0].features),
+        )
+        tmp_dir = tempfile.mkdtemp(prefix="qf_ev_receipt_")
+        receipt = export_receipt(manifest, availability, Path(tmp_dir))
+        assert receipt.pit_evidence is not None
+        assert "evidence_sha256" in receipt.pit_evidence
+
+    def test_feature_set_version_set_on_manifest(self) -> None:
+        """build_manifest with feature_set_version sets it on the manifest."""
+        rows = _clean_rows()
+        builder = FeatureLakeBuilder(
+            dataset_id="ds-fsv",
+            universe=_universe(),
+            rows=rows,
+            feature_schema_hash="fsh",
+            label_schema_hash="lsh",
+            max_label_horizon_ns=NS_PER_DAY,
+        )
+        manifest = builder.build_manifest(feature_set_version="v3.1.4")
+        assert manifest.feature_set_version == "v3.1.4"
+        # The PIT evidence should also carry the feature_set_version.
+        assert manifest.pit_evidence is not None
+        assert manifest.pit_evidence["feature_set_version"] == "v3.1.4"

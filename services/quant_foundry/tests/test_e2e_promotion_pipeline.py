@@ -27,6 +27,10 @@ _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+# Legacy trainer construction (without column_roles) emits a
+# DeprecationWarning; these tests intentionally exercise that path.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 # ---------------------------------------------------------------------------
 # Test 1: the pipeline script can be imported.

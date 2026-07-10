@@ -1,0 +1,24 @@
+{
+  "endpoint_id": "xo14hppm4s8zkc",
+  "name": "qf-a7train-34d85c10-1783384094",
+  "template_id": "du9sj49ka3",
+  "gpu_type": "ADA_24",
+  "workers_min": 1,
+  "workers_max": 1,
+  "idle_timeout": 300,
+  "execution_timeout": 1860,
+  "scaler_type": "QUEUE_DELAY",
+  "scaler_value": 4,
+  "container_disk_gb": 20,
+  "network_volume_id": "rrsd005i3g",
+  "output_prefix": "/runpod-volume/models/qf:a7-train:lightgbm:34d85c10:001/",
+  "timeout_config": {
+    "executionTimeout": 1860,
+    "idleTimeout": 300,
+    "handler_deadline_s": 1800,
+    "slack_s": 60,
+    "meets_min_requirement": true,
+    "min_required_execution_timeout": 1860,
+    "note": "executionTimeout >= handler deadline + 60s slack so the handler's signed failure envelope fires before RunPod times the job out."
+  }
+}

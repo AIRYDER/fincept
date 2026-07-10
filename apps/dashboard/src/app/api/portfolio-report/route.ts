@@ -15,8 +15,8 @@ interface RequestBody {
   provider?: PortfolioModelProvider;
 }
 
-const OPENAI_MODEL = process.env.OPENAI_PORTFOLIO_MODEL ?? "gpt-5.5";
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_PORTFOLIO_MODEL ?? "claude-opus-4-7";
+const OPENAI_MODEL = process.env.OPENAI_PORTFOLIO_MODEL ?? "gpt-4o";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_PORTFOLIO_MODEL ?? "claude-3-5-sonnet-20241022";
 const OPENAI_REASONING_EFFORT = process.env.OPENAI_PORTFOLIO_REASONING_EFFORT ?? "high";
 const ANTHROPIC_THINKING_EFFORT = process.env.ANTHROPIC_PORTFOLIO_THINKING_EFFORT ?? "high";
 const PORTFOLIO_REPORT_MAX_OUTPUT_TOKENS = Number(

@@ -40,6 +40,15 @@ from fincept_core.prediction_log import PredictionRow
 from .approved_roots import ApprovedRoots, ApprovedRootsError, default_approved_roots
 from .dossier import build_calibration_sidecar, build_dossier
 from .feature_snapshot import FeatureSnapshotStore
+
+# Phase 3 / T-2.2: manifest-first dataset loader with hash verification.
+from .manifest_loader import (
+    ColumnRoles,
+    DatasetLoadError,
+    DatasetLoadReceipt,
+    LoadedDataset,
+    ManifestDatasetLoader,
+)
 from .schema_compat import (
     SchemaCompatResult,
     SchemaIncompatibilityError,
@@ -69,18 +78,43 @@ from .settlement import (
 # operation the real symbols replace the ``None`` placeholders.
 try:
     from .cv import (
+        CPCVFold,
         Fold,
         WalkForwardWindow,
         derive_walk_forward_window,
         fold_iter_to_dicts,
+        make_cpcv_folds,
         make_folds,
     )
 except ImportError:  # pragma: no cover - safety net for cv.py import errors
+    CPCVFold = None  # type: ignore[assignment,misc]
     Fold = None  # type: ignore[assignment,misc]
     WalkForwardWindow = None  # type: ignore[assignment,misc]
     derive_walk_forward_window = None  # type: ignore[assignment]
     fold_iter_to_dicts = None  # type: ignore[assignment]
+    make_cpcv_folds = None  # type: ignore[assignment]
     make_folds = None  # type: ignore[assignment]
+
+
+# --------------------------------------------------------------------------- #
+# Labeling (triple-barrier + meta-labeling, Tier 2.3)                         #
+# --------------------------------------------------------------------------- #
+try:
+    from .labels import (
+        BarrierConfig,
+        MetaLabelConfig,
+        TripleBarrierLabel,
+        meta_labels,
+        triple_barrier_labels,
+        volatility_scaled_widths,
+    )
+except ImportError:  # pragma: no cover - safety net
+    BarrierConfig = None  # type: ignore[assignment,misc]
+    MetaLabelConfig = None  # type: ignore[assignment,misc]
+    TripleBarrierLabel = None  # type: ignore[assignment,misc]
+    meta_labels = None  # type: ignore[assignment]
+    triple_barrier_labels = None  # type: ignore[assignment]
+    volatility_scaled_widths = None  # type: ignore[assignment]
 
 
 # --------------------------------------------------------------------------- #
@@ -148,16 +182,25 @@ __all__ = [
     "ApprovedRoots",
     "ApprovedRootsError",
     "ArtifactManifest",
+    "BarrierConfig",
+    "CPCVFold",
+    "ColumnRoles",
+    "DatasetLoadError",
+    "DatasetLoadReceipt",
     "DatasetManifest",
     "FeatureRow",
     "FeatureSnapshot",
     "FeatureSnapshotStore",
     "Fold",
+    "LoadedDataset",
+    "ManifestDatasetLoader",
+    "MetaLabelConfig",
     "SchemaCompatResult",
     "SchemaIncompatibilityError",
     "SettlementError",
     "SettlementRecord",
     "SettlementStore",
+    "TripleBarrierLabel",
     "WalkForwardWindow",
     "assert_feature_schema_compatible",
     "build_calibration_sidecar",
@@ -167,5 +210,9 @@ __all__ = [
     "default_approved_roots",
     "derive_walk_forward_window",
     "fold_iter_to_dicts",
+    "make_cpcv_folds",
     "make_folds",
+    "meta_labels",
+    "triple_barrier_labels",
+    "volatility_scaled_widths",
 ]

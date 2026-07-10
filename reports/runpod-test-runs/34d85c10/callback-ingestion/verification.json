@@ -1,0 +1,20 @@
+{
+  "callback_receipts_count": 1,
+  "callback_receipt_id": "cb:qf:cbproof:34d85c10:1783388382:1783388388554717300",
+  "callback_status": "processed",
+  "model_dossiers_count": 1,
+  "dossier_model_id": "model:qf:cbproof:34d85c10:1783388382",
+  "dossier_status": "candidate",
+  "dossier_content_hash": "4e6621f77ade4d00f48c656b4a950e1ec0b4271879f9838da53ed15a243d7c91",
+  "artifact_manifests_count": 1,
+  "artifact_id": "artifact:af9a7ddc34f9c686",
+  "artifact_sha256": "af9a7ddc34f9c686f9670c4958a8642c41a687f37a792342e746659ea9d7f305",
+  "training_jobs_status": "completed",
+  "training_jobs_callback_receipt_id": "cb:qf:cbproof:34d85c10:1783388382:1783388388554717300",
+  "model_version_id": "version:cbproof:34d85c10:001",
+  "model_version_status": "candidate",
+  "model_version_dossier_hash": "4e6621f77ade4d00f48c656b4a950e1ec0b4271879f9838da53ed15a243d7c91",
+  "model_version_artifact_id": "artifact:af9a7ddc34f9c686",
+  "errors": [],
+  "passed": true
+}

@@ -1,9 +1,10 @@
 """Detach network volume from RunPod endpoint and purge workers."""
-import httpx
-import json
+
 import os
 import sys
 import time
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = sys.argv[1] if len(sys.argv) > 1 else os.environ["RUNPOD_ENDPOINT_ID"]

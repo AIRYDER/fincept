@@ -70,6 +70,8 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
+
 from quant_foundry.budget import BudgetGuard
 
 # ---------------------------------------------------------------------------
@@ -140,6 +142,396 @@ DEFAULT_VAL_WINDOW_RANGE_NS: tuple[int, int] = (
     7 * 86_400_000_000_000,  # 7 days minimum
     180 * 86_400_000_000_000,  # 180 days maximum
 )
+
+
+# ---------------------------------------------------------------------------
+# Model Family Registry (Phase 7 / T-7.1)
+# ---------------------------------------------------------------------------
+#
+# The ``ModelFamilyRegistry`` is the **single source of truth** for which
+# model families may run in production, what they require, and how their
+# artifacts are loaded. It replaces the ad-hoc hardcoded allowlists that
+# previously gated production deployment with a versioned, declarative
+# registry: adding a model family is now a single ``register()`` call
+# (gated by code review) rather than editing scattered allowlists.
+#
+# Each :class:`ModelFamilySpec` declares:
+#   - the dataset shape it expects,
+#   - the objectives it supports,
+#   - the artifact format + loader it produces,
+#   - the metrics it must report,
+#   - the RunPod Docker image it maps to (or None for local/baseline),
+#   - whether it requires a GPU,
+#   - a per-job budget cap,
+#   - its promotion-eligibility class,
+#   - whether it is an explicit baseline exception (may run in production
+#     without a GPU image).
+#
+# Production gating rule (enforced by ``ModelFamilyRegistry.validate_family``):
+#   a production request's family MUST either map to a GPU RunPod image
+#   (``runpod_image`` is not None and ``requires_gpu`` is True) OR carry an
+#   explicit baseline exception (``is_baseline_exception`` is True). Any
+#   other family is rejected for production. Canary and research modes are
+#   permissive — the GPU requirement is advisory only.
+#
+# The legacy ``ALLOWED_MODEL_FAMILIES`` / ``HYPERPARAM_BOUNDS`` constants
+# above remain the allowlist for the Alpha Genome Lab's *bounded mutation
+# engine* (a separate concern — the lab mutates recipes within a small,
+# profiled family set). The registry is the source of truth for
+# *production deployment* of trained families.
+
+# RunPod Docker image reference for the CUDA-capable tree-model worker
+# built in T-4.2 (runpod/quant-foundry-training/Dockerfile). GPU families
+# (catboost_gpu, xgboost_gpu) map to this image; baseline / sanity families
+# leave ``runpod_image`` as None and run on the local CPU trainer.
+RUNPOD_GPU_TREE_IMAGE: str = "fincept-qf-training:gpu-tree"
+
+# Registry schema version. Bumped when the ``ModelFamilySpec`` shape
+# changes in a backward-incompatible way. Existing specs carry their own
+# ``version`` field for per-family evolution tracking.
+MODEL_FAMILY_REGISTRY_VERSION: str = "1"
+
+
+class PromotionEligibilityClass(enum.StrEnum):
+    """Promotion-eligibility class for a model family.
+
+    - ``PRIMARY``: eligible to be promoted to production as a primary model.
+    - ``CHALLENGER``: eligible to challenge the primary in a tournament;
+      promotion requires beating the incumbent.
+    - ``SANITY``: a sanity baseline (logreg / linear); never promotion
+      eligible on its own, used only to detect regressions.
+    - ``BASELINE``: the current production baseline; promotion eligible
+      by default (it is the incumbent).
+    """
+
+    PRIMARY = "primary"
+    CHALLENGER = "challenger"
+    SANITY = "sanity"
+    BASELINE = "baseline"
+
+
+class ModelFamilySpec(BaseModel):
+    """A versioned, declarative spec for one model family.
+
+    Frozen + ``extra='forbid'`` (audit integrity). A spec is the unit the
+    registry stores; adding a family is a single ``register()`` call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    family_id: str
+    display_name: str
+    version: str
+    dataset_shape: str
+    objectives: tuple[str, ...]
+    artifact_format: str
+    artifact_loader: str
+    required_metrics: tuple[str, ...]
+    runpod_image: str | None = None
+    requires_gpu: bool = False
+    max_budget_cents: int = 0
+    promotion_eligibility_class: PromotionEligibilityClass = PromotionEligibilityClass.CHALLENGER
+    is_baseline_exception: bool = False
+    created_at_ns: int = 0
+
+    def resolve_artifact_loader(self) -> Callable[..., Any]:
+        """Resolve this spec's ``artifact_loader`` to a callable.
+
+        Delegates to :func:`quant_foundry.artifact_io.resolve_loader` so
+        the family spec is the single place that knows its loader name and
+        the artifact_io module is the single place that knows the mapping
+        from name to callable.
+
+        Raises:
+            ValueError: if ``artifact_loader`` is not a registered loader.
+        """
+        # Lazy import to avoid a circular dependency at module load time
+        # (artifact_io has no dependency on alpha_genome, but importing it
+        # eagerly here would couple the two modules at import time).
+        from quant_foundry.artifact_io import resolve_loader
+
+        return resolve_loader(self.artifact_loader)
+
+
+class FamilyValidationResult(BaseModel):
+    """Result of ``ModelFamilyRegistry.validate_family``.
+
+    Frozen + ``extra='forbid'``. ``passed`` is True only when there are no
+    errors. ``warnings`` carries advisory notes (e.g. a canary/research
+    family that wants a GPU but is running without one).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passed: bool
+    family_id: str
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+class ModelFamilyRegistry:
+    """Versioned registry of model family specs — the single source of truth.
+
+    The registry is process-global: the module-level
+    :data:`MODEL_FAMILY_REGISTRY` singleton is pre-populated with the
+    initial families at import time. Adding a family is declarative and
+    gated (a ``register()`` call that code review approves); unknown
+    families are rejected by ``validate_family``.
+
+    Thread-safety: the registry is populated once at import and read-only
+    thereafter. ``register`` is not intended for concurrent mutation at
+    runtime — it exists so a deployment can add a family in a controlled
+    startup hook.
+    """
+
+    def __init__(self) -> None:
+        self._specs: dict[str, ModelFamilySpec] = {}
+
+    # --- mutation (gated / declarative) --------------------------------
+
+    def register(self, family_spec: ModelFamilySpec) -> None:
+        """Register a family spec.
+
+        Raises ``ValueError`` if a spec with the same ``family_id`` is
+        already registered (re-registration requires an explicit
+        version bump + removal path, not a silent overwrite).
+        """
+        if not isinstance(family_spec, ModelFamilySpec):
+            raise TypeError("family_spec must be a ModelFamilySpec")
+        if not family_spec.family_id or not family_spec.family_id.strip():
+            raise ValueError("family_spec.family_id must be non-empty")
+        if family_spec.family_id in self._specs:
+            raise ValueError(
+                f"family {family_spec.family_id!r} already registered; "
+                "bump the version and remove the old spec first"
+            )
+        self._specs[family_spec.family_id] = family_spec
+
+    # --- read API ------------------------------------------------------
+
+    def get(self, family_id: str) -> ModelFamilySpec:
+        """Return the spec for ``family_id``.
+
+        Raises ``KeyError`` if the family is not registered.
+        """
+        if family_id not in self._specs:
+            raise KeyError(
+                f"model family {family_id!r} is not registered; known: {sorted(self._specs)}"
+            )
+        return self._specs[family_id]
+
+    def list(self) -> list[str]:
+        """Return all registered family ids (sorted for determinism)."""
+        return sorted(self._specs)
+
+    def is_registered(self, family_id: str) -> bool:
+        """Return True if ``family_id`` is registered."""
+        return family_id in self._specs
+
+    # --- validation ----------------------------------------------------
+
+    def validate_family(
+        self,
+        *,
+        family_id: str,
+        mode: str,
+        has_gpu: bool,
+    ) -> FamilyValidationResult:
+        """Validate that ``family_id`` may run in ``mode``.
+
+        Rules:
+          - The family MUST be registered (unknown family → error).
+          - The family MUST declare an artifact loader (non-empty
+            ``artifact_loader``); a family without a loader is rejected.
+          - For ``production`` mode: the family MUST map to a GPU RunPod
+            image (``runpod_image`` is not None and ``requires_gpu`` is
+            True) OR carry an explicit baseline exception
+            (``is_baseline_exception`` is True). Any other family is
+            rejected for production.
+          - For ``canary`` / ``research``: the GPU requirement is
+            advisory — a GPU family running without a GPU produces a
+            warning, not an error.
+
+        Returns a :class:`FamilyValidationResult` with ``passed`` True
+        only when there are no errors.
+        """
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # 1. Known family?
+        if not self.is_registered(family_id):
+            errors.append(f"model family {family_id!r} is not registered; known: {self.list()}")
+            return FamilyValidationResult(
+                passed=False,
+                family_id=family_id,
+                errors=tuple(errors),
+                warnings=tuple(warnings),
+            )
+
+        spec = self.get(family_id)
+
+        # 2. Artifact loader present?
+        if not spec.artifact_loader or not spec.artifact_loader.strip():
+            errors.append(
+                f"family {family_id!r} has no artifact_loader; a family "
+                "without a loader cannot produce a loadable artifact"
+            )
+        else:
+            # 2b. Artifact loader resolves to a callable in LOADER_REGISTRY?
+            try:
+                from quant_foundry.artifact_io import resolve_loader
+
+                resolve_loader(spec.artifact_loader)
+            except ValueError:
+                errors.append(
+                    f"family {family_id!r} artifact_loader "
+                    f"{spec.artifact_loader!r} does not resolve to a "
+                    "registered loader (see artifact_io.LOADER_REGISTRY)"
+                )
+            except ImportError:
+                # artifact_io not importable — treat as advisory (older
+                # deployment). The loader-name presence check above still
+                # applies.
+                pass
+
+        # 3. Mode-specific gating.
+        if mode == "production":
+            maps_to_gpu = (
+                spec.runpod_image is not None
+                and spec.runpod_image.strip() != ""
+                and spec.requires_gpu
+            )
+            if not maps_to_gpu and not spec.is_baseline_exception:
+                errors.append(
+                    f"production mode requires family {family_id!r} to map "
+                    "to a GPU RunPod image (runpod_image set + requires_gpu) "
+                    "or carry an explicit baseline exception; "
+                    f"runpod_image={spec.runpod_image!r}, "
+                    f"requires_gpu={spec.requires_gpu}, "
+                    f"is_baseline_exception={spec.is_baseline_exception}"
+                )
+        else:
+            # canary / research: GPU requirement is advisory.
+            if spec.requires_gpu and not has_gpu:
+                warnings.append(
+                    f"family {family_id!r} prefers a GPU but is running "
+                    f"without one in {mode!r} mode (advisory only)"
+                )
+
+        return FamilyValidationResult(
+            passed=len(errors) == 0,
+            family_id=family_id,
+            errors=tuple(errors),
+            warnings=tuple(warnings),
+        )
+
+
+# Module-level singleton registry, pre-populated with the 5 initial
+# families. This is the authoritative registry instance for the platform.
+MODEL_FAMILY_REGISTRY: ModelFamilyRegistry = ModelFamilyRegistry()
+
+
+def _register_initial_families(registry: ModelFamilyRegistry) -> None:
+    """Pre-register the 5 initial model families (T-7.1).
+
+    Adding a family is declarative and gated: each spec is constructed
+    in one place and registered in one call. New families are added by
+    appending a spec + ``register()`` call here (under code review).
+    """
+    now_ns = time.time_ns()
+    registry.register(
+        ModelFamilySpec(
+            family_id="lightgbm_baseline",
+            display_name="LightGBM baseline (CPU)",
+            version="1",
+            dataset_shape="tabular_wide",
+            objectives=("binary", "regression"),
+            artifact_format="lightgbm_model",
+            artifact_loader="quant_foundry.artifact_io.load_lightgbm_model",
+            required_metrics=("auc", "logloss", "brier", "mse", "mae"),
+            runpod_image=None,
+            requires_gpu=False,
+            max_budget_cents=5000,
+            promotion_eligibility_class=PromotionEligibilityClass.BASELINE,
+            is_baseline_exception=True,
+            created_at_ns=now_ns,
+        )
+    )
+    registry.register(
+        ModelFamilySpec(
+            family_id="catboost_gpu",
+            display_name="CatBoost GPU challenger",
+            version="1",
+            dataset_shape="tabular_wide",
+            objectives=("binary", "regression", "multiclass"),
+            artifact_format="catboost_model",
+            artifact_loader="quant_foundry.artifact_io.load_catboost_model",
+            required_metrics=("auc", "logloss", "brier", "mse", "mae"),
+            runpod_image=RUNPOD_GPU_TREE_IMAGE,
+            requires_gpu=True,
+            max_budget_cents=20000,
+            promotion_eligibility_class=PromotionEligibilityClass.CHALLENGER,
+            is_baseline_exception=False,
+            created_at_ns=now_ns,
+        )
+    )
+    registry.register(
+        ModelFamilySpec(
+            family_id="xgboost_gpu",
+            display_name="XGBoost GPU challenger",
+            version="1",
+            dataset_shape="tabular_wide",
+            objectives=("binary", "regression"),
+            artifact_format="xgboost_json",
+            artifact_loader="quant_foundry.artifact_io.load_xgboost_model",
+            required_metrics=("auc", "logloss", "brier", "mse", "mae"),
+            runpod_image=RUNPOD_GPU_TREE_IMAGE,
+            requires_gpu=True,
+            max_budget_cents=20000,
+            promotion_eligibility_class=PromotionEligibilityClass.CHALLENGER,
+            is_baseline_exception=False,
+            created_at_ns=now_ns,
+        )
+    )
+    registry.register(
+        ModelFamilySpec(
+            family_id="logreg_sanity",
+            display_name="Logistic regression sanity baseline",
+            version="1",
+            dataset_shape="tabular_wide",
+            objectives=("binary", "regression"),
+            artifact_format="sklearn_pickle",
+            artifact_loader="quant_foundry.artifact_io.load_sklearn_pickle",
+            required_metrics=("auc", "logloss", "brier"),
+            runpod_image=None,
+            requires_gpu=False,
+            max_budget_cents=1000,
+            promotion_eligibility_class=PromotionEligibilityClass.SANITY,
+            is_baseline_exception=False,
+            created_at_ns=now_ns,
+        )
+    )
+    registry.register(
+        ModelFamilySpec(
+            family_id="linear_sanity",
+            display_name="Linear regression sanity baseline",
+            version="1",
+            dataset_shape="tabular_wide",
+            objectives=("regression",),
+            artifact_format="sklearn_pickle",
+            artifact_loader="quant_foundry.artifact_io.load_sklearn_pickle",
+            required_metrics=("mse", "mae"),
+            runpod_image=None,
+            requires_gpu=False,
+            max_budget_cents=1000,
+            promotion_eligibility_class=PromotionEligibilityClass.SANITY,
+            is_baseline_exception=False,
+            created_at_ns=now_ns,
+        )
+    )
+
+
+_register_initial_families(MODEL_FAMILY_REGISTRY)
 
 
 # ---------------------------------------------------------------------------
@@ -1198,12 +1590,19 @@ __all__ = [
     "DEFAULT_TRAIN_WINDOW_RANGE_NS",
     "DEFAULT_VAL_WINDOW_RANGE_NS",
     "HYPERPARAM_BOUNDS",
+    "MODEL_FAMILY_REGISTRY",
+    "MODEL_FAMILY_REGISTRY_VERSION",
+    "RUNPOD_GPU_TREE_IMAGE",
     "AlphaGenomeLab",
     "BudgetDecision",
     "DiscardReceipt",
     "EarlyStopDecision",
     "EarlyStopper",
+    "FamilyValidationResult",
+    "ModelFamilyRegistry",
+    "ModelFamilySpec",
     "MutationKind",
+    "PromotionEligibilityClass",
     "Recipe",
     "RecipeMutation",
     "SweepReceipt",

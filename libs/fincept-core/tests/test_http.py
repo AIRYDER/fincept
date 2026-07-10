@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import httpx
@@ -114,4 +113,3 @@ def test_build_http_client_applies_timeouts() -> None:
     assert client.timeout.connect == 5.0
     # headers default is an empty dict; not None.
     assert client.headers is not None
-    asyncio.get_event_loop()  # touch the loop to keep ruff happy if it ever loads

@@ -28,10 +28,8 @@ Design principles:
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
-
+from typing import Any, Protocol, cast, runtime_checkable
 
 # --------------------------------------------------------------------------- #
 # Module metadata                                                             #
@@ -127,12 +125,15 @@ class SentimentResult:
     1 = very positive.  ``confidence`` is in ``[0, 1]``.  ``provider``
     identifies the sentiment engine (``"naive"``, ``"finbert"``,
     ``"openai"``, ``"anthropic"``, ``"xai"``, ``"minimax"``).
+    ``metadata`` is an optional dict for engine-specific extras (e.g.
+    the detected language code for multilingual engines).
     """
 
     item_id: str
     provider: str
     score: float
     confidence: float
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -327,8 +328,7 @@ class ModuleRegistry:
         """
         if category not in MODULE_CATEGORIES:
             raise ValueError(
-                f"unknown module category: {category!r}; "
-                f"valid: {MODULE_CATEGORIES}",
+                f"unknown module category: {category!r}; valid: {MODULE_CATEGORIES}",
             )
         full_id = f"{category}:{module_id}:{version}"
         if full_id in self._modules:
@@ -348,10 +348,9 @@ class ModuleRegistry:
         entry = self._modules.get(full_id)
         if entry is None:
             raise KeyError(
-                f"module not registered: {full_id!r}; "
-                f"available: {sorted(self._modules.keys())}",
+                f"module not registered: {full_id!r}; available: {sorted(self._modules.keys())}",
             )
-        return entry["cls"]
+        return cast("type", entry["cls"])
 
     def get_info(self, full_id: str) -> ModuleInfo:
         """Return :class:`ModuleInfo` for a registered module."""
@@ -368,16 +367,12 @@ class ModuleRegistry:
         if category not in MODULE_CATEGORIES:
             raise ValueError(f"unknown category: {category!r}")
         return sorted(
-            full_id
-            for full_id, entry in self._modules.items()
-            if entry["category"] == category
+            full_id for full_id, entry in self._modules.items() if entry["category"] == category
         )
 
     def list_all(self) -> dict[str, list[str]]:
         """List all registered modules grouped by category."""
-        return {
-            cat: self.list_by_category(cat) for cat in MODULE_CATEGORIES
-        }
+        return {cat: self.list_by_category(cat) for cat in MODULE_CATEGORIES}
 
     def create(
         self,
@@ -431,7 +426,7 @@ def register_module(
         )
         # Attach ModuleInfo as a class attribute so Protocol checks
         # (``hasattr(cls, 'info')``) pass before instantiation.
-        cls.info = ModuleInfo(
+        cls.info = ModuleInfo(  # type: ignore[attr-defined]  # dynamic attribute on module class
             module_id=module_id,
             category=category,
             version=version,
@@ -444,16 +439,16 @@ def register_module(
 
 __all__ = [
     "MODULE_CATEGORIES",
+    "FeatureComputer",
+    "FeatureRowData",
+    "LabelComputer",
     "MediaItem",
     "ModuleInfo",
     "ModuleRegistry",
     "PriceBar",
-    "SentimentResult",
-    "FeatureRowData",
-    "LabelComputer",
-    "FeatureComputer",
     "PriceJoiner",
     "SentimentEngine",
+    "SentimentResult",
     "SourceAdapter",
     "UniverseSelector",
     "register_module",

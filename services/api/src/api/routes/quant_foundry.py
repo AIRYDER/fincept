@@ -31,10 +31,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from api.auth import require_user
+from fincept_db.registry_tables import ModelMetricRow, ModelVersionRow
 from quant_foundry.dossier import DossierStatus
 from quant_foundry.gateway import QuantFoundryGateway
 from quant_foundry.outbox import JobStatus
+from quant_foundry.registry_db import ModelRegistryDB
 
 router = APIRouter()
 
@@ -77,6 +82,29 @@ def _require_gateway(request: Request) -> QuantFoundryGateway:
             detail="Quant Foundry gateway is not configured (disabled).",
         )
     return gw
+
+
+# --- registry access --------------------------------------------------------
+
+
+def _get_registry(request: Request) -> ModelRegistryDB | None:
+    """Return the DB-backed model registry stashed on app.state, or None.
+
+    The registry is installed by ``configure_quant_foundry_gateway`` (or a
+    test fixture). When absent, the registry endpoints return 503.
+    """
+    return getattr(request.app.state, "quant_foundry_registry", None)
+
+
+def _require_registry(request: Request) -> ModelRegistryDB:
+    """Return the model registry or raise 503 if not configured."""
+    reg = _get_registry(request)
+    if reg is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quant Foundry model registry is not configured (disabled).",
+        )
+    return reg
 
 
 # --- operator endpoints (bearer auth) ---------------------------------------
@@ -126,7 +154,7 @@ async def list_jobs(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"invalid status filter: {status_filter}",
-            )
+            ) from None
     return gw.list_jobs(status=job_status)
 
 
@@ -161,7 +189,7 @@ async def list_dossiers(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"invalid status filter: {status_filter}",
-            )
+            ) from None
     return gw.list_dossiers(status=dossier_status)
 
 
@@ -339,7 +367,7 @@ async def receive_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-QF-Timestamp must be an integer (unix seconds)",
-        )
+        ) from None
 
     payload = await request.body()
     receipt = gw.receive_callback(
@@ -556,3 +584,169 @@ async def reject_promotion(
             detail=result.get("detail", "invalid rejection reason"),
         )
     return result
+
+
+# --- Model registry endpoints (DB-backed, bearer auth) ----------------------
+
+
+class RegistryPromoteRequest(BaseModel):
+    """Body for POST /quant-foundry/registry/promote. extra='forbid' for safety."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    target_level: str
+    review_note: str = ""
+
+
+def _list_metrics_for_model(
+    registry: ModelRegistryDB, model_id: str
+) -> list[dict[str, Any]]:
+    """List metric rows for all versions of a model_id.
+
+    Queries ``model_metrics`` joined to ``model_versions`` via the
+    registry's sync engine. Returns rows as dicts (newest first).
+    """
+    with Session(registry.engine) as session:
+        version_ids = [
+            v.version_id
+            for v in session.scalars(
+                select(ModelVersionRow).where(ModelVersionRow.model_id == model_id)
+            ).all()
+        ]
+        if not version_ids:
+            return []
+        rows = session.scalars(
+            select(ModelMetricRow)
+            .where(ModelMetricRow.version_id.in_(version_ids))
+            .order_by(ModelMetricRow.recorded_at_ns.desc())
+        ).all()
+        return [{c: getattr(r, c) for c in r.__table__.columns.keys()} for r in rows]
+
+
+@router.get("/registry/models")
+async def registry_list_models(
+    request: Request,
+    status_filter: str | None = Query(default=None, alias="status"),
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    """List registered models (DB-backed). Bearer-auth.
+
+    Returns 503 when the model registry is not configured. Optional
+    ``status`` query param filters by ``current_status``.
+    """
+    reg = _require_registry(request)
+    dossier_status: DossierStatus | None = None
+    if status_filter is not None:
+        try:
+            dossier_status = DossierStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"invalid status filter: {status_filter}",
+            ) from None
+    return reg.list_models(status=dossier_status)
+
+
+@router.get("/registry/models/{model_id}")
+async def registry_get_model(
+    model_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Get a single model by model_id (DB-backed). Bearer-auth.
+
+    Returns 503 when the registry is not configured, 404 when the model
+    is unknown.
+    """
+    reg = _require_registry(request)
+    rec = reg.get_model(model_id)
+    if rec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown model_id: {model_id}",
+        )
+    return rec
+
+
+@router.get("/registry/models/{model_id}/versions")
+async def registry_list_versions(
+    model_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    """List versions for a model_id (DB-backed). Bearer-auth.
+
+    Returns 503 when the registry is not configured. Returns an empty
+    list when the model exists but has no versions.
+    """
+    reg = _require_registry(request)
+    return reg.list_versions(model_id)
+
+
+@router.get("/registry/models/{model_id}/metrics")
+async def registry_list_metrics(
+    model_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(require_user),
+) -> list[dict[str, Any]]:
+    """List metrics for all versions of a model_id (DB-backed). Bearer-auth.
+
+    Returns 503 when the registry is not configured. Returns an empty
+    list when the model/version has no metrics.
+    """
+    reg = _require_registry(request)
+    return _list_metrics_for_model(reg, model_id)
+
+
+@router.post("/registry/promote")
+async def registry_promote(
+    body: RegistryPromoteRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
+    """Submit a promotion for a model's latest version (DB-backed). Bearer-auth.
+
+    Accepts ``model_id``, ``target_level``, and ``review_note``. Resolves
+    the model's latest version, runs it through the PromotionGate, and
+    persists the receipt. The gate fails closed — missing evidence or
+    blocking issues result in REJECTED, not APPROVED. Returns the
+    promotion receipt dict.
+
+    Returns 503 when the registry is not configured, 404 when the model
+    or its versions are unknown, 422 when ``target_level`` is invalid.
+    """
+    reg = _require_registry(request)
+
+    # Validate target_level early.
+    try:
+        target_status = DossierStatus(body.target_level)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"invalid target_level: {body.target_level}",
+        ) from None
+
+    # Resolve the latest version for this model.
+    versions = reg.list_versions(body.model_id)
+    if not versions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no versions found for model_id: {body.model_id}",
+        )
+    latest_version_id = versions[-1]["version_id"]
+
+    decided_by = str(user.get("sub", "unknown"))
+    try:
+        receipt = reg.promote(
+            version_id=latest_version_id,
+            target_status=target_status,
+            review_note=body.review_note,
+            decided_by=decided_by,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    return receipt.to_dict()

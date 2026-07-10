@@ -21,6 +21,16 @@ Cross-cutting quant rigor enforced HERE (NEXT_STEPS_PLAN §1):
 - **Reproducibility:** the manifest hash covers every field that affects a
   training run; identical inputs yield identical hashes.
 
+Phase 3 / T-3.1 — dataset registry integration:
+- :meth:`FeatureLakeBuilder.build_manifest` now optionally accepts a
+  :class:`~quant_foundry.dataset_manifest.DatasetRegistry` and auto-registers
+  the emitted manifest. The manifest's ``manifest_uri``, ``data_uri``, and
+  hashes are recorded in the registry so the production dispatch path can
+  resolve the dataset by id.
+- :func:`register_manifest` is a standalone helper that registers an
+  already-built :class:`FeatureLakeManifest` in a registry, deriving the
+  registry entry fields from the manifest.
+
 This module is fixture-driven and CPU-only. It does NOT touch
 ``services/features/src/features/computer.py`` and does NOT touch
 ``schemas.py`` (Builder 2's file).
@@ -35,11 +45,16 @@ from pathlib import Path
 from typing import Any
 
 from quant_foundry.dataset_manifest import (
+    DatasetRegistry,
+    DatasetRegistryEntry,
     FeatureLakeManifest,
     FoldBoundary,
     PurgedFoldSpec,
+    ReadinessLevel,
+    SourceReceipt,
 )
 from quant_foundry.feature_availability import FeatureAvailabilityReport
+from quant_foundry.pit_evidence import build_pit_evidence
 
 
 class LeakyFeatureError(ValueError):
@@ -103,6 +118,8 @@ class ExportReceipt:
     row_count: int
     pit_proof_verified: bool
     receipt_path: Path
+    # C3: signed PIT evidence v1 (None if not computed).
+    pit_evidence: dict[str, Any] | None = None
 
 
 @dataclass
@@ -282,16 +299,57 @@ class FeatureLakeBuilder:
 
     # --- public API ------------------------------------------------------
 
-    def build_manifest(self) -> FeatureLakeManifest:
+    def build_manifest(
+        self,
+        *,
+        registry: DatasetRegistry | None = None,
+        manifest_uri: str | None = None,
+        data_uri: str | None = None,
+        data_sha256: str | None = None,
+        quality_report_uri: str | None = None,
+        quality_report_sha256: str | None = None,
+        readiness_level: ReadinessLevel | str = ReadinessLevel.L1_RAW,
+        feature_set_version: str | None = None,
+    ) -> FeatureLakeManifest:
         """Validate PIT correctness and emit the dataset manifest.
 
         Raises ``LeakyFeatureError`` if any feature value's observed_at is
         after its row's decision_time (look-ahead leak).
+
+        Phase 3 / T-3.1 — registry integration:
+        If ``registry`` is provided, the emitted manifest is auto-registered
+        in the dataset registry. The ``manifest_uri``, ``data_uri``, and
+        any provided hashes are set on the manifest AND recorded in the
+        registry entry. This is the integration point between the feature
+        lake builder and the dataset registry (acceptance criterion:
+        integrate with FeatureLakeBuilder.build_manifest to auto-register
+        manifests).
+
+        Args:
+            registry: optional :class:`DatasetRegistry` to auto-register
+                the manifest in. If None, no registration occurs
+                (backward compat).
+            manifest_uri: the URI where the manifest JSON will be
+                published. Set on the manifest and recorded in the
+                registry entry.
+            data_uri: the URI where the tabular data lives. Set on the
+                manifest and recorded in the registry entry.
+            data_sha256: optional SHA-256 of the data file.
+            quality_report_uri: optional quality report URI (required for
+                L3+ readiness).
+            quality_report_sha256: optional quality report hash (required
+                for L3+ readiness).
+            readiness_level: the initial readiness level for the registry
+                entry (default L1). Only used if ``registry`` is provided.
+
+        Returns:
+            The emitted :class:`FeatureLakeManifest` (with URIs set if
+            provided).
         """
         self._assert_pit_proof()
         folds = self._build_folds()
         as_of_ts = max((r.decision_time for r in self.rows), default=0)
-        return FeatureLakeManifest(
+        manifest = FeatureLakeManifest(
             dataset_id=self.dataset_id,
             feature_schema_hash=self.feature_schema_hash,
             label_schema_hash=self.label_schema_hash,
@@ -302,7 +360,31 @@ class FeatureLakeBuilder:
             folds=folds,
             pit_proof_verified=True,
             source_vintage_refs=list(self.source_vintage_refs),
+            manifest_uri=manifest_uri,
+            data_uri=data_uri,
+            data_sha256=data_sha256,
+            quality_report_uri=quality_report_uri,
+            quality_report_sha256=quality_report_sha256,
+            feature_set_version=feature_set_version,
         )
+        # C3: build signed PIT evidence v1 and attach it to the manifest.
+        # The evidence is computed from the manifest + feature rows and
+        # carries its own tamper seal (evidence_sha256). It is excluded
+        # from the manifest hash to avoid a circular dependency.
+        pit_evidence = build_pit_evidence(
+            manifest,
+            self.rows,
+            max_label_horizon_ns=self.max_label_horizon_ns,
+            embargo_ns=folds.embargo_ns,
+        )
+        manifest = manifest.model_copy(update={"pit_evidence": pit_evidence.to_dict()})
+        if registry is not None:
+            register_manifest(
+                registry,
+                manifest,
+                readiness_level=readiness_level,
+            )
+        return manifest
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +417,7 @@ def export_receipt(
         "label_schema_hash": manifest.label_schema_hash,
         "availability": json.loads(availability.to_json()),
         "training_reference": manifest.training_reference(),
+        "pit_evidence": manifest.pit_evidence,
     }
     receipt_path.write_text(json.dumps(body, sort_keys=True, indent=2))
     return ExportReceipt(
@@ -343,4 +426,98 @@ def export_receipt(
         row_count=manifest.row_count,
         pit_proof_verified=manifest.pit_proof_verified,
         receipt_path=receipt_path,
+        pit_evidence=manifest.pit_evidence,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 / T-3.1 — Dataset registry integration
+# ---------------------------------------------------------------------------
+
+
+def register_manifest(
+    registry: DatasetRegistry,
+    manifest: FeatureLakeManifest,
+    *,
+    readiness_level: ReadinessLevel | str = ReadinessLevel.L1_RAW,
+    source_receipts: tuple[SourceReceipt, ...] | list[SourceReceipt] | None = None,
+) -> DatasetRegistryEntry:
+    """Register a :class:`FeatureLakeManifest` in a :class:`DatasetRegistry`.
+
+    This is the integration bridge between the feature lake builder and
+    the dataset registry. It derives the registry entry fields from the
+    manifest:
+
+    - ``dataset_id`` ← ``manifest.dataset_id``
+    - ``manifest_uri`` ← ``manifest.manifest_uri`` (required — the
+      registry must know where to fetch the manifest)
+    - ``data_uri`` ← ``manifest.data_uri`` (required — the registry must
+      know where to fetch the data)
+    - ``manifest_sha256`` ← SHA-256 of ``manifest.to_json()``
+    - ``data_sha256`` ← ``manifest.data_sha256``
+    - ``quality_report_uri`` ← ``manifest.quality_report_uri``
+    - ``quality_report_sha256`` ← ``manifest.quality_report_sha256``
+    - ``source_receipts`` ← derived from ``manifest.source_vintage_refs``
+      (each vintage ref becomes a :class:`SourceReceipt` with the
+      manifest's ``as_of_ts`` as the vintage timestamp) plus any
+      explicitly provided receipts.
+
+    Args:
+        registry: the dataset registry to register in.
+        manifest: the feature lake manifest to register.
+        readiness_level: the initial readiness level (default L1). L3+
+            requires a quality report on the manifest.
+        source_receipts: additional provenance receipts (merged with
+            those derived from ``manifest.source_vintage_refs``).
+
+    Returns:
+        The newly created :class:`DatasetRegistryEntry`.
+
+    Raises:
+        ValueError: if the manifest lacks ``manifest_uri`` or
+            ``data_uri`` (required for registration), or if L3+ is
+            requested without a quality report.
+    """
+    if not manifest.manifest_uri:
+        raise ValueError(
+            "cannot register manifest: manifest_uri is not set on "
+            f"manifest {manifest.dataset_id!r} (required for registry "
+            "registration)"
+        )
+    if not manifest.data_uri:
+        raise ValueError(
+            "cannot register manifest: data_uri is not set on "
+            f"manifest {manifest.dataset_id!r} (required for registry "
+            "registration)"
+        )
+    if isinstance(readiness_level, str):
+        readiness_level = ReadinessLevel.from_str(readiness_level)
+
+    # Derive the manifest SHA-256 from the serialized manifest JSON.
+    manifest_sha256 = hashlib.sha256(
+        manifest.to_json().encode("utf-8"),
+    ).hexdigest()
+
+    # Build source receipts from the manifest's vintage refs.
+    derived_receipts: list[SourceReceipt] = []
+    for ref in manifest.source_vintage_refs:
+        derived_receipts.append(
+            SourceReceipt(
+                source_id=ref,
+                vintage_ts=manifest.as_of_ts,
+            )
+        )
+    if source_receipts:
+        derived_receipts.extend(source_receipts)
+
+    return registry.register(
+        dataset_id=manifest.dataset_id,
+        manifest_uri=manifest.manifest_uri,
+        data_uri=manifest.data_uri,
+        manifest_sha256=manifest_sha256,
+        data_sha256=manifest.data_sha256,
+        quality_report_uri=manifest.quality_report_uri,
+        quality_report_sha256=manifest.quality_report_sha256,
+        source_receipts=tuple(derived_receipts),
+        readiness_level=readiness_level,
     )

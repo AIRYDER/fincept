@@ -1,0 +1,41 @@
+{
+  "test": "S2 Local: Full Training Chain Proof",
+  "timestamp_utc": "2026-07-06T10:36:07Z",
+  "job_id": "s2-local-1783334165",
+  "model_family": "lightgbm",
+  "elapsed_seconds": 2.0084805488586426,
+  "artifact_id": "artifact:b7c3b56dc4d526d1",
+  "artifact_uri": "unknown",
+  "artifact_file_exists": false,
+  "artifact_sha256_match": false,
+  "hmac_valid": true,
+  "training_metrics": {
+    "accuracy": 0.7142857142857143,
+    "logloss": 0.70531132456265,
+    "brier_score": 0.2097511846880503,
+    "sharpe_ratio": 11.264134703768681,
+    "max_drawdown": -1.8969156954527797,
+    "win_rate": 0.7142857142857143
+  },
+  "artifact_manifest": {
+    "schema_version": 1,
+    "artifact_id": "artifact:b7c3b56dc4d526d1",
+    "sha256": "b7c3b56dc4d526d121083ad1abf92c24b45a2dbcf806a351f51656a49f4a5e26",
+    "size_bytes": 75931,
+    "uri": null,
+    "model_family": "lightgbm",
+    "created_at_ns": 1783334167133543100,
+    "feature_schema_hash": "6e9ecc79a21be726",
+    "label_schema_hash": "a7aa1004d4f7f1f1",
+    "code_git_sha": "local-git-sha",
+    "lockfile_hash": "local-lockfile-hash",
+    "container_image_digest": "local-container-digest",
+    "determinism_status": null
+  },
+  "dossier": {
+    "job_id": null,
+    "model_family": null,
+    "authority": "shadow-only",
+    "promotion_eligible": null
+  }
+}

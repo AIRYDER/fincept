@@ -1,9 +1,11 @@
 """Force-recycle RunPod endpoint workers by toggling workersMax."""
-import httpx
+
 import json
 import os
 import sys
 import time
+
+import httpx
 
 api_key = os.environ["RUNPOD_API_KEY"]
 endpoint_id = sys.argv[1] if len(sys.argv) > 1 else os.environ["RUNPOD_ENDPOINT_ID"]
@@ -21,21 +23,12 @@ query($id: String!) {
 }
 """
 
-update_query = """
-mutation($id: String!, $workersMin: Int!, $workersMax: Int!) {
-  updateEndpoint(input: {id: $id, workersMin: $workersMin, workersMax: $workersMax}) {
-    id
-    workersMin
-    workersMax
-  }
-}
-"""
 
 def graphql(query, variables):
     r = httpx.post(
-        f"https://api.runpod.io/graphql?api_key={api_key}",
+        "https://api.runpod.io/graphql",
         json={"query": query, "variables": variables},
-        headers={"Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         timeout=30.0,
     )
     r.raise_for_status()
@@ -43,6 +36,17 @@ def graphql(query, variables):
     if "errors" in data:
         raise RuntimeError(json.dumps(data["errors"], indent=2))
     return data["data"]
+
+
+def update_workers(workers_min: int, workers_max: int) -> None:
+    r = httpx.post(
+        f"https://rest.runpod.io/v1/endpoints/{endpoint_id}/update",
+        json={"workersMin": workers_min, "workersMax": workers_max},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        timeout=30.0,
+    )
+    r.raise_for_status()
+
 
 # 1. Fetch current state
 result = graphql(query, {"id": endpoint_id})
@@ -52,7 +56,7 @@ print(f"  Current: workersMin={ep['workersMin']}, workersMax={ep['workersMax']}"
 
 # 2. Set workersMax=0 to kill all workers
 print("  Setting workersMax=0 to purge workers...")
-graphql(update_query, {"id": endpoint_id, "workersMin": 0, "workersMax": 0})
+update_workers(workers_min=0, workers_max=0)
 time.sleep(10)
 
 # 3. Check health
@@ -65,7 +69,7 @@ print(f"  Health after purge: {json.dumps(r.json())}")
 
 # 4. Restore workersMax=1
 print("  Restoring workersMax=1...")
-graphql(update_query, {"id": endpoint_id, "workersMin": 0, "workersMax": 1})
+update_workers(workers_min=0, workers_max=1)
 
 time.sleep(5)
 r = httpx.get(

@@ -42,7 +42,6 @@ from __future__ import annotations
 import random
 from typing import Any, Protocol
 
-
 __all__ = ["PlaceboTest"]
 
 
@@ -89,10 +88,7 @@ def _shuffled_column(
     n_cols = len(X[0]) if X else 0
     col_values = [X[i][col_idx] for i in range(n)]
     rng.shuffle(col_values)
-    return [
-        [col_values[i] if j == col_idx else X[i][j] for j in range(n_cols)]
-        for i in range(n)
-    ]
+    return [[col_values[i] if j == col_idx else X[i][j] for j in range(n_cols)] for i in range(n)]
 
 
 def _sharpe_ratio(returns: list[float]) -> float:
@@ -110,7 +106,7 @@ def _sharpe_ratio(returns: list[float]) -> float:
     variance = sum((r - mean) ** 2 for r in returns) / (n - 1)
     if variance <= 0.0:
         return 0.0
-    return mean / (variance ** 0.5)
+    return float(mean / (variance**0.5))
 
 
 def _metric_from_predictions(y_true: list[float], y_pred: list[float]) -> float:
@@ -175,7 +171,7 @@ class PlaceboTest:
                 - ``p_value``: fraction of permuted metrics >= real metric.
                 - ``significant_at_5pct``: whether ``p_value < 0.05``.
         """
-        rng = random.Random(seed)
+        random.Random(seed)
 
         # Real model
         real_model = self._clone_model(model)
@@ -244,7 +240,7 @@ class PlaceboTest:
             feature name to its importance (metric drop).  Higher
             importance = more important feature.
         """
-        rng = random.Random(seed)
+        random.Random(seed)
 
         # Fit the model once on real data
         trained_model = self._clone_model(model)
@@ -280,6 +276,6 @@ class PlaceboTest:
         except Exception:
             pass
         try:
-            return model.__class__()  # type: ignore[call-arg]
+            return model.__class__()
         except Exception:
             return model

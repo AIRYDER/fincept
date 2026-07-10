@@ -1,10 +1,12 @@
 """Start a RunPod pod with the network volume, upload dataset via SSH, then stop it."""
+
 import json
 import os
+import pathlib
+import subprocess
 import sys
 import time
-import subprocess
-import pathlib
+
 import requests
 
 KEY = os.environ["RUNPOD_API_KEY"]
@@ -43,7 +45,7 @@ if cmd == "start-pod":
         print(json.dumps(result, indent=2))
         pod_id = result.get("id")
         print(f"\nPod ID: {pod_id}")
-        print(f"Waiting for pod to start...")
+        print("Waiting for pod to start...")
         # Wait for pod to be running
         for i in range(60):
             time.sleep(5)
@@ -56,12 +58,14 @@ if cmd == "start-pod":
                         runtime = p.get("runtime", {})
                         public_ip = runtime.get("publicIp", "") if isinstance(runtime, dict) else ""
                         ports = runtime.get("ports", {}) if isinstance(runtime, dict) else {}
-                        print(f"  [{i*5}s] status={status} ip={public_ip} ports={ports}")
+                        print(f"  [{i * 5}s] status={status} ip={public_ip} ports={ports}")
                         if status == "RUNNING" and public_ip:
-                            print(f"\nPod is running!")
+                            print("\nPod is running!")
                             print(f"  IP: {public_ip}")
                             print(f"  SSH: ssh root@{public_ip} -p <port>")
-                            print(f"\nNext: python scripts/runpod_volume_upload.py ssh-upload {pod_id} {public_ip}")
+                            print(
+                                f"\nNext: python scripts/runpod_volume_upload.py ssh-upload {pod_id} {public_ip}"
+                            )
                             sys.exit(0)
         print("Timeout waiting for pod")
     else:
@@ -148,9 +152,13 @@ elif cmd == "ssh-upload":
     # Upload via scp
     ssh_target = f"root@{public_ip}"
     scp_cmd = [
-        "scp", "-P", str(ssh_port or 22),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
+        "scp",
+        "-P",
+        str(ssh_port or 22),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
         str(csv_path),
         f"{ssh_target}:/workspace/dataset_full.csv",
     ]

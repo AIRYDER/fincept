@@ -38,6 +38,10 @@ import pytest
 _LIGHTGBM = pytest.importorskip("lightgbm")
 _NUMPY = pytest.importorskip("numpy")
 
+# Legacy trainer construction (without column_roles) emits a
+# DeprecationWarning; these tests intentionally exercise that path.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -240,20 +244,19 @@ class TestRealTrainerInferenceE2E:
         assert 0.0 <= metrics["brier_score"] <= 1.0
         assert metrics["max_drawdown"] <= 0.0
 
-        # --- Step 7: Save the trained model to a temporary pickle file ---
-        # The trainer doesn't expose model bytes, but it is deterministic
-        # (deterministic=True, num_threads=1). Re-train the final model and
-        # verify the pickled hash matches the artifact sha256.
-        seed = req.random_seed if req.random_seed is not None else 0
-        final_model = trainer._train_final_model(X, y, seed, req)
-        model_path = tmp_path / "trained_model.pkl"
-        model_bytes = pickle.dumps(final_model, protocol=pickle.HIGHEST_PROTOCOL)
+        # --- Step 7: Save the trained model bundle to a temporary file ---
+        # C1: the trainer now writes ModelBundle v1 (zip archive). Use the
+        # bundle bytes from the trainer directly — the sha256 of these bytes
+        # is the artifact sha256.
+        model_bytes = trainer.last_model_bytes
+        assert model_bytes is not None
+        model_path = tmp_path / "trained_model.bundle"
         model_path.write_bytes(model_bytes)
 
-        # Verify the re-trained model produces the same hash as the artifact.
+        # Verify the bundle hash matches the artifact sha256.
         model_sha = hashlib.sha256(model_bytes).hexdigest()
         assert model_sha == artifact.sha256, (
-            f"re-trained model hash {model_sha} != artifact hash {artifact.sha256} "
+            f"bundle hash {model_sha} != artifact hash {artifact.sha256} "
             "(trainer must be deterministic)"
         )
 
@@ -375,11 +378,11 @@ class TestDeterminism:
         deadline_ns = time.time_ns() + 120 * 1_000_000_000
         _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
 
-        # Save model.
-        seed = req.random_seed if req.random_seed is not None else 0
-        model = trainer._train_final_model(X, y, seed, req)
-        model_path = tmp_path / "model_det.pkl"
-        model_path.write_bytes(pickle.dumps(model, protocol=pickle.HIGHEST_PROTOCOL))
+        # Save model bundle (C1: trainer now writes ModelBundle v1).
+        model_bytes = trainer.last_model_bytes
+        assert model_bytes is not None
+        model_path = tmp_path / "model_det.bundle"
+        model_path.write_bytes(model_bytes)
 
         symbols = ["SYM_A", "SYM_B", "SYM_C"]
         snapshot = _make_feature_snapshot(symbols, X, row_indices=[10, 20, 30])
@@ -426,13 +429,16 @@ class TestDeterminism:
             "different seeds should produce different artifact hashes"
         )
 
-        # Save both models.
-        model_a = trainer._train_final_model(X_a, y_a, 42, req_a)
-        model_b = trainer._train_final_model(X_b, y_b, 99, req_b)
-        path_a = tmp_path / "model_a.pkl"
-        path_b = tmp_path / "model_b.pkl"
-        path_a.write_bytes(pickle.dumps(model_a, protocol=pickle.HIGHEST_PROTOCOL))
-        path_b.write_bytes(pickle.dumps(model_b, protocol=pickle.HIGHEST_PROTOCOL))
+        # Save both models (C1: trainer now writes ModelBundle v1).
+        # Re-train to get fresh bundle bytes for each model.
+        trainer_a = RealLightGBMTrainer()
+        trainer_b = RealLightGBMTrainer()
+        trainer_a.train(req_a, deadline_ns=deadline_ns)
+        trainer_b.train(req_b, deadline_ns=deadline_ns)
+        path_a = tmp_path / "model_a.bundle"
+        path_b = tmp_path / "model_b.bundle"
+        path_a.write_bytes(trainer_a.last_model_bytes)
+        path_b.write_bytes(trainer_b.last_model_bytes)
 
         # Use the same feature snapshot for both models.
         symbols = ["SYM_A", "SYM_B", "SYM_C"]
@@ -733,3 +739,209 @@ class TestNoSecrets:
         _check_keys(artifact_dict, "artifact")
         _check_keys(dossier_dict, "dossier")
         _check_keys(dossier_dict.get("metadata", {}), "dossier.metadata")
+
+
+# ---------------------------------------------------------------------------
+# C1: Meta-labeled bundle E2E regression
+# ===========================================================================
+
+
+def _make_triple_barrier_dataset(
+    tmp_path: Path,
+    n: int = 300,
+    seed: int = 42,
+    n_features: int = 4,
+) -> tuple[Path, Any, Any]:
+    """Create a synthetic CSV with triple-barrier labels (-1, 0, +1).
+
+    Layout: timestamp, f1, f2, f3, f4, label.
+    """
+    import numpy as np
+
+    rng = np.random.RandomState(seed)
+    timestamps = np.arange(n, dtype=np.int64)
+    features = [rng.randn(n) for _ in range(n_features)]
+    weights = [0.8, 0.5, -0.6] + [0.0] * max(0, n_features - 3)
+    logit = sum(w * f for w, f in zip(weights, features, strict=False)) + 0.05 * rng.randn(n)
+    label = np.where(logit > 0.3, 1.0, np.where(logit < -0.3, -1.0, 0.0))
+    data = np.column_stack([timestamps, *features, label])
+    path = tmp_path / "tb_data.csv"
+    header = ",".join(["timestamp"] + [f"f{i + 1}" for i in range(n_features)] + ["label"])
+    np.savetxt(str(path), data, delimiter=",", header=header, comments="")
+    return path, np.column_stack(features), label
+
+
+class TestMetaLabeledBundleE2E:
+    """C1 E2E regression: meta-labeled bundle train/write/load/score.
+
+    It must train/write/load/score through the same public loader used
+    by inference (ModelLoader.load → load_bundle → BundleScorer).
+    """
+
+    def test_meta_labeled_bundle_train_load_score(self, tmp_path: Path) -> None:
+        """Full round-trip: train meta-labeled → write bundle → load → score."""
+        from quant_foundry.bundle_io import BundleKind, Decision, load_bundle
+        from quant_foundry.dataset_manifest import ColumnRoles
+        from quant_foundry.real_trainer import RealLightGBMTrainer
+        from quant_foundry.training_manifest import ModelTaskSpec
+
+        # --- Train a meta-labeled model ---
+        data_path, X, y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+        req = _make_training_request(
+            "qf:e2e:meta:bundle:1",
+            data_path.as_uri(),
+            seed=42,
+        )
+        roles = ColumnRoles(
+            feature_columns=("f1", "f2", "f3", "f4"),
+            label_columns=("label",),
+            timestamp_column="timestamp",
+        )
+        task_spec = ModelTaskSpec(
+            task_type="multiclass",
+            label_column="label",
+            barrier_config={
+                "profit_take_width": 0.02,
+                "stop_loss_width": 0.01,
+                "horizon_bars": 10,
+            },
+            meta_label_config={
+                "side_column": "side",
+                "label_column": "label",
+                "meta_label_column": "meta_label",
+            },
+        )
+        trainer = RealLightGBMTrainer(
+            n_folds=3,
+            column_roles=roles,
+            task_spec=task_spec,
+        )
+        deadline_ns = time.time_ns() + 120 * 1_000_000_000
+        artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+        # --- Verify the artifact is a ModelBundle v1 ---
+        model_bytes = trainer.last_model_bytes
+        assert model_bytes is not None
+        assert model_bytes[:4] == b"PK\x03\x04"  # zip magic
+
+        # The artifact sha256 must match the bundle bytes sha256.
+        bundle_sha = hashlib.sha256(model_bytes).hexdigest()
+        assert bundle_sha == artifact.sha256, (
+            f"bundle sha256 {bundle_sha} != artifact sha256 {artifact.sha256}"
+        )
+
+        # --- Write the bundle to a file ---
+        bundle_path = tmp_path / "meta_labeled.bundle"
+        bundle_path.write_bytes(model_bytes)
+
+        # --- Load via the same public loader used by inference ---
+        from quant_foundry.real_inference import ModelLoader
+
+        loader = ModelLoader()
+        scorer = loader.load(str(bundle_path))
+        # The loader returns a BundleScorer (implements _Scorer protocol).
+        assert hasattr(scorer, "predict")
+        assert hasattr(scorer, "score")
+
+        # --- Score via BundleScorer.score() (full Decision objects) ---
+        sample = X[:5].tolist()
+        decisions = scorer.score(sample)
+        assert len(decisions) == 5
+        for d in decisions:
+            assert isinstance(d, Decision)
+            assert 0.0 <= d.p <= 1.0
+            assert d.direction in (-1, 0, 1)
+            assert d.meta_p is not None
+            assert 0.0 <= d.meta_p <= 1.0
+            # Invariant: abstained=True ⇒ act=False
+            if d.abstained:
+                assert d.act is False
+            assert d.bundle_sha256 == bundle_sha
+
+        # --- Also verify .predict() works (backward-compat with _Scorer) ---
+        raw_outputs = scorer.predict(sample)
+        assert len(raw_outputs) == 5
+
+        # --- Verify the bundle can be loaded directly via load_bundle ---
+        bundle = load_bundle(model_bytes)
+        assert bundle.bundle_kind == BundleKind.META_LABELED
+        assert bundle.primary_model is not None
+        assert bundle.meta_model is not None
+        assert bundle.bundle_sha256 == bundle_sha
+
+        # --- Verify the selfcheck sample was stashed ---
+        assert trainer.last_selfcheck_features is not None
+        assert len(trainer.last_selfcheck_features) > 0
+
+        # --- Run the selfcheck against the final bundle bytes ---
+        from quant_foundry.bundle_io import run_selfcheck
+
+        selfcheck = run_selfcheck(model_bytes, trainer.last_selfcheck_features)
+        assert selfcheck.passed is True
+        assert selfcheck.n_rows_scored > 0
+        assert selfcheck.bundle_sha256 == bundle_sha
+        assert len(selfcheck.output_sha256) == 64
+
+    def test_meta_labeled_bundle_through_real_inference_engine(self, tmp_path: Path) -> None:
+        """The meta-labeled bundle loads through RealInferenceEngine.run()."""
+        from quant_foundry.dataset_manifest import ColumnRoles
+        from quant_foundry.real_inference import RealInferenceEngine
+        from quant_foundry.real_trainer import RealLightGBMTrainer
+        from quant_foundry.schemas import Authority, RunPodInferenceRequest
+        from quant_foundry.training_manifest import ModelTaskSpec
+
+        data_path, X, y = _make_triple_barrier_dataset(tmp_path, n=300, seed=42)
+        req = _make_training_request(
+            "qf:e2e:meta:infer:1",
+            data_path.as_uri(),
+            seed=42,
+        )
+        roles = ColumnRoles(
+            feature_columns=("f1", "f2", "f3", "f4"),
+            label_columns=("label",),
+            timestamp_column="timestamp",
+        )
+        task_spec = ModelTaskSpec(
+            task_type="multiclass",
+            label_column="label",
+            barrier_config={
+                "profit_take_width": 0.02,
+                "stop_loss_width": 0.01,
+                "horizon_bars": 10,
+            },
+            meta_label_config={
+                "side_column": "side",
+                "label_column": "label",
+                "meta_label_column": "meta_label",
+            },
+        )
+        trainer = RealLightGBMTrainer(
+            n_folds=3,
+            column_roles=roles,
+            task_spec=task_spec,
+        )
+        deadline_ns = time.time_ns() + 120 * 1_000_000_000
+        _artifact, dossier = trainer.train(req, deadline_ns=deadline_ns)
+
+        # Write the bundle to a file.
+        bundle_path = tmp_path / "meta_infer.bundle"
+        bundle_path.write_bytes(trainer.last_model_bytes)
+
+        # Run inference through the public RealInferenceEngine.
+        symbols = ["SYM_A", "SYM_B", "SYM_C"]
+        snapshot = _make_feature_snapshot(symbols, X, row_indices=[10, 20, 30])
+        infer_req = RunPodInferenceRequest(
+            job_id="qf:e2e:meta:infer:run:1",
+            artifact_ref=str(bundle_path),
+            symbols=symbols,
+            horizons_ns=[3_600_000_000_000],
+        )
+        engine = RealInferenceEngine(enabled=True)
+        result = engine.run(request=infer_req, snapshot=snapshot, model_id=dossier.model_id)
+
+        # Verify real predictions (not stub).
+        assert len(result.predictions) == len(symbols) * len(infer_req.horizons_ns)
+        for pred in result.predictions:
+            assert pred.authority == Authority.SHADOW_ONLY
+            assert -1.0 <= pred.direction <= 1.0
+            assert 0.0 <= pred.confidence <= 1.0

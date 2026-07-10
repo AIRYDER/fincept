@@ -46,16 +46,71 @@ _NON_WORD = re.compile(r"[^a-z0-9]+")
 _CASHTAG = re.compile(r"(?<![A-Z0-9])\$([A-Z][A-Z0-9.-]{0,9})(?![A-Z0-9])")
 
 _EVENT_PATTERNS: tuple[tuple[str, tuple[re.Pattern[str], ...]], ...] = (
-    ("guidance", (re.compile(r"\b(guidance|outlook|forecast|raises|cuts|lowers|full[- ]year)\b", re.I),)),
+    (
+        "guidance",
+        (re.compile(r"\b(guidance|outlook|forecast|raises|cuts|lowers|full[- ]year)\b", re.I),),
+    ),
     ("earnings", (re.compile(r"\b(earnings|eps|revenue|quarterly results|profit|loss)\b", re.I),)),
-    ("litigation", (re.compile(r"\b(lawsuit|sued|sues|settlement|class action|antitrust|probe|investigation)\b", re.I),)),
-    ("m&a", (re.compile(r"\b(acquire|acquires|acquisition|merger|buyout|takeover|deal to buy)\b", re.I),)),
-    ("financing", (re.compile(r"\b(offering|convertible note|debt sale|share sale|secondary|raises capital|financing)\b", re.I),)),
-    ("macro", (re.compile(r"\b(fed|fomc|inflation|cpi|ppi|payrolls|jobs report|treasury|gdp|rates|yield)\b", re.I),)),
-    ("security", (re.compile(r"\b(hack|breach|exploit|ransomware|vulnerability|cyberattack|security incident)\b", re.I),)),
-    ("regulatory", (re.compile(r"\b(sec|doj|ftc|fda|regulator|regulatory|approval|approved|ban|sanction)\b", re.I),)),
-    ("product", (re.compile(r"\b(launch|unveil|product|chip|model|platform|supply|device)\b", re.I),)),
-    ("partnership", (re.compile(r"\b(partner|partnership|collaboration|contract|agreement|supplier)\b", re.I),)),
+    (
+        "litigation",
+        (
+            re.compile(
+                r"\b(lawsuit|sued|sues|settlement|class action|antitrust|probe|investigation)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "m&a",
+        (
+            re.compile(
+                r"\b(acquire|acquires|acquisition|merger|buyout|takeover|deal to buy)\b", re.I
+            ),
+        ),
+    ),
+    (
+        "financing",
+        (
+            re.compile(
+                r"\b(offering|convertible note|debt sale|share sale|secondary|raises capital|financing)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "macro",
+        (
+            re.compile(
+                r"\b(fed|fomc|inflation|cpi|ppi|payrolls|jobs report|treasury|gdp|rates|yield)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "security",
+        (
+            re.compile(
+                r"\b(hack|breach|exploit|ransomware|vulnerability|cyberattack|security incident)\b",
+                re.I,
+            ),
+        ),
+    ),
+    (
+        "regulatory",
+        (
+            re.compile(
+                r"\b(sec|doj|ftc|fda|regulator|regulatory|approval|approved|ban|sanction)\b", re.I
+            ),
+        ),
+    ),
+    (
+        "product",
+        (re.compile(r"\b(launch|unveil|product|chip|model|platform|supply|device)\b", re.I),),
+    ),
+    (
+        "partnership",
+        (re.compile(r"\b(partner|partnership|collaboration|contract|agreement|supplier)\b", re.I),),
+    ),
 )
 
 
@@ -181,7 +236,9 @@ def normalize_vendor_event(
     headline = _first_str(row, "headline", "title", required=True)
     body = _first_str(row, "body", "summary", "description")
     source = _first_str(row, "source", "provider", default=source_type_norm).lower()
-    published_at_ns = _first_timestamp_ns(row, "published_at_ns", "published_at", "created_at_ns", "created_at")
+    published_at_ns = _first_timestamp_ns(
+        row, "published_at_ns", "published_at", "created_at_ns", "created_at"
+    )
     available_at_ns = _first_timestamp_ns(
         row,
         "available_at_ns",
@@ -208,7 +265,9 @@ def normalize_vendor_event(
         else f"{source_type_norm}:{_stable_event_digest(source, headline, available_at_ns)}"
     )
     metadata = _metadata_from_row(row)
-    metadata.setdefault("dedupe_group_id", dedupe_group_id_fields(symbols, event_type, headline, available_at_ns))
+    metadata.setdefault(
+        "dedupe_group_id", dedupe_group_id_fields(symbols, event_type, headline, available_at_ns)
+    )
 
     return NormalizedNewsEvent(
         event_id=event_id,
@@ -294,8 +353,7 @@ def source_latency_stats(events: Iterable[NormalizedNewsEvent]) -> list[SourceLa
     stats: list[SourceLatencyStats] = []
     for source, rows in sorted(grouped.items()):
         latencies = [
-            max(0.0, (row.available_at_ns - row.published_at_ns) / NS_PER_SECOND)
-            for row in rows
+            max(0.0, (row.available_at_ns - row.published_at_ns) / NS_PER_SECOND) for row in rows
         ]
         coverage: dict[str, int] = {}
         for row in rows:

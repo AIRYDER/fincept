@@ -1,0 +1,12 @@
+{
+  "endpoint_id": "6hl6v67nybijwy",
+  "name": "qf-gpuhc-6dbec436",
+  "template_id": "l1shf1bs3c",
+  "gpu_type": "ADA_24",
+  "workers_min": 1,
+  "workers_max": 1,
+  "idle_timeout": 300,
+  "scaler_type": "QUEUE_DELAY",
+  "scaler_value": 4,
+  "container_disk_gb": 20
+}

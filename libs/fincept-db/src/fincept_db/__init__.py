@@ -7,15 +7,30 @@ import os
 if os.name == "nt" and "SQLALCHEMY_DISABLE_CYEXT" not in os.environ:
     os.environ["SQLALCHEMY_DISABLE_CYEXT"] = "1"
 
-from . import audit, bars, engine, features, models, provider_data, ticks, universe
+from . import (
+    audit,
+    bars,
+    callback_tables,
+    engine,
+    features,
+    models,
+    observability,
+    provider_data,
+    registry_tables,
+    ticks,
+    universe,
+)
 
 __all__ = [
     "audit",
     "bars",
+    "callback_tables",
     "engine",
     "features",
     "models",
+    "observability",
     "provider_data",
+    "registry_tables",
     "ticks",
     "universe",
 ]

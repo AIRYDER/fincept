@@ -19,11 +19,10 @@ Tests verify:
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 import pathlib
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -66,9 +65,14 @@ def test_benchmark_result_success_property() -> None:
 
     config = BenchmarkConfig(
         name="test",
-        universe="u", source="s", sentiment="se",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        universe="u",
+        source="s",
+        sentiment="se",
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
 
     # Failed result
@@ -82,7 +86,9 @@ def test_benchmark_result_success_property() -> None:
     mock_dossier.pbo = 0.1
     mock_dossier.to_json.return_value = '{"model_id": "test"}'
     r_ok = BenchmarkResult(
-        config=config, dataset_id="test", dossier=mock_dossier,
+        config=config,
+        dataset_id="test",
+        dossier=mock_dossier,
     )
     assert r_ok.succeeded
     assert r_ok.deflated_sharpe == 1.5
@@ -98,9 +104,14 @@ def test_benchmark_result_to_dict() -> None:
 
     config = BenchmarkConfig(
         name="test",
-        universe="u", source="s", sentiment="se",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        universe="u",
+        source="s",
+        sentiment="se",
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
     result = BenchmarkResult(config=config, dataset_id="test", error="fail")
     d = result.to_dict()
@@ -132,7 +143,8 @@ def test_benchmark_harness_handles_failures(tmp_path: pathlib.Path) -> None:
         features=["feature:nonexistent:1.0.0"],
         label="label:nonexistent:1.0.0",
         price_join="price_join:nonexistent:1.0.0",
-        start_ns=0, end_ns=1,
+        start_ns=0,
+        end_ns=1,
     )
     config2 = BenchmarkConfig(
         name="fail-2",
@@ -142,7 +154,8 @@ def test_benchmark_harness_handles_failures(tmp_path: pathlib.Path) -> None:
         features=["feature:also-nonexistent:1.0.0"],
         label="label:also-nonexistent:1.0.0",
         price_join="price_join:also-nonexistent:1.0.0",
-        start_ns=0, end_ns=1,
+        start_ns=0,
+        end_ns=1,
     )
 
     harness = BenchmarkHarness(
@@ -178,7 +191,8 @@ def test_benchmark_harness_writes_combined_report(tmp_path: pathlib.Path) -> Non
         features=["feature:nonexistent:1.0.0"],
         label="label:nonexistent:1.0.0",
         price_join="price_join:nonexistent:1.0.0",
-        start_ns=0, end_ns=1,
+        start_ns=0,
+        end_ns=1,
     )
 
     harness = BenchmarkHarness(
@@ -207,10 +221,18 @@ def test_attribution_report_basic() -> None:
     from quant_foundry.modules.benchmark.attribution import AttributionReport
 
     feature_names = [
-        "sent_earnings", "sent_regulatory", "sent_macro", "sent_social",
-        "sent_mean", "sent_count",
-        "year_2023", "year_2024",
-        "ar_1d", "ar_5d", "ar_21d", "ar_63d",
+        "sent_earnings",
+        "sent_regulatory",
+        "sent_macro",
+        "sent_social",
+        "sent_mean",
+        "sent_count",
+        "year_2023",
+        "year_2024",
+        "ar_1d",
+        "ar_5d",
+        "ar_21d",
+        "ar_63d",
     ]
     importances = [10.0, 5.0, 3.0, 8.0, 7.0, 2.0, 4.0, 6.0, 1.0, 9.0, 5.0, 3.0]
 
@@ -311,18 +333,19 @@ def test_attribution_report_from_parquet(tmp_path: pathlib.Path) -> None:
     """AttributionReport.from_parquet reads features from a parquet file."""
     pytest.importorskip("polars")
     import polars as pl
-
     from quant_foundry.modules.benchmark.attribution import AttributionReport
 
     # Create a synthetic parquet
-    df = pl.DataFrame({
-        "decision_time": [1, 2, 3],
-        "symbol": ["AAPL", "AAPL", "MSFT"],
-        "sent_earnings": [0.5, -0.3, 0.8],
-        "sent_regulatory": [0.0, 0.2, -0.1],
-        "year_2023": [1.0, 1.0, 1.0],
-        "label": [0.01, -0.02, 0.03],
-    })
+    df = pl.DataFrame(
+        {
+            "decision_time": [1, 2, 3],
+            "symbol": ["AAPL", "AAPL", "MSFT"],
+            "sent_earnings": [0.5, -0.3, 0.8],
+            "sent_regulatory": [0.0, 0.2, -0.1],
+            "year_2023": [1.0, 1.0, 1.0],
+            "label": [0.01, -0.02, 0.03],
+        }
+    )
     parquet_path = tmp_path / "test_dataset.parquet"
     df.write_parquet(str(parquet_path))
 
@@ -356,10 +379,15 @@ def test_comparison_report_ranks_by_sharpe() -> None:
     )
 
     config = BenchmarkConfig(
-        name="test", universe="u", source="source:newsapi:1.0.0",
+        name="test",
+        universe="u",
+        source="source:newsapi:1.0.0",
         sentiment="sentiment:finbert:1.0.0",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
 
     def make_result(name: str, dsr: float, pbo: float) -> BenchmarkResult:
@@ -393,10 +421,15 @@ def test_comparison_report_ranks_by_pbo() -> None:
     )
 
     config = BenchmarkConfig(
-        name="test", universe="u", source="source:newsapi:1.0.0",
+        name="test",
+        universe="u",
+        source="source:newsapi:1.0.0",
         sentiment="sentiment:finbert:1.0.0",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
 
     def make_result(name: str, dsr: float, pbo: float) -> BenchmarkResult:
@@ -405,7 +438,7 @@ def test_comparison_report_ranks_by_pbo() -> None:
         mock_dossier.deflated_sharpe = dsr
         mock_dossier.pbo = pbo
         mock_dossier.metadata = {}
-        mock_dossier.to_json.return_value = '{}'
+        mock_dossier.to_json.return_value = "{}"
         return BenchmarkResult(config=c, dataset_id=name, dossier=mock_dossier)
 
     results = [
@@ -431,16 +464,21 @@ def test_comparison_report_best_by_source() -> None:
 
     def make_result(name: str, source: str, dsr: float) -> BenchmarkResult:
         c = BenchmarkConfig(
-            name=name, universe="u", source=source,
+            name=name,
+            universe="u",
+            source=source,
             sentiment="sentiment:finbert:1.0.0",
-            features=["f"], label="l", price_join="p",
-            start_ns=0, end_ns=1,
+            features=["f"],
+            label="l",
+            price_join="p",
+            start_ns=0,
+            end_ns=1,
         )
         mock_dossier = MagicMock()
         mock_dossier.deflated_sharpe = dsr
         mock_dossier.pbo = 0.1
         mock_dossier.metadata = {}
-        mock_dossier.to_json.return_value = '{}'
+        mock_dossier.to_json.return_value = "{}"
         return BenchmarkResult(config=c, dataset_id=name, dossier=mock_dossier)
 
     results = [
@@ -466,16 +504,21 @@ def test_comparison_report_best_by_sentiment() -> None:
 
     def make_result(name: str, sentiment: str, dsr: float) -> BenchmarkResult:
         c = BenchmarkConfig(
-            name=name, universe="u", source="source:newsapi:1.0.0",
+            name=name,
+            universe="u",
+            source="source:newsapi:1.0.0",
             sentiment=sentiment,
-            features=["f"], label="l", price_join="p",
-            start_ns=0, end_ns=1,
+            features=["f"],
+            label="l",
+            price_join="p",
+            start_ns=0,
+            end_ns=1,
         )
         mock_dossier = MagicMock()
         mock_dossier.deflated_sharpe = dsr
         mock_dossier.pbo = 0.1
         mock_dossier.metadata = {}
-        mock_dossier.to_json.return_value = '{}'
+        mock_dossier.to_json.return_value = "{}"
         return BenchmarkResult(config=c, dataset_id=name, dossier=mock_dossier)
 
     results = [
@@ -499,10 +542,15 @@ def test_comparison_report_write_json(tmp_path: pathlib.Path) -> None:
     )
 
     config = BenchmarkConfig(
-        name="test", universe="u", source="source:newsapi:1.0.0",
+        name="test",
+        universe="u",
+        source="source:newsapi:1.0.0",
         sentiment="sentiment:finbert:1.0.0",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
     mock_dossier = MagicMock()
     mock_dossier.deflated_sharpe = 1.5
@@ -533,16 +581,21 @@ def test_comparison_report_summary_text() -> None:
     )
 
     config = BenchmarkConfig(
-        name="test", universe="u", source="source:newsapi:1.0.0",
+        name="test",
+        universe="u",
+        source="source:newsapi:1.0.0",
         sentiment="sentiment:finbert:1.0.0",
-        features=["f"], label="l", price_join="p",
-        start_ns=0, end_ns=1,
+        features=["f"],
+        label="l",
+        price_join="p",
+        start_ns=0,
+        end_ns=1,
     )
     mock_dossier = MagicMock()
     mock_dossier.deflated_sharpe = 1.5
     mock_dossier.pbo = 0.1
     mock_dossier.metadata = {}
-    mock_dossier.to_json.return_value = '{}'
+    mock_dossier.to_json.return_value = "{}"
     result = BenchmarkResult(config=config, dataset_id="test", dossier=mock_dossier)
 
     comparison = ComparisonReport.from_results([result])

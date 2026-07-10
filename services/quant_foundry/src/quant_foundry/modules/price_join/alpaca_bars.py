@@ -91,7 +91,8 @@ class AlpacaBarsPriceJoin:
         for path in candidates:
             df = pl.read_parquet(str(path))
             keep = [
-                c for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume")
+                c
+                for c in ("symbol", "ts_event", "open", "high", "low", "close", "volume")
                 if c in df.columns
             ]
             df = df.select(keep)

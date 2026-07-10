@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 from news_impact_model.schema import AnalogMatch, HistoricalOutcome, MarketContext, NewsEvent
 from news_impact_model.text import weighted_jaccard
-
 
 DEFAULT_SOURCE_CREDIBILITY = {
     "reuters": 1.0,
@@ -68,10 +67,7 @@ class HistoricalAnalogIndex:
         *,
         top_k: int = 20,
     ) -> list[AnalogMatch]:
-        scored = [
-            self._score(outcome, event=event, context=context)
-            for outcome in self._outcomes
-        ]
+        scored = [self._score(outcome, event=event, context=context) for outcome in self._outcomes]
         scored = [m for m in scored if m.score > 0]
         scored.sort(key=lambda m: m.score, reverse=True)
         return scored[:top_k]
@@ -89,8 +85,7 @@ class HistoricalAnalogIndex:
         )
         event_type_match = event.event_type == outcome.event_type
         regime_match = (
-            context.market_regime != "unknown"
-            and context.market_regime == outcome.market_regime
+            context.market_regime != "unknown" and context.market_regime == outcome.market_regime
         )
         source_quality = self._source_credibility.get(outcome.source.lower(), 0.45)
         age_ns = max(0, event.available_at_ns - outcome.available_at_ns)

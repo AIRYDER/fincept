@@ -20,8 +20,6 @@ import math
 import pathlib
 import sys
 
-import pytest
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -60,16 +58,18 @@ def _make_bars(
         else:
             ts = start_ns + i * NS_PER_DAY
         ret = drift + rng.gauss(0, volatility)
-        price *= (1.0 + ret)
-        bars.append(PriceBar(
-            symbol=symbol,
-            ts_ns=ts,
-            open=price * 0.999,
-            high=price * 1.005,
-            low=price * 0.995,
-            close=price,
-            volume=1_000_000.0,
-        ))
+        price *= 1.0 + ret
+        bars.append(
+            PriceBar(
+                symbol=symbol,
+                ts_ns=ts,
+                open=price * 0.999,
+                high=price * 1.005,
+                low=price * 0.995,
+                close=price,
+                volume=1_000_000.0,
+            )
+        )
     return bars
 
 
@@ -101,10 +101,9 @@ def test_vasicek_shrinkage_pulls_beta_toward_prior() -> None:
         _estimate_beta_v1,
         _estimate_beta_v2,
     )
-    from quant_foundry.modules.registry import PriceBar
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Create bars where OLS β would be far from 1.0
     asset_bars = _make_bars("AAPL", start_ns, 300, base_price=100.0, seed=42, volatility=0.02)
@@ -117,16 +116,24 @@ def test_vasicek_shrinkage_pulls_beta_toward_prior() -> None:
     bench_ts = [b.ts_ns for b in bench_sorted]
     bench_close = [b.close for b in bench_sorted]
     beta_ols = _estimate_beta_v1(
-        asset_bars, bench_ts, bench_close, decision_time,
-        window=252, min_window=60,
+        asset_bars,
+        bench_ts,
+        bench_close,
+        decision_time,
+        window=252,
+        min_window=60,
     )
     assert beta_ols is not None
 
     # Shrunk β with prior=1.0, shrinkage=0.5
     beta_shrunk = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=1.0, shrinkage=0.5,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=1.0,
+        shrinkage=0.5,
     )
     assert beta_shrunk is not None
 
@@ -139,17 +146,25 @@ def test_vasicek_shrinkage_pulls_beta_toward_prior() -> None:
 
     # With shrinkage=1.0, β should be exactly the prior
     beta_pure_prior = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=1.0, shrinkage=1.0,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=1.0,
+        shrinkage=1.0,
     )
     assert beta_pure_prior == 1.0
 
     # With shrinkage=0.0, β should equal OLS β
     beta_no_shrink = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=1.0, shrinkage=0.0,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=1.0,
+        shrinkage=0.0,
     )
     assert beta_no_shrink == beta_ols
 
@@ -157,10 +172,9 @@ def test_vasicek_shrinkage_pulls_beta_toward_prior() -> None:
 def test_shrinkage_clamped_to_valid_range() -> None:
     """Shrinkage > 1 or < 0 is clamped to [0, 1]."""
     from quant_foundry.modules.labels.abnormal_return import _estimate_beta_v2
-    from quant_foundry.modules.registry import PriceBar
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 300, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 300, seed=99)
@@ -169,24 +183,36 @@ def test_shrinkage_clamped_to_valid_range() -> None:
 
     # shrinkage=2.0 should be clamped to 1.0 → pure prior
     beta_over = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=0.5, shrinkage=2.0,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=0.5,
+        shrinkage=2.0,
     )
     assert beta_over == 0.5
 
     # shrinkage=-1.0 should be clamped to 0.0 → pure OLS
     beta_under = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=0.5, shrinkage=-1.0,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=0.5,
+        shrinkage=-1.0,
     )
     assert beta_under is not None
     # Should equal pure OLS (shrinkage=0.0)
     beta_ols = _estimate_beta_v2(
-        asset_bars, bench_sorted, decision_time,
-        window=252, min_window=60,
-        beta_prior=0.5, shrinkage=0.0,
+        asset_bars,
+        bench_sorted,
+        decision_time,
+        window=252,
+        min_window=60,
+        beta_prior=0.5,
+        shrinkage=0.0,
     )
     assert beta_under == beta_ols
 
@@ -207,8 +233,7 @@ def test_v11_trading_day_horizons() -> None:
     load_all_modules()
     label_mod = ModuleRegistry.instance().create("label:abnormal-return:1.1.0")
 
-    NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Create bars with a gap after bar 260 (simulating weekend)
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42, gap_after=260, gap_days=3)
@@ -216,11 +241,13 @@ def test_v11_trading_day_horizons() -> None:
 
     # Decision time at bar 260 (just before the gap)
     decision_time = asset_bars[260].ts_ns
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -257,18 +284,19 @@ def test_v11_open_to_close_returns() -> None:
         config={"return_type": "open_to_close"},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 400, seed=99)
 
     decision_time = asset_bars[260].ts_ns
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -303,18 +331,19 @@ def test_v11_car_method() -> None:
         config={"ar_method": "endpoint"},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 400, seed=99)
 
     decision_time = asset_bars[260].ts_ns
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled_car = label_mod_car.compute_labels(
         rows,
@@ -355,17 +384,19 @@ def test_v10_still_works() -> None:
     label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 400, seed=99)
 
     decision_time = start_ns + 260 * NS_PER_DAY
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -395,18 +426,20 @@ def test_v10_drops_insufficient_history() -> None:
     label_mod = ModuleRegistry.instance().create("label:abnormal-return-v1:1.0.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Only 10 days — not enough for β window (min 60)
     asset_bars = _make_bars("AAPL", start_ns, 10)
     bench_bars = _make_bars("SPY", start_ns, 10)
 
     decision_time = start_ns + 5 * NS_PER_DAY
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,
@@ -435,17 +468,19 @@ def test_v11_default_close_to_v10() -> None:
     label_v11 = ModuleRegistry.instance().create("label:abnormal-return:1.1.0")
 
     NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     asset_bars = _make_bars("AAPL", start_ns, 400, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 400, seed=99)
 
     decision_time = start_ns + 260 * NS_PER_DAY
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled_v10 = label_v10.compute_labels(
         rows,
@@ -471,8 +506,7 @@ def test_v11_default_close_to_v10() -> None:
     # We use a generous tolerance because the β difference affects the AR.
     diff = abs(labeled_v10[0].label - labeled_v11[0].label)
     assert diff < 0.1, (
-        f"v1.0 label {labeled_v10[0].label} vs v1.1 label {labeled_v11[0].label} "
-        f"diff {diff} > 0.1"
+        f"v1.0 label {labeled_v10[0].label} vs v1.1 label {labeled_v11[0].label} diff {diff} > 0.1"
     )
 
 
@@ -495,19 +529,20 @@ def test_v11_thin_trading_guard() -> None:
         config={"min_beta_window": 100},
     )
 
-    NS_PER_DAY = 86_400_000_000_000
-    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()) * 1_000_000_000
+    start_ns = int(dt.datetime(2023, 1, 1, tzinfo=dt.UTC).timestamp()) * 1_000_000_000
 
     # Only 50 bars — below the min_beta_window of 100
     asset_bars = _make_bars("AAPL", start_ns, 50, seed=42)
     bench_bars = _make_bars("SPY", start_ns, 50, seed=99)
 
     decision_time = asset_bars[30].ts_ns
-    rows = [FeatureRowData(
-        symbol="AAPL",
-        decision_time=decision_time,
-        features={"sent_earnings": 0.5},
-    )]
+    rows = [
+        FeatureRowData(
+            symbol="AAPL",
+            decision_time=decision_time,
+            features={"sent_earnings": 0.5},
+        )
+    ]
 
     labeled = label_mod.compute_labels(
         rows,

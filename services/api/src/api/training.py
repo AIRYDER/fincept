@@ -283,9 +283,7 @@ def _validate_input_path(input_path: str) -> pathlib.Path:
     try:
         resolved = default_approved_roots().resolve(input_path)
     except ApprovedRootsError as exc:
-        raise TrainingValidationError(
-            f"input path rejected: {exc.code}"
-        ) from exc
+        raise TrainingValidationError(f"input path rejected: {exc.code}") from exc
     p = resolved.path
     if not p.is_file():
         raise TrainingValidationError(f"input path not found: {input_path}")

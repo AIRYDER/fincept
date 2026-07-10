@@ -1,12 +1,14 @@
 """Probe the new RunPod inference endpoint with a single job (async + poll)."""
-import httpx
+
 import json
 import os
 import sys
 import time
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from runpod_config import INFERENCE_ENDPOINT_ID  # noqa: E402
+from runpod_config import INFERENCE_ENDPOINT_ID
 
 api_key = os.environ["RUNPOD_API_KEY"]
 eid = INFERENCE_ENDPOINT_ID
@@ -41,7 +43,9 @@ def health():
 
 
 print(f"Health before dispatch: {json.dumps(health())}")
-r = httpx.post(f"https://api.runpod.ai/v2/{eid}/run", headers=H, json={"input": payload}, timeout=60.0)
+r = httpx.post(
+    f"https://api.runpod.ai/v2/{eid}/run", headers=H, json={"input": payload}, timeout=60.0
+)
 job_id = r.json().get("id")
 print(f"Dispatched: {job_id}")
 
@@ -50,7 +54,7 @@ for i in range(30):
     r = httpx.get(f"https://api.runpod.ai/v2/{eid}/status/{job_id}", headers=H, timeout=30.0)
     d = r.json()
     state = d.get("status")
-    print(f"[{i+1}/30] {state}  workers={json.dumps(health())}")
+    print(f"[{i + 1}/30] {state}  workers={json.dumps(health())}")
     if state == "COMPLETED":
         out = d.get("output", {})
         for k in ("callback_payload", "callback_signature"):

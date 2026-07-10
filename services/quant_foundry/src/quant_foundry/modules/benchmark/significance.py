@@ -45,7 +45,6 @@ import math
 import random
 from typing import Any
 
-
 __all__ = [
     "bootstrap_sharpe_ci",
     "bootstrap_sharpe_difference_ci",
@@ -115,8 +114,7 @@ def diebold_mariano_test(
     """
     if len(errors_a) != len(errors_b):
         raise ValueError(
-            f"error lists must have the same length; "
-            f"got {len(errors_a)} and {len(errors_b)}",
+            f"error lists must have the same length; got {len(errors_a)} and {len(errors_b)}",
         )
     n = len(errors_a)
     if n < 2:
@@ -231,8 +229,8 @@ def bootstrap_sharpe_ci(
 
     # Percentile method
     alpha = 1.0 - confidence
-    lower_idx = max(0, int(math.floor((alpha / 2.0) * n_bootstrap)))
-    upper_idx = min(n_bootstrap - 1, int(math.ceil((1.0 - alpha / 2.0) * n_bootstrap)) - 1)
+    lower_idx = max(0, math.floor((alpha / 2.0) * n_bootstrap))
+    upper_idx = min(n_bootstrap - 1, math.ceil((1.0 - alpha / 2.0) * n_bootstrap) - 1)
 
     return {
         "mean": float(_mean(sharpe_ratios)),
@@ -299,8 +297,8 @@ def bootstrap_sharpe_difference_ci(
     diffs.sort()
 
     alpha = 1.0 - confidence
-    lower_idx = max(0, int(math.floor((alpha / 2.0) * n_bootstrap)))
-    upper_idx = min(n_bootstrap - 1, int(math.ceil((1.0 - alpha / 2.0) * n_bootstrap)) - 1)
+    lower_idx = max(0, math.floor((alpha / 2.0) * n_bootstrap))
+    upper_idx = min(n_bootstrap - 1, math.ceil((1.0 - alpha / 2.0) * n_bootstrap) - 1)
 
     lower = diffs[lower_idx]
     upper = diffs[upper_idx]

@@ -1,0 +1,14 @@
+# trainer-gpu-rl — Python package requirements (T-13.5)
+#
+# Source of truth: RLImageSpec.packages in
+#   src/quant_foundry/rl_runtime.py
+#
+# torch is provided by the base image (pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime),
+# so it is NOT reinstalled here to avoid pulling the CPU-only wheel and
+# clobbering the CUDA build. The pins below match RLImageSpec.packages.
+
+numpy>=1.26
+pandas>=2.1
+pydantic>=2.7
+gymnasium>=0.29
+stable-baselines3>=2.2

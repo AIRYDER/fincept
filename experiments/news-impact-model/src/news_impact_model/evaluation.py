@@ -138,8 +138,7 @@ def calibration_curve(
                 upper=upper,
                 count=len(rows),
                 mean_prediction=mean(probability for probability, _ in rows),
-                observed_frequency=sum(1 for _, actual in rows if actual > 0.0)
-                / len(rows),
+                observed_frequency=sum(1 for _, actual in rows if actual > 0.0) / len(rows),
             )
         )
     return curve
@@ -156,17 +155,14 @@ def impact_decay_accuracy(
     if not horizons:
         raise ValueError("predicted and actual must share at least one horizon")
     errors = [abs(predicted[horizon] - actual[horizon]) for horizon in horizons]
-    direction_hits = [
-        _same_direction(predicted[horizon], actual[horizon]) for horizon in horizons
-    ]
+    direction_hits = [_same_direction(predicted[horizon], actual[horizon]) for horizon in horizons]
     predicted_decay = [abs(predicted[horizon]) for horizon in horizons]
     actual_decay = [abs(actual[horizon]) for horizon in horizons]
     return ImpactDecayScore(
         horizons=horizons,
         mean_abs_error=round(mean(errors), 12),
         directional_hit=all(direction_hits),
-        decay_shape_hit=_monotonic_direction(predicted_decay)
-        == _monotonic_direction(actual_decay),
+        decay_shape_hit=_monotonic_direction(predicted_decay) == _monotonic_direction(actual_decay),
     )
 
 
@@ -195,9 +191,7 @@ def error_analysis_by_event_source(
 def _same_direction(predicted: float, actual: float) -> bool:
     if predicted == 0.0 and actual == 0.0:
         return True
-    return (predicted > 0.0 and actual > 0.0) or (
-        predicted < 0.0 and actual < 0.0
-    )
+    return (predicted > 0.0 and actual > 0.0) or (predicted < 0.0 and actual < 0.0)
 
 
 def _monotonic_direction(values: list[float]) -> str:

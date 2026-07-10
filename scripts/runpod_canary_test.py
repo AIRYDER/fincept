@@ -1,8 +1,10 @@
 """Canary test to verify callback secret parity between local env and RunPod."""
+
 import json
 import os
 import sys
 import time
+
 import requests
 
 sys.path.insert(0, "services/quant_foundry/src")
@@ -55,7 +57,9 @@ if "callback_signature" in output:
     ts = int(output.get("callback_ts", 0))
     print(f"Callback ts: {ts}")
     print(f"Signature: {sig[:32]}...")
-    valid = verify_callback(payload, secret=local_secret, signature=sig, ts=ts, job_id="canary-test-001")
+    valid = verify_callback(
+        payload, secret=local_secret, signature=sig, ts=ts, job_id="canary-test-001"
+    )
     print(f"HMAC valid with local secret: {valid}")
     if not valid:
         print("The RunPod container has a DIFFERENT callback secret than local env.")

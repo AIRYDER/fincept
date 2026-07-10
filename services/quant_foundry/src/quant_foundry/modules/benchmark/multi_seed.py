@@ -34,7 +34,6 @@ from quant_foundry.modules.benchmark.harness import (
     BenchmarkResult,
 )
 
-
 __all__ = ["MultiSeedResult", "MultiSeedRunner"]
 
 
@@ -71,9 +70,7 @@ class MultiSeedResult:
             "sharpe_std": round(self.sharpe_std, 6),
             "pbo_mean": round(self.pbo_mean, 6),
             "pbo_std": round(self.pbo_std, 6),
-            "sharpe_values": [
-                round(v, 6) if v is not None else None for v in self.sharpe_values
-            ],
+            "sharpe_values": [round(v, 6) if v is not None else None for v in self.sharpe_values],
             "all_succeeded": self.all_succeeded,
             "results": [r.to_dict() for r in self.results],
         }
@@ -148,4 +145,4 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
     if n < 2:
         return float(mean), 0.0
     variance = sum((v - mean) ** 2 for v in values) / (n - 1)
-    return float(mean), float(variance ** 0.5)
+    return float(mean), float(variance**0.5)

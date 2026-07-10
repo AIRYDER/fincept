@@ -1,0 +1,15 @@
+# trainer-gpu-event-text — Python package requirements (T-12.5)
+#
+# Source of truth: EventTextImageSpec.packages in
+#   src/quant_foundry/event_text_runtime.py
+#
+# torch is provided by the base image (pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime),
+# so it is NOT reinstalled here to avoid pulling the CPU-only wheel and
+# clobbering the CUDA build. The pins below match EventTextImageSpec.packages.
+
+transformers>=4.36
+numpy>=1.26
+pandas>=2.1
+pydantic>=2.7
+huggingface_hub>=0.20
+sentence-transformers>=2.2

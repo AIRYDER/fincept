@@ -45,16 +45,29 @@ from quant_foundry.feature_lake import (
 # Import the news event loader from the news-impact-model experiment without
 # modifying it.  The experiment is a workspace member but not on the
 # quant_foundry import path, so add its src dir to sys.path.
+#
+# The repo root is at parents[5] in the dev checkout but only parents[3] in
+# the RunPod worker image.  Guard the index so importing this module never
+# raises IndexError in the container, and skip sys.path insertion when the
+# experiments directory is not present.
 # ---------------------------------------------------------------------------
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[5]
-_NEWS_SRC = _REPO_ROOT / "experiments" / "news-impact-model" / "src"
-if str(_NEWS_SRC) not in sys.path:
+_parents = pathlib.Path(__file__).resolve().parents
+_REPO_ROOT = _parents[5] if len(_parents) > 5 else None
+_NEWS_SRC = _REPO_ROOT / "experiments" / "news-impact-model" / "src" if _REPO_ROOT else None
+if _NEWS_SRC and _NEWS_SRC.is_dir() and str(_NEWS_SRC) not in sys.path:
     sys.path.insert(0, str(_NEWS_SRC))
 
-from news_impact_model.events import (  # noqa: E402
-    NormalizedNewsEvent,
-    load_vendor_news_events,
-)
+try:
+    from news_impact_model.events import (
+        NormalizedNewsEvent,
+        load_vendor_news_events,
+    )
+except ModuleNotFoundError:
+    # news-impact-model is not available in the worker image.  The names are
+    # only used inside ingest_news_events(); callers that do not invoke news
+    # ingestion will never touch them.
+    NormalizedNewsEvent = None
+    load_vendor_news_events = None
 
 NEWS_FEATURE_NAMES: tuple[str, ...] = (
     "headline_len",
@@ -69,20 +82,80 @@ NS_PER_DAY = 86_400_000_000_000
 # Naive sentiment word lists for a lightweight, dependency-free sentiment proxy.
 _POSITIVE_WORDS = frozenset(
     {
-        "beat", "beats", "surge", "surges", "jump", "jumps", "rise", "rises",
-        "gain", "gains", "profit", "profits", "raise", "raises", "upgrade",
-        "outperform", "strong", "growth", "grow", "win", "wins", "approve",
-        "approved", "launch", "unveil", "partner", "partnership", "record",
-        "high", "boost", "boosts", "rally", "soar", "soars", "breakthrough",
+        "beat",
+        "beats",
+        "surge",
+        "surges",
+        "jump",
+        "jumps",
+        "rise",
+        "rises",
+        "gain",
+        "gains",
+        "profit",
+        "profits",
+        "raise",
+        "raises",
+        "upgrade",
+        "outperform",
+        "strong",
+        "growth",
+        "grow",
+        "win",
+        "wins",
+        "approve",
+        "approved",
+        "launch",
+        "unveil",
+        "partner",
+        "partnership",
+        "record",
+        "high",
+        "boost",
+        "boosts",
+        "rally",
+        "soar",
+        "soars",
+        "breakthrough",
     },
 )
 _NEGATIVE_WORDS = frozenset(
     {
-        "miss", "misses", "fall", "falls", "drop", "drops", "cut", "cuts",
-        "lower", "lowers", "loss", "losses", "downgrade", "weak", "decline",
-        "declines", "sue", "sued", "sues", "lawsuit", "settlement", "probe",
-        "investigation", "hack", "breach", "ban", "sanction", "recall",
-        "halt", "delay", "fire", "fraud", "default", "bankrupt", "warning",
+        "miss",
+        "misses",
+        "fall",
+        "falls",
+        "drop",
+        "drops",
+        "cut",
+        "cuts",
+        "lower",
+        "lowers",
+        "loss",
+        "losses",
+        "downgrade",
+        "weak",
+        "decline",
+        "declines",
+        "sue",
+        "sued",
+        "sues",
+        "lawsuit",
+        "settlement",
+        "probe",
+        "investigation",
+        "hack",
+        "breach",
+        "ban",
+        "sanction",
+        "recall",
+        "halt",
+        "delay",
+        "fire",
+        "fraud",
+        "default",
+        "bankrupt",
+        "warning",
     },
 )
 
@@ -261,10 +334,7 @@ def ingest_news_events(
 
     # --- build feature rows + universe ----------------------------------
     symbols = sorted({r["__symbol"] for r in data_rows})
-    universe = tuple(
-        UniverseEntry(symbol=s, listed_until=None, renamed_from=None)
-        for s in symbols
-    )
+    universe = tuple(UniverseEntry(symbol=s, listed_until=None, renamed_from=None) for s in symbols)
 
     horizon_ns = label_horizon_days * NS_PER_DAY
     feature_rows: list[FeatureRow] = []

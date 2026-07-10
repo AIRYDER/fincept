@@ -52,9 +52,7 @@ def _parse_strategy_params(raw: str | None) -> dict[str, object]:
             f"--strategy-params must be valid JSON; got {exc.msg}"
         ) from exc
     if not isinstance(parsed, dict):
-        raise argparse.ArgumentTypeError(
-            "--strategy-params must be a JSON object (key/value map)"
-        )
+        raise argparse.ArgumentTypeError("--strategy-params must be a JSON object (key/value map)")
     return parsed
 
 
@@ -63,8 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--bars",
         required=True,
-        help="Path to a parquet with columns: symbol, ts_event, open, "
-        "high, low, close, volume.",
+        help="Path to a parquet with columns: symbol, ts_event, open, high, low, close, volume.",
     )
     parser.add_argument(
         "--strategy",
@@ -74,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--strategy-params",
         default=None,
-        help='JSON object of constructor kwargs for the strategy. '
+        help="JSON object of constructor kwargs for the strategy. "
         'Example: \'{"fast": 5, "slow": 30, "per_symbol_notional": 10000}\'',
     )
     parser.add_argument(
@@ -86,14 +83,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--freq",
         default="1m",
-        help="Bar frequency: 1m | 5m | 15m | 1h | 1d.  Used for "
-        "Sharpe annualization.",
+        help="Bar frequency: 1m | 5m | 15m | 1h | 1d.  Used for Sharpe annualization.",
     )
     parser.add_argument(
         "--venue",
         default=str(Venue.PAPER),
-        help=f"Venue tag stamped on every bar/order. "
-        f"Default: {Venue.PAPER}.",
+        help=f"Venue tag stamped on every bar/order. Default: {Venue.PAPER}.",
     )
     parser.add_argument(
         "--asset-class",
@@ -127,8 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         venue = Venue(args.venue)
     except ValueError:
         print(
-            f"ERROR: unknown venue {args.venue!r}; "
-            f"valid: {[v.value for v in Venue]}",
+            f"ERROR: unknown venue {args.venue!r}; valid: {[v.value for v in Venue]}",
             file=sys.stderr,
         )
         return 1

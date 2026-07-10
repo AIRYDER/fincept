@@ -209,5 +209,5 @@ def test_tool_meta_is_frozen() -> None:
         input_schema={"type": "object"},
         output_schema={"type": "object"},
     )
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(Exception):
         meta.name = "y"  # type: ignore[misc]

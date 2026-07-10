@@ -63,6 +63,7 @@ from backtester.ingest import (  # noqa: E402
     parse_alpaca_bars_payload,
     parse_yfinance_daily_frame,
 )
+from fincept_core.config import get_settings  # noqa: E402
 from fincept_core.schemas import AssetClass, BarEvent, Venue  # noqa: E402
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets"
@@ -128,9 +129,7 @@ async def fetch_alpaca_bars(
                 params=params,
             )
             if response.status_code >= 400:
-                raise RuntimeError(
-                    f"Alpaca data error {response.status_code}: {response.text}"
-                )
+                raise RuntimeError(f"Alpaca data error {response.status_code}: {response.text}")
             payload = response.json()
             page_bars = parse_alpaca_bars_payload(
                 payload,
@@ -191,9 +190,7 @@ def fetch_yfinance_daily(
             continue
         rows = sym_frame.reset_index().to_dict(orient="records")
         out.extend(
-            parse_yfinance_daily_frame(
-                sym, rows, venue=venue, asset_class=AssetClass.EQUITY
-            )
+            parse_yfinance_daily_frame(sym, rows, venue=venue, asset_class=AssetClass.EQUITY)
         )
     return out
 
@@ -206,22 +203,21 @@ def fetch_yfinance_daily(
 def _resolve_source(arg_source: str) -> str:
     if arg_source != "auto":
         return arg_source
-    has_alpaca = bool(
-        os.environ.get("FINCEPT_ALPACA_API_KEY")
-        and os.environ.get("FINCEPT_ALPACA_API_SECRET")
-    ) or bool(
-        os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_API_SECRET")
-    )
-    return "alpaca" if has_alpaca else "yfinance"
+    key, secret = _alpaca_credentials_or_none()
+    return "alpaca" if key and secret else "yfinance"
+
+
+def _alpaca_credentials_or_none() -> tuple[str | None, str | None]:
+    """Resolve Alpaca creds via ``Settings`` (canonical ``FINCEPT_`` prefix),
+    falling back to the deprecated unprefixed ``ALPACA_*`` env vars."""
+    settings = get_settings()
+    key = settings.ALPACA_API_KEY or os.environ.get("ALPACA_API_KEY")
+    secret = settings.ALPACA_API_SECRET or os.environ.get("ALPACA_API_SECRET")
+    return key, secret
 
 
 def _alpaca_credentials() -> tuple[str, str]:
-    key = os.environ.get("FINCEPT_ALPACA_API_KEY") or os.environ.get(
-        "ALPACA_API_KEY"
-    )
-    secret = os.environ.get("FINCEPT_ALPACA_API_SECRET") or os.environ.get(
-        "ALPACA_API_SECRET"
-    )
+    key, secret = _alpaca_credentials_or_none()
     if not key or not secret:
         raise SystemExit(
             "Alpaca credentials not set. Export FINCEPT_ALPACA_API_KEY and "
@@ -258,12 +254,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         help="Comma-separated tickers (e.g. AAPL,MSFT,SPY).",
     )
-    parser.add_argument(
-        "--start", required=True, help="Start date YYYY-MM-DD (inclusive)."
-    )
-    parser.add_argument(
-        "--end", required=True, help="End date YYYY-MM-DD (inclusive)."
-    )
+    parser.add_argument("--start", required=True, help="Start date YYYY-MM-DD (inclusive).")
+    parser.add_argument("--end", required=True, help="End date YYYY-MM-DD (inclusive).")
     parser.add_argument(
         "--timeframe",
         default="1d",
@@ -300,16 +292,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if source == "yfinance":
         if args.timeframe not in ("1d", "1Day"):
             raise SystemExit(
-                "yfinance source supports --timeframe 1d only "
-                "(use --source alpaca for intraday)."
+                "yfinance source supports --timeframe 1d only (use --source alpaca for intraday)."
             )
-        print(
-            f"[ingest] yfinance daily {symbols} "
-            f"{start_d.isoformat()}..{end_d.isoformat()}"
-        )
-        bars = fetch_yfinance_daily(
-            symbols=symbols, start=start_d, end=end_d
-        )
+        print(f"[ingest] yfinance daily {symbols} {start_d.isoformat()}..{end_d.isoformat()}")
+        bars = fetch_yfinance_daily(symbols=symbols, start=start_d, end=end_d)
     else:
         api_key, api_secret = _alpaca_credentials()
         timeframe = _normalize_alpaca_timeframe(args.timeframe)
@@ -335,9 +321,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if not bars:
-        raise SystemExit(
-            f"no bars returned for {symbols} {start_d}..{end_d} via {source}"
-        )
+        raise SystemExit(f"no bars returned for {symbols} {start_d}..{end_d} via {source}")
 
     n = bars_to_parquet(bars, args.out)
     assert_parquet_matches_runner_schema(args.out)
@@ -347,10 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         by_sym[b.symbol] = by_sym.get(b.symbol, 0) + 1
     print(f"[ingest] wrote {n} rows -> {args.out}")
     print(f"[ingest] per-symbol: {by_sym}")
-    print(
-        f"[ingest] ts span: {min(b.ts_event for b in bars)} .. "
-        f"{max(b.ts_event for b in bars)}"
-    )
+    print(f"[ingest] ts span: {min(b.ts_event for b in bars)} .. {max(b.ts_event for b in bars)}")
     return 0
 
 
