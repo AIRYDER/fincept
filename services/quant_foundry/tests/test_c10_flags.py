@@ -75,6 +75,11 @@ def test_should_read_compare_defaults_false(clean_env: None) -> None:
     assert c10_flags.should_read_compare() is False
 
 
+def test_postgres_read_switch_active_defaults_false(clean_env: None) -> None:
+    """postgres_read_switch_active() is False by default."""
+    assert c10_flags.postgres_read_switch_active() is False
+
+
 # ---------------------------------------------------------------------------
 # Derived helpers
 # ---------------------------------------------------------------------------
@@ -168,6 +173,26 @@ def test_read_compare_on_reads_on(clean_env: None, monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("QF_LEGACY_FILE_READ_FALLBACK", "0")
     assert c10_flags.should_read_compare() is True
     assert c10_flags.should_read_from_postgres() is True
+
+
+def test_read_switch_active_with_fallback_on(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Read switch active with fallback on → Postgres-first with legacy fallback."""
+    monkeypatch.setenv("QF_POSTGRES_READS_ENABLED", "1")
+    monkeypatch.setenv("QF_LEGACY_FILE_READ_FALLBACK", "1")
+    assert c10_flags.postgres_read_switch_active() is True
+    assert c10_flags.should_read_from_postgres() is False  # not Postgres-only
+
+
+def test_read_switch_active_with_fallback_off(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Read switch active with fallback off → Postgres-only mode."""
+    monkeypatch.setenv("QF_POSTGRES_READS_ENABLED", "1")
+    monkeypatch.setenv("QF_LEGACY_FILE_READ_FALLBACK", "0")
+    assert c10_flags.postgres_read_switch_active() is True
+    assert c10_flags.should_read_from_postgres() is True  # Postgres-only
 
 
 # ---------------------------------------------------------------------------

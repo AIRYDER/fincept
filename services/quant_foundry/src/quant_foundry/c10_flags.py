@@ -116,8 +116,24 @@ def should_read_from_postgres() -> bool:
 
     True when ``QF_POSTGRES_READS_ENABLED=1`` AND
     ``QF_LEGACY_FILE_READ_FALLBACK=0``.
+
+    This represents "Postgres-only, no fallback" mode (Phase 7). For
+    "Postgres-first with fallback" mode (Task 20), use
+    ``postgres_read_switch_active()`` instead.
     """
     return postgres_reads_enabled() and not legacy_file_read_fallback()
+
+
+def postgres_read_switch_active() -> bool:
+    """Return True if the Postgres read switch is active (Postgres-first).
+
+    True when ``QF_POSTGRES_READS_ENABLED=1``, regardless of fallback.
+    When active, reads are attempted from Postgres first. If
+    ``QF_LEGACY_FILE_READ_FALLBACK=1``, Postgres failures fall back to
+    legacy JSONL reads. If ``QF_LEGACY_FILE_READ_FALLBACK=0``, Postgres
+    failures are fatal.
+    """
+    return postgres_reads_enabled()
 
 
 def should_read_compare() -> bool:

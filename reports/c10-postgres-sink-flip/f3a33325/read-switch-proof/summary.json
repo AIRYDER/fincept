@@ -1,0 +1,30 @@
+{
+  "overall_pass": true,
+  "proofs": {
+    "flags_off_legacy_read": {
+      "pass": true,
+      "records_read": 5,
+      "source": "jsonl"
+    },
+    "postgres_mismatch_detected": {
+      "pass": true,
+      "records_read": 3,
+      "source": "postgres"
+    },
+    "postgres_missing_fallback_off": {
+      "pass": true,
+      "records_read": 0,
+      "source": "postgres_empty"
+    },
+    "postgres_missing_fallback_on": {
+      "pass": true,
+      "records_read": 5,
+      "source": "legacy_fallback"
+    },
+    "postgres_read_enabled": {
+      "pass": true,
+      "records_read": 5,
+      "source": "postgres"
+    }
+  }
+}

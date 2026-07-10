@@ -1,0 +1,9 @@
+{
+  "all_legacy_values": true,
+  "pass": true,
+  "proof": "postgres_missing_fallback_on",
+  "records_in_jsonl": 5,
+  "records_in_postgres": 0,
+  "records_read": 5,
+  "source": "legacy_fallback"
+}

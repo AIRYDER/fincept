@@ -114,6 +114,11 @@ class SettlementLedger:
     Postgres, normalizes both, compares, and emits structured evidence.
     The legacy record is always returned — Postgres data is never returned
     while ``QF_POSTGRES_READS_ENABLED=0``.
+
+    C10 read switch: when ``QF_POSTGRES_READS_ENABLED=1`` AND
+    ``QF_LEGACY_FILE_READ_FALLBACK=0``, ``read_all()`` reads from Postgres
+    instead of JSONL. When fallback is on, Postgres read failures fall back
+    to legacy JSONL reads with warning/evidence.
     """
 
     def __init__(
@@ -355,12 +360,35 @@ class SettlementLedger:
     def read_all(self) -> list[SettlementRecord]:
         """Return all settled records across all model files (newest-first).
 
-        C10 read-compare: when ``QF_POSTGRES_READ_COMPARE_ENABLED=1`` and a
-        ``db_store`` is injected, each legacy record is compared against
-        the Postgres record with the same key. The legacy record is always
+        C10 read switch: when ``QF_POSTGRES_READS_ENABLED=1`` and a
+        ``db_store`` is injected, reads from Postgres first. When fallback
+        is on (``QF_LEGACY_FILE_READ_FALLBACK=1``), Postgres read failures
+        fall back to legacy JSONL reads. When fallback is off, Postgres
+        read failures are fatal.
+
+        C10 read-compare: when ``QF_POSTGRES_READ_COMPARE_ENABLED=1`` and
+        reads are NOT flipped, each legacy record is compared against the
+        Postgres record with the same key. The legacy record is always
         returned — Postgres data is never returned while
         ``QF_POSTGRES_READS_ENABLED=0``. Mismatches are logged and counted.
+
+        When both reads and compare are enabled, Postgres is the primary
+        read, legacy is read for comparison, and Postgres is returned.
         """
+        # C10 read switch: check if Postgres reads are enabled.
+        if self._db_store is not None:
+            from quant_foundry.c10_flags import postgres_read_switch_active
+
+            if postgres_read_switch_active():
+                return self._read_all_from_postgres()
+
+        # Legacy read path (with optional read-compare).
+        records = self._read_all_from_jsonl()
+        self._read_compare(records)
+        return records
+
+    def _read_all_from_jsonl(self) -> list[SettlementRecord]:
+        """Read all records from JSONL files (legacy path)."""
         if not self._root.is_dir():
             return []
         rows: list[SettlementRecord] = []
@@ -376,11 +404,47 @@ class SettlementLedger:
                         # Malformed line must not take the read down.
                         continue
         rows.sort(key=lambda r: r.settled_at_ns or 0, reverse=True)
-
-        # C10 read-compare: compare each legacy record against Postgres.
-        self._read_compare(rows)
-
         return rows
+
+    def _read_all_from_postgres(self) -> list[SettlementRecord]:
+        """Read all records from Postgres (C10 read switch path).
+
+        Postgres is the primary read source. If Postgres read fails or
+        records are missing/invalid, behavior depends on
+        ``QF_LEGACY_FILE_READ_FALLBACK``:
+          - Fallback on (default): fall back to legacy JSONL reads.
+          - Fallback off: raise ``ReadSwitchError``.
+        """
+        from quant_foundry.c10_flags import legacy_file_read_fallback
+        from quant_foundry.read_switch import (
+            ReadSwitchError,
+            read_switch_settlements,
+        )
+
+        fallback = legacy_file_read_fallback()
+        try:
+            records, evidence = read_switch_settlements(
+                self._db_store,
+                self._read_all_from_jsonl,
+                fail_hard=not fallback,
+            )
+        except ReadSwitchError:
+            raise
+
+        # If read-compare is also on and we read from Postgres, the
+        # comparison evidence is already in the ReadSwitchEvidence.
+        # Log it for observability.
+        if evidence.comparison_evidence:
+            import logging
+
+            logging.getLogger(__name__).info(
+                "C10 read-switch: %d comparison evidence entries (reads=%s, compare=%s)",
+                len(evidence.comparison_evidence),
+                "postgres",
+                "on",
+            )
+
+        return records
 
     # ------------------------------------------------------------------ #
     # C10 read-compare                                                    #
@@ -389,27 +453,29 @@ class SettlementLedger:
     def _read_compare(self, records: list[SettlementRecord]) -> None:
         """Compare legacy records against Postgres if read-compare is enabled.
 
-        Called after ``read_all()`` has collected the legacy records. The
-        legacy records are already in ``records`` and are always returned
-        to the caller — this method only emits evidence.
+        Called after ``read_all()`` has collected the legacy records from
+        JSONL. The legacy records are already in ``records`` and are always
+        returned to the caller — this method only emits evidence.
 
         Behavior:
-          - If ``db_store`` is None → no-op (no DB store injected).
-          - If ``QF_POSTGRES_READ_COMPARE_ENABLED=0`` → no-op (flag off).
-          - If ``QF_POSTGRES_READS_ENABLED=1`` → no-op (reads already
-            flipped to Postgres; read-compare is no longer needed).
+          - If ``db_store`` is None -> no-op (no DB store injected).
+          - If ``QF_POSTGRES_READ_COMPARE_ENABLED=0`` -> no-op (flag off).
+          - If ``QF_POSTGRES_READS_ENABLED=1`` -> no-op (reads already
+            flipped to Postgres; read-compare is handled in
+            ``_read_all_from_postgres()``).
           - For each record: read Postgres, normalize, compare, emit evidence.
           - Errors are logged. In fail-hard mode, re-raise.
         """
         if self._db_store is None:
             return
         from quant_foundry.c10_flags import (
-            postgres_reads_enabled,
+            postgres_read_switch_active,
             should_read_compare,
         )
 
-        # If reads are already flipped to Postgres, read-compare is moot.
-        if postgres_reads_enabled():
+        # If reads are already flipped to Postgres, read-compare is moot
+        # (comparison is handled in _read_all_from_postgres).
+        if postgres_read_switch_active():
             return
         if not should_read_compare():
             return
