@@ -21,6 +21,18 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _set_callback_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide a test-only HMAC callback secret for handler-based tests.
+
+    The production handler refuses to start without
+    ``QUANT_FOUNDRY_CALLBACK_SECRET`` (fail-closed against unsigned
+    callbacks).  Tests that exercise the handler need a non-empty
+    secret so the gate passes.
+    """
+    monkeypatch.setenv("QUANT_FOUNDRY_CALLBACK_SECRET", "test-secret-not-for-production")
+
+
+@pytest.fixture(autouse=True)
 def _close_lingering_event_loops() -> None:
     """Close any non-closed event loop after each test."""
     yield
