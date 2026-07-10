@@ -97,7 +97,13 @@ jobs:
       - name: pip-audit (installed env)
         run: |
           uv run pip install pip-audit
-          uv run pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph
+          # pip-audit's pip-api defaults to /usr/bin/python3 (the Ubuntu
+          # runner's system interpreter), which audits Ubuntu system packages
+          # (cloud-init, ufw, bcc, sos, …) instead of the project venv.
+          # Point it at the venv interpreter so only project dependencies
+          # are audited.  Without this the nightly reports ~50 false
+          # positives from OS packages that are not part of the project.
+          uv run bash -c 'PIPAPI_PYTHON_LOCATION="$(which python)" pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph'
 
   determinism-gate:
     name: Determinism proof (Tier 3.1)
