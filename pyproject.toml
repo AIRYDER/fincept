@@ -62,7 +62,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["libs", "services"]
 asyncio_mode = "auto"
-pythonpath = ["scripts"]
+pythonpath = ["scripts", "services/quant_foundry/tests"]
 addopts = "-ra --strict-markers --strict-config --import-mode=importlib -m 'not long and not gpu and not live'"
 filterwarnings = ["error"]
 markers = [

@@ -693,11 +693,13 @@ class ManifestDatasetLoader:
         import io
 
         try:
-            return pq.read_table(io.BytesIO(data_bytes)).to_pandas()  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
+            return pq.read_table(
+                io.BytesIO(data_bytes)
+            ).to_pandas()  # pyarrow read_table lacks type stubs
         except Exception:
             # Fallback: pyarrow Table (no pandas conversion).
             try:
-                return pq.read_table(io.BytesIO(data_bytes))  # type: ignore[no-untyped-call]  # pyarrow read_table lacks type stubs
+                return pq.read_table(io.BytesIO(data_bytes))  # pyarrow read_table lacks type stubs
             except Exception as exc:
                 raise DatasetLoadError(
                     "parse_failed",
