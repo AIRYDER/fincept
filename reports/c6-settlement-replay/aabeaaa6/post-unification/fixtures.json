@@ -1,0 +1,264 @@
+[
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 402.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "Long prediction, price goes up 5%",
+    "name": "winning_long",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.7,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.7,
+      "prediction_id": "fix-001",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 105.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 402.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "Long prediction, price goes down 5%",
+    "name": "losing_long",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.6,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.6,
+      "prediction_id": "fix-002",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 95.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 402.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "Short prediction, price goes down 5%",
+    "name": "winning_short",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.65,
+      "direction": -1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.35,
+      "prediction_id": "fix-003",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 95.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 400.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "No price movement",
+    "name": "flat",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.5,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.5,
+      "prediction_id": "fix-004",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 100.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [],
+    "description": "No price data available at horizon",
+    "name": "missing_prices",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.7,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.7,
+      "prediction_id": "fix-005",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": []
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      }
+    ],
+    "description": "Entry price available, exit price missing",
+    "name": "partial_prices_entry_only",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.7,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.7,
+      "prediction_id": "fix-006",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 410.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "High confidence (0.9) winning trade +10%",
+    "name": "high_confidence_win",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.9,
+      "direction": 1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.9,
+      "prediction_id": "fix-007",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 110.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  },
+  {
+    "benchmark_prices": [
+      {
+        "price": 400.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 402.0,
+        "ts": 1700003600000000000
+      }
+    ],
+    "description": "Short prediction, price goes up 5%",
+    "name": "losing_short",
+    "prediction": {
+      "agent_id": "test-agent",
+      "confidence": 0.6,
+      "direction": -1.0,
+      "horizon_ns": 3600000000000,
+      "model_id": "test-model",
+      "model_name": "test-model",
+      "p_up": 0.4,
+      "prediction_id": "fix-008",
+      "symbol": "AAPL",
+      "ts_event": 1700000000000000000
+    },
+    "prices": [
+      {
+        "price": 100.0,
+        "ts": 1700000000000000000
+      },
+      {
+        "price": 105.0,
+        "ts": 1700003600000000000
+      }
+    ]
+  }
+]

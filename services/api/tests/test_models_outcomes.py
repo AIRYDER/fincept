@@ -30,30 +30,39 @@ def patched_stores(
 ):
     """Redirect prediction log, settlement store, and snapshot store at tmp dirs.
 
-    Yields a dict with the three store instances so each test can
-    pre-populate them with the rows it cares about.
+    Yields a dict with the store instances so each test can
+    pre-populate them with the rows it cares about. Both Path A
+    (SettlementStore) and Path B (SettlementLedger) are patched so
+    the outcomes route works regardless of which path is active.
     """
     from fincept_core.datasets import (
         FeatureSnapshotStore,
         SettlementStore,
     )
     from fincept_core.prediction_log import PredictionLog
+    from quant_foundry.settlement import SettlementLedger
 
     predictions_dir = tmp_path / "predictions"
     settlements_dir = tmp_path / "settlements"
+    settlements_b_dir = tmp_path / "settlements_b"
     snapshots_dir = tmp_path / "feature_snapshots"
     log = PredictionLog(predictions_dir=predictions_dir)
     settlement_store = SettlementStore(root=settlements_dir)
+    settlement_ledger = SettlementLedger(root=settlements_b_dir)
     snapshot_store = FeatureSnapshotStore(root=snapshots_dir)
 
     monkeypatch.setattr("api.routes.models._get_prediction_log", lambda: log)
     monkeypatch.setattr(
         "api.routes.models._get_settlement_store", lambda: settlement_store
     )
+    monkeypatch.setattr(
+        "api.routes.models._get_settlement_ledger", lambda: settlement_ledger
+    )
     monkeypatch.setattr("api.routes.models._get_snapshot_store", lambda: snapshot_store)
     return {
         "log": log,
         "settlements": settlement_store,
+        "settlement_ledger": settlement_ledger,
         "snapshots": snapshot_store,
         "tmp_path": tmp_path,
     }
@@ -91,7 +100,7 @@ def _make_settlement(
     status: str = "settled",
     now_ns: int = 2_000_000_000_000_000_000,
 ):
-    """Build a SettlementRecord matching the given prediction row."""
+    """Build a Path A SettlementRecord matching the given prediction row."""
     from fincept_core.datasets import SettlementRecord
 
     return SettlementRecord(
@@ -111,6 +120,74 @@ def _make_settlement(
         status=status,
         settled_at_ns=now_ns if status == "settled" else None,
     )
+
+
+def _make_path_b_settlement(
+    prediction_row,
+    *,
+    agent_id: str = "gbm_predictor.v1",
+    status: str = "settled",
+    now_ns: int = 2_000_000_000_000_000_000,
+):
+    """Build a Path B SettlementRecord matching the given prediction row.
+
+    Writes directly to the Path B ledger so the outcomes route can read
+    it when SETTLEMENTS_USE_PATH_B=1.
+    """
+    from quant_foundry.outcomes import SettlementRecord as BRecord
+    from quant_foundry.outcomes import SettlementStatus
+    from quant_foundry.settlement_sweep import default_cost_model
+
+    from settlements.compat import default_agent_to_model_id
+
+    model_id = default_agent_to_model_id(agent_id)
+    cost_model = default_cost_model()
+    b_status = SettlementStatus(status)
+
+    return BRecord(
+        prediction_id=prediction_row.id,
+        model_id=model_id,
+        symbol=prediction_row.symbol,
+        ts_event=prediction_row.ts_event,
+        horizon_ns=prediction_row.horizon_ns,
+        status=b_status,
+        settled_at_ns=now_ns if status == "settled" else None,
+        realized_return_gross=0.01 if status == "settled" else None,
+        realized_return_net=0.0002 if status == "settled" else None,
+        abnormal_return=None,
+        brier=0.16 if status == "settled" else None,
+        calibration_bucket="0.4-0.6" if status == "settled" else None,
+        cost_model_version=cost_model.version,
+        decision_window_start=prediction_row.ts_event,
+        decision_window_end=prediction_row.ts_event + prediction_row.horizon_ns,
+    )
+
+
+def _seed_settlement_both_stores(
+    patched_stores,
+    prediction_row,
+    *,
+    status: str = "settled",
+):
+    """Write a settlement to both Path A and Path B stores.
+
+    This ensures the outcomes route finds the settlement regardless
+    of whether SETTLEMENTS_USE_PATH_B is 1 or 0.
+    """
+    store = patched_stores["settlements"]
+    ledger = patched_stores["settlement_ledger"]
+
+    # Path A store
+    a_record = _make_settlement(prediction_row, status=status)
+    store.append(a_record)
+
+    # Path B ledger — write the JSONL line directly to avoid idempotency
+    # checks that would reject a record with no prices.
+    b_record = _make_path_b_settlement(prediction_row, status=status)
+    ledger._root.mkdir(parents=True, exist_ok=True)
+    path = ledger._path(b_record.model_id)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(b_record.to_json() + "\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -154,12 +231,11 @@ async def test_outcomes_with_settlements(
 ) -> None:
     """3 predictions + 2 settlements → 3 rows, 2 settled + 1 pending_time."""
     log = patched_stores["log"]
-    store = patched_stores["settlements"]
 
     preds = _seed_predictions(log, n=3)
     # Settle the first two; leave the third pending.
-    store.append(_make_settlement(preds[0]))
-    store.append(_make_settlement(preds[1]))
+    _seed_settlement_both_stores(patched_stores, preds[0])
+    _seed_settlement_both_stores(patched_stores, preds[1])
 
     r = await client.get("/models/gbm_predictor/outcomes", headers=auth_headers)
     assert r.status_code == 200
@@ -293,13 +369,16 @@ async def test_outcomes_malformed_settlement_line_skipped(
 ) -> None:
     """A corrupt line in the settlement JSONL is skipped, not a 500."""
     log = patched_stores["log"]
-    store = patched_stores["settlements"]
 
     preds = _seed_predictions(log, n=2)
-    store.append(_make_settlement(preds[0]))
+    _seed_settlement_both_stores(patched_stores, preds[0])
 
-    # Append a malformed line directly to the settlement file.
-    settlement_path = store.root / "gbm_predictor.v1.jsonl"
+    # Append a malformed line directly to the Path B settlement file.
+    ledger = patched_stores["settlement_ledger"]
+    from settlements.compat import default_agent_to_model_id
+
+    model_id = default_agent_to_model_id("gbm_predictor.v1")
+    settlement_path = ledger._root / f"{model_id}.settlements.jsonl"
     with settlement_path.open("a", encoding="utf-8") as f:
         f.write("{NOT VALID JSON}\n")
 

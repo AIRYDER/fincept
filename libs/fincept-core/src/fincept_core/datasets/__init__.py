@@ -143,6 +143,13 @@ def build_evidence_receipt(
     feature schema the prediction was made against.  When
     ``feature_health`` is not ``None`` it is included verbatim under the
     ``"feature_health"`` key.
+
+    The ``settlement`` argument accepts either a Path A
+    ``fincept_core.datasets.SettlementRecord`` (legacy) or a Path B
+    ``quant_foundry.outcomes.SettlementRecord`` (canonical). Path B
+    records carry ``abnormal_return``, ``calibration_bucket``, and
+    ``cost_model_version`` as first-class fields; Path A records do not,
+    so those fields are ``None`` when a Path A record is passed.
     """
     receipt: dict[str, Any] = {
         "prediction_id": prediction.id,
@@ -156,17 +163,39 @@ def build_evidence_receipt(
     }
 
     if settlement is not None:
-        receipt["settlement_status"] = settlement.status
+        # Normalize status: Path A uses a string, Path B uses a StrEnum.
+        status = settlement.status
+        status_value = getattr(status, "value", status)
+        receipt["settlement_status"] = status_value
         receipt["realized_return_gross"] = settlement.realized_return_gross
         receipt["realized_return_net"] = settlement.realized_return_net
         receipt["settled_at_ns"] = settlement.settled_at_ns
-        receipt["brier_component"] = settlement.brier_component
+        receipt["brier_component"] = getattr(settlement, "brier", None) or getattr(
+            settlement, "brier_component", None
+        )
+
+        # New canonical fields (Path B). None when Path A record is passed.
+        receipt["abnormal_return"] = getattr(settlement, "abnormal_return", None)
+        receipt["calibration_bucket"] = getattr(settlement, "calibration_bucket", None)
+        receipt["cost_model_version"] = getattr(settlement, "cost_model_version", None)
+
+        # Cost breakdown fields (Path A has cost_breakdown_*; Path B does not
+        # carry them on the record — they are on the CostModel object).
+        receipt["cost_fee_bps"] = getattr(settlement, "cost_breakdown_fee_bps", None)
+        receipt["cost_spread_bps"] = getattr(settlement, "cost_breakdown_spread_bps", None)
+        receipt["cost_slippage_bps"] = getattr(settlement, "cost_breakdown_slippage_bps", None)
     else:
         receipt["settlement_status"] = "pending_time"
         receipt["realized_return_gross"] = None
         receipt["realized_return_net"] = None
         receipt["settled_at_ns"] = None
         receipt["brier_component"] = None
+        receipt["abnormal_return"] = None
+        receipt["calibration_bucket"] = None
+        receipt["cost_model_version"] = None
+        receipt["cost_fee_bps"] = None
+        receipt["cost_spread_bps"] = None
+        receipt["cost_slippage_bps"] = None
 
     if feature_snapshot is not None:
         receipt["feature_schema_hash"] = feature_snapshot.feature_schema_hash
