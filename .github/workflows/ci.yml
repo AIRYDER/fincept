@@ -115,10 +115,10 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
-  # Temporary C7 gate: verify migration 0007 downgrade/upgrade cycle
-  # against real PostgreSQL/TimescaleDB. Remove after C7 merge.
+  # C7+C10 gate: verify migration downgrade/upgrade cycle
+  # against real PostgreSQL/TimescaleDB.
   alembic-downgrade-verify:
-    name: Alembic downgrade/upgrade verify (C7 gate)
+    name: Alembic downgrade/upgrade verify (C7+C10 gate)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -184,59 +184,67 @@ jobs:
             WHERE conname = 'ck_model_metrics_metric_type_domain';
           "
 
-      - name: Alembic downgrade -1 (drops 0007)
+      - name: Verify 0008 settlement_records table exists after upgrade
+        run: |
+          set -e
+          echo "=== settlement_records table ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_name = 'settlement_records'
+            ORDER BY ordinal_position;
+          "
+          echo "=== settlement_records indexes ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE tablename = 'settlement_records'
+            ORDER BY indexname;
+          "
+          echo "=== settlement_records CHECK constraints ==="
+          PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -c "
+            SELECT conname, pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid = 'settlement_records'::regclass
+              AND contype = 'c'
+            ORDER BY conname;
+          "
+          # Verify the table exists
+          if ! PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
+            SELECT 1 FROM information_schema.tables WHERE table_name = 'settlement_records';
+          " | grep -q 1; then
+            echo "FAIL: settlement_records table does not exist after upgrade"
+            exit 1
+          fi
+          echo "OK: settlement_records table exists after upgrade"
+
+      - name: Alembic downgrade -1 (drops 0008)
         run: uv run alembic -c libs/fincept-db/alembic.ini downgrade -1
 
-      - name: Verify 0007 constraints removed after downgrade
+      - name: Verify 0008 settlement_records removed after downgrade
         run: |
           set -e
-          # After downgrade, retired should NOT be in the status domain
           if PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'ck_models_current_status_domain'
-              AND pg_get_constraintdef(oid) LIKE '%retired%';
+            SELECT 1 FROM information_schema.tables WHERE table_name = 'settlement_records';
           " | grep -q 1; then
-            echo "FAIL: retired still in ck_models_current_status_domain after downgrade"
+            echo "FAIL: settlement_records table still exists after downgrade"
             exit 1
           fi
-          echo "OK: retired removed from status domain after downgrade"
-          # C7 rejection reasons should be gone
-          if PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'ck_promotion_decisions_rejection_reason_domain'
-              AND pg_get_constraintdef(oid) LIKE '%missing_selfcheck%';
-          " | grep -q 1; then
-            echo "FAIL: missing_selfcheck still in rejection_reason domain after downgrade"
-            exit 1
-          fi
-          echo "OK: C7 rejection reasons removed after downgrade"
+          echo "OK: settlement_records table removed after downgrade"
 
-      - name: Alembic re-upgrade head (restores 0007)
+      - name: Alembic re-upgrade head (restores 0008)
         run: uv run alembic -c libs/fincept-db/alembic.ini upgrade head
 
-      - name: Verify 0007 constraints restored after re-upgrade
+      - name: Verify 0008 settlement_records restored after re-upgrade
         run: |
           set -e
-          # After re-upgrade, retired SHOULD be in the status domain
           if ! PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'ck_models_current_status_domain'
-              AND pg_get_constraintdef(oid) LIKE '%retired%';
+            SELECT 1 FROM information_schema.tables WHERE table_name = 'settlement_records';
           " | grep -q 1; then
-            echo "FAIL: retired not in ck_models_current_status_domain after re-upgrade"
+            echo "FAIL: settlement_records table not restored after re-upgrade"
             exit 1
           fi
-          echo "OK: retired restored to status domain after re-upgrade"
-          # C7 rejection reasons should be back
-          if ! PGPASSWORD=fincept psql -h localhost -U fincept -d fincept -tAc "
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'ck_promotion_decisions_rejection_reason_domain'
-              AND pg_get_constraintdef(oid) LIKE '%missing_selfcheck%';
-          " | grep -q 1; then
-            echo "FAIL: missing_selfcheck not in rejection_reason domain after re-upgrade"
-            exit 1
-          fi
-          echo "OK: C7 rejection reasons restored after re-upgrade"
+          echo "OK: settlement_records table restored after re-upgrade"
 
   js-lint-typecheck-test:
     name: JS lint + typecheck + test
