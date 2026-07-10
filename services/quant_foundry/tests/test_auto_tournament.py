@@ -273,7 +273,7 @@ class TestAutoTournamentConsumer:
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
         # Create two versions under the same model.
-        v1 = _dispatch_and_callback(
+        _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -281,7 +281,7 @@ class TestAutoTournamentConsumer:
             artifact_id="artifact:tourn:multi:1",
             sha256="f" * 64,
         )
-        v2 = _dispatch_and_callback(
+        _dispatch_and_callback(
             gateway,
             engine,
             secret,
@@ -372,7 +372,7 @@ class TestAutoTournamentConsumer:
 
         try:
             receipt.scored = 999
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except Exception:
             pass  # expected â€” frozen model
         engine.dispose()

@@ -1604,10 +1604,7 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         if not self.enabled:
             return {"enabled": False, "detail": "Quant Foundry is disabled"}
 
-        from quant_foundry.bundle_io import TrainingSelfCheck
         from quant_foundry.promotion import (
-            CallbackReceiptRef,
-            PITEvidenceRef,
             PromotionEvidence,
             PromotionRequest,
         )

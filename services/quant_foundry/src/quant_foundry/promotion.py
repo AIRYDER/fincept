@@ -56,7 +56,6 @@ from pydantic import BaseModel, ConfigDict
 
 from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
-from quant_foundry.pit_evidence import PITEvidence
 from quant_foundry.sentinel import SentinelReceipt, SentinelSeverity
 from quant_foundry.tournament import TournamentResult
 

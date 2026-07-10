@@ -21,7 +21,6 @@ RunPod live probes from this file.
 
 from __future__ import annotations
 
-import pytest
 from quant_foundry.bundle_io import TrainingSelfCheck
 from quant_foundry.dossier import DossierRecord, DossierStatus
 from quant_foundry.promotion import (
@@ -39,7 +38,6 @@ from quant_foundry.tournament import (
     TournamentResult,
     TournamentStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers â€” minimal evidence factory
@@ -138,7 +136,9 @@ def _make_evidence_complete(
         sentinel_receipt=_make_sentinel_receipt(),
         blocking_issues=[],
         selfcheck=_make_selfcheck() if selfcheck == "default" else selfcheck,
-        callback_receipt=_make_callback_receipt() if callback_receipt == "default" else callback_receipt,
+        callback_receipt=_make_callback_receipt()
+        if callback_receipt == "default"
+        else callback_receipt,
         artifact_uri="file:///durable/artifact.zip" if artifact_uri == "default" else artifact_uri,
         dossier_hash=d.content_hash if dossier_hash == "default" else dossier_hash,
         feature_set_version="fs-v1" if feature_set_version == "default" else feature_set_version,

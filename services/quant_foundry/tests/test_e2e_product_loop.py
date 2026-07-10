@@ -520,14 +520,12 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
     # 4-7) model_versions auto-registered (same as Phase A).
     in_rec = gateway.inbox.get_by_job_id(job_id)
     assert in_rec is not None
-    callback_receipt_id = in_rec.callback_id
 
     with Session(engine) as session:
         dossier_row = session.scalars(
             select(ModelDossierRow).where(ModelDossierRow.model_id == _MODEL_ID)
         ).first()
         assert dossier_row is not None
-        dossier_content_hash = dossier_row.content_hash
 
         version_row = session.scalars(
             select(ModelVersionRow).where(ModelVersionRow.model_id == _MODEL_ID)
@@ -614,7 +612,9 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         f"reason={promotion_receipt.rejection_reason}"
     )
     assert promotion_receipt.rejection_reason is None
-    assert promotion_receipt.review_note == ("E2E full loop proof â€” promotion to research_approved")
+    assert promotion_receipt.review_note == (
+        "E2E full loop proof â€” promotion to research_approved"
+    )
 
     # 12) Verify promotions + promotion_decisions rows are persisted.
     with Session(engine) as session:
@@ -690,9 +690,7 @@ def test_e2e_full_product_loop_through_promotion(tmp_path) -> None:
         metric_rows = session.scalars(
             select(ModelMetricRow).where(ModelMetricRow.version_id == version_id)
         ).all()
-        assert len(metric_rows) == 6, (
-            "should have 6 metric rows (tournament + sentinel + 4 C7)"
-        )
+        assert len(metric_rows) == 6, "should have 6 metric rows (tournament + sentinel + 4 C7)"
         metric_types = {r.metric_type for r in metric_rows}
         assert metric_types == {
             "tournament",

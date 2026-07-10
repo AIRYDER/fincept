@@ -373,7 +373,7 @@ class TestAutoShadowDispatcher:
 
         try:
             receipt.dispatched = 999
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except Exception:
             pass  # expected â€” frozen model
         engine.dispose()

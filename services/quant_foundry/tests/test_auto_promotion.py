@@ -41,6 +41,17 @@ from quant_foundry.schemas import (
     RunPodCallbackEnvelope,
 )
 from quant_foundry.signatures import sign_callback
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+# Re-use the engine + callback helpers from the e2e test module.
+# Use the same model_id as the e2e helpers (hardcoded in _signed_training_callback).
+from test_e2e_product_loop import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
+
+from fincept_db.registry_tables import (
+    ModelVersionRow,
+    ShadowEvaluationRow,
+)
 
 
 def _signed_callback_with_artifact(
@@ -100,20 +111,9 @@ def _signed_callback_with_artifact(
     return payload, signature, ts
 
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-# Re-use the engine + callback helpers from the e2e test module.
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
-# Use the same model_id as the e2e helpers (hardcoded in _signed_training_callback).
-from test_e2e_product_loop import _ARTIFACT_ID, _MODEL_ID, _make_engine, _training_payload
-
-from fincept_db.registry_tables import (
-    ModelVersionRow,
-    ShadowEvaluationRow,
-)
 
 
 def _dispatch_and_callback(
@@ -460,7 +460,7 @@ class TestAutoPromotionRun:
             gate=PromotionGate(min_settled_count=10),
         )
         gateway = _make_gateway(engine, secret, registry, tmp_path)
-        version_id = _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
+        _dispatch_and_callback(gateway, engine, secret, "qf:auto:5")
 
         # Provider returns None â†’ no comparison input â†’ skipped.
         orchestrator = AutoPromotionOrchestrator(
@@ -621,6 +621,3 @@ class TestAutoPromotionWithChampion:
             assert len(eval_rows) >= 1
 
         engine.dispose()
-
-
-

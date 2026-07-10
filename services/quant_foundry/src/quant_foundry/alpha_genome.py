@@ -1543,8 +1543,6 @@ class AlphaGenomeLab:
         try:
             from quant_foundry.dossier import DossierRecord
             from quant_foundry.promotion import (
-                CallbackReceiptRef,
-                PITEvidenceRef,
                 PromotionEvidence,
             )
             from quant_foundry.sentinel import SentinelReceipt

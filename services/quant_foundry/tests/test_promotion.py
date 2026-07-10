@@ -143,7 +143,9 @@ def _make_evidence(
             else callback_receipt
         ),
         artifact_uri="file:///durable/artifact.zip" if artifact_uri == "default" else artifact_uri,
-        dossier_hash=(d.content_hash if d is not None else "h" * 64) if dossier_hash == "default" else dossier_hash,
+        dossier_hash=(d.content_hash if d is not None else "h" * 64)
+        if dossier_hash == "default"
+        else dossier_hash,
         feature_set_version="fs-v1" if feature_set_version == "default" else feature_set_version,
         pit_evidence=(
             PITEvidenceRef(verified=True, evidence_sha256="e" * 64, manifest_hash="m" * 64)
