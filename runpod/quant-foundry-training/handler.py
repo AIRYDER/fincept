@@ -4418,19 +4418,26 @@ def _handler_impl(event: dict[str, Any]) -> dict[str, Any]:
     # is imported lazily to avoid a hard dependency on cost_tracker at
     # handler import time (the handler must remain importable without
     # fincept_db).
-    try:
-        from quant_foundry.cost_tracker import estimate_gpu_cost
-
-        _cost = estimate_gpu_cost(
-            gpu_type=_gpu_model_for_cost,
-            gpu_count=1,
-            duration_seconds=_execution_time_ms / 1000.0,
-        )
-        metrics_summary["cost_usd"] = float(_cost)
-    except Exception:
-        # If cost estimation fails (no cost_tracker, bad GPU type), emit
-        # a zero cost rather than failing the job.
+    # C4C: no GPU detected => no GPU cost => exactly 0.0. Do NOT delegate
+    # None to estimate_gpu_cost (it applies a default-rate floor, producing
+    # a tiny non-zero cost). The handler is the only layer that knows
+    # "None means no physical GPU" vs "None means unknown GPU type".
+    if _gpu_model_for_cost is None:
         metrics_summary["cost_usd"] = 0.0
+    else:
+        try:
+            from quant_foundry.cost_tracker import estimate_gpu_cost
+
+            _cost = estimate_gpu_cost(
+                gpu_type=_gpu_model_for_cost,
+                gpu_count=1,
+                duration_seconds=_execution_time_ms / 1000.0,
+            )
+            metrics_summary["cost_usd"] = float(_cost)
+        except Exception:
+            # If cost estimation fails (no cost_tracker, bad GPU type), emit
+            # a zero cost rather than failing the job.
+            metrics_summary["cost_usd"] = 0.0
 
     # Quality gate passed flag (fail-closed when unknown).
     quality_gate_passed: bool | None = None

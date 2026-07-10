@@ -66,12 +66,11 @@ def upgrade() -> None:
         sa.Column("current_version_id", sa.String(128), nullable=True),
         sa.Column("current_status", sa.String(32), nullable=False, server_default="'candidate'"),
         sa.Column("description", sa.String(1024), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["current_version_id"],
-            ["model_versions.version_id"],
-            name="fk_models_current_version_id",
-            use_alter=True,
-        ),
+        # NOTE: the circular FK models -> model_versions.current_version_id
+        # is created AFTER model_versions exists (see op.create_foreign_key
+        # below). Alembic's op.create_table silently skips FK constraints
+        # with use_alter=True, so the constraint would never be created and
+        # the downgrade would fail trying to drop a non-existent constraint.
         sa.CheckConstraint(
             "current_status IN ('candidate','research_approved','shadow_approved',"
             "'paper_approved','limited_live_approved','rejected')",
@@ -119,6 +118,17 @@ def upgrade() -> None:
     )
     op.create_index("ix_model_versions_model_id", "model_versions", ["model_id"])
     op.create_index("ix_model_versions_status", "model_versions", ["status"])
+
+    # Create the deferred circular FK: models.current_version_id ->
+    # model_versions.version_id. Both tables now exist, so this succeeds.
+    # The downgrade drops this constraint before dropping model_versions.
+    op.create_foreign_key(
+        "fk_models_current_version_id",
+        "models",
+        "model_versions",
+        ["current_version_id"],
+        ["version_id"],
+    )
 
     # --- model_metrics (validation metrics) ---
     op.create_table(
@@ -245,9 +255,9 @@ def downgrade() -> None:
     op.drop_index("ix_model_metrics_version_id", table_name="model_metrics")
     op.drop_table("model_metrics")
 
-    # Drop the deferred FK (use_alter=True in upgrade) from models ->
-    # model_versions BEFORE dropping model_versions, otherwise PostgreSQL
-    # rejects the drop (RESTRICT) because models still references it.
+    # Drop the deferred circular FK (models -> model_versions) BEFORE
+    # dropping model_versions, otherwise PostgreSQL rejects the drop
+    # (RESTRICT) because models still references it.
     op.drop_constraint(
         "fk_models_current_version_id", "models", type_="foreignkey"
     )

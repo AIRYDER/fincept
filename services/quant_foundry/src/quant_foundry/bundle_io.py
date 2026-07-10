@@ -316,13 +316,25 @@ def write_bundle(
 
     manifest_json = manifest.model_dump_json(indent=2).encode("utf-8")
 
+    # Build the list of (filename, data) entries in deterministic order.
+    entries: list[tuple[str, bytes]] = [
+        (_MANIFEST_FILENAME, manifest_json),
+        (_PRIMARY_FILENAME, primary_bytes),
+    ]
+    if meta_bytes is not None:
+        entries.append((_META_FILENAME, meta_bytes))
+
     # Build the zip archive in memory.
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(_MANIFEST_FILENAME, manifest_json)
-        zf.writestr(_PRIMARY_FILENAME, primary_bytes)
-        if meta_bytes is not None:
-            zf.writestr(_META_FILENAME, meta_bytes)
+        # Use deterministic ZipInfo with a fixed timestamp (1980-01-01)
+        # so the zip bytes are reproducible given the same inputs.
+        # writestr() with a plain filename uses the current time, which
+        # breaks determinism.
+        for filename, data in entries:
+            info = zipfile.ZipInfo(filename=filename, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(info, data)
 
     return buf.getvalue()
 

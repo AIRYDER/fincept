@@ -56,3 +56,7 @@ addopts = "-ra --strict-markers"
 # Depends/Body/Query as defaults — canonical pattern, well-known
 # B008 false-positive.
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# training.py dispatches the quant-foundry training subprocess intentionally.
+"src/api/training.py" = ["S603"]

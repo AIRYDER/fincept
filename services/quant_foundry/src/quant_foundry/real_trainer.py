@@ -885,7 +885,10 @@ class RealLightGBMTrainer:
                 suffix = ".parquet"
             elif parsed.path.endswith(".csv"):
                 suffix = ".csv"
-            tmp_path = Path(tempfile.mktemp(prefix="qf_http_", suffix=suffix))
+            # C4C: use mkstemp (safe) instead of mktemp (racy, deprecated).
+            fd, tmp_name = tempfile.mkstemp(prefix="qf_http_", suffix=suffix)
+            os.close(fd)  # close fd; urlretrieve will write to the path
+            tmp_path = Path(tmp_name)
             try:
                 urllib.request.urlretrieve(ref, str(tmp_path))
             except Exception as exc:
