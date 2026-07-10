@@ -100,15 +100,30 @@ class SettlementLedger:
     per line). Tests pass a ``tmp_path``; production reads from
     ``$QUANT_FOUNDRY_SETTLEMENTS_DIR`` (default
     ``data/quant-foundry/settlements``).
+
+    C10 dual-write: when a ``db_store`` is injected AND the
+    ``QF_POSTGRES_SINK_ENABLED`` flag is on, each ``settle()`` call writes
+    to both the JSONL file (legacy canonical) and the Postgres
+    ``settlement_records`` table (idempotent via ON CONFLICT DO NOTHING).
+    The JSONL write remains the read path until ``QF_POSTGRES_READS_ENABLED``
+    is flipped in a later task.
     """
 
-    def __init__(self, *, root: pathlib.Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        root: pathlib.Path | None = None,
+        db_store: Any = None,
+    ) -> None:
         self._root = root or pathlib.Path(
             os.environ.get(
                 "QUANT_FOUNDRY_SETTLEMENTS_DIR",
                 "data/quant-foundry/settlements",
             )
         )
+        # C10: optional DB-backed settlement store for dual-write.
+        # When None or when QF_POSTGRES_SINK_ENABLED=0, only JSONL is written.
+        self._db_store = db_store
 
     @property
     def root(self) -> pathlib.Path:
@@ -163,6 +178,7 @@ class SettlementLedger:
             window_end=window_end,
         )
         self._append(record)
+        self._dual_write(record, now_ns=now_ns)
         return record
 
     def _compute_record(
@@ -272,6 +288,50 @@ class SettlementLedger:
         path = self._path(record.model_id)
         with path.open("a", encoding="utf-8") as f:
             f.write(record.to_json() + "\n")
+
+    # ------------------------------------------------------------------ #
+    # C10 dual-write                                                     #
+    # ------------------------------------------------------------------ #
+
+    def _dual_write(self, record: SettlementRecord, *, now_ns: int) -> None:
+        """Write the record to Postgres if dual-write is enabled.
+
+        Called after ``_append()`` so the JSONL write (legacy canonical)
+        always happens first. The Postgres write is idempotent
+        (ON CONFLICT DO NOTHING).
+
+        Behavior:
+          - If ``db_store`` is None → no-op (no DB store injected).
+          - If ``QF_POSTGRES_SINK_ENABLED=0`` → no-op (flag off).
+          - If ``QF_DUAL_WRITE_SETTLEMENTS=0`` and sink is on → no-op
+            (JSONL writes have been retired, Postgres is the only writer —
+            not the default, only used in Phase 7).
+          - If DB write fails → log the error. The JSONL write already
+            succeeded, so the record is not lost. In test/verification mode
+            (``QF_DUAL_WRITE_FAIL_HARD=1``), re-raise the exception.
+        """
+        if self._db_store is None:
+            return
+        # Lazy import to avoid circular dependency at module load time.
+        from quant_foundry.c10_flags import should_write_to_postgres
+
+        if not should_write_to_postgres():
+            return
+        try:
+            self._db_store.write(record, now_ns=now_ns)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).error(
+                "C10 dual-write: Postgres settlement write failed for "
+                "prediction_id=%s cost_model_version=%s: %s",
+                record.prediction_id,
+                record.cost_model_version,
+                exc,
+            )
+            # In fail-hard mode (test/verification), re-raise.
+            if os.environ.get("QF_DUAL_WRITE_FAIL_HARD", "0") == "1":
+                raise
 
     def _find(self, prediction_id: str, cost_model_version: str) -> SettlementRecord | None:
         """Return the existing record for (prediction_id, cost_model_version) if any.
