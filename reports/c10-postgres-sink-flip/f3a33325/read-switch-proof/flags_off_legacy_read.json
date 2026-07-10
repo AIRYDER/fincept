@@ -1,0 +1,8 @@
+{
+  "pass": true,
+  "proof": "flags_off_legacy_read",
+  "records_in_jsonl": 5,
+  "records_in_postgres": 0,
+  "records_read": 5,
+  "source": "jsonl"
+}

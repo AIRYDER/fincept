@@ -1,0 +1,8 @@
+{
+  "all_postgres_values": true,
+  "legacy_values_not_returned": true,
+  "pass": true,
+  "proof": "postgres_mismatch_detected",
+  "records_read": 3,
+  "source": "postgres"
+}

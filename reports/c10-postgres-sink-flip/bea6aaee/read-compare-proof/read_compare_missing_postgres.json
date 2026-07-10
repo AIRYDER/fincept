@@ -1,0 +1,12 @@
+{
+  "errors": 0,
+  "legacy_returned": true,
+  "matches": 0,
+  "mismatches": 0,
+  "misses": 5,
+  "pass": true,
+  "proof": "missing_postgres",
+  "records_in_postgres": 0,
+  "records_read": 5,
+  "records_written_to_jsonl": 5
+}

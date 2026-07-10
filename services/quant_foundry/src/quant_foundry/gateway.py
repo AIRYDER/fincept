@@ -1119,11 +1119,29 @@ class QuantFoundryGateway(GatewayCallbackMixin):
         # injected (the training_jobs.callback_receipt_id FK references
         # callback_receipts.callback_id, so the parent row must exist for
         # CostTracker.link_callback() to succeed).
+        #
+        # C10 dual-write: when QF_POSTGRES_SINK_ENABLED=1, the callback
+        # receipt is dual-written via the dual_write coordinator with proper
+        # error handling (logged at ERROR, optionally fail-hard). When the
+        # flag is off, the existing CostTracker FK mirroring remains (silent
+        # suppress, for the FK dependency only).
         if self._callback_receipt_db_store is not None:
             in_rec = self.inbox.get_by_job_id(job_id)
             if in_rec is not None:
-                with contextlib.suppress(Exception):
-                    self._callback_receipt_db_store.write(in_rec)
+                from quant_foundry.c10_flags import postgres_sink_enabled
+
+                if postgres_sink_enabled():
+                    # C10 dual-write path: flag-controlled, proper error handling.
+                    from quant_foundry.dual_write import dual_write_callback_receipt
+
+                    dual_write_callback_receipt(self._callback_receipt_db_store, in_rec)
+                else:
+                    # Pre-C10 mirroring: for CostTracker FK dependency only.
+                    # Silent suppress is acceptable here because the FK
+                    # dependency is a best-effort optimization — if the DB
+                    # write fails, the CostTracker will skip the link.
+                    with contextlib.suppress(Exception):
+                        self._callback_receipt_db_store.write(in_rec)
         # Only update the CostTracker when the callback was accepted (ok=True).
         if not receipt.get("ok"):
             return receipt
@@ -1530,10 +1548,23 @@ class QuantFoundryGateway(GatewayCallbackMixin):
     # --- Tournament wiring (Agent B) ----------------------------------------
 
     def settlement_ledger(self) -> SettlementLedger:
-        """Return the lazily constructed settlement ledger."""
+        """Return the lazily constructed settlement ledger.
+
+        C10: when a DB engine is available, inject a ``DbSettlementStore``
+        so settlement records are dual-written to Postgres behind the
+        ``QF_POSTGRES_SINK_ENABLED`` feature flag. The flag defaults to 0
+        (off), so the DB store is injected but not called until the flag
+        is flipped.
+        """
         if self._settlement_ledger is None:
+            db_store = None
+            if self._db_engine is not None:
+                from quant_foundry.settlement_db_sink import DbSettlementStore
+
+                db_store = DbSettlementStore(engine=self._db_engine)
             self._settlement_ledger = SettlementLedger(
                 root=self.base_dir / "settlements",
+                db_store=db_store,
             )
         return self._settlement_ledger
 

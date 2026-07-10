@@ -17,6 +17,7 @@ from . import (
     observability,
     provider_data,
     registry_tables,
+    settlement_tables,
     ticks,
     universe,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "observability",
     "provider_data",
     "registry_tables",
+    "settlement_tables",
     "ticks",
     "universe",
 ]

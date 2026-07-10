@@ -1,0 +1,8 @@
+{
+  "pass": true,
+  "proof": "postgres_missing_fallback_off",
+  "records_in_jsonl": 5,
+  "records_in_postgres": 0,
+  "records_read": 0,
+  "source": "postgres_empty"
+}

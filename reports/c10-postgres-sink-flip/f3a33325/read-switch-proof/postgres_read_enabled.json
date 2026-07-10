@@ -1,0 +1,8 @@
+{
+  "all_postgres_values": true,
+  "pass": true,
+  "proof": "postgres_read_enabled",
+  "records_in_postgres": 5,
+  "records_read": 5,
+  "source": "postgres"
+}

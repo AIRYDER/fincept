@@ -100,15 +100,42 @@ class SettlementLedger:
     per line). Tests pass a ``tmp_path``; production reads from
     ``$QUANT_FOUNDRY_SETTLEMENTS_DIR`` (default
     ``data/quant-foundry/settlements``).
+
+    C10 dual-write: when a ``db_store`` is injected AND the
+    ``QF_POSTGRES_SINK_ENABLED`` flag is on, each ``settle()`` call writes
+    to both the JSONL file (legacy canonical) and the Postgres
+    ``settlement_records`` table (idempotent via ON CONFLICT DO NOTHING).
+    The JSONL write remains the read path until ``QF_POSTGRES_READS_ENABLED``
+    is flipped in a later task.
+
+    C10 read-compare: when a ``db_store`` is injected AND the
+    ``QF_POSTGRES_READ_COMPARE_ENABLED`` flag is on, ``read_all()`` reads
+    from JSONL (legacy canonical), then reads the same record from
+    Postgres, normalizes both, compares, and emits structured evidence.
+    The legacy record is always returned — Postgres data is never returned
+    while ``QF_POSTGRES_READS_ENABLED=0``.
+
+    C10 read switch: when ``QF_POSTGRES_READS_ENABLED=1`` AND
+    ``QF_LEGACY_FILE_READ_FALLBACK=0``, ``read_all()`` reads from Postgres
+    instead of JSONL. When fallback is on, Postgres read failures fall back
+    to legacy JSONL reads with warning/evidence.
     """
 
-    def __init__(self, *, root: pathlib.Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        root: pathlib.Path | None = None,
+        db_store: Any = None,
+    ) -> None:
         self._root = root or pathlib.Path(
             os.environ.get(
                 "QUANT_FOUNDRY_SETTLEMENTS_DIR",
                 "data/quant-foundry/settlements",
             )
         )
+        # C10: optional DB-backed settlement store for dual-write.
+        # When None or when QF_POSTGRES_SINK_ENABLED=0, only JSONL is written.
+        self._db_store = db_store
 
     @property
     def root(self) -> pathlib.Path:
@@ -163,6 +190,7 @@ class SettlementLedger:
             window_end=window_end,
         )
         self._append(record)
+        self._dual_write(record, now_ns=now_ns)
         return record
 
     def _compute_record(
@@ -273,6 +301,50 @@ class SettlementLedger:
         with path.open("a", encoding="utf-8") as f:
             f.write(record.to_json() + "\n")
 
+    # ------------------------------------------------------------------ #
+    # C10 dual-write                                                     #
+    # ------------------------------------------------------------------ #
+
+    def _dual_write(self, record: SettlementRecord, *, now_ns: int) -> None:
+        """Write the record to Postgres if dual-write is enabled.
+
+        Called after ``_append()`` so the JSONL write (legacy canonical)
+        always happens first. The Postgres write is idempotent
+        (ON CONFLICT DO NOTHING).
+
+        Behavior:
+          - If ``db_store`` is None → no-op (no DB store injected).
+          - If ``QF_POSTGRES_SINK_ENABLED=0`` → no-op (flag off).
+          - If ``QF_DUAL_WRITE_SETTLEMENTS=0`` and sink is on → no-op
+            (JSONL writes have been retired, Postgres is the only writer —
+            not the default, only used in Phase 7).
+          - If DB write fails → log the error. The JSONL write already
+            succeeded, so the record is not lost. In test/verification mode
+            (``QF_DUAL_WRITE_FAIL_HARD=1``), re-raise the exception.
+        """
+        if self._db_store is None:
+            return
+        # Lazy import to avoid circular dependency at module load time.
+        from quant_foundry.c10_flags import should_write_to_postgres
+
+        if not should_write_to_postgres():
+            return
+        try:
+            self._db_store.write(record, now_ns=now_ns)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).error(
+                "C10 dual-write: Postgres settlement write failed for "
+                "prediction_id=%s cost_model_version=%s: %s",
+                record.prediction_id,
+                record.cost_model_version,
+                exc,
+            )
+            # In fail-hard mode (test/verification), re-raise.
+            if os.environ.get("QF_DUAL_WRITE_FAIL_HARD", "0") == "1":
+                raise
+
     def _find(self, prediction_id: str, cost_model_version: str) -> SettlementRecord | None:
         """Return the existing record for (prediction_id, cost_model_version) if any.
 
@@ -286,7 +358,37 @@ class SettlementLedger:
         return None
 
     def read_all(self) -> list[SettlementRecord]:
-        """Return all settled records across all model files (newest-first)."""
+        """Return all settled records across all model files (newest-first).
+
+        C10 read switch: when ``QF_POSTGRES_READS_ENABLED=1`` and a
+        ``db_store`` is injected, reads from Postgres first. When fallback
+        is on (``QF_LEGACY_FILE_READ_FALLBACK=1``), Postgres read failures
+        fall back to legacy JSONL reads. When fallback is off, Postgres
+        read failures are fatal.
+
+        C10 read-compare: when ``QF_POSTGRES_READ_COMPARE_ENABLED=1`` and
+        reads are NOT flipped, each legacy record is compared against the
+        Postgres record with the same key. The legacy record is always
+        returned — Postgres data is never returned while
+        ``QF_POSTGRES_READS_ENABLED=0``. Mismatches are logged and counted.
+
+        When both reads and compare are enabled, Postgres is the primary
+        read, legacy is read for comparison, and Postgres is returned.
+        """
+        # C10 read switch: check if Postgres reads are enabled.
+        if self._db_store is not None:
+            from quant_foundry.c10_flags import postgres_read_switch_active
+
+            if postgres_read_switch_active():
+                return self._read_all_from_postgres()
+
+        # Legacy read path (with optional read-compare).
+        records = self._read_all_from_jsonl()
+        self._read_compare(records)
+        return records
+
+    def _read_all_from_jsonl(self) -> list[SettlementRecord]:
+        """Read all records from JSONL files (legacy path)."""
         if not self._root.is_dir():
             return []
         rows: list[SettlementRecord] = []
@@ -303,3 +405,81 @@ class SettlementLedger:
                         continue
         rows.sort(key=lambda r: r.settled_at_ns or 0, reverse=True)
         return rows
+
+    def _read_all_from_postgres(self) -> list[SettlementRecord]:
+        """Read all records from Postgres (C10 read switch path).
+
+        Postgres is the primary read source. If Postgres read fails or
+        records are missing/invalid, behavior depends on
+        ``QF_LEGACY_FILE_READ_FALLBACK``:
+          - Fallback on (default): fall back to legacy JSONL reads.
+          - Fallback off: raise ``ReadSwitchError``.
+        """
+        from quant_foundry.c10_flags import legacy_file_read_fallback
+        from quant_foundry.read_switch import (
+            ReadSwitchError,
+            read_switch_settlements,
+        )
+
+        fallback = legacy_file_read_fallback()
+        try:
+            records, evidence = read_switch_settlements(
+                self._db_store,
+                self._read_all_from_jsonl,
+                fail_hard=not fallback,
+            )
+        except ReadSwitchError:
+            raise
+
+        # If read-compare is also on and we read from Postgres, the
+        # comparison evidence is already in the ReadSwitchEvidence.
+        # Log it for observability.
+        if evidence.comparison_evidence:
+            import logging
+
+            logging.getLogger(__name__).info(
+                "C10 read-switch: %d comparison evidence entries (reads=%s, compare=%s)",
+                len(evidence.comparison_evidence),
+                "postgres",
+                "on",
+            )
+
+        return records
+
+    # ------------------------------------------------------------------ #
+    # C10 read-compare                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _read_compare(self, records: list[SettlementRecord]) -> None:
+        """Compare legacy records against Postgres if read-compare is enabled.
+
+        Called after ``read_all()`` has collected the legacy records from
+        JSONL. The legacy records are already in ``records`` and are always
+        returned to the caller — this method only emits evidence.
+
+        Behavior:
+          - If ``db_store`` is None -> no-op (no DB store injected).
+          - If ``QF_POSTGRES_READ_COMPARE_ENABLED=0`` -> no-op (flag off).
+          - If ``QF_POSTGRES_READS_ENABLED=1`` -> no-op (reads already
+            flipped to Postgres; read-compare is handled in
+            ``_read_all_from_postgres()``).
+          - For each record: read Postgres, normalize, compare, emit evidence.
+          - Errors are logged. In fail-hard mode, re-raise.
+        """
+        if self._db_store is None:
+            return
+        from quant_foundry.c10_flags import (
+            postgres_read_switch_active,
+            should_read_compare,
+        )
+
+        # If reads are already flipped to Postgres, read-compare is moot
+        # (comparison is handled in _read_all_from_postgres).
+        if postgres_read_switch_active():
+            return
+        if not should_read_compare():
+            return
+
+        from quant_foundry.read_compare import read_compare_settlement_batch
+
+        read_compare_settlement_batch(records, self._db_store)

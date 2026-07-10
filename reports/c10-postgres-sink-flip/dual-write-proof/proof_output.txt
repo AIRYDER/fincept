@@ -1,0 +1,22 @@
+=== C10 Dual-Write Comparison Proof ===
+
+Records written: 10
+JSONL records read: 10
+Postgres records read: 10
+
+Total divergences: 0
+
+After replay: JSONL=10, Postgres=10
+Idempotency: PASS (no duplicates after replay)
+
+Read path: JSONL (QF_POSTGRES_READS_ENABLED=0, QF_LEGACY_FILE_READ_FALLBACK=1)
+
+=== PROOF SUMMARY ===
+Records written: 10
+JSONL records: 10
+Postgres records: 10
+Divergences: 0
+Idempotency: PASS
+Read path: JSONL (legacy)
+
+VERDICT: PASS � 0 divergences, dual-write is correct

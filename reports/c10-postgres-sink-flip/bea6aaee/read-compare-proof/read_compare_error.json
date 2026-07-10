@@ -1,0 +1,11 @@
+{
+  "errors": 3,
+  "legacy_returned": true,
+  "matches": 0,
+  "mismatches": 0,
+  "misses": 0,
+  "pass": true,
+  "proof": "error",
+  "records_read": 3,
+  "records_written": 3
+}
